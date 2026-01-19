@@ -62,6 +62,6 @@ app.get('/health', async (req, res) => {
 });
 
 // Start server
-app.listen(port, () => {
-  console.log(`TierTrak server running at http://localhost:${port}`);
+app.listen(PORT, () => {
+  console.log(`TierTrak server running at http://localhost:${PORT}`);
 });
