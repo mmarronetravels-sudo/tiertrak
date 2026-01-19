@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, ChevronRight, User, Clock, TrendingUp, AlertCircle, CheckCircle, BookOpen, Users, BarChart3, FileText, ArrowLeft, Save, LogOut, LogIn, Calendar, MapPin, Filter, Settings, Trash2, X, Edit, UserPlus, Upload, Download, FileSpreadsheet } from 'lucide-react';
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 // Tier colors
 const tierColors = {
