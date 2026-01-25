@@ -183,6 +183,12 @@ const [reportData, setReportData] = useState(null);
       setLoading(false);
     }
   }, [token]);
+  // Fetch missing logs when dashboard loads
+useEffect(() => {
+  if (view === 'dashboard' && user?.tenant_id) {
+    fetchMissingLogs();
+  }
+}, [view, user?.tenant_id]);
 
   // Fetch missing logs when dashboard loads
   useEffect(() => {
@@ -266,6 +272,21 @@ const [reportData, setReportData] = useState(null);
       console.error('Error fetching weekly progress:', err);
     }
   };
+  // Fetch missing weekly logs for dashboard alert
+const fetchMissingLogs = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const response = await fetch(`${API_URL}/weekly-progress/missing/${user.tenant_id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setMissingLogs(data);
+    }
+  } catch (error) {
+    console.error('Error fetching missing logs:', error);
+  }
+};
 
   // Fetch missing weekly logs for dashboard alert
   const fetchMissingLogs = async () => {
@@ -957,6 +978,7 @@ const filterByDateRange = (items, dateField) => {
         </div>
       </div>
       {/* Missing Logs Alert */}
+<<<<<<< HEAD
       {missingLogs.missing_count > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -1000,6 +1022,51 @@ const filterByDateRange = (items, dateField) => {
           </div>
         </div>
       )}
+=======
+{missingLogs.missing_count > 0 && (
+  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+    <div className="flex items-center gap-2 mb-3">
+      <AlertCircle className="w-5 h-5 text-amber-600" />
+      <h3 className="font-semibold text-amber-800">
+        Weekly Logs Needed ({missingLogs.missing_count})
+      </h3>
+    </div>
+    <p className="text-sm text-amber-700 mb-3">
+      The following interventions need progress logs for the week of {new Date(missingLogs.week_of + 'T00:00:00').toLocaleDateString()}:
+    </p>
+    <div className="space-y-2 max-h-48 overflow-y-auto">
+      {missingLogs.interventions.map((item) => (
+        <div 
+          key={item.intervention_id}
+          onClick={() => {
+            setSelectedStudent({ id: item.student_id });
+            setView('student');
+          }}
+          className="flex items-center justify-between p-2 bg-white rounded-lg border border-amber-100 cursor-pointer hover:bg-amber-50 transition-colors"
+        >
+          <div>
+            <span className="font-medium text-slate-800">
+              {item.first_name} {item.last_name}
+            </span>
+            <span className="text-slate-400 mx-2">—</span>
+            <span className="text-slate-600">{item.intervention_name}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded-full ${
+              item.tier === 1 ? 'bg-emerald-100 text-emerald-700' :
+              item.tier === 2 ? 'bg-amber-100 text-amber-700' :
+              'bg-rose-100 text-rose-700'
+            }`}>
+              Tier {item.tier}
+            </span>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+>>>>>>> 644862e6a4fd48f3f556552d69a3d699b59469b9
 
       {/* Tier Overview Cards */}
       <div className="grid grid-cols-3 gap-6">
