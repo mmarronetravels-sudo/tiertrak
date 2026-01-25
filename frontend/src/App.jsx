@@ -160,13 +160,7 @@ const [reportData, setReportData] = useState(null);
     goal_target_date: '',
     goal_target_rating: 3
   });
-  const [showReport, setShowReport] = useState(false);
-  const [reportData, setReportData] = useState(null);
-  const [reportDateRange, setReportDateRange] = useState({
-    startDate: new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
-  });
-
+  
   // Check if user is admin
   const isAdmin = user && (user.role === 'district_admin' || user.role === 'school_admin');
   
