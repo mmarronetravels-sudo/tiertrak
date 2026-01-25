@@ -2892,22 +2892,3 @@ const filterByDateRange = (items, dateField) => {
     </div>
   );
 }
-/* Print Styles for MTSS Report */
-@media print {
-  body * {
-    visibility: hidden;
-  }
-  
-  .fixed.inset-0 {
-    position: absolute !important;
-    visibility: visible !important;
-    background: white !important;
-    inset: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-  
-  .fixed.inset-0 * {
-    visibility: visible !important;
-  }
-}
