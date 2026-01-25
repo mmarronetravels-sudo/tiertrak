@@ -160,7 +160,7 @@ const [reportData, setReportData] = useState(null);
     goal_target_date: '',
     goal_target_rating: 3
   });
-  const [showReportModal, setShowReportModal] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [reportDateRange, setReportDateRange] = useState({
     startDate: new Date(Date.now() - 56 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -329,23 +329,7 @@ const [reportData, setReportData] = useState(null);
     }
   };
 
-  // Generate progress report
-  const generateReport = async () => {
-    try {
-      const response = await fetch(
-        `${API_URL}/weekly-progress/summary/${selectedStudent.id}?startDate=${reportDateRange.startDate}&endDate=${reportDateRange.endDate}`,
-        { headers: { 'Authorization': `Bearer ${token}` }}
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setReportData(data);
-        setShowReportModal(true);
-      }
-    } catch (err) {
-      console.error('Error generating report:', err);
-    }
-  };
-
+  
   // Fetch intervention templates
   const fetchInterventionTemplates = async (tenantId) => {
     try {
