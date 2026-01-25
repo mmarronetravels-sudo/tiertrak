@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Search, ChevronLeft, Eye, Trash2, Edit, Upload, Download, FileText, Printer, BarChart3 } from 'lucide-react';
+import { X, Plus, Search, ChevronLeft, Eye, Trash2, Edit, Upload, Download, FileText, Printer, BarChart3, LogIn } from 'lucide-react';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 // Get Monday of the current week
