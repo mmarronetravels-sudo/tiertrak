@@ -28,6 +28,7 @@ const usersRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
 const interventionLogsRoutes = require('./routes/interventionLogs');
 const csvImportRoutes = require('./routes/csvImport');
+const weeklyProgressRoutes = require('./routes/weeklyProgress');
 
 // Use routes
 app.use('/api/tenants', tenantsRoutes);
@@ -38,6 +39,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/intervention-logs', interventionLogsRoutes);
 app.use('/api/csv', csvImportRoutes);
+app.use('/api/weekly-progress', weeklyProgressRoutes);
 
 // Test route
 app.get('/', (req, res) => {

@@ -139,4 +139,30 @@ router.get('/student/:studentId', async (req, res) => {
   }
 });
 
+
+// Set or update intervention goal
+router.patch('/:id/goal', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { goal_description, goal_target_date, goal_target_rating } = req.body;
+
+    const result = await pool.query(`
+      UPDATE student_interventions
+      SET goal_description = $1,
+          goal_target_date = $2,
+          goal_target_rating = $3
+      WHERE id = $4
+      RETURNING *
+    `, [goal_description, goal_target_date, goal_target_rating, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Intervention not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating intervention goal:', err);
+    res.status(500).json({ error: 'Failed to update goal' });
+  }
+});
 module.exports = router;

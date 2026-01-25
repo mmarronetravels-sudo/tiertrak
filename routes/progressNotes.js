@@ -29,12 +29,12 @@ router.get('/student/:studentId', async (req, res) => {
 // Create a new progress note
 router.post('/', async (req, res) => {
   try {
-    const { student_id, author_id, note } = req.body;
+    const { student_id, author_id, note, meeting_date } = req.body;
     const result = await pool.query(
-      `INSERT INTO progress_notes (student_id, author_id, note) 
-       VALUES ($1, $2, $3) 
+      `INSERT INTO progress_notes (student_id, author_id, note, meeting_date) 
+       VALUES ($1, $2, $3, $4) 
        RETURNING *`,
-      [student_id, author_id, note]
+      [student_id, author_id, note, meeting_date || new Date().toISOString().split('T')[0]]
     );
     
     // Update the student's updated_at timestamp
