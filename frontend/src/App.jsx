@@ -100,6 +100,7 @@ export default function App() {
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
   const progressNotesRef = useRef(null);
+  const interventionNotesRef = useRef(null);  
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
@@ -496,7 +497,7 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
         body: JSON.stringify({
           student_id: selectedStudent.id,
           intervention_name: newIntervention.name,
-          notes: newIntervention.notes,
+          notes: interventionNotesRef.current?.value || '',
           assigned_by: user.id
         })
       });
@@ -1373,12 +1374,12 @@ const filterByDateRange = (items, dateField) => {
                 </p>
 
                 <textarea
-                  placeholder="Notes..."
-                  value={newIntervention.notes}
-                  onChange={(e) => setNewIntervention({ ...newIntervention, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                  rows={2}
-                />
+  ref={interventionNotesRef}
+  placeholder="Notes..."
+  defaultValue=""
+  className="w-full px-3 py-2 border border-slate-200 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+  rows={2}
+/>
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => { 
