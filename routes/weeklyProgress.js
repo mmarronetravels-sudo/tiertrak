@@ -222,7 +222,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const normalizedWeek = getWeekStart(week_of);
+    const normalizedWeek = week_of;
 
     const result = await pool.query(`
       INSERT INTO weekly_progress 
