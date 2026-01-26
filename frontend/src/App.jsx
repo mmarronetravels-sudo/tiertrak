@@ -6,6 +6,7 @@ import {
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
   MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 // Get Monday of the current week
@@ -98,6 +99,7 @@ export default function App() {
   const [newIntervention, setNewIntervention] = useState({ name: '', notes: '' });
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
+  const progressNotesRef = useRef(null);
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
@@ -161,6 +163,8 @@ const [reportData, setReportData] = useState(null);
     notes: ''
   });
   const [showGoalForm, setShowGoalForm] = useState(false);
+  const [showProgressChart, setShowProgressChart] = useState(false);
+const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
   const [selectedInterventionForGoal, setSelectedInterventionForGoal] = useState(null);
   const [goalFormData, setGoalFormData] = useState({
     goal_description: '',
@@ -276,11 +280,7 @@ const [reportData, setReportData] = useState(null);
       });
       if (response.ok) {
         const data = await response.json();
-       setMissingLogs({
-  missing_count: data.length,
-  week_of: new Date().toISOString().split('T')[0],
-  interventions: data
-});
+        setMissingLogs(data);
       }
     } catch (error) {
       console.error('Error fetching missing logs:', error);
@@ -304,7 +304,7 @@ const [reportData, setReportData] = useState(null);
           status: progressFormData.status,
           rating: progressFormData.rating || null,
           response: progressFormData.response || null,
-          notes: progressFormData.notes || null,
+          notes: progressNotesRef.current?.value || null,
           logged_by: user.id
         })
       });
@@ -1453,6 +1453,16 @@ const filterByDateRange = (items, dateField) => {
                       <Target className="w-3 h-3" />
                       {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
                     </button>
+                    <button
+  onClick={() => {
+    setSelectedInterventionForChart(intervention);
+    setShowProgressChart(true);
+  }}
+  className="px-3 py-1.5 border border-indigo-300 text-indigo-700 text-sm rounded-lg hover:bg-indigo-50 flex items-center gap-1"
+>
+  <TrendingUp className="w-3 h-3" />
+  View Chart
+</button>
                   </div>
                   {/* Weekly Progress Logs Display */}
                   {weeklyProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 0 && (
@@ -2841,12 +2851,12 @@ const filterByDateRange = (items, dateField) => {
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
                   <textarea
-                    value={progressFormData.notes}
-                    onChange={(e) => setProgressFormData({ ...progressFormData, notes: e.target.value })}
-                    className="w-full p-2 border rounded-lg"
-                    rows="3"
-                    placeholder="Observations, adjustments made, student behavior..."
-                  />
+  ref={progressNotesRef}
+  defaultValue=""
+  className="w-full p-2 border rounded-lg"
+  rows="3"
+  placeholder="Observations, adjustments made, student behavior..."
+/>
                 </div>
 
                 <div className="flex gap-2 pt-2">
@@ -2945,6 +2955,165 @@ const filterByDateRange = (items, dateField) => {
             </div>
           </div>
         )}
+        {/* Progress Chart Modal */}
+{showProgressChart && selectedInterventionForChart && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
+        <div>
+          <h3 className="font-semibold text-lg">Progress Over Time</h3>
+          <p className="text-sm text-slate-500">{selectedInterventionForChart.intervention_name}</p>
+        </div>
+        <button onClick={() => setShowProgressChart(false)} className="text-slate-500 hover:text-slate-700">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      <div className="p-6">
+        {(() => {
+          const chartData = weeklyProgressLogs
+            .filter(log => log.student_intervention_id === selectedInterventionForChart.id && log.rating)
+            .sort((a, b) => new Date(a.week_of) - new Date(b.week_of))
+            .map(log => ({
+              week: new Date(log.week_of + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              rating: log.rating,
+              status: log.status,
+              response: log.response,
+              notes: log.notes
+            }));
+
+          const goalRating = selectedInterventionForChart.goal_target_rating;
+
+          if (chartData.length === 0) {
+            return (
+              <div className="text-center py-12 text-slate-400">
+                <TrendingUp size={48} className="mx-auto mb-4 opacity-50" />
+                <p className="text-lg">No progress data yet</p>
+                <p className="text-sm mt-2">Log weekly progress to see the chart</p>
+              </div>
+            );
+          }
+
+          return (
+            <>
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis 
+                      dataKey="week" 
+                      tick={{ fontSize: 12, fill: '#64748b' }}
+                      tickLine={{ stroke: '#cbd5e1' }}
+                    />
+                    <YAxis 
+                      domain={[0, 5]} 
+                      ticks={[1, 2, 3, 4, 5]}
+                      tick={{ fontSize: 12, fill: '#64748b' }}
+                      tickLine={{ stroke: '#cbd5e1' }}
+                      label={{ value: 'Rating', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
+                    />
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 rounded-lg shadow-lg border border-slate-200">
+                              <p className="font-medium text-slate-800">{data.week}</p>
+                              <p className={`text-sm ${getRatingColor(data.rating)}`}>
+                                Rating: {data.rating}/5 - {getRatingLabel(data.rating)}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-1">{data.status}</p>
+                              {data.response && <p className="text-xs text-slate-500">Response: {data.response}</p>}
+                              {data.notes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.notes}</p>}
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    {goalRating && (
+                      <ReferenceLine 
+                        y={goalRating} 
+                        stroke="#6366f1" 
+                        strokeDasharray="5 5" 
+                        label={{ value: `Goal: ${goalRating}`, position: 'right', fill: '#6366f1', fontSize: 12 }}
+                      />
+                    )}
+                    <Line 
+                      type="monotone" 
+                      dataKey="rating" 
+                      stroke="#3b82f6" 
+                      strokeWidth={3}
+                      dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
+                      activeDot={{ r: 8, fill: '#1d4ed8' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Legend */}
+              <div className="flex items-center justify-center gap-6 mt-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-1 bg-blue-500 rounded"></div>
+                  <span className="text-slate-600">Progress Rating</span>
+                </div>
+                {goalRating && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-0.5 border-t-2 border-dashed border-indigo-500"></div>
+                    <span className="text-slate-600">Goal Target ({goalRating})</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Rating Scale Reference */}
+              <div className="mt-6 p-4 bg-slate-50 rounded-lg">
+                <p className="text-sm font-medium text-slate-700 mb-2">Rating Scale</p>
+                <div className="grid grid-cols-5 gap-2 text-xs">
+                  <div className="text-center p-2 bg-rose-100 rounded text-rose-700">1 - No Progress</div>
+                  <div className="text-center p-2 bg-rose-50 rounded text-rose-600">2 - Minimal</div>
+                  <div className="text-center p-2 bg-amber-100 rounded text-amber-700">3 - Some</div>
+                  <div className="text-center p-2 bg-emerald-50 rounded text-emerald-600">4 - Good</div>
+                  <div className="text-center p-2 bg-emerald-100 rounded text-emerald-700">5 - Significant</div>
+                </div>
+              </div>
+
+              {/* Summary Stats */}
+              {chartData.length >= 2 && (
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  <div className="p-3 bg-blue-50 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-blue-700">
+                      {(chartData.reduce((sum, d) => sum + d.rating, 0) / chartData.length).toFixed(1)}
+                    </p>
+                    <p className="text-xs text-blue-600">Average Rating</p>
+                  </div>
+                  <div className="p-3 bg-emerald-50 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-emerald-700">
+                      {Math.max(...chartData.map(d => d.rating))}
+                    </p>
+                    <p className="text-xs text-emerald-600">Highest Rating</p>
+                  </div>
+                  <div className="p-3 bg-indigo-50 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-indigo-700">{chartData.length}</p>
+                    <p className="text-xs text-indigo-600">Weeks Logged</p>
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
+      </div>
+
+      <div className="p-4 border-t bg-slate-50">
+        <button
+          onClick={() => setShowProgressChart(false)}
+          className="w-full py-2 px-4 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
