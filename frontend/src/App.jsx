@@ -2766,7 +2766,7 @@ const filterByDateRange = (items, dateField) => {
                 </button>
               </div>
 
-              <form onSubmit={submitWeeklyProgress} className="p-4 space-y-4">
+              <form key={selectedInterventionForProgress?.id} onSubmit={submitWeeklyProgress} className="p-4 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Week Of (Monday)</label>
                   <input
