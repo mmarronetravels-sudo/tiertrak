@@ -184,13 +184,7 @@ const [reportData, setReportData] = useState(null);
     }
   }, [token]);
   // Fetch missing logs when dashboard loads
-useEffect(() => {
-  if (view === 'dashboard' && user?.tenant_id) {
-    fetchMissingLogs();
-  }
-}, [view, user?.tenant_id]);
 
-  // Fetch missing logs when dashboard loads
   useEffect(() => {
     if (view === 'dashboard' && user?.tenant_id) {
       fetchMissingLogs();
