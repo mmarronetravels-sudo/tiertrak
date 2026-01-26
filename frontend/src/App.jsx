@@ -323,11 +323,30 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
           notes: ''
         });
         fetchWeeklyProgress(selectedStudent.id);
-      }
-    } catch (err) {
+   
+      } catch (err) {
       console.error('Error submitting weekly progress:', err);
     }
   };
+
+  // Delete weekly progress log
+  const deleteWeeklyProgress = async (logId) => {
+    if (!confirm('Are you sure you want to delete this progress log?')) return;
+    try {
+      const response = await fetch(`${API_URL}/weekly-progress/${logId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        fetchWeeklyProgress(selectedStudent.id);
+      }
+    } catch (err) {
+      console.error('Error deleting weekly progress:', err);
+    }
+  };
+  
 
   // Update intervention goal
   const updateInterventionGoal = async (interventionId) => {
