@@ -1521,9 +1521,7 @@ const filterByDateRange = (items, dateField) => {
       {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
     </div>
   ))}
-                      </div>
-                    </div>
-                  )}
+                      
                 </div>
               ))}
               {(!selectedStudent.interventions || selectedStudent.interventions.length === 0) && (
