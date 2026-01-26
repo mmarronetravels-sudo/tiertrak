@@ -323,8 +323,8 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
           notes: ''
         });
         fetchWeeklyProgress(selectedStudent.id);
-   
-      } catch (err) {
+      }
+    } catch (err) {
       console.error('Error submitting weekly progress:', err);
     }
   };
