@@ -280,7 +280,11 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       });
       if (response.ok) {
         const data = await response.json();
-        setMissingLogs(data);
+        setMissingLogs({
+  missing_count: data.length,
+  week_of: new Date().toISOString().split('T')[0],
+  interventions: data
+});
       }
     } catch (error) {
       console.error('Error fetching missing logs:', error);
