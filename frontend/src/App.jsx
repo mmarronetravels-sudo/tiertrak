@@ -1433,7 +1433,7 @@ const filterByDateRange = (items, dateField) => {
                       onClick={() => {
   setSelectedInterventionForProgress(intervention);
   setProgressFormData({
-    week_of: getCurrentWeekStart(),
+    week_of: new Date().toISOString().split('T')[0],
     status: '',
     rating: '',
     response: '',
@@ -2773,7 +2773,7 @@ const filterByDateRange = (items, dateField) => {
 
               <form key={selectedInterventionForProgress?.id} onSubmit={submitWeeklyProgress} className="p-4 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Week Of (Monday)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
                   <input
                     type="date"
                     value={progressFormData.week_of}
