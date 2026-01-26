@@ -17,10 +17,9 @@ const getCurrentWeekStart = () => {
   return new Date(now.setDate(diff)).toISOString().split('T')[0];
 };
 
-// Format date for display
 const formatWeekOf = (dateStr) => {
   if (!dateStr) return 'No date';
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'T00:00:00');
   if (isNaN(date.getTime())) return 'Invalid date';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
