@@ -1430,13 +1430,17 @@ const filterByDateRange = (items, dateField) => {
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => {
-                        setSelectedInterventionForProgress(intervention);
-                        setProgressFormData({
-                          ...progressFormData,
-                          week_of: getCurrentWeekStart()
-                        });
-                        setShowProgressForm(true);
-                      }}
+  setSelectedInterventionForProgress(intervention);
+  setProgressFormData({
+    week_of: getCurrentWeekStart(),
+    status: '',
+    rating: '',
+    response: '',
+    notes: ''
+  });
+  if (progressNotesRef.current) progressNotesRef.current.value = '';
+  setShowProgressForm(true);
+}}
                       className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" />
