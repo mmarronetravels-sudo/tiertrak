@@ -1492,41 +1492,35 @@ const filterByDateRange = (items, dateField) => {
 </button>
                   </div>
                   {/* Weekly Progress Logs Display */}
-                  {weeklyProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-200">
-                      <h5 className="text-sm font-medium text-slate-600 mb-2">Recent Progress</h5>
-                      <div className="space-y-2">
-                        {weeklyProgressLogs
-                          .filter(log => log.student_intervention_id === intervention.id)
-                          .slice(0, 3)
-                          .map(log => (
-                            <div key={log.id} className="text-sm bg-white p-2 rounded border border-slate-100">
-  <div className="flex justify-between items-center">
-    <span className="text-slate-500">{formatWeekOf(log.week_of)}</span>
-    <div className="flex items-center gap-2">
-      <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
-        {log.status}
-      </span>
-      <button
-        onClick={() => deleteWeeklyProgress(log.id)}
-        className="text-slate-400 hover:text-rose-600 p-1"
-        title="Delete log"
-      >
-        <Trash2 className="w-3 h-3" />
-      </button>
+                  {weeklyProgressLogs
+  .filter(log => log.student_intervention_id === intervention.id)
+  .slice(0, 3)
+  .map(log => (
+    <div key={log.id} className="text-sm bg-white p-2 rounded border border-slate-100">
+      <div className="flex justify-between items-center">
+        <span className="text-slate-500">{formatWeekOf(log.week_of)}</span>
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
+            {log.status}
+          </span>
+          <button
+            onClick={() => deleteWeeklyProgress(log.id)}
+            className="text-slate-400 hover:text-rose-600 p-1"
+            title="Delete log"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+      {log.rating && (
+        <div className="mt-1">
+          <span className="text-slate-500">Rating: </span>
+          <span className={getRatingColor(log.rating)}>{log.rating}/5 - {getRatingLabel(log.rating)}</span>
+        </div>
+      )}
+      {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
     </div>
-  </div>
-                                </span>
-                              </div>
-                              {log.rating && (
-                                <div className="mt-1">
-                                  <span className="text-slate-500">Rating: </span>
-                                  <span className={getRatingColor(log.rating)}>{log.rating}/5 - {getRatingLabel(log.rating)}</span>
-                                </div>
-                              )}
-                              {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
-                            </div>
-                          ))}
+  ))}
                       </div>
                     </div>
                   )}
