@@ -1556,7 +1556,7 @@ const filterByDateRange = (items, dateField) => {
                 <div key={idx} className="p-4 bg-slate-50 rounded-xl border-l-4 border-indigo-400">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium text-indigo-600">{note.author_name || 'Staff'}</span>
-                    <span className="text-xs text-slate-400">{note.meeting_date || note.created_at?.split('T')[0]}</span>
+                    <span className="text-xs text-slate-400">{formatWeekOf(note.meeting_date || note.created_at)}</span>
                   </div>
                   <p className="text-sm text-slate-700">{note.note}</p>
                 </div>
