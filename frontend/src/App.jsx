@@ -1427,7 +1427,7 @@ const filterByDateRange = (items, dateField) => {
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
-                      <p className="text-sm text-slate-500">Started {intervention.start_date}</p>
+                      <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       intervention.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
