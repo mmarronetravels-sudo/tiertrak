@@ -140,7 +140,23 @@ const [reportData, setReportData] = useState(null);
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   // Pre-Referral Form state
-  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
+  const [showMTSSMeetingForm, setShowMTSSMeetingForm] = useState(false);
+const [mtssMeetings, setMTSSMeetings] = useState([]);
+const [mtssMeetingOptions, setMTSSMeetingOptions] = useState(null);
+const [interventionsSummary, setInterventionsSummary] = useState([]);
+const [currentMTSSMeeting, setCurrentMTSSMeeting] = useState(null);
+const [mtssMeetingForm, setMTSSMeetingForm] = useState({
+  meeting_date: new Date().toISOString().split('T')[0],
+  meeting_number: 1,
+  meeting_type: '6-week',
+  attendees: { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
+  parent_attended: false,
+  progress_summary: '',
+  tier_decision: '',
+  next_steps: '',
+  next_meeting_date: '',
+  intervention_reviews: []
+});  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
   const [preReferralForm, setPreReferralForm] = useState(null);
   const [preReferralStep, setPreReferralStep] = useState(1);
   const [preReferralOptions, setPreReferralOptions] = useState(null);
@@ -412,7 +428,178 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       console.error('Error fetching missing logs:', error);
     }
   };
+  // MTSS Meeting Functions
+  const fetchMTSSMeetingOptions = async () => {
+    try {
+      const response = await fetch(`${API_URL}/mtss-meetings/options`);
+      if (response.ok) {
+        const data = await response.json();
+        setMTSSMeetingOptions(data);
+      }
+    } catch (error) {
+      console.error('Error fetching MTSS meeting options:', error);
+    }
+  };
 
+  const fetchMTSSMeetings = async (studentId) => {
+    try {
+      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMTSSMeetings(data);
+      }
+    } catch (error) {
+      console.error('Error fetching MTSS meetings:', error);
+    }
+  };
+
+  const fetchInterventionsSummary = async (studentId) => {
+    try {
+      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}/interventions-summary`);
+      if (response.ok) {
+        const data = await response.json();
+        setInterventionsSummary(data);
+        return data;
+      }
+    } catch (error) {
+      console.error('Error fetching interventions summary:', error);
+    }
+    return [];
+  };
+
+  const fetchMeetingCount = async (studentId) => {
+    try {
+      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}/count`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.count || 0;
+      }
+    } catch (error) {
+      console.error('Error fetching meeting count:', error);
+    }
+    return 0;
+  };
+
+  const openMTSSMeetingForm = async (meeting = null) => {
+    if (!selectedStudent) return;
+    
+    await fetchMTSSMeetingOptions();
+    const interventions = await fetchInterventionsSummary(selectedStudent.id);
+    
+    if (meeting) {
+      // Editing existing meeting
+      setCurrentMTSSMeeting(meeting);
+      setMTSSMeetingForm({
+        meeting_date: meeting.meeting_date ? meeting.meeting_date.split('T')[0] : '',
+        meeting_number: meeting.meeting_number || 1,
+        meeting_type: meeting.meeting_type || '6-week',
+        attendees: meeting.attendees || { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
+        parent_attended: meeting.parent_attended || false,
+        progress_summary: meeting.progress_summary || '',
+        tier_decision: meeting.tier_decision || '',
+        next_steps: meeting.next_steps || '',
+        next_meeting_date: meeting.next_meeting_date ? meeting.next_meeting_date.split('T')[0] : '',
+        intervention_reviews: meeting.intervention_reviews || interventions.map(inv => ({
+          student_intervention_id: inv.id,
+          intervention_name: inv.intervention_name,
+          implementation_fidelity: '',
+          progress_toward_goal: '',
+          recommendation: '',
+          notes: '',
+          avg_rating: inv.avg_rating,
+          total_logs: inv.total_logs
+        }))
+      });
+    } else {
+      // New meeting
+      const count = await fetchMeetingCount(selectedStudent.id);
+      setCurrentMTSSMeeting(null);
+      setMTSSMeetingForm({
+        meeting_date: new Date().toISOString().split('T')[0],
+        meeting_number: Math.min(count + 1, 3),
+        meeting_type: '6-week',
+        attendees: { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
+        parent_attended: false,
+        progress_summary: '',
+        tier_decision: '',
+        next_steps: '',
+        next_meeting_date: '',
+        intervention_reviews: interventions.map(inv => ({
+          student_intervention_id: inv.id,
+          intervention_name: inv.intervention_name,
+          implementation_fidelity: '',
+          progress_toward_goal: '',
+          recommendation: '',
+          notes: '',
+          avg_rating: inv.avg_rating,
+          total_logs: inv.total_logs
+        }))
+      });
+    }
+    setShowMTSSMeetingForm(true);
+  };
+
+  const saveMTSSMeeting = async () => {
+    if (!selectedStudent) return;
+    
+    try {
+      const payload = {
+        student_id: selectedStudent.id,
+        tenant_id: user.tenant_id,
+        created_by: user.id,
+        ...mtssMeetingForm
+      };
+      
+      const url = currentMTSSMeeting 
+        ? `${API_URL}/mtss-meetings/${currentMTSSMeeting.id}`
+        : `${API_URL}/mtss-meetings`;
+      
+      const response = await fetch(url, {
+        method: currentMTSSMeeting ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      if (response.ok) {
+        setShowMTSSMeetingForm(false);
+        fetchMTSSMeetings(selectedStudent.id);
+        alert(currentMTSSMeeting ? 'Meeting updated!' : 'Meeting saved!');
+      } else {
+        const error = await response.json();
+        alert('Error saving meeting: ' + (error.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error saving MTSS meeting:', error);
+      alert('Error saving meeting');
+    }
+  };
+
+  const deleteMTSSMeeting = async (meetingId) => {
+    if (!confirm('Delete this meeting? This cannot be undone.')) return;
+    
+    try {
+      const response = await fetch(`${API_URL}/mtss-meetings/${meetingId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        fetchMTSSMeetings(selectedStudent.id);
+      }
+    } catch (error) {
+      console.error('Error deleting meeting:', error);
+    }
+  };
+
+  const updateInterventionReview = (interventionId, field, value) => {
+    setMTSSMeetingForm(prev => ({
+      ...prev,
+      intervention_reviews: prev.intervention_reviews.map(rev =>
+        rev.student_intervention_id === interventionId
+          ? { ...rev, [field]: value }
+          : rev
+      )
+    }));
+  };
   // Submit weekly progress
   const submitWeeklyProgress = async (e) => {
     e.preventDefault();
@@ -525,6 +712,11 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
         setSelectedStudent(data);
         fetchInterventionLogs(studentId);
         fetchWeeklyProgress(studentId);
+        // Fetch MTSS meetings for Tier 2+ students
+        if (data.tier > 1) {
+          fetchMTSSMeetings(studentId);
+          fetchMTSSMeetingOptions();
+        }
       }
     } catch (error) {
       console.error('Error fetching student details:', error);
@@ -1666,43 +1858,361 @@ const filterByDateRange = (items, dateField) => {
           </div>
 
           
-          {/* Progress Notes */}
+          {/* MTSS Meetings */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
                 <FileText size={20} className="text-slate-400" />
                 <h2 className="text-lg font-semibold text-slate-800">MTSS Meetings</h2>
               </div>
-              {!selectedStudent.archived && (
+              {!selectedStudent.archived && selectedStudent.tier > 1 && (
                 <button
-                  onClick={() => setShowAddNote(true)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+                  onClick={() => openMTSSMeetingForm()}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition-colors"
                 >
                   <Plus size={16} />
-                  Add
+                  New Meeting
                 </button>
               )}
             </div>
-
             
-            <div className="space-y-4 max-h-80 overflow-y-auto">
-              {selectedStudent.progressNotes?.map((note, idx) => (
-                <div key={idx} className="p-4 bg-slate-50 rounded-xl border-l-4 border-indigo-400">
+            {selectedStudent.tier === 1 && (
+              <p className="text-sm text-gray-500 italic mb-4">
+                MTSS Meetings are for Tier 2 and 3 students. Use the Pre-Referral Form to move this student into the MTSS process.
+              </p>
+            )}
+            
+            <div className="space-y-4 max-h-96 overflow-y-auto">
+              {/* Structured MTSS Meetings */}
+              {mtssMeetings.map((meeting) => (
+                <div key={meeting.id} className="p-4 bg-emerald-50 rounded-xl border border-emerald-200">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-indigo-600">{note.author_name || 'Staff'}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-emerald-600 text-white text-xs rounded-full">
+                        Meeting #{meeting.meeting_number}
+                      </span>
+                      <span className="text-sm text-emerald-700 font-medium">
+                        {meeting.meeting_type === '4-week' ? '4-Week Review' : 
+                         meeting.meeting_type === '6-week' ? '6-Week Review' : 
+                         meeting.meeting_type === 'final-review' ? 'Final Review' : 'Other'}
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      {meeting.meeting_date ? new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString() : ''}
+                    </span>
+                  </div>
+                  
+                  {meeting.tier_decision && (
+                    <div className="mb-2">
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        meeting.tier_decision === 'move_tier1' ? 'bg-green-100 text-green-700' :
+                        meeting.tier_decision === 'move_tier3' ? 'bg-red-100 text-red-700' :
+                        meeting.tier_decision.includes('refer') ? 'bg-purple-100 text-purple-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {meeting.tier_decision === 'stay_tier2_continue' ? 'Continue Tier 2' :
+                         meeting.tier_decision === 'stay_tier2_modify' ? 'Modify Tier 2' :
+                         meeting.tier_decision === 'move_tier1' ? 'Move to Tier 1' :
+                         meeting.tier_decision === 'move_tier3' ? 'Move to Tier 3' :
+                         meeting.tier_decision === 'refer_sped' ? 'Refer for SpEd' :
+                         meeting.tier_decision === 'refer_504' ? 'Refer for 504' : meeting.tier_decision}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {meeting.progress_summary && (
+                    <p className="text-sm text-slate-700 mb-2">{meeting.progress_summary}</p>
+                  )}
+                  
+                  {meeting.attendees && (
+                    <p className="text-xs text-slate-500">
+                      Attendees: {Object.entries(meeting.attendees)
+                        .filter(([key, val]) => val === true)
+                        .map(([key]) => key.charAt(0).toUpperCase() + key.slice(1))
+                        .join(', ') || 'None recorded'}
+                    </p>
+                  )}
+                  
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => openMTSSMeetingForm(meeting)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => deleteMTSSMeeting(meeting.id)}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+              
+              {/* Legacy Progress Notes */}
+              {selectedStudent.progressNotes?.map((note, idx) => (
+                <div key={`legacy-${idx}`} className="p-4 bg-slate-50 rounded-xl border-l-4 border-slate-300 border-dashed">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-600">{note.author_name || 'Staff'}</span>
+                      <span className="text-xs text-slate-400">📝 Legacy Note</span>
+                    </div>
                     <span className="text-xs text-slate-400">{formatWeekOf(note.meeting_date || note.created_at)}</span>
                   </div>
                   <p className="text-sm text-slate-700">{note.note}</p>
                 </div>
               ))}
-              {(!selectedStudent.progressNotes || selectedStudent.progressNotes.length === 0) && (
-                <p className="text-center py-8 text-slate-400">No meeting notes yet</p>
+              
+              {mtssMeetings.length === 0 && (!selectedStudent.progressNotes || selectedStudent.progressNotes.length === 0) && (
+                <p className="text-sm text-gray-400 italic text-center py-4">No meetings recorded yet.</p>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Pre-Referral Form Modal */}
+        {/* MTSS Meeting Form Modal */}
+      {showMTSSMeetingForm && selectedStudent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+              <h2 className="text-xl font-bold text-gray-800">
+                {currentMTSSMeeting ? 'Edit' : 'New'} MTSS Progress Review Meeting
+              </h2>
+              <button onClick={() => setShowMTSSMeetingForm(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Meeting Info Section */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Calendar size={18} />
+                  Meeting Information
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Date</label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border rounded-lg"
+                      defaultValue={mtssMeetingForm.meeting_date}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_date: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting #</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg"
+                      defaultValue={mtssMeetingForm.meeting_number}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_number: parseInt(e.target.value) }))}
+                    >
+                      <option value={1}>1st Meeting</option>
+                      <option value={2}>2nd Meeting</option>
+                      <option value={3}>3rd Meeting</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Type</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg"
+                      defaultValue={mtssMeetingForm.meeting_type}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_type: e.target.value }))}
+                    >
+                      <option value="4-week">4-Week Review</option>
+                      <option value="6-week">6-Week Review</option>
+                      <option value="final-review">Final Review</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Attendees */}
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Attendees</label>
+                  <div className="flex flex-wrap gap-4">
+                    {['teacher', 'counselor', 'admin', 'parent', 'specialist'].map(role => (
+                      <label key={role} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={mtssMeetingForm.attendees[role] || false}
+                          onChange={(e) => setMTSSMeetingForm(prev => ({
+                            ...prev,
+                            attendees: { ...prev.attendees, [role]: e.target.checked },
+                            parent_attended: role === 'parent' ? e.target.checked : prev.parent_attended
+                          }))}
+                        />
+                        <span className="capitalize">{role}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Intervention Reviews Section */}
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <ClipboardList size={18} />
+                  Intervention Progress Review
+                </h3>
+                
+                {mtssMeetingForm.intervention_reviews.length === 0 ? (
+                  <p className="text-gray-500 italic">No active interventions to review.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {mtssMeetingForm.intervention_reviews.map((review, idx) => (
+                      <div key={idx} className="bg-white rounded-lg p-4 border">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
+                            <p className="text-sm text-gray-500">
+                              Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} | 
+                              Logs: {review.total_logs || 0}
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Implementation Fidelity</label>
+                            <select
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                              value={review.implementation_fidelity || ''}
+                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'implementation_fidelity', e.target.value)}
+                            >
+                              <option value="">Select...</option>
+                              <option value="yes">Yes - Implemented as planned</option>
+                              <option value="partial">Partial - Some modifications</option>
+                              <option value="no">No - Not implemented consistently</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Progress Toward Goal</label>
+                            <select
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                              value={review.progress_toward_goal || ''}
+                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'progress_toward_goal', e.target.value)}
+                            >
+                              <option value="">Select...</option>
+                              <option value="met">Goal Met</option>
+                              <option value="progressing">Progressing</option>
+                              <option value="minimal">Minimal Progress</option>
+                              <option value="no_progress">No Progress</option>
+                              <option value="regression">Regression</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Recommendation</label>
+                            <select
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                              value={review.recommendation || ''}
+                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'recommendation', e.target.value)}
+                            >
+                              <option value="">Select...</option>
+                              <option value="continue">Continue as-is</option>
+                              <option value="modify">Modify intervention</option>
+                              <option value="discontinue_met">Discontinue - Goal met</option>
+                              <option value="discontinue_ineffective">Discontinue - Ineffective</option>
+                              <option value="add_support">Add additional support</option>
+                            </select>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                          <textarea
+                            className="w-full px-3 py-2 border rounded-lg text-sm"
+                            rows={2}
+                            placeholder="Notes about this intervention..."
+                            defaultValue={review.notes || ''}
+                            onBlur={(e) => updateInterventionReview(review.student_intervention_id, 'notes', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Overall Decision Section */}
+              <div className="bg-green-50 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <CheckCircle size={18} />
+                  Team Decision
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Progress Summary</label>
+                    <textarea
+                      className="w-full px-3 py-2 border rounded-lg"
+                      rows={3}
+                      placeholder="Summarize the student's overall progress..."
+                      defaultValue={mtssMeetingForm.progress_summary}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, progress_summary: e.target.value }))}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tier Decision</label>
+                    <select
+                      className="w-full px-3 py-2 border rounded-lg"
+                      defaultValue={mtssMeetingForm.tier_decision}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, tier_decision: e.target.value }))}
+                    >
+                      <option value="">Select decision...</option>
+                      <option value="stay_tier2_continue">Stay at Tier 2 - Continue interventions</option>
+                      <option value="stay_tier2_modify">Stay at Tier 2 - Modify interventions</option>
+                      <option value="move_tier1">Move to Tier 1 - Goals met</option>
+                      <option value="move_tier3">Move to Tier 3 - Needs intensive support</option>
+                      <option value="refer_sped">Refer for Special Education evaluation</option>
+                      <option value="refer_504">Refer for 504 Plan</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Steps</label>
+                    <textarea
+                      className="w-full px-3 py-2 border rounded-lg"
+                      rows={3}
+                      placeholder="Action items and next steps..."
+                      defaultValue={mtssMeetingForm.next_steps}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, next_steps: e.target.value }))}
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Meeting Date</label>
+                    <input
+                      type="date"
+                      className="w-full px-3 py-2 border rounded-lg"
+                      defaultValue={mtssMeetingForm.next_meeting_date}
+                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, next_meeting_date: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowMTSSMeetingForm(false)}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveMTSSMeeting}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2"
+              >
+                <Save size={18} />
+                {currentMTSSMeeting ? 'Update Meeting' : 'Save Meeting'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}        {/* Pre-Referral Form Modal */}
       {showPreReferralForm && preReferralForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
