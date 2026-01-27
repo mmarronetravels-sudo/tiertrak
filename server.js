@@ -29,6 +29,8 @@ const authRoutes = require('./routes/auth');
 const interventionLogsRoutes = require('./routes/interventionLogs');
 const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
+const prereferralFormsRoutes = require('./routes/prereferralForms');
+prereferralFormsRoutes.initializePool(pool);
 
 // Use routes
 app.use('/api/tenants', tenantsRoutes);
@@ -40,7 +42,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/intervention-logs', interventionLogsRoutes);
 app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
-
+app.use('/api/prereferral-forms', prereferralFormsRoutes);
 // Test route
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to TierTrak API!' });
