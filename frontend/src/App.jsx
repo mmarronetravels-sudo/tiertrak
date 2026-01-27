@@ -1898,7 +1898,7 @@ const filterByDateRange = (items, dateField) => {
                       </span>
                     </div>
                     <span className="text-xs text-slate-500">
-                      {meeting.meeting_date ? new Date(meeting.meeting_date + 'T00:00:00').toLocaleDateString() : 'No date'}
+                      {meeting.meeting_date ? new Date(meeting.meeting_date).toLocaleDateString() : 'No date'}
                     </span>
                   </div>
                   
