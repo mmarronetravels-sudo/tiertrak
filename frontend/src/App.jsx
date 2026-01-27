@@ -139,6 +139,12 @@ const [reportData, setReportData] = useState(null);
     risk_level: 'low'
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
+  // Pre-Referral Form state
+  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
+  const [preReferralForm, setPreReferralForm] = useState(null);
+  const [preReferralStep, setPreReferralStep] = useState(1);
+  const [preReferralOptions, setPreReferralOptions] = useState(null);
+  const [preReferralLoading, setPreReferralLoading] = useState(false);
 
   // CSV Import state
   const [csvFile, setCsvFile] = useState(null);
@@ -254,6 +260,121 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     } catch (error) {
       console.error('Error fetching archived students:', error);
     }
+  };
+
+  // Fetch pre-referral form options
+  const fetchPreReferralOptions = async () => {
+    try {
+      const res = await fetch(`${API_URL}/prereferral-forms/options`);
+      if (res.ok) {
+        const data = await res.json();
+        setPreReferralOptions(data);
+      }
+    } catch (error) {
+      console.error('Error fetching pre-referral options:', error);
+    }
+  };
+
+  // Fetch existing pre-referral form for a student
+  const fetchPreReferralForm = async (studentId) => {
+    try {
+      const res = await fetch(`${API_URL}/prereferral-forms/student/${studentId}`);
+      if (res.ok) {
+        const data = await res.json();
+        // Return the most recent non-archived form if exists
+        const activeForm = data.find(f => f.status !== 'archived');
+        return activeForm || null;
+      }
+    } catch (error) {
+      console.error('Error fetching pre-referral form:', error);
+    }
+    return null;
+  };
+
+  // Create new pre-referral form
+  const createPreReferralForm = async (studentId) => {
+    try {
+      const res = await fetch(`${API_URL}/prereferral-forms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: studentId,
+          tenant_id: user.tenant_id,
+          referred_by: user.id,
+          initiated_by: 'staff'
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch (error) {
+      console.error('Error creating pre-referral form:', error);
+    }
+    return null;
+  };
+
+  // Save pre-referral form draft
+  const savePreReferralForm = async (formId, updates) => {
+    try {
+      const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPreReferralForm(data);
+        return data;
+      }
+    } catch (error) {
+      console.error('Error saving pre-referral form:', error);
+    }
+    return null;
+  };
+
+  // Submit pre-referral form for approval
+  const submitPreReferralForm = async (formId, staffName) => {
+    try {
+      const res = await fetch(`${API_URL}/prereferral-forms/${formId}/submit`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referring_staff_name: staffName })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPreReferralForm(data);
+        return data;
+      }
+    } catch (error) {
+      console.error('Error submitting pre-referral form:', error);
+    }
+    return null;
+  };
+
+  // Open pre-referral form (creates new or opens existing)
+  const openPreReferralForm = async (student) => {
+    setPreReferralLoading(true);
+    
+    // Fetch options if not loaded
+    if (!preReferralOptions) {
+      await fetchPreReferralOptions();
+    }
+    
+    // Check for existing form
+    const existingForm = await fetchPreReferralForm(student.id);
+    
+    if (existingForm) {
+      setPreReferralForm(existingForm);
+    } else {
+      // Create new form
+      const newForm = await createPreReferralForm(student.id);
+      setPreReferralForm(newForm);
+    }
+    
+    setPreReferralStep(1);
+    setPreReferralLoading(false);
+    setShowPreReferralForm(true);
   };
 
   // Fetch weekly progress for a student
@@ -1568,6 +1689,723 @@ const filterByDateRange = (items, dateField) => {
           </div>
         </div>
 
+        {/* Pre-Referral Form Modal */}
+      {showPreReferralForm && preReferralForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Pre-Referral Form</h3>
+                <p className="text-sm text-slate-500">
+                  {selectedStudent?.first_name} {selectedStudent?.last_name} - Step {preReferralStep} of 11
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowPreReferralForm(false)} 
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="px-4 py-2 bg-slate-50">
+              <div className="flex gap-1">
+                {[1,2,3,4,5,6,7,8,9,10,11].map(step => (
+                  <div
+                    key={step}
+                    className={`h-2 flex-1 rounded ${step <= preReferralStep ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Form Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              
+              {/* Step 1: Referral Information */}
+              {preReferralStep === 1 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 1: Referral Information</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                    <div>
+                      <span className="text-sm text-slate-500">Student Name</span>
+                      <p className="font-medium">{selectedStudent?.first_name} {selectedStudent?.last_name}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Grade</span>
+                      <p className="font-medium">{selectedStudent?.grade || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Current Tier</span>
+                      <p className="font-medium">Tier {selectedStudent?.tier}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Area</span>
+                      <p className="font-medium">{selectedStudent?.area || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Referral Initiated By</label>
+                    <select
+                      defaultValue={preReferralForm.initiated_by || 'staff'}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { initiated_by: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="staff">School Staff</option>
+                      <option value="parent">Parent/Guardian</option>
+                      <option value="student">Student Self-Referral</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Referral Date</label>
+                    <input
+                      type="date"
+                      defaultValue={preReferralForm.referral_date?.split('T')[0] || new Date().toISOString().split('T')[0]}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { referral_date: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Area of Concern */}
+              {preReferralStep === 2 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 2: Area of Concern</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Primary Area(s) of Concern</label>
+                    <div className="space-y-2">
+                      {['Academic', 'Behavior', 'Social-Emotional'].map(area => (
+                        <label key={area} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            defaultChecked={preReferralForm.concern_areas?.includes(area)}
+                            onChange={(e) => {
+                              const current = preReferralForm.concern_areas || [];
+                              const updated = e.target.checked 
+                                ? [...current, area]
+                                : current.filter(a => a !== area);
+                              savePreReferralForm(preReferralForm.id, { concern_areas: updated });
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded"
+                          />
+                          <span>{area}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Specific Concerns</label>
+                    <textarea
+                      defaultValue={preReferralForm.specific_concerns || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { specific_concerns: e.target.value })}
+                      placeholder="Describe specific concerns..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Detailed Description */}
+              {preReferralStep === 3 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 3: Detailed Description</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Describe the concern in detail</label>
+                    <textarea
+                      defaultValue={preReferralForm.concern_description || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_description: e.target.value })}
+                      placeholder="Provide a detailed description of the concern..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">When did you first notice?</label>
+                      <select
+                        defaultValue={preReferralForm.concern_first_noticed || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_first_noticed: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="less_than_1_month">Less than 1 month ago</option>
+                        <option value="1_to_3_months">1-3 months ago</option>
+                        <option value="3_to_6_months">3-6 months ago</option>
+                        <option value="6_to_12_months">6-12 months ago</option>
+                        <option value="more_than_1_year">More than 1 year ago</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">How often does it occur?</label>
+                      <select
+                        defaultValue={preReferralForm.concern_frequency || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_frequency: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="daily">Daily</option>
+                        <option value="several_times_week">Several times per week</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="occasionally">Occasionally</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Medical & Background */}
+              {preReferralStep === 4 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 4: Medical & Background Information</h4>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Hearing tested in last 2 years?</label>
+                      <select
+                        defaultValue={preReferralForm.hearing_tested || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { hearing_tested: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Vision tested in last 2 years?</label>
+                      <select
+                        defaultValue={preReferralForm.vision_tested || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { vision_tested: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Known Medical Diagnoses</label>
+                    <textarea
+                      defaultValue={preReferralForm.medical_diagnoses || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { medical_diagnoses: e.target.value })}
+                      placeholder="List any known medical diagnoses..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Medications Affecting Learning</label>
+                    <textarea
+                      defaultValue={preReferralForm.medications || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { medications: e.target.value })}
+                      placeholder="List any medications that may affect learning..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5: Academic Performance */}
+              {preReferralStep === 5 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 5: Current Academic Performance</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Grades/Progress</label>
+                    <textarea
+                      defaultValue={preReferralForm.current_grades || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { current_grades: e.target.value })}
+                      placeholder="Describe current academic performance..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Recent Assessment Scores</label>
+                    <textarea
+                      defaultValue={preReferralForm.assessment_scores || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { assessment_scores: e.target.value })}
+                      placeholder="List any recent assessment scores..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Support Classes</label>
+                    <textarea
+                      defaultValue={preReferralForm.support_classes || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { support_classes: e.target.value })}
+                      placeholder="List any current support classes or services..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 6: Existing Plans */}
+              {preReferralStep === 6 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 6: Existing Plans & Supports</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Current Plans</label>
+                    <div className="space-y-2">
+                      {['504 Plan', 'IEP', 'Safety Plan', 'Behavior Plan', 'None'].map(plan => (
+                        <label key={plan} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            defaultChecked={preReferralForm.current_plans?.includes(plan)}
+                            onChange={(e) => {
+                              const current = preReferralForm.current_plans || [];
+                              const updated = e.target.checked 
+                                ? [...current, plan]
+                                : current.filter(p => p !== plan);
+                              savePreReferralForm(preReferralForm.id, { current_plans: updated });
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded"
+                          />
+                          <span>{plan}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Plan Details</label>
+                    <textarea
+                      defaultValue={preReferralForm.plan_details || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { plan_details: e.target.value })}
+                      placeholder="Provide details about existing plans..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">External Supports</label>
+                    <textarea
+                      defaultValue={preReferralForm.external_supports || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { external_supports: e.target.value })}
+                      placeholder="List any external supports (counseling, tutoring, community services)..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 7: Prior Interventions */}
+              {preReferralStep === 7 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 7: Prior Interventions Attempted</h4>
+                  
+                  {preReferralForm.prior_interventions?.length > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-sm text-slate-600">The following interventions were found in TierTrak:</p>
+                      {preReferralForm.prior_interventions.map((intervention, index) => (
+                        <div key={index} className="p-3 bg-slate-50 rounded-lg">
+                          <p className="font-medium">{intervention.name}</p>
+                          <p className="text-sm text-slate-500">Started: {intervention.start_date ? formatWeekOf(intervention.start_date) : 'Unknown'}</p>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <input
+                              type="text"
+                              placeholder="Duration used"
+                              defaultValue={intervention.duration || ''}
+                              onBlur={(e) => {
+                                const updated = [...preReferralForm.prior_interventions];
+                                updated[index].duration = e.target.value;
+                                savePreReferralForm(preReferralForm.id, { prior_interventions: updated });
+                              }}
+                              className="px-2 py-1 text-sm border border-slate-200 rounded"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Outcome/response"
+                              defaultValue={intervention.outcome || ''}
+                              onBlur={(e) => {
+                                const updated = [...preReferralForm.prior_interventions];
+                                updated[index].outcome = e.target.value;
+                                savePreReferralForm(preReferralForm.id, { prior_interventions: updated });
+                              }}
+                              className="px-2 py-1 text-sm border border-slate-200 rounded"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500 italic">No interventions found in TierTrak for this student.</p>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Other Interventions Not Listed Above</label>
+                    <textarea
+                      defaultValue={preReferralForm.other_interventions || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { other_interventions: e.target.value })}
+                      placeholder="List any other interventions that were tried..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 8: Student Strengths */}
+              {preReferralStep === 8 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 8: Student Strengths</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Academic Strengths</label>
+                    <textarea
+                      defaultValue={preReferralForm.academic_strengths || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { academic_strengths: e.target.value })}
+                      placeholder="What are the student's academic strengths?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Social Strengths</label>
+                    <textarea
+                      defaultValue={preReferralForm.social_strengths || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { social_strengths: e.target.value })}
+                      placeholder="What are the student's social strengths?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Interests/Preferred Activities</label>
+                    <textarea
+                      defaultValue={preReferralForm.interests || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { interests: e.target.value })}
+                      placeholder="What does the student enjoy?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">What Motivates This Student?</label>
+                    <textarea
+                      defaultValue={preReferralForm.motivators || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { motivators: e.target.value })}
+                      placeholder="What motivates the student?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 9: Parent Contact */}
+              {preReferralStep === 9 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 9: Parent/Guardian Contact</h4>
+                  <p className="text-sm text-amber-600 bg-amber-50 p-2 rounded">⚠️ Parent contact is required before submitting this form.</p>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Parent/Guardian Name *</label>
+                      <input
+                        type="text"
+                        defaultValue={preReferralForm.parent_name || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_name: e.target.value })}
+                        placeholder="Enter name"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Relationship</label>
+                      <select
+                        defaultValue={preReferralForm.parent_relationship || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_relationship: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="mother">Mother</option>
+                        <option value="father">Father</option>
+                        <option value="guardian">Guardian</option>
+                        <option value="grandparent">Grandparent</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                      <input
+                        type="tel"
+                        defaultValue={preReferralForm.parent_phone || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_phone: e.target.value })}
+                        placeholder="(555) 555-5555"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                      <input
+                        type="email"
+                        defaultValue={preReferralForm.parent_email || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_email: e.target.value })}
+                        placeholder="email@example.com"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Date of Contact *</label>
+                      <input
+                        type="date"
+                        defaultValue={preReferralForm.contact_date?.split('T')[0] || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { contact_date: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Contact Method *</label>
+                      <select
+                        defaultValue={preReferralForm.contact_method || ''}
+                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { contact_method: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Select...</option>
+                        <option value="phone">Phone Call</option>
+                        <option value="email">Email</option>
+                        <option value="in_person">In Person</option>
+                        <option value="text">Text Message</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Parent Input/Concerns Shared *</label>
+                    <textarea
+                      defaultValue={preReferralForm.parent_input || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_input: e.target.value })}
+                      placeholder="What did the parent share during the conversation?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Supports Used at Home</label>
+                    <textarea
+                      defaultValue={preReferralForm.home_supports || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { home_supports: e.target.value })}
+                      placeholder="What strategies are working at home?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Parent Supports This Referral?</label>
+                    <select
+                      defaultValue={preReferralForm.parent_supports_referral || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_supports_referral: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select...</option>
+                      <option value="yes">Yes</option>
+                      <option value="no">No</option>
+                      <option value="partial">Partially</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 10: Reason for Referral */}
+              {preReferralStep === 10 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 10: Reason for Referral</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Why are Tier 1 supports insufficient? *</label>
+                    <textarea
+                      defaultValue={preReferralForm.why_tier1_insufficient || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { why_tier1_insufficient: e.target.value })}
+                      placeholder="Explain why current Tier 1 supports are not meeting this student's needs..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={4}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">What data supports this referral?</label>
+                    <textarea
+                      defaultValue={preReferralForm.supporting_data || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { supporting_data: e.target.value })}
+                      placeholder="List data points that support this referral (grades, behavior incidents, assessments, etc.)..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Specific Event(s) Prompting Referral</label>
+                    <textarea
+                      defaultValue={preReferralForm.triggering_events || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { triggering_events: e.target.value })}
+                      placeholder="Were there specific events that prompted this referral?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 11: Recommendations */}
+              {preReferralStep === 11 && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-800 text-lg">Step 11: Recommendations</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier *</label>
+                    <select
+                      defaultValue={preReferralForm.recommended_tier || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_tier: parseInt(e.target.value) || null })}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">Select recommended tier...</option>
+                      <option value="2">Tier 2 - Targeted Support</option>
+                      <option value="3">Tier 3 - Intensive Support</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Interventions</label>
+                    <textarea
+                      defaultValue={preReferralForm.recommended_interventions || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_interventions: e.target.value })}
+                      placeholder="What interventions do you recommend?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Assessments</label>
+                    <textarea
+                      defaultValue={preReferralForm.recommended_assessments || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_assessments: e.target.value })}
+                      placeholder="What assessments should be conducted?"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Additional Recommendations</label>
+                    <textarea
+                      defaultValue={preReferralForm.additional_recommendations || ''}
+                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { additional_recommendations: e.target.value })}
+                      placeholder="Any other recommendations..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                      rows={2}
+                    />
+                  </div>
+
+                  {preReferralForm.status === 'draft' && (
+                    <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                      <p className="text-sm text-amber-800 mb-2">
+                        <strong>Ready to submit?</strong> Make sure you have contacted the parent (Step 9) before submitting.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+            </div>
+
+            {/* Footer with Navigation */}
+            <div className="p-4 border-t border-slate-200 flex items-center justify-between">
+              <div>
+                {preReferralStep > 1 && (
+                  <button
+                    onClick={() => setPreReferralStep(preReferralStep - 1)}
+                    className="px-4 py-2 text-slate-600 hover:text-slate-800 flex items-center gap-1"
+                  >
+                    <ArrowLeft className="w-4 h-4" /> Previous
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPreReferralForm(false)}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800"
+                >
+                  Save & Close
+                </button>
+                
+                {preReferralStep < 11 ? (
+                  <button
+                    onClick={() => setPreReferralStep(preReferralStep + 1)}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
+                  >
+                    Next <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  preReferralForm.status === 'draft' && (
+                    <button
+                      onClick={async () => {
+                        if (!preReferralForm.parent_name || !preReferralForm.contact_date || !preReferralForm.parent_input) {
+                          alert('Please complete the Parent Contact section (Step 9) before submitting.');
+                          setPreReferralStep(9);
+                          return;
+                        }
+                        if (!preReferralForm.recommended_tier) {
+                          alert('Please select a recommended tier before submitting.');
+                          return;
+                        }
+                        const staffName = prompt('Type your name to sign and submit this form:');
+                        if (staffName) {
+                          await submitPreReferralForm(preReferralForm.id, staffName);
+                          alert('Form submitted for counselor approval!');
+                          setShowPreReferralForm(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1"
+                    >
+                      <CheckCircle className="w-4 h-4" /> Submit for Approval
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+        
         {/* MTSS Meeting Modal */}
         {showAddNote && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
