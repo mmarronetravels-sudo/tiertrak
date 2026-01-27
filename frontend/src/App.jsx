@@ -1390,7 +1390,7 @@ const filterByDateRange = (items, dateField) => {
                   ))}
                 </div>
               )}
-              {/* Generate Report Button */}
+             {/* Generate Report Button */}
 <button
   onClick={generateReport}
   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
@@ -1398,6 +1398,19 @@ const filterByDateRange = (items, dateField) => {
   <FileText size={18} />
   Generate Report
 </button>
+
+{/* Pre-Referral Form Button - Only for Tier 1 students */}
+{selectedStudent.tier === 1 && !selectedStudent.archived && (
+  <button
+    onClick={() => openPreReferralForm(selectedStudent)}
+    disabled={preReferralLoading}
+    className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition font-medium disabled:opacity-50"
+  >
+    <ClipboardList size={18} />
+    {preReferralLoading ? 'Loading...' : 'Pre-Referral Form'}
+  </button>
+)}
+
               {canArchive && !selectedStudent.archived && (
                 <button
                   onClick={() => setShowArchiveModal(true)}
