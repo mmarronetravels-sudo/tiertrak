@@ -31,11 +31,14 @@ const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
 const prereferralFormsRoutes = require('./routes/prereferralForms');
 const mtssMeetingsRoutes = require('./routes/mtssMeetings');
+
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
-// Auto-create prereferral_forms table if it doesn't exist
-const createPreReferralTable = async () => {
+
+// Auto-create tables if they don't exist
+const createTables = async () => {
   try {
+    // Migration 007: Pre-Referral Forms
     await pool.query(`
       CREATE TABLE IF NOT EXISTS prereferral_forms (
         id SERIAL PRIMARY KEY,
@@ -114,7 +117,6 @@ const createPreReferralTable = async () => {
       CREATE INDEX IF NOT EXISTS idx_prereferral_forms_status ON prereferral_forms(status);
     `);
     console.log('prereferral_forms table ready');
-   console.log('prereferral_forms table ready');
 
     // Migration 008: MTSS Meetings
     await pool.query(`
@@ -153,7 +155,13 @@ const createPreReferralTable = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
-createPreReferralTable();
+
+  } catch (error) {
+    console.error('Error creating tables:', error);
+  }
+};
+
+createTables();
 
 // Use routes
 app.use('/api/tenants', tenantsRoutes);
@@ -166,7 +174,9 @@ app.use('/api/intervention-logs', interventionLogsRoutes);
 app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
-app.use('/api/mtss-meetings', mtssMeetingsRoutes);// Test route
+app.use('/api/mtss-meetings', mtssMeetingsRoutes);
+
+// Test route
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to TierTrak API!' });
 });
@@ -192,5 +202,4 @@ app.get('/health', async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`TierTrak server running at http://localhost:${PORT}`);
-
 });
