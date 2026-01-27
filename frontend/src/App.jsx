@@ -19,7 +19,8 @@ const getCurrentWeekStart = () => {
 
 const formatWeekOf = (dateStr) => {
   if (!dateStr) return 'No date';
-  const date = new Date(dateStr + 'T00:00:00');
+  // If the date string already has a T (ISO format), don't add another one
+  const date = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
   if (isNaN(date.getTime())) return 'Invalid date';
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
