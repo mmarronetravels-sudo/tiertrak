@@ -5108,11 +5108,7 @@ const filterByDateRange = (items, dateField) => {
               </button>
             </div>
           )}
-          {/* CSV Import Tab */}
-      {adminTab === 'import' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          {/* ... all the import content ... */}
-        </div>
+         </div>
       )}
 
       {/* Plan Templates Tab */}
