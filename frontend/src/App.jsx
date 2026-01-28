@@ -2062,17 +2062,17 @@ const filterByDateRange = (items, dateField) => {
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => {
-  setSelectedInterventionForProgress(intervention);
-  setProgressFormData({
-    week_of: new Date().toISOString().split('T')[0],
-    status: '',
-    rating: '',
-    response: '',
-    notes: ''
-  });
-  if (progressNotesRef.current) progressNotesRef.current.value = '';
-  setShowProgressForm(true);
-}}
+                        setSelectedInterventionForProgress(intervention);
+                        setProgressFormData({
+                          week_of: new Date().toISOString().split('T')[0],
+                          status: '',
+                          rating: '',
+                          response: '',
+                          notes: ''
+                        });
+                        if (progressNotesRef.current) progressNotesRef.current.value = '';
+                        setShowProgressForm(true);
+                      }}
                       className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" />
@@ -2094,47 +2094,46 @@ const filterByDateRange = (items, dateField) => {
                       {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
                     </button>
                     <button
-  onClick={() => {
-    setSelectedInterventionForChart(intervention);
-    setShowProgressChart(true);
-  }}
-  className="px-3 py-1.5 border border-indigo-300 text-indigo-700 text-sm rounded-lg hover:bg-indigo-50 flex items-center gap-1"
->
-  <TrendingUp className="w-3 h-3" />
-  View Chart
-</button>
+                      onClick={() => {
+                        setSelectedInterventionForChart(intervention);
+                        setShowProgressChart(true);
+                      }}
+                      className="px-3 py-1.5 border border-indigo-300 text-indigo-700 text-sm rounded-lg hover:bg-indigo-50 flex items-center gap-1"
+                    >
+                      <TrendingUp className="w-3 h-3" />
+                      View Chart
+                    </button>
                   </div>
                   {/* Weekly Progress Logs Display */}
                   {weeklyProgressLogs
-  .filter(log => log.student_intervention_id === intervention.id)
-  .slice(0, 3)
-  .map(log => (
-    <div key={log.id} className="text-sm bg-white p-2 rounded border border-slate-100">
-      <div className="flex justify-between items-center">
-        <span className="text-slate-500">{formatWeekOf(log.week_of)}</span>
-        <div className="flex items-center gap-2">
-         <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
-            {log.status}
-          </span>
-          <button
-            onClick={() => deleteWeeklyProgress(log.id)}
-            className="text-slate-400 hover:text-rose-600 p-1"
-            title="Delete log"
-          >
-            <Trash2 className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-      {log.rating && (
-        <div className="mt-1">
-          <span className="text-slate-500">Rating: </span>
-          <span className={getRatingColor(log.rating)}>{log.rating}/5 - {getRatingLabel(log.rating)}</span>
-        </div>
-      )}
-      {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
-    </div>
-  ))}
-                      
+                    .filter(log => log.student_intervention_id === intervention.id)
+                    .slice(0, 3)
+                    .map(log => (
+                      <div key={log.id} className="text-sm bg-white p-2 rounded border border-slate-100 mt-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-500">{formatWeekOf(log.week_of)}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
+                              {log.status}
+                            </span>
+                            <button
+                              onClick={() => deleteWeeklyProgress(log.id)}
+                              className="text-slate-400 hover:text-rose-600 p-1"
+                              title="Delete log"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        {log.rating && (
+                          <div className="mt-1">
+                            <span className="text-slate-500">Rating: </span>
+                            <span className={getRatingColor(log.rating)}>{log.rating}/5 - {getRatingLabel(log.rating)}</span>
+                          </div>
+                        )}
+                        {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
+                      </div>
+                    ))}
                 </div>
               ))}
               {(!selectedStudent.interventions || selectedStudent.interventions.length === 0) && (
@@ -2142,7 +2141,6 @@ const filterByDateRange = (items, dateField) => {
               )}
             </div>
           </div>
-
           
           {/* MTSS Meetings */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
