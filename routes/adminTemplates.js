@@ -18,7 +18,7 @@ router.get('/templates', async (req, res) => {
         id,
         name,
         area as category,
-        tier_level,
+        tier,
         has_plan_template,
         CASE 
           WHEN plan_template IS NOT NULL THEN plan_template->>'name'
@@ -54,7 +54,7 @@ router.get('/templates/:id', async (req, res) => {
         id,
         name,
         area as category,
-        tier_level,
+        tier,
         description,
         has_plan_template,
         plan_template
