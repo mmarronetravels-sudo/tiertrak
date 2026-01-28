@@ -5522,76 +5522,7 @@ const filterByDateRange = (items, dateField) => {
         </div>
       )}
 
-      {csvResult && (
-            <div className={`p-4 rounded-xl ${csvResult.error ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
-              {csvResult.error ? (
-                <div className="flex items-center gap-2 text-red-700">
-                  <AlertCircle size={20} />
-                  <span>{csvResult.error}</span>
-                </div>
-              ) : (
-                <div>
-                  <div className="flex items-center gap-2 text-emerald-700 mb-4">
-                    <CheckCircle size={20} />
-                    <span className="font-medium">Import Complete!</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-4 gap-4 mb-4">
-                    <div className="bg-white p-3 rounded-lg text-center">
-                      <p className="text-2xl font-bold text-slate-800">{csvResult.summary.totalRows}</p>
-                      <p className="text-xs text-slate-500">Total Rows</p>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg text-center">
-                      <p className="text-2xl font-bold text-emerald-600">{csvResult.summary.imported}</p>
-                      <p className="text-xs text-slate-500">Imported</p>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg text-center">
-                      <p className="text-2xl font-bold text-amber-600">{csvResult.summary.validationErrors}</p>
-                      <p className="text-xs text-slate-500">Validation Errors</p>
-                    </div>
-                    <div className="bg-white p-3 rounded-lg text-center">
-                      <p className="text-2xl font-bold text-red-600">{csvResult.summary.insertErrors}</p>
-                      <p className="text-xs text-slate-500">Insert Errors</p>
-                    </div>
-                  </div>
-
-                  {csvResult.imported?.length > 0 && (
-                    <div className="mb-4">
-                      <p className="font-medium text-slate-700 mb-2">Successfully Imported:</p>
-                      <div className="max-h-40 overflow-y-auto bg-white rounded-lg p-2">
-                        {csvResult.imported.map((item, idx) => (
-                          <div key={idx} className="flex items-center gap-2 py-1 text-sm text-slate-600">
-                            <CheckCircle size={14} className="text-emerald-500" />
-                            Row {item.row}: {item.name}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {csvResult.errors?.length > 0 && (
-                    <div>
-                      <p className="font-medium text-slate-700 mb-2">Errors:</p>
-                      <div className="max-h-40 overflow-y-auto bg-white rounded-lg p-2">
-                        {csvResult.errors.map((item, idx) => (
-                          <div key={idx} className="flex items-start gap-2 py-1 text-sm text-red-600">
-                            <AlertCircle size={14} className="mt-0.5 flex-shrink-0" />
-                            <span>Row {item.row}: {item.error}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
-  return (
+    return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50">
       {/* Navigation */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
