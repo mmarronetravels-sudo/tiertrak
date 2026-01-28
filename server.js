@@ -254,29 +254,4 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// TEMPORARY: Seed plan templates (remove after running once)
-app.post('/api/seed-plan-templates', async (req, res) => {
-  try {
-    const planTemplates = require('./scripts/seedPlanTemplates');
-    const results = [];
-    for (const [name, template] of Object.entries(planTemplates)) {
-      const result = await pool.query(
-        `UPDATE intervention_templates SET plan_template = $1, has_plan_template = true WHERE name = $2 RETURNING id, name`,
-        [JSON.stringify(template), name]
-      );
-      if (result.rows.length > 0) {
-        results.push({ name, status: 'updated', id: result.rows[0].id });
-      } else {
-        results.push({ name, status: 'not_found' });
-      }
-    }
-    res.json({ message: 'Plan templates seeded', results, updated: results.filter(r => r.status === 'updated').length });
-  } catch (error) {
-    console.error('Error seeding:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-// Start server
-app.listen(PORT, () => {
-  console.log(`TierTrak server running at http://localhost:${PORT}`);
-});
+
