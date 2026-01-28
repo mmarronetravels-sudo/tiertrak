@@ -2042,14 +2042,7 @@ const filterByDateRange = (items, dateField) => {
   </div>
   <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
 </div>
-```
 
----
-
-## In simple terms:
-
-1. **Find** this line:
-```
    <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       intervention.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
