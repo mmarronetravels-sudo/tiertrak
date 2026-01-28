@@ -41,11 +41,6 @@ router.get('/templates', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
-  } catch (error) {
-    console.error('Error fetching templates:', error);
-    res.status(500).json({ error: 'Failed to fetch templates' });
-  }
-});
 
 // ============================================
 // GET /api/admin/templates/:id
@@ -58,7 +53,7 @@ router.get('/templates/:id', async (req, res) => {
       SELECT 
         id,
         name,
-        category,
+        area as category,
         tier_level,
         description,
         has_plan_template,
@@ -203,7 +198,7 @@ router.post('/templates/:id/duplicate', async (req, res) => {
 });
 
 // ============================================
-// GET /api/admin/templates/field-types
+// GET /api/admin/field-types
 // Get available field types and their options
 // ============================================
 router.get('/field-types', async (req, res) => {
