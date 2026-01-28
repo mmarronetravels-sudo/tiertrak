@@ -2022,9 +2022,6 @@ const filterByDateRange = (items, dateField) => {
                 <div key={intervention.id} className="p-4 bg-slate-50 rounded-xl">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <div>
-  <div className="flex items-start justify-between mb-2">
-                    <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
                         {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan', 
