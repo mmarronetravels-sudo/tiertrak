@@ -2050,7 +2050,6 @@ const filterByDateRange = (items, dateField) => {
                       {intervention.status}
                     </span>
                   </div>
-                  </div>
                   {intervention.notes && (
                     <p className="text-sm text-slate-600 mb-3">{intervention.notes}</p>
                   )}
