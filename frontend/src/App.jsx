@@ -127,6 +127,19 @@ const [reportData, setReportData] = useState(null);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', area: '', tier: '' });
   
+  // Admin Template Editor state
+  const [adminTemplates, setAdminTemplates] = useState([]);
+  const [selectedAdminTemplate, setSelectedAdminTemplate] = useState(null);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [fieldTypes, setFieldTypes] = useState([]);
+  const [templateEditorForm, setTemplateEditorForm] = useState({
+    name: '',
+    version: '1.0',
+    sections: []
+  });
+  const [editorPreviewMode, setEditorPreviewMode] = useState(false);
+  const [duplicateSourceId, setDuplicateSourceId] = useState('');
+  
   // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
