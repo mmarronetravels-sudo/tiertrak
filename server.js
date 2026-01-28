@@ -31,10 +31,10 @@ const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
 const prereferralFormsRoutes = require('./routes/prereferralForms');
 const mtssMeetingsRoutes = require('./routes/mtssMeetings');
-
+const interventionPlansRoutes = require('./routes/interventionPlans');
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
-
+interventionPlansRoutes.initializePool(pool);
 // Auto-create tables if they don't exist
 const createTables = async () => {
   try {
@@ -155,6 +155,60 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
+    // Migration 009: Intervention Plan Templates
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        -- Add plan_template column to intervention_templates
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'intervention_templates' AND column_name = 'plan_template'
+        ) THEN
+          ALTER TABLE intervention_templates ADD COLUMN plan_template JSONB DEFAULT NULL;
+        END IF;
+        
+        -- Add has_plan_template flag to intervention_templates
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'intervention_templates' AND column_name = 'has_plan_template'
+        ) THEN
+          ALTER TABLE intervention_templates ADD COLUMN has_plan_template BOOLEAN DEFAULT FALSE;
+        END IF;
+        
+        -- Add plan_data column to student_interventions
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_data'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_data JSONB DEFAULT NULL;
+        END IF;
+        
+        -- Add plan_status column to student_interventions
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_status'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_status VARCHAR(20) DEFAULT 'not_applicable';
+        END IF;
+        
+        -- Add plan_completed_at column to student_interventions
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_at'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_completed_at TIMESTAMP;
+        END IF;
+        
+        -- Add plan_completed_by column to student_interventions
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_by'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_completed_by INTEGER REFERENCES users(id);
+        END IF;
+      END $$;
+    `);
+    console.log('Intervention plan columns ready');
 
   } catch (error) {
     console.error('Error creating tables:', error);
@@ -175,6 +229,7 @@ app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
+app.use('/api/intervention-plans', interventionPlansRoutes);
 
 // Test route
 app.get('/', (req, res) => {
@@ -199,6 +254,28 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// TEMPORARY: Seed plan templates (remove after running once)
+app.post('/api/seed-plan-templates', async (req, res) => {
+  try {
+    const planTemplates = require('./scripts/seedPlanTemplates');
+    const results = [];
+    for (const [name, template] of Object.entries(planTemplates)) {
+      const result = await pool.query(
+        `UPDATE intervention_templates SET plan_template = $1, has_plan_template = true WHERE name = $2 RETURNING id, name`,
+        [JSON.stringify(template), name]
+      );
+      if (result.rows.length > 0) {
+        results.push({ name, status: 'updated', id: result.rows[0].id });
+      } else {
+        results.push({ name, status: 'not_found' });
+      }
+    }
+    res.json({ message: 'Plan templates seeded', results, updated: results.filter(r => r.status === 'updated').length });
+  } catch (error) {
+    console.error('Error seeding:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 // Start server
 app.listen(PORT, () => {
   console.log(`TierTrak server running at http://localhost:${PORT}`);
