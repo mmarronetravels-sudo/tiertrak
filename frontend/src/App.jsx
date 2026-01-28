@@ -2117,7 +2117,7 @@ const filterByDateRange = (items, dateField) => {
       <div className="flex justify-between items-center">
         <span className="text-slate-500">{formatWeekOf(log.week_of)}</span>
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
+         <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
             {log.status}
           </span>
           <button
