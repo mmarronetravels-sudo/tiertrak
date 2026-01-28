@@ -2023,32 +2023,33 @@ const filterByDateRange = (items, dateField) => {
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <div>
-  <div className="flex items-center gap-2">
-    <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
-    {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan', 
-      'Crisis Safety Plan', 'Daily Behavior Report Card', 'Behavior Intervention Plan',
-      'Token Economy System'].includes(intervention.intervention_name) && (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          openInterventionPlanModal(intervention);
-        }}
-        className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors flex items-center gap-1"
-      >
-        <FileText size={12} />
-        Plan
-      </button>
-    )}
-  </div>
-  <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
-</div>
-
-   <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
+  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
+                        {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan', 
+                          'Crisis Safety Plan', 'Daily Behavior Report Card', 'Behavior Intervention Plan',
+                          'Token Economy System'].includes(intervention.intervention_name) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openInterventionPlanModal(intervention);
+                            }}
+                            className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors flex items-center gap-1"
+                          >
+                            <FileText size={12} />
+                            Plan
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
+                    </div>
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       intervention.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                     }`}>
                       {intervention.status}
                     </span>
+                  </div>
                   </div>
                   {intervention.notes && (
                     <p className="text-sm text-slate-600 mb-3">{intervention.notes}</p>
