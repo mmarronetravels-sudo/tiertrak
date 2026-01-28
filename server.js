@@ -31,9 +31,11 @@ const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
 const prereferralFormsRoutes = require('./routes/prereferralForms');
 const mtssMeetingsRoutes = require('./routes/mtssMeetings');
+const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
+adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
 // Auto-create tables if they don't exist
 const createTables = async () => {
@@ -229,6 +231,7 @@ app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
+app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
 
 // Test route
