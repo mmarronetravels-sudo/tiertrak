@@ -4510,8 +4510,9 @@ const filterByDateRange = (items, dateField) => {
           </div>
         </button>
       </div>
-      
-      {/* Interventions Tab */}
+       )}     
+        
+        {/* Interventions Tab */}
       {adminTab === 'interventions' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-6">
