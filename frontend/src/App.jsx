@@ -4481,9 +4481,7 @@ const filterByDateRange = (items, dateField) => {
         >
           <div className="flex items-center gap-2">
             <Upload size={16} />
-            Import CSV
-          </div>
-<button
+            <button
           onClick={() => setAdminTab('import')}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
             adminTab === 'import' 
@@ -4491,7 +4489,10 @@ const filterByDateRange = (items, dateField) => {
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-         
+          <div className="flex items-center gap-2">
+            <Upload size={16} />
+            Import CSV
+          </div>
         </button>
         <button
           onClick={() => setAdminTab('templates')}
