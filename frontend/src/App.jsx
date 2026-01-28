@@ -4509,8 +4509,7 @@ const filterByDateRange = (items, dateField) => {
             Plan Templates
           </div>
         </button>
-      </div>
-       )}     
+      </div>   
         
         {/* Interventions Tab */}
       {adminTab === 'interventions' && (
