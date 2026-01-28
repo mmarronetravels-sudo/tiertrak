@@ -749,7 +749,7 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
   const fetchInterventionPlan = async (interventionId) => {
     try {
       setPlanLoading(true);
-      const response = await fetch(`${API_URL}/api/intervention-plans/student-interventions/${interventionId}/plan`);
+      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${interventionId}/plan`);
       if (response.ok) {
         const data = await response.json();
         setPlanTemplate(data.plan_template);
@@ -780,7 +780,7 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     
     try {
       setPlanSaving(true);
-      await fetch(`${API_URL}/api/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan`, {
+      await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan_data: updatedData })
@@ -816,7 +816,7 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     
     try {
       setPlanSaving(true);
-      const response = await fetch(`${API_URL}/api/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/complete`, {
+      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan_data: planData, user_id: user.id })
@@ -841,7 +841,7 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     if (!confirm('This will reopen the plan for editing. Continue?')) return;
     
     try {
-      const response = await fetch(`${API_URL}/api/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/reopen`, {
+      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/reopen`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
