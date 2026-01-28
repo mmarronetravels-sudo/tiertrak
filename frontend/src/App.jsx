@@ -5188,6 +5188,68 @@ const filterByDateRange = (items, dateField) => {
         </div>
       )}
 
+      {/* Template Editor Modal */}
+      {showTemplateEditor && selectedAdminTemplate && (
+          
+          {/* Templates Table */}
+          <div className="overflow-hidden rounded-xl border border-slate-200">
+            <table className="w-full">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Intervention</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Category</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Plan Template</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Sections</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adminTemplates.map(template => (
+                  <tr key={template.id} className="border-t border-slate-200 hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-slate-800">{template.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        template.category === 'Academic' ? 'bg-blue-100 text-blue-700' :
+                        template.category === 'Behavior' ? 'bg-orange-100 text-orange-700' :
+                        'bg-green-100 text-green-700'
+                      }`}>
+                        {template.category}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {template.has_plan_template ? (
+                        <span className="text-green-600 flex items-center gap-1">
+                          <CheckCircle size={16} /> {template.plan_name || 'Yes'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">None</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {template.section_count > 0 ? `${template.section_count} sections` : '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openTemplateEditor(template)}
+                        className="text-indigo-600 hover:text-indigo-800 font-medium text-sm"
+                      >
+                        {template.has_plan_template ? 'Edit' : 'Add Template'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {adminTemplates.length === 0 && (
+            <div className="text-center py-8 text-slate-500">
+              Loading templates...
+            </div>
+          )}
+        </div>
+      )}
+
           {csvResult && (
             <div className={`p-4 rounded-xl ${csvResult.error ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'}`}>
               {csvResult.error ? (
