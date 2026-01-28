@@ -17,7 +17,7 @@ router.get('/templates', async (req, res) => {
       SELECT 
         id,
         name,
-        category,
+        area as category,
         tier_level,
         has_plan_template,
         CASE 
@@ -33,9 +33,14 @@ router.get('/templates', async (req, res) => {
           ELSE 0
         END as section_count
       FROM intervention_templates
-      ORDER BY category, name
+      ORDER BY area, name
     `);
     res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ error: 'Failed to fetch templates' });
+  }
+});
   } catch (error) {
     console.error('Error fetching templates:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
