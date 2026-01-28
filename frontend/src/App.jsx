@@ -2253,6 +2253,7 @@ const filterByDateRange = (items, dateField) => {
               )}
             </div>
           </div>
+        </div>
           
         {/* MTSS Meeting Form Modal */}
       {showMTSSMeetingForm && selectedStudent && (
