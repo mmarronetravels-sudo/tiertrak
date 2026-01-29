@@ -164,10 +164,10 @@ router.get('/staff', async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT id, name, email, role 
+      SELECT id, full_name as name, email, role
       FROM users 
       WHERE tenant_id = $1 AND role != 'parent'
-      ORDER BY name
+      ORDER BY full_name
     `, [tenant_id]);
     
     res.json(result.rows);
@@ -187,7 +187,7 @@ router.get('/parents', async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT u.id, u.name, u.email, 
+      SELECT u.id, u.full_name as name, u.email,
         COALESCE(json_agg(
           json_build_object('student_id', psl.student_id, 'relationship', psl.relationship)
         ) FILTER (WHERE psl.id IS NOT NULL), '[]') as linked_students
@@ -195,7 +195,7 @@ router.get('/parents', async (req, res) => {
       LEFT JOIN parent_student_links psl ON u.id = psl.parent_user_id
       WHERE u.tenant_id = $1 AND u.role = 'parent'
       GROUP BY u.id
-      ORDER BY u.name
+      ORDER BY u.full_name
     `, [tenant_id]);
     
     res.json(result.rows);
