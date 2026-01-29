@@ -5680,8 +5680,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
 
 {/* Students Tab */}
 {adminTab === 'students' && (
-
-          <div className="relative mb-4">
+  <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+    <div className="relative mb-4">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
