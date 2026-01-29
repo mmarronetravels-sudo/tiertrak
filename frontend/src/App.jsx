@@ -5770,7 +5770,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             </div>
           )}
 
-          <<div className="mt-4 text-sm text-slate-500">
+          <div className="mt-4 text-sm text-slate-500">
             Total: {activeStudents.length} active students
           </div>
         </div>
