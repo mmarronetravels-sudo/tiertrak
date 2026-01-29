@@ -32,10 +32,14 @@ const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
 const prereferralFormsRoutes = require('./routes/prereferralForms');
 const mtssMeetingsRoutes = require('./routes/mtssMeetings');
+const interventionAssignmentsRoutes = require('./routes/interventionAssignments');
+const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
+interventionAssignmentsRoutes.initializePool(pool);
+parentLinksRoutes.initializePool(pool);
 adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
 // Auto-create tables if they don't exist
@@ -274,6 +278,8 @@ app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
+app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
+app.use('/api/parent-links', parentLinksRoutes);
 app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
 
