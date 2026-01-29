@@ -28,6 +28,56 @@ router.get('/tenant/:tenantId', async (req, res) => {
   }
 });
 
+// GET staff members for assignment dropdown (excludes parents)
+router.get('/staff', async (req, res) => {
+  try {
+    const { tenant_id } = req.query;
+    
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
+    const result = await pool.query(`
+      SELECT id, full_name as name, email, role
+      FROM users 
+      WHERE tenant_id = $1 AND role != 'parent'
+      ORDER BY full_name
+    `, [tenant_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET parents for a tenant (for parent assignment dropdown)
+router.get('/parents', async (req, res) => {
+  try {
+    const { tenant_id } = req.query;
+    
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
+    const result = await pool.query(`
+      SELECT u.id, u.full_name as name, u.email,
+        COALESCE(json_agg(
+          json_build_object('student_id', psl.student_id, 'relationship', psl.relationship)
+        ) FILTER (WHERE psl.id IS NOT NULL), '[]') as linked_students
+      FROM users u
+      LEFT JOIN parent_student_links psl ON u.id = psl.parent_user_id
+      WHERE u.tenant_id = $1 AND u.role = 'parent'
+      GROUP BY u.id
+      ORDER BY u.full_name
+    `, [tenant_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching parents:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 // Get users by role for a tenant
 router.get('/tenant/:tenantId/role/:role', async (req, res) => {
   try {
@@ -151,56 +201,6 @@ router.get('/tenant/:tenantId/teachers', async (req, res) => {
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-// GET staff members for assignment dropdown (excludes parents)
-router.get('/staff', async (req, res) => {
-  try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
-    }
-
-    const result = await pool.query(`
-      SELECT id, full_name as name, email, role
-      FROM users 
-      WHERE tenant_id = $1 AND role != 'parent'
-      ORDER BY full_name
-    `, [tenant_id]);
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching staff:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET parents for a tenant (for parent assignment dropdown)
-router.get('/parents', async (req, res) => {
-  try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
-    }
-
-    const result = await pool.query(`
-      SELECT u.id, u.full_name as name, u.email,
-        COALESCE(json_agg(
-          json_build_object('student_id', psl.student_id, 'relationship', psl.relationship)
-        ) FILTER (WHERE psl.id IS NOT NULL), '[]') as linked_students
-      FROM users u
-      LEFT JOIN parent_student_links psl ON u.id = psl.parent_user_id
-      WHERE u.tenant_id = $1 AND u.role = 'parent'
-      GROUP BY u.id
-      ORDER BY u.full_name
-    `, [tenant_id]);
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Error fetching parents:', error);
     res.status(500).json({ error: error.message });
   }
 });
