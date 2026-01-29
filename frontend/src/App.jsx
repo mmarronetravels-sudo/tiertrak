@@ -5601,7 +5601,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     {adminParentTab === 'accounts' && (
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-semibold text-lg mb-4">Create Parent Account</h3>
-        <form onSubmit={handleCreateParent} className="space-y-4">
+        <form key="create-parent-form" onSubmit={handleCreateParent} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Parent Name</label>
