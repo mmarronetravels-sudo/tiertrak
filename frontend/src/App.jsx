@@ -5076,6 +5076,165 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     );
   };
 
+  // Create Parent Form Component
+const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
+  const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    password: 'parent123',
+    student_id: '',
+    relationship: 'parent'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      // Create user account
+      const userRes = await fetch(`${API_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.full_name,
+          role: 'parent',
+          tenant_id: tenantId,
+          school_wide_access: false
+        })
+      });
+      
+      if (!userRes.ok) {
+        const err = await userRes.json();
+        alert(`Error creating parent: ${err.error}`);
+        setSubmitting(false);
+        return;
+      }
+      
+      const newUser = await userRes.json();
+      
+      // If student selected, create link
+      if (formData.student_id) {
+        await fetch(`${API_URL}/parent-links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_user_id: newUser.id,
+            student_id: formData.student_id,
+            relationship: formData.relationship
+          })
+        });
+      }
+      
+      alert(`Parent account created!\n\nEmail: ${formData.email}\nPassword: ${formData.password}`);
+      
+      // Reset form
+      setFormData({
+        full_name: '',
+        email: '',
+        password: 'parent123',
+        student_id: '',
+        relationship: 'parent'
+      });
+      
+      // Notify parent component
+      if (onParentCreated) onParentCreated();
+      
+    } catch (error) {
+      console.error('Error creating parent:', error);
+      alert('Error creating parent account');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-6">
+      <h3 className="font-semibold text-lg mb-4">Create Parent Account</h3>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Parent Name</label>
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="John Smith"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="parent@email.com"
+              required
+            />
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Temporary Password</label>
+            <input
+              type="text"
+              value={formData.password}
+              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              required
+            />
+            <p className="text-xs text-slate-500 mt-1">Share this with the parent to login</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Link to Student (optional)</label>
+            <select
+              value={formData.student_id}
+              onChange={(e) => setFormData({...formData, student_id: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">-- Select Student --</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id}>{s.last_name}, {s.first_name} (Grade {s.grade})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {formData.student_id && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Relationship</label>
+            <select
+              value={formData.relationship}
+              onChange={(e) => setFormData({...formData, relationship: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="parent">Parent</option>
+              <option value="mother">Mother</option>
+              <option value="father">Father</option>
+              <option value="guardian">Guardian</option>
+              <option value="step-parent">Step-Parent</option>
+              <option value="grandparent">Grandparent</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {submitting ? 'Creating...' : 'Create Parent Account'}
+        </button>
+      </form>
+    </div>
+  );
+};
   // Admin View
   const AdminView = () => (
     <div className="space-y-6">
@@ -5597,95 +5756,13 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
       </button>
     </div>
 
-    {/* Create Parent Account */}
+{/* Create Parent Account */}
     {adminParentTab === 'accounts' && (
-      <div className="bg-white rounded-xl shadow-sm border p-6">
-        <h3 className="font-semibold text-lg mb-4">Create Parent Account</h3>
-        <form key="create-parent-form" onSubmit={handleCreateParent} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Parent Name</label>
-             <input
-  id="parent-full-name"
-  type="text"
-  value={newParent.full_name}
-  onChange={(e) => setNewParent({...newParent, full_name: e.target.value})}
-  className="w-full px-3 py-2 border rounded-lg"
-  placeholder="John Smith"
-  required
-/>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Email</label>
-              <input
-  id="parent-email"
-  type="email"
-  value={newParent.email}
-  onChange={(e) => setNewParent({...newParent, email: e.target.value})}
-  className="w-full px-3 py-2 border rounded-lg"
-  placeholder="parent@email.com"
-  required
-/>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Temporary Password</label>
-              <input
-  id="parent-password"
-  type="text"
-  value={newParent.password}
-  onChange={(e) => setNewParent({...newParent, password: e.target.value})}
-  className="w-full px-3 py-2 border rounded-lg"
-  required
-/>
-              <p className="text-xs text-slate-500 mt-1">Share this with the parent to login</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Link to Student (optional)</label>
-              <select
-  id="parent-student-select"
-  value={newParent.student_id}
-  onChange={(e) => setNewParent({...newParent, student_id: e.target.value})}
-  className="w-full px-3 py-2 border rounded-lg"
->
-                <option value="">-- Select Student --</option>
-                {students.map(s => (
-                  <option key={s.id} value={s.id}>{s.last_name}, {s.first_name} (Grade {s.grade})</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {newParent.student_id && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Relationship</label>
-              <select
-  id="parent-relationship"
-  value={newParent.relationship}
-  onChange={(e) => setNewParent({...newParent, relationship: e.target.value})}
-  className="w-full px-3 py-2 border rounded-lg"
->
-                <option value="parent">Parent</option>
-                <option value="mother">Mother</option>
-                <option value="father">Father</option>
-                <option value="guardian">Guardian</option>
-                <option value="step-parent">Step-Parent</option>
-                <option value="grandparent">Grandparent</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            className="w-full py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-          >
-            Create Parent Account
-          </button>
-        </form>
-      </div>
+      <CreateParentForm 
+        students={students} 
+        tenantId={user.tenant_id} 
+        onParentCreated={() => { fetchParentAccounts(); fetchAllParentLinks(); }} 
+      />
     )}
 
     {/* Manage Links */}
