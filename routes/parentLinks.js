@@ -13,7 +13,7 @@ router.get('/student/:studentId', async (req, res) => {
     const { studentId } = req.params;
     
     const result = await pool.query(`
-      SELECT psl.*, u.name as parent_name, u.email as parent_email
+      SELECT psl.*, u.full_name as parent_name, u.email as parent_email
       FROM parent_student_links psl
       JOIN users u ON psl.parent_user_id = u.id
       WHERE psl.student_id = $1
@@ -92,6 +92,31 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
-module.exports = router;
+// GET all parent-student links for a tenant (for Admin panel)
+router.get('/tenant/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        psl.id,
+        psl.parent_user_id,
+        psl.student_id,
+        psl.relationship,
+        u.full_name as parent_name,
+        u.email as parent_email,
+        s.first_name || ' ' || s.last_name as student_name
+      FROM parent_student_links psl
+      JOIN users u ON psl.parent_user_id = u.id
+      JOIN students s ON psl.student_id = s.id
+      WHERE s.tenant_id = $1
+      ORDER BY u.full_name, s.last_name
+    `, [tenantId]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching tenant parent links:', error);
+    res.status(500).json({ error: error.message });
+  }
+});module.exports = router;
 module.exports.initializePool = initializePool;
