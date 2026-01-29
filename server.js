@@ -203,6 +203,19 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_intervention_assignments_user ON intervention_assignments(user_id)
     `);
     console.log('Role-based access tables ready');
+    // Seed test users (only if they don't exist)
+    const testUsers = await pool.query(`SELECT id FROM users WHERE email = 'teacher1@lincoln.edu'`);
+    if (testUsers.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO users (tenant_id, email, password_hash, full_name, role, school_wide_access) VALUES
+        (3, 'teacher1@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Maria Santos', 'teacher', FALSE),
+        (3, 'teacher2@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'James Wilson', 'teacher', FALSE),
+        (3, 'specialist@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Dr. Angela Thompson', 'student_support_specialist', TRUE),
+        (3, 'parent1@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Sarah Johnson', 'parent', FALSE),
+        (3, 'parent2@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Michael Davis', 'parent', FALSE)
+      `);
+      console.log('Test users seeded');
+    }
     // Migration 009: Intervention Plan Templates
     await pool.query(`
       DO $$ 
