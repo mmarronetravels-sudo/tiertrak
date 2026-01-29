@@ -6531,10 +6531,13 @@ const ParentPortalView = () => {
                   </button>
 
                   {/* Expanded content */}
-                  {expandedIntervention === intervention.id && (
-                    <div className="px-4 pb-4 border-t">
-                      {/* Goal if exists */}
-                      {intervention.goal_description && (
+{expandedIntervention === intervention.id && (
+  <div className="px-4 pb-4 border-t">
+    {/* Intervention name */}
+    <h4 className="font-semibold text-slate-800 mt-3 mb-2">{intervention.name}</h4>
+    
+    {/* Goal if exists */}
+    {intervention.goal_description && (
                         <div className="mt-3 p-3 bg-amber-50 rounded-lg">
                           <p className="text-xs font-medium text-amber-700 mb-1">🎯 Goal</p>
                           <p className="text-sm text-amber-800">{intervention.goal_description}</p>
