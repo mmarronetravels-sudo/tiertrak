@@ -2481,7 +2481,7 @@ const filterByDateRange = (items, dateField) => {
                     >
                       <TrendingUp className="w-3 h-3" />
                       View Chart
-                    </button
+                    </button>
                     <button
                       onClick={() => {
                         setSelectedInterventionForAssignment(intervention);
