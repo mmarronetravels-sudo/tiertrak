@@ -9,7 +9,7 @@ const pool = new Pool({
 });
 
 // Valid roles
-const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist'];
+const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'];
 
 // Get all users for a tenant
 router.get('/tenant/:tenantId', async (req, res) => {
