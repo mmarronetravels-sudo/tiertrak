@@ -13,11 +13,11 @@ router.get('/:studentInterventionId', async (req, res) => {
     const { studentInterventionId } = req.params;
     
     const result = await pool.query(`
-      SELECT ia.*, u.name as user_name, u.email as user_email, u.role as user_role
+      SELECT ia.*, u.full_name as user_name, u.email as user_email, u.role as user_role
       FROM intervention_assignments ia
       JOIN users u ON ia.user_id = u.id
       WHERE ia.student_intervention_id = $1
-      ORDER BY ia.assignment_type, u.name
+      ORDER BY ia.assignment_type, u.full_name
     `, [studentInterventionId]);
     
     res.json(result.rows);
