@@ -5638,7 +5638,48 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                   handleLinkParent(parentId, studentId, 'parent');
                 }
               }}
-              className="py-2 px-4 bg-emerald-600 text-white rounde
+              className="py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              Link
+            </button>
+          </div>
+        </div>
+
+        {/* Current Links */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h3 className="font-semibold text-lg mb-4">Current Parent-Student Links</h3>
+          {parentLinksLoading ? (
+            <p className="text-slate-500">Loading...</p>
+          ) : parentStudentLinks.length === 0 ? (
+            <p className="text-slate-500">No parent-student links yet</p>
+          ) : (
+            <div className="space-y-2">
+              {parentStudentLinks.map(link => (
+                <div key={link.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                  <div>
+                    <span className="font-medium">{link.parent_name}</span>
+                    <span className="text-slate-400 mx-2">→</span>
+                    <span>{link.student_name}</span>
+                    <span className="text-xs text-slate-500 ml-2">({link.relationship})</span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkParent(link.id)}
+                    className="text-rose-500 hover:text-rose-700 text-sm"
+                  >
+                    Unlink
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
+{/* Students Tab */}
+{adminTab === 'students' && (
 
           <div className="relative mb-4">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
