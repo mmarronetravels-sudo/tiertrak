@@ -215,17 +215,6 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     goal_target_date: '',
     goal_target_rating: 3
   });
-<<<<<<< HEAD
-
-  // Pre-referral form state
-  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
-  const [preReferralForm, setPreReferralForm] = useState(null);
-  const [preReferralFormStep, setPreReferralFormStep] = useState(1);
-  const [preReferralOptions, setPreReferralOptions] = useState(null);
-  const [pendingPreReferrals, setPendingPreReferrals] = useState({ pending_approval: 0, needs_revision: 0 });
-  
-=======
->>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   // Check if user is admin
   const isAdmin = user && (user.role === 'district_admin' || user.role === 'school_admin');
   
@@ -248,21 +237,6 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       fetchMissingLogs();
     }
   }, [view, user?.tenant_id]);
-<<<<<<< HEAD
-  // Fetch pre-referral options on load
-  useEffect(() => {
-    fetchPreReferralOptions();
-  }, []);
-
-  // Fetch pending pre-referrals when user is logged in and on dashboard
-  useEffect(() => {
-    if (user && view === 'dashboard') {
-      fetchPendingPreReferrals();
-    }
-  }, [user, view]);
-
-  // Fetch user info
-=======
   
 // Fetch admin templates when admin view loads
   useEffect(() => {
@@ -271,7 +245,6 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       fetchFieldTypes();
     }
   }, [view]);  // Fetch user info
->>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
@@ -481,176 +454,6 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       console.error('Error fetching missing logs:', error);
     }
   };
-<<<<<<< HEAD
-  // Fetch pre-referral form options (dropdowns)
-  const fetchPreReferralOptions = async () => {
-    try {
-      const response = await fetch(`${API_URL}/prereferral-forms/options`);
-      const data = await response.json();
-      setPreReferralOptions(data);
-    } catch (error) {
-      console.error('Error fetching pre-referral options:', error);
-    }
-  };
-
-  // Fetch pending pre-referral counts (for dashboard alert)
-  const fetchPendingPreReferrals = async () => {
-    if (!user?.tenant_id) return;
-    try {
-      const response = await fetch(`${API_URL}/prereferral-forms/pending/${user.tenant_id}`);
-      const data = await response.json();
-      setPendingPreReferrals(data);
-    } catch (error) {
-      console.error('Error fetching pending pre-referrals:', error);
-    }
-  };
-
-  // Check if student has approved pre-referral form
-  const checkPreReferralApproval = async (studentId) => {
-    try {
-      const response = await fetch(`${API_URL}/prereferral-forms/check-approved/${studentId}`);
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error checking pre-referral approval:', error);
-      return { has_approved_form: false };
-    }
-  };
-
-  // Create new pre-referral form OR open existing one
-  const createPreReferralForm = async (initiatedBy = 'staff') => {
-    if (!selectedStudent || !user) return;
-    
-    try {
-      // First, check if a form already exists for this student
-      const checkResponse = await fetch(`${API_URL}/prereferral-forms/student/${selectedStudent.id}`);
-      const existingForms = await checkResponse.json();
-      
-      // If there's an existing draft or submitted form, open it
-      const activeForm = existingForms.find(f => f.status === 'draft' || f.status === 'submitted' || f.status === 'changes_requested');
-      
-      if (activeForm) {
-        // Fetch the full form data
-        const formResponse = await fetch(`${API_URL}/prereferral-forms/${activeForm.id}`);
-        const formData = await formResponse.json();
-        setPreReferralForm(formData);
-        setPreReferralFormStep(1);
-        setShowPreReferralForm(true);
-        return;
-      }
-      
-      // No existing form, create a new one
-      const response = await fetch(`${API_URL}/prereferral-forms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          student_id: selectedStudent.id,
-          tenant_id: user.tenant_id,
-          referred_by: user.id,
-          initiated_by: initiatedBy
-        })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setPreReferralForm(data);
-        setPreReferralFormStep(1);
-        setShowPreReferralForm(true);
-      } else {
-        alert(data.error || 'Failed to create form');
-      }
-    } catch (error) {
-      console.error('Error with pre-referral form:', error);
-      alert('Failed to load pre-referral form');
-    }
-  };
-  // Save pre-referral form draft
-  const savePreReferralForm = async (formData) => {
-    if (!formData?.id) {
-      alert('No form to save');
-      return;
-    }
-    
-    try {
-      const response = await fetch(`${API_URL}/prereferral-forms/${formData.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      
-      if (response.ok) {
-        alert('Draft saved!');
-      } else {
-        const error = await response.json();
-        alert('Error saving: ' + error.error);
-      }
-    } catch (err) {
-      console.error('Error saving form:', err);
-      alert('Error saving form');
-    }
-  };
-
-  // Submit pre-referral form for approval
-  const submitPreReferralForm = async () => {
-    if (!preReferralForm?.id) {
-      alert('No form to submit');
-      return;
-    }
-    
-    // Validate required fields
-    if (!preReferralForm.parent_informed) {
-      alert('You must confirm that you have contacted the parent/guardian before submitting.');
-      setPreReferralFormStep(9);
-      return;
-    }
-    
-    if (!preReferralForm.recommended_tier) {
-      alert('Please select a recommended tier (Tier 2 or Tier 3).');
-      setPreReferralFormStep(11);
-      return;
-    }
-    
-    // Ask for signature
-    const signatureName = prompt('Type your full name to sign this form:');
-    if (!signatureName || signatureName.trim() === '') {
-      alert('Signature is required to submit.');
-      return;
-    }
-    
-    try {
-      // First save the current form data
-      await fetch(`${API_URL}/prereferral-forms/${preReferralForm.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(preReferralForm)
-      });
-      
-      // Then submit for approval
-      const response = await fetch(`${API_URL}/prereferral-forms/${preReferralForm.id}/submit`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          referring_staff_name: signatureName.trim()
-        })
-      });
-      
-      if (response.ok) {
-        alert('Form submitted for counselor approval!');
-        setShowPreReferralForm(false);
-        setPreReferralFormStep(1);
-        setPreReferralForm(null);
-      } else {
-        const error = await response.json();
-        alert('Error submitting: ' + error.error);
-      }
-    } catch (err) {
-      console.error('Error submitting form:', err);
-      alert('Error submitting form');
-    }
-  };
-    
-    
-  
-=======
   // MTSS Meeting Functions
   const fetchMTSSMeetingOptions = async () => {
     try {
@@ -1072,7 +875,6 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       )
     }));
   };
->>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   // Submit weekly progress
   const submitWeeklyProgress = async (e) => {
     e.preventDefault();
@@ -1565,12 +1367,13 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
           student_id: selectedStudent.id,
           intervention_name: newIntervention.name,
           notes: interventionNotesRef.current?.value || '',
-          assigned_by: user.id
+          assigned_by: user.id,
+          log_frequency: newIntervention.log_frequency || 'weekly'
         })
       });
       if (res.ok) {
         fetchStudentDetails(selectedStudent.id);
-        setNewIntervention({ name: '', notes: '' });
+        setNewIntervention({ name: '', notes: '', log_frequency: 'weekly' });
         setShowAddIntervention(false);
         setInterventionAreaFilter('all');
       }
@@ -2038,16 +1841,16 @@ const filterByDateRange = (items, dateField) => {
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="w-5 h-5 text-amber-600" />
             <h3 className="font-semibold text-amber-800">
-              Weekly Logs Needed ({missingLogs.missing_count})
+              Weekly Reminder: Log Progress ({missingLogs.missing_count})
             </h3>
           </div>
           <p className="text-sm text-amber-700 mb-3">
-            The following interventions need progress logs for the week of {new Date(missingLogs.week_of + 'T00:00:00').toLocaleDateString()}:
+            The following interventions haven't been logged yet this week. Remember to log progress based on each intervention's frequency.
           </p>
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {missingLogs.interventions.map((item) => (
               <div 
-                key={item.intervention_id}
+                key={item.id}
                 onClick={() => {
                   setSelectedStudent({ id: item.student_id });
                   setView('student');
@@ -2062,6 +1865,12 @@ const filterByDateRange = (items, dateField) => {
                   <span className="text-slate-600">{item.intervention_name}</span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                    {item.log_frequency === 'daily' ? 'Daily' :
+                     item.log_frequency === '3x_week' ? '3x/wk' :
+                     item.log_frequency === '2x_week' ? '2x/wk' :
+                     item.log_frequency === 'biweekly' ? 'Bi-wkly' : 'Weekly'}
+                  </span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     item.tier === 1 ? 'bg-emerald-100 text-emerald-700' :
                     item.tier === 2 ? 'bg-amber-100 text-amber-700' :
@@ -2076,6 +1885,8 @@ const filterByDateRange = (items, dateField) => {
           </div>
         </div>
       )}
+
+      {/* Tier Overview Cards */}
 
       {/* Tier Overview Cards */}
       <div className="grid grid-cols-3 gap-6">
@@ -2325,26 +2136,6 @@ const filterByDateRange = (items, dateField) => {
   <FileText size={18} />
   Generate Report
 </button>
-<<<<<<< HEAD
-{/* Generate Report Button */}
-              <button
-                onClick={generateReport}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
-              >
-                <FileText size={18} />
-                Generate Report
-              </button>
-              {/* Pre-Referral Form Button - Only for Tier 1 students */}
-              {selectedStudent.tier === 1 && !selectedStudent.archived && (
-                <button
-                  onClick={() => createPreReferralForm('staff')}
-                  className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition font-medium"
-                >
-                  <FileText size={18} />
-                  Pre-Referral Form
-                </button>
-              )}
-=======
 
 {/* Pre-Referral Form Button - Only for Tier 1 students */}
 {selectedStudent.tier === 1 && !selectedStudent.archived && (
@@ -2358,7 +2149,6 @@ const filterByDateRange = (items, dateField) => {
   </button>
 )}
 
->>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
               {canArchive && !selectedStudent.archived && (
                 <button
                   onClick={() => setShowArchiveModal(true)}
@@ -2481,13 +2271,34 @@ const filterByDateRange = (items, dateField) => {
   className="w-full px-3 py-2 border border-slate-200 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
   rows={2}
 />
+
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    How often should progress be logged?
+                  </label>
+                  <select
+                    value={newIntervention.log_frequency || 'weekly'}
+                    onChange={(e) => setNewIntervention({ ...newIntervention, log_frequency: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="daily">Daily (5x/week)</option>
+                    <option value="3x_week">3x per week</option>
+                    <option value="2x_week">2x per week</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    This helps staff know how often to log progress.
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => { 
-                      setShowAddIntervention(false); 
-                      setNewIntervention({ name: '', notes: '' }); 
-                      setInterventionAreaFilter('all');
-                    }}
+  setShowAddIntervention(false); 
+  setNewIntervention({ name: '', notes: '', log_frequency: 'weekly' }); 
+  setInterventionAreaFilter('all');
+}}
                     className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-sm"
                   >
                     Cancel
@@ -2531,6 +2342,12 @@ const filterByDateRange = (items, dateField) => {
                       intervention.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                     }`}>
                       {intervention.status}
+                    </span>
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                      📅 {intervention.log_frequency === 'daily' ? 'Daily' :
+                          intervention.log_frequency === '3x_week' ? '3x/week' :
+                          intervention.log_frequency === '2x_week' ? '2x/week' :
+                          intervention.log_frequency === 'biweekly' ? 'Bi-weekly' : 'Weekly'}
                     </span>
                   </div>
                   {intervention.notes && (
