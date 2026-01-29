@@ -5480,6 +5480,12 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 >
                   <Save size={16} />
                   {editingStudent ? 'Update Student' : 'Add Student'}
+                    <button
+                  onClick={editingStudent ? handleUpdateStudent : handleAddStudent}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                >
+                  <Save size={16} />
+                  {editingStudent ? 'Update Student' : 'Add Student'}
                 </button>
               </div>
             </div>
