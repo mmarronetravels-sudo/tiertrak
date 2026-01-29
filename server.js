@@ -27,6 +27,7 @@ const progressNotesRoutes = require('./routes/progressNotes');
 const usersRoutes = require('./routes/users');
 const authRoutes = require('./routes/auth');
 const interventionLogsRoutes = require('./routes/interventionLogs');
+const prereferralFormsRoutes = require('./routes/prereferralForms');
 const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
 
@@ -38,6 +39,7 @@ app.use('/api/progress-notes', progressNotesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/intervention-logs', interventionLogsRoutes);
+app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 
