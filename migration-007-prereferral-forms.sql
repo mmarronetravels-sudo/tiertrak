@@ -1,12 +1,18 @@
 -- Migration 007: Pre-Referral Forms
 -- Created: January 26, 2026
+<<<<<<< HEAD
 -- Purpose: Add pre-referral form support for Tier 1 → Tier 2/3 transitions
 
 -- Create the prereferral_forms table
+=======
+-- Purpose: Add table for pre-referral forms used when moving Tier 1 students into MTSS
+
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
 CREATE TABLE prereferral_forms (
   id SERIAL PRIMARY KEY,
   student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
   tenant_id INTEGER REFERENCES tenants(id),
+<<<<<<< HEAD
   
   -- Section 1: Referral Info
   referral_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -29,6 +35,28 @@ CREATE TABLE prereferral_forms (
   hearing_test_date DATE,
   hearing_test_result TEXT,
   vision_tested VARCHAR(20), -- 'yes', 'no', 'unknown'
+=======
+  referral_date DATE DEFAULT CURRENT_DATE,
+  referred_by INTEGER REFERENCES users(id),
+  initiated_by VARCHAR(50) DEFAULT 'staff',
+  initiated_by_other TEXT,
+  
+  -- Section 2: Area of Concern
+  concern_areas JSONB,
+  specific_concerns JSONB,
+  
+  -- Section 3: Detailed Description
+  concern_description TEXT,
+  concern_first_noticed VARCHAR(100),
+  concern_frequency VARCHAR(100),
+  concern_settings JSONB,
+  
+  -- Section 4: Medical/Background
+  hearing_tested VARCHAR(20),
+  hearing_test_date DATE,
+  hearing_test_result TEXT,
+  vision_tested VARCHAR(20),
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   vision_test_date DATE,
   vision_test_result TEXT,
   medical_diagnoses TEXT,
@@ -40,6 +68,7 @@ CREATE TABLE prereferral_forms (
   current_grades TEXT,
   assessment_scores TEXT,
   support_classes TEXT,
+<<<<<<< HEAD
   credits_status TEXT, -- For high school only
   
   -- Section 6: Existing Plans
@@ -49,6 +78,17 @@ CREATE TABLE prereferral_forms (
   
   -- Section 7: Prior Interventions
   prior_interventions JSONB DEFAULT '[]', -- [{intervention_id, name, duration, frequency, outcome}, ...]
+=======
+  credits_status TEXT,
+  
+  -- Section 6: Existing Plans
+  current_plans JSONB,
+  plan_details TEXT,
+  external_supports TEXT,
+  
+  -- Section 7: Prior Interventions
+  prior_interventions JSONB,
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   other_interventions TEXT,
   
   -- Section 8: Student Strengths
@@ -57,6 +97,7 @@ CREATE TABLE prereferral_forms (
   interests TEXT,
   motivators TEXT,
   
+<<<<<<< HEAD
   -- Section 9: Parent/Guardian Contact & Input
   parent_name VARCHAR(255),
   parent_relationship VARCHAR(50), -- 'Parent', 'Guardian', 'Grandparent', 'Other'
@@ -69,6 +110,20 @@ CREATE TABLE prereferral_forms (
   parent_input TEXT, -- What did the parent say?
   home_supports TEXT, -- What's working at home?
   parent_supports_referral VARCHAR(20), -- 'yes', 'no', 'partial'
+=======
+  -- Section 9: Parent Contact
+  parent_name VARCHAR(255),
+  parent_relationship VARCHAR(100),
+  parent_phone VARCHAR(50),
+  parent_email VARCHAR(255),
+  preferred_contact VARCHAR(50),
+  contact_date DATE,
+  contact_method VARCHAR(100),
+  parent_informed BOOLEAN DEFAULT FALSE,
+  parent_input TEXT,
+  home_supports TEXT,
+  parent_supports_referral VARCHAR(20),
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   
   -- Section 10: Reason for Referral
   why_tier1_insufficient TEXT,
@@ -77,20 +132,31 @@ CREATE TABLE prereferral_forms (
   
   -- Section 11: Recommendations
   recommended_tier INTEGER CHECK (recommended_tier IN (2, 3)),
+<<<<<<< HEAD
   recommended_interventions JSONB DEFAULT '[]', -- Array of intervention template IDs or names
+=======
+  recommended_interventions JSONB,
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   recommended_assessments TEXT,
   recommended_supports TEXT,
   additional_recommendations TEXT,
   
+<<<<<<< HEAD
   -- Section 12: Meeting Notes (optional, can be filled after team meeting)
+=======
+  -- Meeting & Signatures
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   meeting_date DATE,
   meeting_attendees TEXT,
   meeting_summary TEXT,
   decisions_made TEXT,
   follow_up_actions TEXT,
   next_meeting_date DATE,
+<<<<<<< HEAD
   
   -- Signatures (name + timestamp)
+=======
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   referring_staff_name VARCHAR(255),
   referring_staff_signed_at TIMESTAMP,
   counselor_name VARCHAR(255),
@@ -98,14 +164,20 @@ CREATE TABLE prereferral_forms (
   counselor_id INTEGER REFERENCES users(id),
   
   -- Status & Workflow
+<<<<<<< HEAD
   status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'changes_requested', 'approved', 'archived')),
   change_request_comments TEXT, -- If counselor requests changes
   
   -- Meta
+=======
+  status VARCHAR(50) DEFAULT 'draft',
+  change_request_comments TEXT,
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+<<<<<<< HEAD
 -- Create indexes for common queries
 CREATE INDEX idx_prereferral_student ON prereferral_forms(student_id);
 CREATE INDEX idx_prereferral_tenant ON prereferral_forms(tenant_id);
@@ -128,3 +200,9 @@ CREATE TRIGGER prereferral_updated_at
 
 -- Comment on table
 COMMENT ON TABLE prereferral_forms IS 'Pre-referral forms for moving students from Tier 1 to Tier 2/3 in MTSS';
+=======
+-- Index for faster lookups
+CREATE INDEX idx_prereferral_forms_student ON prereferral_forms(student_id);
+CREATE INDEX idx_prereferral_forms_tenant ON prereferral_forms(tenant_id);
+CREATE INDEX idx_prereferral_forms_status ON prereferral_forms(status);
+>>>>>>> 8d9ee1cf3af098001da8ff5fb46215a54645f145

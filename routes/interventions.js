@@ -60,12 +60,12 @@ router.delete('/templates/:id', async (req, res) => {
 // Assign an intervention to a student
 router.post('/assign', async (req, res) => {
   try {
-    const { student_id, intervention_template_id, assigned_by, intervention_name, notes } = req.body;
+    const { student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency = 'weekly' } = req.body;
     const result = await pool.query(
-      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes) 
-       VALUES ($1, $2, $3, $4, $5) 
+      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency) 
+       VALUES ($1, $2, $3, $4, $5, $6) 
        RETURNING *`,
-      [student_id, intervention_template_id, assigned_by, intervention_name, notes]
+      [student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
