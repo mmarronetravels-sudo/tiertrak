@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt'); 
 require('dotenv').config();
 
 const pool = new Pool({
@@ -126,13 +127,15 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // For now, store password as plain text (we'll add proper hashing in authentication step)
-    const result = await pool.query(
-      `INSERT INTO users (tenant_id, email, password_hash, full_name, role) 
-       VALUES ($1, $2, $3, $4, $5) 
-       RETURNING id, tenant_id, email, full_name, role, created_at`,
-      [tenant_id, email, password, full_name, role]
-    );
+    // Hash the password
+const hashedPassword = await bcrypt.hash(password, 10);
+
+const result = await pool.query(
+  `INSERT INTO users (tenant_id, email, password_hash, full_name, role) 
+   VALUES ($1, $2, $3, $4, $5) 
+   RETURNING id, tenant_id, email, full_name, role, created_at`,
+  [tenant_id, email, hashedPassword, full_name, role]
+);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     if (error.code === '23505') {
