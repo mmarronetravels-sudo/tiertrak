@@ -5605,25 +5605,27 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Parent Name</label>
-              <input
-                type="text"
-                value={newParent.full_name}
-                onChange={(e) => setNewParent({...newParent, full_name: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="John Smith"
-                required
-              />
+             <input
+  id="parent-full-name"
+  type="text"
+  value={newParent.full_name}
+  onChange={(e) => setNewParent({...newParent, full_name: e.target.value})}
+  className="w-full px-3 py-2 border rounded-lg"
+  placeholder="John Smith"
+  required
+/>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Email</label>
               <input
-                type="email"
-                value={newParent.email}
-                onChange={(e) => setNewParent({...newParent, email: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-                placeholder="parent@email.com"
-                required
-              />
+  id="parent-email"
+  type="email"
+  value={newParent.email}
+  onChange={(e) => setNewParent({...newParent, email: e.target.value})}
+  className="w-full px-3 py-2 border rounded-lg"
+  placeholder="parent@email.com"
+  required
+/>
             </div>
           </div>
           
@@ -5631,21 +5633,23 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             <div>
               <label className="block text-sm font-medium mb-1">Temporary Password</label>
               <input
-                type="text"
-                value={newParent.password}
-                onChange={(e) => setNewParent({...newParent, password: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-                required
-              />
+  id="parent-password"
+  type="text"
+  value={newParent.password}
+  onChange={(e) => setNewParent({...newParent, password: e.target.value})}
+  className="w-full px-3 py-2 border rounded-lg"
+  required
+/>
               <p className="text-xs text-slate-500 mt-1">Share this with the parent to login</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Link to Student (optional)</label>
               <select
-                value={newParent.student_id}
-                onChange={(e) => setNewParent({...newParent, student_id: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              >
+  id="parent-student-select"
+  value={newParent.student_id}
+  onChange={(e) => setNewParent({...newParent, student_id: e.target.value})}
+  className="w-full px-3 py-2 border rounded-lg"
+>
                 <option value="">-- Select Student --</option>
                 {students.map(s => (
                   <option key={s.id} value={s.id}>{s.last_name}, {s.first_name} (Grade {s.grade})</option>
@@ -5658,10 +5662,11 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             <div>
               <label className="block text-sm font-medium mb-1">Relationship</label>
               <select
-                value={newParent.relationship}
-                onChange={(e) => setNewParent({...newParent, relationship: e.target.value})}
-                className="w-full px-3 py-2 border rounded-lg"
-              >
+  id="parent-relationship"
+  value={newParent.relationship}
+  onChange={(e) => setNewParent({...newParent, relationship: e.target.value})}
+  className="w-full px-3 py-2 border rounded-lg"
+>
                 <option value="parent">Parent</option>
                 <option value="mother">Mother</option>
                 <option value="father">Father</option>
