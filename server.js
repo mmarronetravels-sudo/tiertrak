@@ -202,6 +202,25 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_intervention_assignments_user ON intervention_assignments(user_id)
     `);
     console.log('Role-based access tables ready');
+
+    // Update role constraint to include new roles
+    await pool.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check 
+        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'));
+    `);
+    console.log('Role constraint updated');
+
+    // Seed test users (only if they don't exist)
+    // Update role constraint to include new roles
+    await pool.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check 
+        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'));
+    `);
+    console.log('Role constraint updated');
+
+    // Seed test users (only if they don't exist)
     // Seed test users (only if they don't exist)
     const testUsers = await pool.query(`SELECT id FROM users WHERE email = 'teacher1@lincoln.edu'`);
     if (testUsers.rows.length === 0) {
