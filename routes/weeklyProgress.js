@@ -121,17 +121,17 @@ router.get('/intervention/:interventionId', async (req, res) => {
   }
 });
 
-// Get interventions missing this week's log for a tenant
+/// Get interventions missing this week's log for a tenant
 router.get('/missing/:tenantId', async (req, res) => {
   try {
     const { tenantId } = req.params;
     const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
-
     const result = await pool.query(`
       SELECT 
         si.id,
         si.intervention_name,
         si.student_id,
+        si.log_frequency,
         s.first_name,
         s.last_name,
         s.tier
@@ -147,14 +147,12 @@ router.get('/missing/:tenantId', async (req, res) => {
         )
       ORDER BY s.last_name, s.first_name
     `, [tenantId, currentWeek]);
-
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching missing logs:', err);
     res.status(500).json({ error: 'Failed to fetch missing logs' });
   }
 });
-
 // Get progress summary for a student (for reports)
 router.get('/summary/:studentId', async (req, res) => {
   try {
