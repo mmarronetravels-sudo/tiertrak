@@ -20,26 +20,60 @@ router.get('/archive-reasons', async (req, res) => {
   res.json(reasons);
 });
 
-// Get all students for a tenant (with archive filter)
+// Get all students for a tenant (with archive filter and role-based access)
 router.get('/tenant/:tenantId', async (req, res) => {
   try {
     const { tenantId } = req.params;
     const { includeArchived, onlyArchived, search } = req.query;
+    const userId = req.headers['x-user-id'];
+    const userRole = req.headers['x-user-role'];
+    const schoolWideAccess = req.headers['x-school-wide-access'] === 'true';
     
-    let query = `
-      SELECT s.*, u.full_name as teacher_name 
-      FROM students s
-      LEFT JOIN users u ON s.teacher_id = u.id
-      WHERE s.tenant_id = $1
-    `;
-    const params = [tenantId];
+    let query;
+    let params;
     
+    // Admin and users with school_wide_access see all students
+    if (userRole === 'school_admin' || schoolWideAccess) {
+      query = `
+        SELECT s.*, u.full_name as teacher_name 
+        FROM students s
+        LEFT JOIN users u ON s.teacher_id = u.id
+        WHERE s.tenant_id = $1
+      `;
+      params = [tenantId];
+    }
+    // Parents see only their linked children
+    else if (userRole === 'parent') {
+      query = `
+        SELECT DISTINCT s.*, u.full_name as teacher_name 
+        FROM students s
+        LEFT JOIN users u ON s.teacher_id = u.id
+        INNER JOIN parent_student_links psl ON s.id = psl.student_id
+        WHERE s.tenant_id = $1 AND psl.parent_user_id = $2
+      `;
+      params = [tenantId, userId];
+    }
+    // Teachers/staff see only students where they have an intervention assignment
+    else {
+      query = `
+        SELECT DISTINCT s.*, u.full_name as teacher_name 
+        FROM students s
+        LEFT JOIN users u ON s.teacher_id = u.id
+        INNER JOIN student_interventions si ON s.id = si.student_id AND si.status = 'active'
+        INNER JOIN intervention_assignments ia ON si.id = ia.student_intervention_id
+        WHERE s.tenant_id = $1 AND ia.user_id = $2
+      `;
+      params = [tenantId, userId];
+    }
+    
+    // Archive filters
     if (onlyArchived === 'true') {
       query += ` AND s.archived = TRUE`;
     } else if (includeArchived !== 'true') {
       query += ` AND (s.archived = FALSE OR s.archived IS NULL)`;
     }
-    
+
+    // Search filter
     if (search) {
       params.push(`%${search}%`);
       query += ` AND (LOWER(s.first_name) LIKE LOWER($${params.length}) OR LOWER(s.last_name) LIKE LOWER($${params.length}))`;
