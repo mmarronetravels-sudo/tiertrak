@@ -35,7 +35,7 @@ const interventionAssignmentsRoutes = require('./routes/interventionAssignments'
 const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
-const parentLinksRoutes = require('./routes/parentLinks');prereferralFormsRoutes.initializePool(pool);
+prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
 parentLinksRoutes.initializePool(pool);
