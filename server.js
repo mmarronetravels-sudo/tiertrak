@@ -158,6 +158,47 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
+    // Migration 010: Role-Based Student Access
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS school_wide_access BOOLEAN DEFAULT FALSE
+    `);
+    
+    await pool.query(`
+      UPDATE users SET school_wide_access = TRUE 
+      WHERE role IN ('counselor', 'school_admin') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parent_student_links (
+        id SERIAL PRIMARY KEY,
+        parent_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        relationship VARCHAR(50) DEFAULT 'parent',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(parent_user_id, student_id)
+      )
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS intervention_assignments (
+        id SERIAL PRIMARY KEY,
+        student_intervention_id INTEGER REFERENCES student_interventions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        assignment_type VARCHAR(20) CHECK (assignment_type IN ('staff', 'parent')),
+        can_log_progress BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(student_intervention_id, user_id)
+      )
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_parent_student_links_parent ON parent_student_links(parent_user_id);
+      CREATE INDEX IF NOT EXISTS idx_parent_student_links_student ON parent_student_links(student_id);
+      CREATE INDEX IF NOT EXISTS idx_intervention_assignments_intervention ON intervention_assignments(student_intervention_id);
+      CREATE INDEX IF NOT EXISTS idx_intervention_assignments_user ON intervention_assignments(user_id)
+    `);
+    console.log('Role-based access tables ready');
     // Migration 009: Intervention Plan Templates
     await pool.query(`
       DO $$ 
