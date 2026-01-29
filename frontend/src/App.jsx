@@ -5774,8 +5774,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             Total: {activeStudents.length} active students
           </div>
         </div>
-      </div>
-      )}
+         )}
       {/* Archived Students Tab */}
       {adminTab === 'archived' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
