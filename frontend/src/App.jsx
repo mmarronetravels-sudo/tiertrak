@@ -5111,22 +5111,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
 >
   <div className="flex items-center gap-2">
     <Users size={16} />
-    Students
-  </div>
-</button>
-<button
-  onClick={() => { setAdminTab('parents'); fetchParentAccounts(); fetchAllParentLinks(); }}
-  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-    adminTab === 'parents' 
-      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
-      : 'text-slate-600 hover:bg-slate-100'
-  }`}
->
-  <div className="flex items-center gap-2">
-    <Users size={16} />
-    Parents
-  </div>
-</button>
+    <button
+          onClick={() => setAdminTab('students')}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
             adminTab === 'students' 
               ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
@@ -5136,6 +5122,19 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
           <div className="flex items-center gap-2">
             <Users size={16} />
             Students
+          </div>
+        </button>
+        <button
+          onClick={() => { setAdminTab('parents'); fetchParentAccounts(); fetchAllParentLinks(); }}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            adminTab === 'parents' 
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Users size={16} />
+            Parents
           </div>
         </button>
         <button
