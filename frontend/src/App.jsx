@@ -84,6 +84,10 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
+  const [staffList, setStaffList] = useState([]);
+  const [parentsList, setParentsList] = useState([]);
+  const [showAssignmentManager, setShowAssignmentManager] = useState(false);
+  const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [interventionTemplates, setInterventionTemplates] = useState([]);
   const [interventionLogs, setInterventionLogs] = useState([]);
@@ -281,7 +285,13 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
   // Fetch students
   const fetchStudents = async (tenantId, includeArchived = false) => {
     try {
-      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`);
+      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
+        headers: {
+          'x-user-id': user.id.toString(),
+          'x-user-role': user.role,
+          'x-school-wide-access': (user.school_wide_access || false).toString()
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setStudents(data);
@@ -291,7 +301,71 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     }
   };
 
-  // Fetch archived students
+const fetchStaffList = async (tenantId) => {
+  try {
+    const response = await fetch(`${API_URL}/users/staff?tenant_id=${tenantId}`);
+    if (response.ok) {
+      const data = await response.json();
+      setStaffList(data);
+    }
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+  }
+};
+
+const fetchParentsList = async (tenantId) => {
+  try {
+    const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
+    if (response.ok) {
+      const data = await response.json();
+      setParentsList(data);
+    }
+  } catch (error) {
+    console.error('Error fetching parents:', error);
+  }
+};
+
+const fetchInterventionAssignments = async (studentInterventionId) => {
+  try {
+    const response = await fetch(`${API_URL}/intervention-assignments/${studentInterventionId}`);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+  }
+  return [];
+};
+
+const addInterventionAssignment = async (studentInterventionId, userId, assignmentType) => {
+  try {
+    const response = await fetch(`${API_URL}/intervention-assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_intervention_id: studentInterventionId,
+        user_id: userId,
+        assignment_type: assignmentType
+      })
+    });
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Error adding assignment:', error);
+  }
+  return null;
+};
+
+const removeInterventionAssignment = async (assignmentId) => {
+  try {
+    await fetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
+      method: 'DELETE'
+    });
+  } catch (error) {
+    console.error('Error removing assignment:', error);
+  }
+};  // Fetch archived students
   const fetchArchivedStudents = async (tenantId) => {
     try {
       const res = await fetch(`${API_URL}/students/tenant/${tenantId}?onlyArchived=true`);
@@ -1338,6 +1412,8 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
         fetchStudents(data.user.tenant_id);
         fetchInterventionTemplates(data.user.tenant_id);
         fetchLogOptions();
+        fetchStaffList(data.user.tenant_id);
+        fetchParentsList(data.user.tenant_id);
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -2405,6 +2481,16 @@ const filterByDateRange = (items, dateField) => {
                     >
                       <TrendingUp className="w-3 h-3" />
                       View Chart
+                    </button
+                    <button
+                      onClick={() => {
+                        setSelectedInterventionForAssignment(intervention);
+                        setShowAssignmentManager(true);
+                      }}
+                      className="px-3 py-1.5 border border-emerald-300 text-emerald-700 text-sm rounded-lg hover:bg-emerald-50 flex items-center gap-1"
+                    >
+                      <Users className="w-3 h-3" />
+                      Assign
                     </button>
                   </div>
                   {/* Weekly Progress Logs Display */}
@@ -5607,7 +5693,179 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     </div>
   );
 
-    return (
+  // Assignment Manager Modal Component
+const AssignmentManager = () => {
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedStaff, setSelectedStaff] = useState('');
+  const [selectedParent, setSelectedParent] = useState('');
+
+  useEffect(() => {
+    if (selectedInterventionForAssignment) {
+      loadAssignments();
+    }
+  }, [selectedInterventionForAssignment]);
+
+  const loadAssignments = async () => {
+    setLoading(true);
+    const data = await fetchInterventionAssignments(selectedInterventionForAssignment.id);
+    setAssignments(data);
+    setLoading(false);
+  };
+
+  const handleAddStaff = async () => {
+    if (!selectedStaff) return;
+    await addInterventionAssignment(selectedInterventionForAssignment.id, selectedStaff, 'staff');
+    setSelectedStaff('');
+    loadAssignments();
+  };
+
+  const handleAddParent = async () => {
+    if (!selectedParent) return;
+    await addInterventionAssignment(selectedInterventionForAssignment.id, selectedParent, 'parent');
+    setSelectedParent('');
+    loadAssignments();
+  };
+
+  const handleRemove = async (assignmentId) => {
+    await removeInterventionAssignment(assignmentId);
+    loadAssignments();
+  };
+
+  if (!selectedInterventionForAssignment) return null;
+
+  const staffAssignments = assignments.filter(a => a.assignment_type === 'staff');
+  const parentAssignments = assignments.filter(a => a.assignment_type === 'parent');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+        <div className="p-4 border-b flex justify-between items-center">
+          <div>
+            <h3 className="font-semibold text-lg">Manage Assignments</h3>
+            <p className="text-sm text-slate-500">{selectedInterventionForAssignment.intervention_name}</p>
+          </div>
+          <button onClick={() => setShowAssignmentManager(false)} className="text-slate-500 hover:text-slate-700">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {loading ? (
+            <p className="text-center text-slate-500">Loading...</p>
+          ) : (
+            <>
+              {/* Staff Assignments */}
+              <div>
+                <h4 className="font-medium text-slate-700 mb-2">👨‍🏫 Assigned Staff</h4>
+                {staffAssignments.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {staffAssignments.map(a => (
+                      <div key={a.id} className="flex justify-between items-center bg-blue-50 px-3 py-2 rounded-lg">
+                        <div>
+                          <span className="font-medium">{a.user_name}</span>
+                          <span className="text-xs text-slate-500 ml-2">({a.user_role})</span>
+                        </div>
+                        <button 
+                          onClick={() => handleRemove(a.id)}
+                          className="text-rose-500 hover:text-rose-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 mb-3">No staff assigned yet</p>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    value={selectedStaff}
+                    onChange={(e) => setSelectedStaff(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">-- Select Staff --</option>
+                    {staffList
+                      .filter(s => !staffAssignments.some(a => a.user_id === s.id))
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    onClick={handleAddStaff}
+                    disabled={!selectedStaff}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Parent Assignments */}
+              <div>
+                <h4 className="font-medium text-slate-700 mb-2">👨‍👩‍👧 Assigned Parents</h4>
+                {parentAssignments.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {parentAssignments.map(a => (
+                      <div key={a.id} className="flex justify-between items-center bg-emerald-50 px-3 py-2 rounded-lg">
+                        <div>
+                          <span className="font-medium">{a.user_name}</span>
+                          <span className="text-xs text-slate-500 ml-2">{a.user_email}</span>
+                        </div>
+                        <button 
+                          onClick={() => handleRemove(a.id)}
+                          className="text-rose-500 hover:text-rose-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 mb-3">No parents assigned yet</p>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    value={selectedParent}
+                    onChange={(e) => setSelectedParent(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">-- Select Parent --</option>
+                    {parentsList
+                      .filter(p => !parentAssignments.some(a => a.user_id === p.id))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    onClick={handleAddParent}
+                    disabled={!selectedParent}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t bg-slate-50">
+          <button
+            onClick={() => setShowAssignmentManager(false)}
+            className="w-full py-2 px-4 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+  
+  return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50">
       {/* Navigation */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
@@ -6040,7 +6298,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     </div>
   </div>
 )}
-
+{showAssignmentManager && <AssignmentManager />}
+      
       {/* Template Editor Modal */}
       {showTemplateEditor && selectedAdminTemplate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
