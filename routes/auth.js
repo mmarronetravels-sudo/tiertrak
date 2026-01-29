@@ -114,10 +114,6 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-} catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Get current user info (requires token)
 
