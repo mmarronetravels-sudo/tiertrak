@@ -162,6 +162,42 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
+    // Migration 012: Student Documents
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_documents (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        
+        -- File info
+        file_name VARCHAR(255) NOT NULL,
+        file_url TEXT NOT NULL,
+        file_type VARCHAR(50),
+        file_size INTEGER,
+        s3_key VARCHAR(500),
+        
+        -- Document metadata
+        document_category VARCHAR(50) CHECK (document_category IN (
+          '504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 
+          'Parent Communication', 'Medical Record', 'Other'
+        )),
+        description TEXT,
+        
+        -- Expiration tracking
+        expiration_date DATE,
+        expiration_alert_sent BOOLEAN DEFAULT FALSE,
+        
+        -- Audit trail
+        uploaded_by INTEGER REFERENCES users(id),
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_student_documents_student ON student_documents(student_id);
+      CREATE INDEX IF NOT EXISTS idx_student_documents_tenant ON student_documents(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_student_documents_expiration ON student_documents(expiration_date) 
+        WHERE expiration_date IS NOT NULL;
+    `);
+    console.log('student_documents table ready');
     // Migration 010: Role-Based Student Access
     await pool.query(`
       ALTER TABLE users 
