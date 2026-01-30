@@ -3477,7 +3477,7 @@ const filterByDateRange = (items, dateField) => {
                       <p className="text-sm text-slate-600">The following interventions were found in TierTrak:</p>
                       {preReferralForm.prior_interventions.map((intervention, index) => (
                         <div key={index} className="p-3 bg-slate-50 rounded-lg">
-                          <p className="font-medium">{intervention.name}</p>
+                          <p className="font-medium">{intervention.intervention_name}</p>
                           <p className="text-sm text-slate-500">Started: {intervention.start_date ? formatWeekOf(intervention.start_date) : 'Unknown'}</p>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <input
@@ -4597,7 +4597,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                         </p>
                         {(preReferralForm.prior_interventions || []).map((intervention, index) => (
                           <div key={index} className="p-4 border rounded-lg bg-slate-50">
-                            <p className="font-medium text-slate-800 mb-3">{intervention.name}</p>
+                            <p className="font-medium text-slate-800 mb-3">{intervention.intervention_name}</p>
                             <div className="grid grid-cols-3 gap-3">
                               <div>
                                 <label className="block text-xs text-slate-500 mb-1">Duration</label>
@@ -6517,7 +6517,7 @@ const ParentPortalView = () => {
                     className="w-full p-4 text-left flex items-center justify-between"
                   >
                     <div>
-                      <h4 className="font-medium text-slate-800">{intervention.name}</h4>
+                      <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
                       <p className="text-sm text-slate-500">
                         Started {new Date(intervention.start_date).toLocaleDateString()}
                         {intervention.log_frequency && (
@@ -6534,7 +6534,7 @@ const ParentPortalView = () => {
 {expandedIntervention === intervention.id && (
   <div className="px-4 pb-4 border-t">
     {/* Intervention name */}
-    <h4 className="font-semibold text-slate-800 mt-3 mb-2">{intervention.name}</h4>
+    <h4 className="font-semibold text-slate-800 mt-3 mb-2">{intervention.intervention_name}</h4>
     
     {/* Goal if exists */}
     {intervention.goal_description && (
