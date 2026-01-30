@@ -1005,7 +1005,7 @@ const removeInterventionAssignment = async (assignmentId) => {
         },
         body: JSON.stringify({
           student_intervention_id: selectedInterventionForProgress.id,
-          student_id: selectedStudent.id,
+          student_id: selectedInterventionForProgress.student_id || selectedStudent?.id,
           week_of: progressFormData.week_of,
           status: progressFormData.status,
           rating: progressFormData.rating || null,
@@ -1024,12 +1024,16 @@ const removeInterventionAssignment = async (assignmentId) => {
           response: '',
           notes: ''
         });
-        fetchWeeklyProgress(selectedStudent.id);
+        const studentId = selectedInterventionForProgress.student_id || selectedStudent?.id;
+        if (studentId) fetchWeeklyProgress(studentId);
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || 'Failed to save progress log. Please try again.');
       }
     } catch (err) {
       console.error('Error submitting weekly progress:', err);
+      alert('Error saving progress log. Please try again.');
     }
-  };
 
   // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
@@ -2577,7 +2581,7 @@ const filterByDateRange = (items, dateField) => {
                   <div className="flex gap-2 mt-3">
                     <button
                       onClick={() => {
-                        setSelectedInterventionForProgress(intervention);
+                        setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
                         setProgressFormData({
                           week_of: new Date().toISOString().split('T')[0],
                           status: '',
