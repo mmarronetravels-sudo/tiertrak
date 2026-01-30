@@ -96,6 +96,10 @@ export default function App() {
   const [filterTier, setFilterTier] = useState('all');
   const [filterArea, setFilterArea] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
+  const [studentDocuments, setStudentDocuments] = useState([]);
+const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+const [documentUploadLoading, setDocumentUploadLoading] = useState(false);
+const [documentCategories] = useState(['504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 'Parent Communication', 'Medical Record', 'Other']);
   const [showAddIntervention, setShowAddIntervention] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddLog, setShowAddLog] = useState(false);
@@ -331,7 +335,8 @@ const fetchAllParentLinks = async () => {
 
   // Fetch students
   const fetchStudents = async (tenantId, includeArchived = false) => {
-    try {
+  if (!user) return;
+  try {
       const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
         headers: {
           'x-user-id': user.id.toString(),
@@ -3067,7 +3072,7 @@ const filterByDateRange = (items, dateField) => {
             </div>
           )}
         </div>
-         
+
         {/* MTSS Meeting Form Modal */}
       {showMTSSMeetingForm && selectedStudent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
