@@ -56,7 +56,7 @@ router.get('/student/:studentId', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         sd.*,
-        u.first_name || ' ' || u.last_name as uploaded_by_name,
+        u.full_name as uploaded_by_name,
         u.role as uploaded_by_role,
         CASE 
           WHEN sd.expiration_date IS NOT NULL AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days' 
@@ -209,7 +209,7 @@ router.get('/expiring/:tenantId', async (req, res) => {
         sd.*,
         s.first_name || ' ' || s.last_name as student_name,
         s.grade,
-        u.first_name || ' ' || u.last_name as uploaded_by_name
+        u.full_name as uploaded_by_name
       FROM student_documents sd
       JOIN students s ON sd.student_id = s.id
       LEFT JOIN users u ON sd.uploaded_by = u.id
