@@ -7098,10 +7098,13 @@ if (isParent) {
           const parentLogs = interventionLogs.filter(log => log.logged_by_role === 'parent');
           
           // Create chart data showing ALL individual log entries
-          const chartData = interventionLogs.map(log => ({
+          // Each entry gets staffRating OR parentRating based on who logged it
+          const chartData = interventionLogs.map((log, index) => ({
+            index: index,
             week: new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
             weekOf: log.week_of,
-            rating: log.rating,
+            staffRating: log.logged_by_role !== 'parent' ? log.rating : null,
+            parentRating: log.logged_by_role === 'parent' ? log.rating : null,
             isParent: log.logged_by_role === 'parent',
             status: log.status,
             response: log.response,
@@ -7109,10 +7112,6 @@ if (isParent) {
             loggerName: log.logged_by_name,
             loggerRole: log.logged_by_role
           }));
-          
-          // Separate data for the two lines
-          const staffChartData = chartData.filter(d => !d.isParent);
-          const parentChartData = chartData.filter(d => d.isParent);
 
           const goalRating = selectedInterventionForChart.goal_target_rating;
           const hasStaffData = staffLogs.length > 0;
@@ -7180,12 +7179,12 @@ if (isParent) {
                     {hasStaffData && (
                       <Line 
                         type="monotone" 
-                        data={staffChartData}
-                        dataKey="rating" 
+                        dataKey="staffRating" 
                         stroke="#3b82f6" 
                         strokeWidth={3}
                         dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#1d4ed8' }}
+                        connectNulls={true}
                         name="Staff"
                       />
                     )}
@@ -7193,12 +7192,12 @@ if (isParent) {
                     {hasParentData && (
                       <Line 
                         type="monotone" 
-                        data={parentChartData}
-                        dataKey="rating" 
+                        dataKey="parentRating" 
                         stroke="#10b981" 
                         strokeWidth={3}
                         dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#059669' }}
+                        connectNulls={true}
                         name="Parent"
                       />
                     )}
