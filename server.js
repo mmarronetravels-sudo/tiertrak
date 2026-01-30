@@ -290,20 +290,18 @@ const createTables = async () => {
     `);
     console.log('Intervention plan columns ready');
 
-    // Migration 011: Update weekly_progress response options
-    await pool.query(`
-      ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS weekly_progress_response_check;
-    `);
-    await pool.query(`
-      ALTER TABLE weekly_progress ADD CONSTRAINT weekly_progress_response_check 
-        CHECK (response IN ('Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted'));
-    `);
-    console.log('weekly_progress response constraint updated');
-
-  } catch (error) {
-    console.error('Error creating tables:', error);
-  }
-};
+   // Migration 011: Update weekly_progress response options
+    try {
+      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS weekly_progress_response_check`);
+      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS check_response`);
+      await pool.query(`
+        ALTER TABLE weekly_progress ADD CONSTRAINT weekly_progress_response_check 
+          CHECK (response IS NULL OR response IN ('Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted', 'Positive', 'Neutral'))
+      `);
+      console.log('weekly_progress response constraint updated');
+    } catch (err) {
+      console.log('Response constraint update skipped or failed:', err.message);
+    }
 
   } catch (error) {
     console.error('Error creating tables:', error);
