@@ -6818,7 +6818,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
     }
   };
 
-  // Fetch documents for selected child
+  // Fetch documents for selected child (filtered for parent view)
 const fetchChildDocuments = async (studentId) => {
   try {
     const res = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
@@ -6826,7 +6826,10 @@ const fetchChildDocuments = async (studentId) => {
     });
     if (res.ok) {
       const data = await res.json();
-      setChildDocuments(data);
+      // Parents can only see these categories
+      const allowedCategories = ['504 Plan', 'IEP', 'Medical Record', 'Parent Communication'];
+      const filteredDocs = data.filter(doc => allowedCategories.includes(doc.document_category));
+      setChildDocuments(filteredDocs);
     }
   } catch (error) {
     console.error('Error fetching child documents:', error);
