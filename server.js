@@ -35,6 +35,7 @@ const interventionAssignmentsRoutes = require('./routes/interventionAssignments'
 const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
+const studentDocumentsRoutes = require('./routes/studentDocuments');
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
@@ -43,6 +44,7 @@ adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
 parentLinksRoutes.initializePool(pool);// Auto-create tables if they don't exist
+studentDocumentsRoutes.initializePool(pool);
 const createTables = async () => {
   try {
     // Migration 007: Pre-Referral Forms
@@ -365,6 +367,7 @@ app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
 app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
 app.use('/api/parent-links', parentLinksRoutes);
+app.use('/api/student-documents', studentDocumentsRoutes);
 
 // Test route
 app.get('/', (req, res) => {
