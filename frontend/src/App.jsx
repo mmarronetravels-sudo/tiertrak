@@ -7200,7 +7200,7 @@ if (isParent) {
                         strokeWidth={3}
                         dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#1d4ed8' }}
-                        connectNulls={false}
+                        connectNulls={true}
                         name="Staff"
                       />
                     )}
@@ -7213,7 +7213,7 @@ if (isParent) {
                         strokeWidth={3}
                         dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#059669' }}
-                        connectNulls={false}
+                        connectNulls={true}
                         name="Parent"
                       />
                     )}
