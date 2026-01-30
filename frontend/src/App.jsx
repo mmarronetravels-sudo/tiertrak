@@ -6364,8 +6364,9 @@ const ParentPortalView = () => {
       const res = await fetch(`${API_URL}/weekly-progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+       body: JSON.stringify({
           student_intervention_id: selectedInterventionForParentProgress.id,
+          student_id: selectedInterventionForParentProgress.student_id || selectedChild?.id,
           ...parentProgressData,
           logged_by: user.id
         })
@@ -6565,7 +6566,7 @@ const ParentPortalView = () => {
                       {/* Log Progress Button */}
                       <button
                         onClick={() => {
-                          setSelectedInterventionForParentProgress(intervention);
+                          setSelectedInterventionForParentProgress({...intervention, student_id: selectedChild?.id});
                           setShowParentProgressForm(true);
                         }}
                         className="mt-4 w-full py-3 px-4 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 active:bg-emerald-800 transition-colors flex items-center justify-center gap-2"
