@@ -6716,6 +6716,11 @@ const ParentPortalView = () => {
   const [selectedInterventionForParentProgress, setSelectedInterventionForParentProgress] = useState(null);
   const [parentLoading, setParentLoading] = useState(true);
   const [childProgressLogs, setChildProgressLogs] = useState([]);
+  // Document upload state for parents
+const [childDocuments, setChildDocuments] = useState([]);
+const [showParentDocumentUpload, setShowParentDocumentUpload] = useState(false);
+const [parentDocumentLoading, setParentDocumentLoading] = useState(false);
+const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Other'];
 
   // Fetch parent's linked students and their interventions
   useEffect(() => {
@@ -6754,6 +6759,8 @@ const ParentPortalView = () => {
               const progressData = await progressRes.json();
               setChildProgressLogs(progressData);
             }
+            // Fetch documents for auto-selected child
+           fetchChildDocuments(studentsWithInterventions[0].id);
           }
         }
       } catch (error) {
@@ -6810,6 +6817,70 @@ const ParentPortalView = () => {
       alert('Error logging progress. Please try again.');
     }
   };
+
+  // Fetch documents for selected child
+const fetchChildDocuments = async (studentId) => {
+  try {
+    const res = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setChildDocuments(data);
+    }
+  } catch (error) {
+    console.error('Error fetching child documents:', error);
+  }
+};
+
+// Handle parent document upload
+const handleParentDocumentUpload = async (e) => {
+  e.preventDefault();
+  setParentDocumentLoading(true);
+  
+  const formData = new FormData(e.target);
+  formData.append('student_id', selectedChild.id);
+  formData.append('tenant_id', user.tenant_id);
+  formData.append('uploaded_by', user.id);
+  
+  try {
+    const res = await fetch(`${API_URL}/student-documents/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    
+    if (res.ok) {
+      alert('Document uploaded successfully!');
+      setShowParentDocumentUpload(false);
+      e.target.reset();
+      fetchChildDocuments(selectedChild.id);
+    } else {
+      const error = await res.json();
+      alert(`Upload failed: ${error.message || 'Please try again.'}`);
+    }
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    alert('Upload failed. Please try again.');
+  }
+  setParentDocumentLoading(false);
+};
+
+// Handle document download
+const handleDocumentDownload = async (docId, fileName) => {
+  try {
+    const res = await fetch(`${API_URL}/student-documents/download/${docId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      window.open(data.downloadUrl, '_blank');
+    }
+  } catch (error) {
+    console.error('Error downloading document:', error);
+    alert('Download failed. Please try again.');
+  }
+};
 
   if (parentLoading) {
     return (
@@ -6872,6 +6943,8 @@ const ParentPortalView = () => {
                     const progressData = await progressRes.json();
                     setChildProgressLogs(progressData);
                   }
+                  // Fetch documents for this child
+                 fetchChildDocuments(child.id);
                 }}
                 className="w-full bg-white rounded-xl shadow-sm border p-4 text-left hover:border-emerald-300 hover:shadow-md transition-all"
               >
@@ -7047,6 +7120,113 @@ const ParentPortalView = () => {
         )}
       </div>
 
+      {/* Documents Section */}
+      <div className="space-y-3 mt-6">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-slate-700">Documents</h3>
+          <button
+            onClick={() => setShowParentDocumentUpload(!showParentDocumentUpload)}
+            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 transition-colors"
+          >
+            <Upload size={16} />
+            Upload
+          </button>
+        </div>
+
+        {/* Upload Form */}
+        {showParentDocumentUpload && (
+          <div className="bg-emerald-50 rounded-xl border border-emerald-200 p-4">
+            <h4 className="font-medium text-slate-800 mb-3">Upload Document</h4>
+            <form onSubmit={handleParentDocumentUpload}>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">File *</label>
+                  <input
+                    type="file"
+                    name="file"
+                    required
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">PDF, DOC, DOCX, PNG, JPG (max 25MB)</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+                  <select
+                    name="document_category"
+                    required
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                  >
+                    <option value="">Select category...</option>
+                    {parentDocumentCategories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                  <input
+                    type="text"
+                    name="description"
+                    placeholder="Optional description..."
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowParentDocumentUpload(false)}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={parentDocumentLoading}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {parentDocumentLoading ? 'Uploading...' : 'Upload'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Documents List */}
+        {childDocuments.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border p-6 text-center">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+            <p className="text-slate-500">No documents uploaded yet</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {childDocuments.map(doc => (
+              <div key={doc.id} className="bg-white rounded-xl shadow-sm border p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FileText className="w-8 h-8 text-emerald-600" />
+                    <div>
+                      <p className="font-medium text-slate-800 text-sm">{doc.file_name}</p>
+                      <p className="text-xs text-slate-500">
+                        {doc.document_category} • {new Date(doc.uploaded_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDocumentDownload(doc.id, doc.file_name)}
+                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                  >
+                    <Download size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+     
       {/* Progress Logging Modal */}
       {showParentProgressForm && selectedInterventionForParentProgress && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
