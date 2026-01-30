@@ -1034,6 +1034,7 @@ const removeInterventionAssignment = async (assignmentId) => {
       console.error('Error submitting weekly progress:', err);
       alert('Error saving progress log. Please try again.');
     }
+  };
 
   // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
