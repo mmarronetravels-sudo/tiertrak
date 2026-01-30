@@ -2662,8 +2662,12 @@ const filterByDateRange = (items, dateField) => {
                           </div>
                         )}
                         {log.notes && <p className="text-slate-600 mt-1">{log.notes}</p>}
-                      </div>
-                    ))}
+                      <p className={`text-xs mt-1 ${log.logged_by_role === 'parent' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        Logged by: {log.logged_by_name || 'Unknown'}
+                        {log.logged_by_role === 'parent' && ' (Parent)'}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               ))}
               {(!selectedStudent.interventions || selectedStudent.interventions.length === 0) && (
@@ -6314,6 +6318,7 @@ const ParentPortalView = () => {
   });
   const [selectedInterventionForParentProgress, setSelectedInterventionForParentProgress] = useState(null);
   const [parentLoading, setParentLoading] = useState(true);
+  const [childProgressLogs, setChildProgressLogs] = useState([]);
 
   // Fetch parent's linked students and their interventions
   useEffect(() => {
@@ -6341,11 +6346,17 @@ const ParentPortalView = () => {
   })
 );
           
-          setParentStudents(studentsWithInterventions);
+         setParentStudents(studentsWithInterventions);
           
           // Auto-select first child if only one
           if (studentsWithInterventions.length === 1) {
             setSelectedChild(studentsWithInterventions[0]);
+            // Fetch progress logs for auto-selected child
+            const progressRes = await fetch(`${API_URL}/weekly-progress/student/${studentsWithInterventions[0].id}`);
+            if (progressRes.ok) {
+              const progressData = await progressRes.json();
+              setChildProgressLogs(progressData);
+            }
           }
         }
       } catch (error) {
@@ -6388,6 +6399,12 @@ const ParentPortalView = () => {
         if (intRes.ok) {
           const interventions = await intRes.json();
           setSelectedChild({ ...selectedChild, interventions });
+        }
+        // Refresh progress logs
+        const progressRes = await fetch(`${API_URL}/weekly-progress/student/${selectedChild.id}`);
+        if (progressRes.ok) {
+          const progressData = await progressRes.json();
+          setChildProgressLogs(progressData);
         }
         alert('Progress logged successfully!');
       }
@@ -6451,7 +6468,14 @@ const ParentPortalView = () => {
             {parentStudents.map(child => (
               <button
                 key={child.id}
-                onClick={() => setSelectedChild(child)}
+                onClick={async () => {
+                  setSelectedChild(child);
+                  const progressRes = await fetch(`${API_URL}/weekly-progress/student/${child.id}`);
+                  if (progressRes.ok) {
+                    const progressData = await progressRes.json();
+                    setChildProgressLogs(progressData);
+                  }
+                }}
                 className="w-full bg-white rounded-xl shadow-sm border p-4 text-left hover:border-emerald-300 hover:shadow-md transition-all"
               >
                 <div className="flex items-center gap-4">
@@ -6576,6 +6600,47 @@ const ParentPortalView = () => {
                         <Plus className="w-5 h-5" />
                         Log Progress
                       </button>
+
+                      {/* Progress History */}
+                      {childProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 0 && (
+                        <div className="mt-4 pt-4 border-t">
+                          <h5 className="text-sm font-medium text-slate-700 mb-2">Progress History</h5>
+                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                            {childProgressLogs
+                              .filter(log => log.student_intervention_id === intervention.id)
+                              .slice(0, 10)
+                              .map(log => (
+                                <div key={log.id} className="p-3 bg-slate-50 rounded-lg text-sm">
+                                  <div className="flex justify-between items-start mb-1">
+                                    <span className="text-slate-600">{new Date(log.week_of + 'T00:00:00').toLocaleDateString()}</span>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                      log.status === 'Implemented as Planned' ? 'bg-emerald-100 text-emerald-700' :
+                                      log.status === 'Partially Implemented' ? 'bg-amber-100 text-amber-700' :
+                                      log.status === 'Student Absent' ? 'bg-slate-100 text-slate-600' :
+                                      'bg-rose-100 text-rose-700'
+                                    }`}>
+                                      {log.status}
+                                    </span>
+                                  </div>
+                                  {log.rating && (
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-slate-500">Rating:</span>
+                                      <span className={`font-medium ${
+                                        log.rating >= 4 ? 'text-emerald-600' :
+                                        log.rating >= 3 ? 'text-amber-600' : 'text-rose-600'
+                                      }`}>{log.rating}/5</span>
+                                    </div>
+                                  )}
+                                  {log.notes && <p className="text-slate-600 text-xs mt-1">{log.notes}</p>}
+                                  <p className="text-xs text-slate-400 mt-1">
+                                    Logged by: {log.logged_by_name || 'Unknown'} 
+                                    {log.logged_by_role === 'parent' && ' (Parent)'}
+                                  </p>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
