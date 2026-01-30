@@ -7088,18 +7088,41 @@ if (isParent) {
 
       <div className="p-6">
         {(() => {
-          const chartData = weeklyProgressLogs
+          // Filter logs for this intervention
+          const interventionLogs = weeklyProgressLogs
             .filter(log => log.student_intervention_id === selectedInterventionForChart.id && log.rating)
-            .sort((a, b) => new Date(a.week_of) - new Date(b.week_of))
-            .map(log => ({
-              week: new Date(log.week_of + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-              rating: log.rating,
-              status: log.status,
-              response: log.response,
-              notes: log.notes
-            }));
+            .sort((a, b) => new Date(a.week_of) - new Date(b.week_of));
+          
+          // Separate logs by who logged them (staff vs parent)
+          const staffLogs = interventionLogs.filter(log => log.logged_by_role !== 'parent');
+          const parentLogs = interventionLogs.filter(log => log.logged_by_role === 'parent');
+          
+          // Get all unique weeks from both sets
+          const allWeeks = [...new Set(interventionLogs.map(log => log.week_of))].sort((a, b) => new Date(a) - new Date(b));
+          
+          // Create combined chart data with both staff and parent ratings
+          const chartData = allWeeks.map(weekOf => {
+            const staffLog = staffLogs.find(log => log.week_of === weekOf);
+            const parentLog = parentLogs.find(log => log.week_of === weekOf);
+            return {
+              week: new Date(weekOf + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              weekOf: weekOf,
+              staffRating: staffLog?.rating || null,
+              parentRating: parentLog?.rating || null,
+              staffStatus: staffLog?.status,
+              parentStatus: parentLog?.status,
+              staffResponse: staffLog?.response,
+              parentResponse: parentLog?.response,
+              staffNotes: staffLog?.notes,
+              parentNotes: parentLog?.notes,
+              staffLogger: staffLog?.logged_by_name,
+              parentLogger: parentLog?.logged_by_name
+            };
+          });
 
           const goalRating = selectedInterventionForChart.goal_target_rating;
+          const hasStaffData = staffLogs.length > 0;
+          const hasParentData = parentLogs.length > 0;
 
           if (chartData.length === 0) {
             return (
@@ -7136,12 +7159,24 @@ if (isParent) {
                           return (
                             <div className="bg-white p-3 rounded-lg shadow-lg border border-slate-200">
                               <p className="font-medium text-slate-800">{data.week}</p>
-                              <p className={`text-sm ${getRatingColor(data.rating)}`}>
-                                Rating: {data.rating}/5 - {getRatingLabel(data.rating)}
-                              </p>
-                              <p className="text-xs text-slate-500 mt-1">{data.status}</p>
-                              {data.response && <p className="text-xs text-slate-500">Response: {data.response}</p>}
-                              {data.notes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.notes}</p>}
+                              {data.staffRating && (
+                                <div className="mt-1 border-l-2 border-blue-500 pl-2">
+                                  <p className={`text-sm ${getRatingColor(data.staffRating)}`}>
+                                    Staff: {data.staffRating}/5 - {getRatingLabel(data.staffRating)}
+                                  </p>
+                                  {data.staffLogger && <p className="text-xs text-slate-500">Logged by: {data.staffLogger}</p>}
+                                  {data.staffNotes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.staffNotes}</p>}
+                                </div>
+                              )}
+                              {data.parentRating && (
+                                <div className="mt-2 border-l-2 border-emerald-500 pl-2">
+                                  <p className={`text-sm ${getRatingColor(data.parentRating)}`}>
+                                    Parent: {data.parentRating}/5 - {getRatingLabel(data.parentRating)}
+                                  </p>
+                                  {data.parentLogger && <p className="text-xs text-slate-500">Logged by: {data.parentLogger}</p>}
+                                  {data.parentNotes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.parentNotes}</p>}
+                                </div>
+                              )}
                             </div>
                           );
                         }
@@ -7156,24 +7191,50 @@ if (isParent) {
                         label={{ value: `Goal: ${goalRating}`, position: 'right', fill: '#6366f1', fontSize: 12 }}
                       />
                     )}
-                    <Line 
-                      type="monotone" 
-                      dataKey="rating" 
-                      stroke="#3b82f6" 
-                      strokeWidth={3}
-                      dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
-                      activeDot={{ r: 8, fill: '#1d4ed8' }}
-                    />
+                    {/* Staff Rating Line (Blue) */}
+                    {hasStaffData && (
+                      <Line 
+                        type="monotone" 
+                        dataKey="staffRating" 
+                        stroke="#3b82f6" 
+                        strokeWidth={3}
+                        dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
+                        activeDot={{ r: 8, fill: '#1d4ed8' }}
+                        connectNulls={false}
+                        name="Staff"
+                      />
+                    )}
+                    {/* Parent Rating Line (Green) */}
+                    {hasParentData && (
+                      <Line 
+                        type="monotone" 
+                        dataKey="parentRating" 
+                        stroke="#10b981" 
+                        strokeWidth={3}
+                        dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
+                        activeDot={{ r: 8, fill: '#059669' }}
+                        connectNulls={false}
+                        name="Parent"
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
               {/* Legend */}
-              <div className="flex items-center justify-center gap-6 mt-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-1 bg-blue-500 rounded"></div>
-                  <span className="text-slate-600">Progress Rating</span>
-                </div>
+              <div className="flex items-center justify-center gap-6 mt-4 text-sm flex-wrap">
+                {hasStaffData && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-1 bg-blue-500 rounded"></div>
+                    <span className="text-slate-600">Staff Rating ({staffLogs.length})</span>
+                  </div>
+                )}
+                {hasParentData && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-1 bg-emerald-500 rounded"></div>
+                    <span className="text-slate-600">Parent Rating ({parentLogs.length})</span>
+                  </div>
+                )}
                 {goalRating && (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-0.5 border-t-2 border-dashed border-indigo-500"></div>
@@ -7195,24 +7256,61 @@ if (isParent) {
               </div>
 
               {/* Summary Stats */}
-              {chartData.length >= 2 && (
-                <div className="mt-4 grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-blue-50 rounded-lg text-center">
-                    <p className="text-2xl font-bold text-blue-700">
-                      {(chartData.reduce((sum, d) => sum + d.rating, 0) / chartData.length).toFixed(1)}
-                    </p>
-                    <p className="text-xs text-blue-600">Average Rating</p>
-                  </div>
-                  <div className="p-3 bg-emerald-50 rounded-lg text-center">
-                    <p className="text-2xl font-bold text-emerald-700">
-                      {Math.max(...chartData.map(d => d.rating))}
-                    </p>
-                    <p className="text-xs text-emerald-600">Highest Rating</p>
-                  </div>
-                  <div className="p-3 bg-indigo-50 rounded-lg text-center">
-                    <p className="text-2xl font-bold text-indigo-700">{chartData.length}</p>
-                    <p className="text-xs text-indigo-600">Weeks Logged</p>
-                  </div>
+              {interventionLogs.length >= 1 && (
+                <div className="mt-4">
+                  {/* Staff Stats */}
+                  {hasStaffData && (
+                    <div className="mb-3">
+                      <p className="text-xs font-medium text-blue-700 mb-2 flex items-center gap-1">
+                        <div className="w-3 h-1 bg-blue-500 rounded"></div> Staff Progress
+                      </p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="p-2 bg-blue-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-blue-700">
+                            {(staffLogs.reduce((sum, d) => sum + d.rating, 0) / staffLogs.length).toFixed(1)}
+                          </p>
+                          <p className="text-xs text-blue-600">Avg Rating</p>
+                        </div>
+                        <div className="p-2 bg-blue-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-blue-700">
+                            {Math.max(...staffLogs.map(d => d.rating))}
+                          </p>
+                          <p className="text-xs text-blue-600">Highest</p>
+                        </div>
+                        <div className="p-2 bg-blue-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-blue-700">{staffLogs.length}</p>
+                          <p className="text-xs text-blue-600">Entries</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Parent Stats */}
+                  {hasParentData && (
+                    <div>
+                      <p className="text-xs font-medium text-emerald-700 mb-2 flex items-center gap-1">
+                        <div className="w-3 h-1 bg-emerald-500 rounded"></div> Parent Progress
+                      </p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-emerald-700">
+                            {(parentLogs.reduce((sum, d) => sum + d.rating, 0) / parentLogs.length).toFixed(1)}
+                          </p>
+                          <p className="text-xs text-emerald-600">Avg Rating</p>
+                        </div>
+                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-emerald-700">
+                            {Math.max(...parentLogs.map(d => d.rating))}
+                          </p>
+                          <p className="text-xs text-emerald-600">Highest</p>
+                        </div>
+                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
+                          <p className="text-xl font-bold text-emerald-700">{parentLogs.length}</p>
+                          <p className="text-xs text-emerald-600">Entries</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
