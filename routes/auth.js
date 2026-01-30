@@ -106,13 +106,16 @@ router.post('/login', async (req, res) => {
         full_name: user.full_name,
         role: user.role,
         tenant_id: user.tenant_id,
-        tenant_name: user.tenant_name
+        tenant_name: user.tenant_name,
+        school_wide_access: user.school_wide_access
       }
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Get current user info (requires token)
 
 // Get current user info (requires token)
 router.get('/me', async (req, res) => {

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt'); 
 require('dotenv').config();
 
 const pool = new Pool({
@@ -9,7 +10,7 @@ const pool = new Pool({
 });
 
 // Valid roles
-const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist'];
+const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'];
 
 // Get all users for a tenant
 router.get('/tenant/:tenantId', async (req, res) => {
@@ -28,6 +29,56 @@ router.get('/tenant/:tenantId', async (req, res) => {
   }
 });
 
+// GET staff members for assignment dropdown (excludes parents)
+router.get('/staff', async (req, res) => {
+  try {
+    const { tenant_id } = req.query;
+    
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
+    const result = await pool.query(`
+      SELECT id, full_name as name, email, role
+      FROM users 
+      WHERE tenant_id = $1 AND role != 'parent'
+      ORDER BY full_name
+    `, [tenant_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET parents for a tenant (for parent assignment dropdown)
+router.get('/parents', async (req, res) => {
+  try {
+    const { tenant_id } = req.query;
+    
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
+    const result = await pool.query(`
+      SELECT u.id, u.full_name as name, u.email,
+        COALESCE(json_agg(
+          json_build_object('student_id', psl.student_id, 'relationship', psl.relationship)
+        ) FILTER (WHERE psl.id IS NOT NULL), '[]') as linked_students
+      FROM users u
+      LEFT JOIN parent_student_links psl ON u.id = psl.parent_user_id
+      WHERE u.tenant_id = $1 AND u.role = 'parent'
+      GROUP BY u.id
+      ORDER BY u.full_name
+    `, [tenant_id]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching parents:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 // Get users by role for a tenant
 router.get('/tenant/:tenantId/role/:role', async (req, res) => {
   try {
@@ -76,13 +127,15 @@ router.post('/', async (req, res) => {
       });
     }
     
-    // For now, store password as plain text (we'll add proper hashing in authentication step)
-    const result = await pool.query(
-      `INSERT INTO users (tenant_id, email, password_hash, full_name, role) 
-       VALUES ($1, $2, $3, $4, $5) 
-       RETURNING id, tenant_id, email, full_name, role, created_at`,
-      [tenant_id, email, password, full_name, role]
-    );
+    // Hash the password
+const hashedPassword = await bcrypt.hash(password, 10);
+
+const result = await pool.query(
+  `INSERT INTO users (tenant_id, email, password_hash, full_name, role) 
+   VALUES ($1, $2, $3, $4, $5) 
+   RETURNING id, tenant_id, email, full_name, role, created_at`,
+  [tenant_id, email, hashedPassword, full_name, role]
+);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     if (error.code === '23505') {

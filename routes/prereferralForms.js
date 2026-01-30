@@ -7,14 +7,6 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
-// Get SSL config for database queries
-const getSSLConfig = () => {
-  if (process.env.NODE_ENV === 'production') {
-    return { ssl: { rejectUnauthorized: false } };
-  }
-  return {};
-};
-
 // GET /options - Get dropdown options for form
 router.get('/options', async (req, res) => {
   try {

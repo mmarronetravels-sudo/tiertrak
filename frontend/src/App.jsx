@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
-  X, Plus, Search, ChevronLeft, ChevronRight, Eye, Trash2, Edit, Upload, Download, 
+  X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
   FileText, Printer, BarChart3, LogIn, LogOut, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
@@ -84,6 +84,10 @@ export default function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
+  const [staffList, setStaffList] = useState([]);
+  const [parentsList, setParentsList] = useState([]);
+  const [showAssignmentManager, setShowAssignmentManager] = useState(false);
+  const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [interventionTemplates, setInterventionTemplates] = useState([]);
   const [interventionLogs, setInterventionLogs] = useState([]);
@@ -126,6 +130,19 @@ const [reportData, setReportData] = useState(null);
   const [adminAreaFilter, setAdminAreaFilter] = useState('all');
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', area: '', tier: '' });
+
+  // Parent management state
+const [adminParentTab, setAdminParentTab] = useState('accounts');
+const [newParent, setNewParent] = useState({ 
+  full_name: '', 
+  email: '', 
+  password: 'parent123',
+  student_id: '', 
+  relationship: 'parent' 
+});
+const [parentAccounts, setParentAccounts] = useState([]);
+const [parentStudentLinks, setParentStudentLinks] = useState([]);
+const [parentLinksLoading, setParentLinksLoading] = useState(false);
   
   // Admin Template Editor state
   const [adminTemplates, setAdminTemplates] = useState([]);
@@ -221,6 +238,9 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
   // Check if user can archive (admins and counselors)
   const canArchive = user && ['district_admin', 'school_admin', 'counselor'].includes(user.role);
 
+  // Check if user is a parent
+const isParent = user && user.role === 'parent';
+  
   // Check if logged in on load
   useEffect(() => {
     if (token) {
@@ -278,10 +298,44 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     }
   };
 
+  // Fetch all parent accounts
+const fetchParentAccounts = async () => {
+  try {
+    const res = await fetch(`${API_URL}/users/parents?tenant_id=${user.tenant_id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setParentAccounts(data);
+    }
+  } catch (error) {
+    console.error('Error fetching parent accounts:', error);
+  }
+};
+
+// Fetch all parent-student links for admin
+const fetchAllParentLinks = async () => {
+  setParentLinksLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/parent-links/tenant/${user.tenant_id}`);
+    if (res.ok) {
+      const data = await res.json();
+      setParentStudentLinks(data);
+    }
+  } catch (error) {
+    console.error('Error fetching parent links:', error);
+  }
+  setParentLinksLoading(false);
+};
+
   // Fetch students
   const fetchStudents = async (tenantId, includeArchived = false) => {
     try {
-      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`);
+      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
+        headers: {
+          'x-user-id': user.id.toString(),
+          'x-user-role': user.role,
+          'x-school-wide-access': (user.school_wide_access || false).toString()
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setStudents(data);
@@ -291,7 +345,71 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
     }
   };
 
-  // Fetch archived students
+const fetchStaffList = async (tenantId) => {
+  try {
+    const response = await fetch(`${API_URL}/users/staff?tenant_id=${tenantId}`);
+    if (response.ok) {
+      const data = await response.json();
+      setStaffList(data);
+    }
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+  }
+};
+
+const fetchParentsList = async (tenantId) => {
+  try {
+    const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
+    if (response.ok) {
+      const data = await response.json();
+      setParentsList(data);
+    }
+  } catch (error) {
+    console.error('Error fetching parents:', error);
+  }
+};
+
+const fetchInterventionAssignments = async (studentInterventionId) => {
+  try {
+    const response = await fetch(`${API_URL}/intervention-assignments/${studentInterventionId}`);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+  }
+  return [];
+};
+
+const addInterventionAssignment = async (studentInterventionId, userId, assignmentType) => {
+  try {
+    const response = await fetch(`${API_URL}/intervention-assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        student_intervention_id: studentInterventionId,
+        user_id: userId,
+        assignment_type: assignmentType
+      })
+    });
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Error adding assignment:', error);
+  }
+  return null;
+};
+
+const removeInterventionAssignment = async (assignmentId) => {
+  try {
+    await fetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
+      method: 'DELETE'
+    });
+  } catch (error) {
+    console.error('Error removing assignment:', error);
+  }
+};  // Fetch archived students
   const fetchArchivedStudents = async (tenantId) => {
     try {
       const res = await fetch(`${API_URL}/students/tenant/${tenantId}?onlyArchived=true`);
@@ -1338,6 +1456,8 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
         fetchStudents(data.user.tenant_id);
         fetchInterventionTemplates(data.user.tenant_id);
         fetchLogOptions();
+        fetchStaffList(data.user.tenant_id);
+        fetchParentsList(data.user.tenant_id);
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -1381,6 +1501,98 @@ const [selectedInterventionForChart, setSelectedInterventionForChart] = useState
       console.error('Error adding intervention:', error);
     }
   };
+
+  // Create parent account
+const handleCreateParent = async (e) => {
+  e.preventDefault();
+  try {
+    // Create user account
+    const userRes = await fetch(`${API_URL}/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newParent.email,
+        password: newParent.password,
+        full_name: newParent.full_name,
+        role: 'parent',
+        tenant_id: user.tenant_id,
+        school_wide_access: false
+      })
+    });
+    
+    if (!userRes.ok) {
+      const err = await userRes.json();
+      alert(`Error creating parent: ${err.error}`);
+      return;
+    }
+    
+    const newUser = await userRes.json();
+    
+    // If student selected, create link
+    if (newParent.student_id) {
+      await fetch(`${API_URL}/parent-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          parent_user_id: newUser.id,
+          student_id: newParent.student_id,
+          relationship: newParent.relationship
+        })
+      });
+    }
+    
+    // Reset form and refresh
+    setNewParent({ 
+      full_name: '', 
+      email: '', 
+      password: 'parent123', 
+      student_id: '', 
+      relationship: 'parent' 
+    });
+    fetchParentAccounts();
+    fetchAllParentLinks();
+    alert(`Parent account created!\n\nEmail: ${newParent.email}\nPassword: ${newParent.password}`);
+  } catch (error) {
+    console.error('Error creating parent:', error);
+    alert('Error creating parent account');
+  }
+};
+
+// Link existing parent to student
+const handleLinkParent = async (parentId, studentId, relationship) => {
+  try {
+    const res = await fetch(`${API_URL}/parent-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parent_user_id: parentId,
+        student_id: studentId,
+        relationship
+      })
+    });
+    
+    if (res.ok) {
+      fetchAllParentLinks();
+    } else {
+      const err = await res.json();
+      alert(`Error: ${err.error}`);
+    }
+  } catch (error) {
+    console.error('Error linking parent:', error);
+  }
+};
+
+// Unlink parent from student
+const handleUnlinkParent = async (linkId) => {
+  if (!confirm('Remove this parent-student link?')) return;
+  
+  try {
+    await fetch(`${API_URL}/parent-links/${linkId}`, { method: 'DELETE' });
+    fetchAllParentLinks();
+  } catch (error) {
+    console.error('Error unlinking parent:', error);
+  }
+};
 
   // Add progress note
   const handleAddNote = async () => {
@@ -2405,6 +2617,16 @@ const filterByDateRange = (items, dateField) => {
                     >
                       <TrendingUp className="w-3 h-3" />
                       View Chart
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedInterventionForAssignment(intervention);
+                        setShowAssignmentManager(true);
+                      }}
+                      className="px-3 py-1.5 border border-emerald-300 text-emerald-700 text-sm rounded-lg hover:bg-emerald-50 flex items-center gap-1"
+                    >
+                      <Users className="w-3 h-3" />
+                      Assign
                     </button>
                   </div>
                   {/* Weekly Progress Logs Display */}
@@ -4854,6 +5076,165 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     );
   };
 
+  // Create Parent Form Component
+const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
+  const [formData, setFormData] = useState({
+    full_name: '',
+    email: '',
+    password: 'parent123',
+    student_id: '',
+    relationship: 'parent'
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      // Create user account
+      const userRes = await fetch(`${API_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          full_name: formData.full_name,
+          role: 'parent',
+          tenant_id: tenantId,
+          school_wide_access: false
+        })
+      });
+      
+      if (!userRes.ok) {
+        const err = await userRes.json();
+        alert(`Error creating parent: ${err.error}`);
+        setSubmitting(false);
+        return;
+      }
+      
+      const newUser = await userRes.json();
+      
+      // If student selected, create link
+      if (formData.student_id) {
+        await fetch(`${API_URL}/parent-links`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_user_id: newUser.id,
+            student_id: formData.student_id,
+            relationship: formData.relationship
+          })
+        });
+      }
+      
+      alert(`Parent account created!\n\nEmail: ${formData.email}\nPassword: ${formData.password}`);
+      
+      // Reset form
+      setFormData({
+        full_name: '',
+        email: '',
+        password: 'parent123',
+        student_id: '',
+        relationship: 'parent'
+      });
+      
+      // Notify parent component
+      if (onParentCreated) onParentCreated();
+      
+    } catch (error) {
+      console.error('Error creating parent:', error);
+      alert('Error creating parent account');
+    }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border p-6">
+      <h3 className="font-semibold text-lg mb-4">Create Parent Account</h3>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Parent Name</label>
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) => setFormData({...formData, full_name: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="John Smith"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="parent@email.com"
+              required
+            />
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Temporary Password</label>
+            <input
+              type="text"
+              value={formData.password}
+              onChange={(e) => setFormData({...formData, password: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              required
+            />
+            <p className="text-xs text-slate-500 mt-1">Share this with the parent to login</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Link to Student (optional)</label>
+            <select
+              value={formData.student_id}
+              onChange={(e) => setFormData({...formData, student_id: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">-- Select Student --</option>
+              {students.map(s => (
+                <option key={s.id} value={s.id}>{s.last_name}, {s.first_name} (Grade {s.grade})</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {formData.student_id && (
+          <div>
+            <label className="block text-sm font-medium mb-1">Relationship</label>
+            <select
+              value={formData.relationship}
+              onChange={(e) => setFormData({...formData, relationship: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="parent">Parent</option>
+              <option value="mother">Mother</option>
+              <option value="father">Father</option>
+              <option value="guardian">Guardian</option>
+              <option value="step-parent">Step-Parent</option>
+              <option value="grandparent">Grandparent</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {submitting ? 'Creating...' : 'Create Parent Account'}
+        </button>
+      </form>
+    </div>
+  );
+};
   // Admin View
   const AdminView = () => (
     <div className="space-y-6">
@@ -4867,29 +5248,42 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
       {/* Admin Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
         <button
-          onClick={() => setAdminTab('interventions')}
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'interventions' 
-              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <BookOpen size={16} />
-            Interventions
-          </div>
-        </button>
+  onClick={() => setAdminTab('interventions')}
+  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+    adminTab === 'interventions' 
+      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+      : 'text-slate-600 hover:bg-slate-100'
+  }`}
+>
+  <div className="flex items-center gap-2">
+    <BookOpen size={16} />
+    Interventions
+  </div>
+</button>
+<button
+  onClick={() => setAdminTab('students')}
+  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+    adminTab === 'students' 
+      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+      : 'text-slate-600 hover:bg-slate-100'
+  }`}
+>
+  <div className="flex items-center gap-2">
+    <Users size={16} />
+    Students
+  </div>
+</button>
         <button
-          onClick={() => setAdminTab('students')}
+          onClick={() => { setAdminTab('parents'); fetchParentAccounts(); fetchAllParentLinks(); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'students' 
+            adminTab === 'parents' 
               ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <div className="flex items-center gap-2">
             <Users size={16} />
-            Students
+            Parents
           </div>
         </button>
         <button
@@ -5335,6 +5729,122 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
         </div>
       )}
 
+      {/* Parents Tab */}
+      {adminTab === 'parents' && (
+  <div className="space-y-6">
+    {/* Sub-tabs */}
+    <div className="flex gap-2">
+      <button
+        onClick={() => setAdminParentTab('accounts')}
+        className={`px-4 py-2 rounded-lg text-sm font-medium ${
+          adminParentTab === 'accounts' 
+            ? 'bg-emerald-100 text-emerald-700' 
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+        }`}
+      >
+        Create Account
+      </button>
+      <button
+        onClick={() => setAdminParentTab('links')}
+        className={`px-4 py-2 rounded-lg text-sm font-medium ${
+          adminParentTab === 'links' 
+            ? 'bg-emerald-100 text-emerald-700' 
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+        }`}
+      >
+        Manage Links
+      </button>
+    </div>
+
+{/* Create Parent Account */}
+    {adminParentTab === 'accounts' && (
+      <CreateParentForm 
+        students={students} 
+        tenantId={user.tenant_id} 
+        onParentCreated={() => { fetchParentAccounts(); fetchAllParentLinks(); }} 
+      />
+    )}
+
+    {/* Manage Links */}
+    {adminParentTab === 'links' && (
+      <div className="space-y-6">
+        {/* Link a Parent */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h3 className="font-semibold text-lg mb-4">Link Parent to Student</h3>
+          <div className="grid grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium mb-1">Parent</label>
+              <select
+                id="linkParentSelect"
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">-- Select Parent --</option>
+                {parentAccounts.map(p => (
+                  <option key={p.id} value={p.id}>{p.full_name} ({p.email})</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Student</label>
+              <select
+                id="linkStudentSelect"
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">-- Select Student --</option>
+                {students.map(s => (
+                  <option key={s.id} value={s.id}>{s.last_name}, {s.first_name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const parentId = document.getElementById('linkParentSelect').value;
+                const studentId = document.getElementById('linkStudentSelect').value;
+                if (parentId && studentId) {
+                  handleLinkParent(parentId, studentId, 'parent');
+                }
+              }}
+              className="py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              Link
+            </button>
+          </div>
+        </div>
+
+        {/* Current Links */}
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h3 className="font-semibold text-lg mb-4">Current Parent-Student Links</h3>
+          {parentLinksLoading ? (
+            <p className="text-slate-500">Loading...</p>
+          ) : parentStudentLinks.length === 0 ? (
+            <p className="text-slate-500">No parent-student links yet</p>
+          ) : (
+            <div className="space-y-2">
+              {parentStudentLinks.map(link => (
+                <div key={link.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                  <div>
+                    <span className="font-medium">{link.parent_name}</span>
+                    <span className="text-slate-400 mx-2">→</span>
+                    <span>{link.student_name}</span>
+                    <span className="text-xs text-slate-500 ml-2">({link.relationship})</span>
+                  </div>
+                  <button
+                    onClick={() => handleUnlinkParent(link.id)}
+                    className="text-rose-500 hover:text-rose-700 text-sm"
+                  >
+                    Unlink
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
       {/* Archived Students Tab */}
       {adminTab === 'archived' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -5607,7 +6117,615 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     </div>
   );
 
+  // Assignment Manager Modal Component
+const AssignmentManager = () => {
+  const [assignments, setAssignments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedStaff, setSelectedStaff] = useState('');
+  const [selectedParent, setSelectedParent] = useState('');
+
+  useEffect(() => {
+    if (selectedInterventionForAssignment) {
+      loadAssignments();
+    }
+  }, [selectedInterventionForAssignment]);
+
+  const loadAssignments = async () => {
+    setLoading(true);
+    const data = await fetchInterventionAssignments(selectedInterventionForAssignment.id);
+    setAssignments(data);
+    setLoading(false);
+  };
+
+  const handleAddStaff = async () => {
+    if (!selectedStaff) return;
+    await addInterventionAssignment(selectedInterventionForAssignment.id, selectedStaff, 'staff');
+    setSelectedStaff('');
+    loadAssignments();
+  };
+
+  const handleAddParent = async () => {
+    if (!selectedParent) return;
+    await addInterventionAssignment(selectedInterventionForAssignment.id, selectedParent, 'parent');
+    setSelectedParent('');
+    loadAssignments();
+  };
+
+  const handleRemove = async (assignmentId) => {
+    await removeInterventionAssignment(assignmentId);
+    loadAssignments();
+  };
+
+  if (!selectedInterventionForAssignment) return null;
+
+  const staffAssignments = assignments.filter(a => a.assignment_type === 'staff');
+  const parentAssignments = assignments.filter(a => a.assignment_type === 'parent');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+        <div className="p-4 border-b flex justify-between items-center">
+          <div>
+            <h3 className="font-semibold text-lg">Manage Assignments</h3>
+            <p className="text-sm text-slate-500">{selectedInterventionForAssignment.intervention_name}</p>
+          </div>
+          <button onClick={() => setShowAssignmentManager(false)} className="text-slate-500 hover:text-slate-700">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {loading ? (
+            <p className="text-center text-slate-500">Loading...</p>
+          ) : (
+            <>
+              {/* Staff Assignments */}
+              <div>
+                <h4 className="font-medium text-slate-700 mb-2">👨‍🏫 Assigned Staff</h4>
+                {staffAssignments.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {staffAssignments.map(a => (
+                      <div key={a.id} className="flex justify-between items-center bg-blue-50 px-3 py-2 rounded-lg">
+                        <div>
+                          <span className="font-medium">{a.user_name}</span>
+                          <span className="text-xs text-slate-500 ml-2">({a.user_role})</span>
+                        </div>
+                        <button 
+                          onClick={() => handleRemove(a.id)}
+                          className="text-rose-500 hover:text-rose-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 mb-3">No staff assigned yet</p>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    value={selectedStaff}
+                    onChange={(e) => setSelectedStaff(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">-- Select Staff --</option>
+                    {staffList
+                      .filter(s => !staffAssignments.some(a => a.user_id === s.id))
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    onClick={handleAddStaff}
+                    disabled={!selectedStaff}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+
+              {/* Parent Assignments */}
+              <div>
+                <h4 className="font-medium text-slate-700 mb-2">👨‍👩‍👧 Assigned Parents</h4>
+                {parentAssignments.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {parentAssignments.map(a => (
+                      <div key={a.id} className="flex justify-between items-center bg-emerald-50 px-3 py-2 rounded-lg">
+                        <div>
+                          <span className="font-medium">{a.user_name}</span>
+                          <span className="text-xs text-slate-500 ml-2">{a.user_email}</span>
+                        </div>
+                        <button 
+                          onClick={() => handleRemove(a.id)}
+                          className="text-rose-500 hover:text-rose-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500 mb-3">No parents assigned yet</p>
+                )}
+                <div className="flex gap-2">
+                  <select
+                    value={selectedParent}
+                    onChange={(e) => setSelectedParent(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">-- Select Parent --</option>
+                    {parentsList
+                      .filter(p => !parentAssignments.some(a => a.user_id === p.id))
+                      .map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+                      ))
+                    }
+                  </select>
+                  <button
+                    onClick={handleAddParent}
+                    disabled={!selectedParent}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="p-4 border-t bg-slate-50">
+          <button
+            onClick={() => setShowAssignmentManager(false)}
+            className="w-full py-2 px-4 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+  // ============================================
+// PARENT PORTAL VIEW COMPONENT
+// Add this BEFORE the main return statement in App.jsx
+// (around line 4800-ish, where other view components are)
+// ============================================
+
+// Parent Portal View Component
+const ParentPortalView = () => {
+  const [parentStudents, setParentStudents] = useState([]);
+  const [selectedChild, setSelectedChild] = useState(null);
+  const [expandedIntervention, setExpandedIntervention] = useState(null);
+  const [showParentProgressForm, setShowParentProgressForm] = useState(false);
+  const [parentProgressData, setParentProgressData] = useState({
+    week_of: getCurrentWeekStart(),
+    status: '',
+    rating: '',
+    response: '',
+    notes: ''
+  });
+  const [selectedInterventionForParentProgress, setSelectedInterventionForParentProgress] = useState(null);
+  const [parentLoading, setParentLoading] = useState(true);
+
+  // Fetch parent's linked students and their interventions
+  useEffect(() => {
+    const fetchParentStudents = async () => {
+      if (!user?.id) return;
+      
+      try {
+        // Get students linked to this parent
+        const res = await fetch(`${API_URL}/parent-links/parent/${user.id}`);
+        if (res.ok) {
+          const students = await res.json();
+          
+          // Fetch interventions for each student
+          const studentsWithInterventions = await Promise.all(
+            students.map(async (student) => {
+              const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`);
+              if (intRes.ok) {
+                student.interventions = await intRes.json();
+              } else {
+                student.interventions = [];
+              }
+              return student;
+            })
+          );
+          
+          setParentStudents(studentsWithInterventions);
+          
+          // Auto-select first child if only one
+          if (studentsWithInterventions.length === 1) {
+            setSelectedChild(studentsWithInterventions[0]);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching parent students:', error);
+      }
+      setParentLoading(false);
+    };
+    
+    fetchParentStudents();
+  }, [user?.id]);
+
+  // Handle progress log submission
+  const handleParentProgressSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedInterventionForParentProgress) return;
+
+    try {
+      const res = await fetch(`${API_URL}/weekly-progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_intervention_id: selectedInterventionForParentProgress.id,
+          ...parentProgressData,
+          logged_by: user.id
+        })
+      });
+
+      if (res.ok) {
+        setShowParentProgressForm(false);
+        setParentProgressData({
+          week_of: getCurrentWeekStart(),
+          status: '',
+          rating: '',
+          response: '',
+          notes: ''
+        });
+        // Refresh the child's interventions
+        const intRes = await fetch(`${API_URL}/interventions/student/${selectedChild.id}`);
+        if (intRes.ok) {
+          const interventions = await intRes.json();
+          setSelectedChild({ ...selectedChild, interventions });
+        }
+        alert('Progress logged successfully!');
+      }
+    } catch (error) {
+      console.error('Error logging progress:', error);
+      alert('Error logging progress. Please try again.');
+    }
+  };
+
+  if (parentLoading) {
     return (
+      <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white">
+      {/* Header */}
+      <div className="bg-emerald-600 text-white px-4 py-6 shadow-lg">
+        <div className="max-w-lg mx-auto">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-bold">Welcome, {user?.full_name?.split(' ')[0] || 'Parent'}!</h1>
+              <p className="text-emerald-100 text-sm">TierTrak Parent Portal</p>
+            </div>
+            <button
+              onClick={() => {
+                localStorage.removeItem('token');
+                setToken(null);
+                setUser(null);
+              }}
+              className="p-2 hover:bg-emerald-700 rounded-lg transition-colors"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-lg mx-auto px-4 py-6">
+        {/* No children linked */}
+        {parentStudents.length === 0 && (
+          <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
+            <User className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <h2 className="text-lg font-semibold text-slate-700 mb-2">No Students Linked</h2>
+            <p className="text-slate-500">
+              Your account hasn't been linked to any students yet. Please contact your school's MTSS coordinator.
+            </p>
+          </div>
+        )}
+
+        {/* Child selector (if multiple children) */}
+        {parentStudents.length > 1 && !selectedChild && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-700">Select a Child</h2>
+            {parentStudents.map(child => (
+              <button
+                key={child.id}
+                onClick={() => setSelectedChild(child)}
+                className="w-full bg-white rounded-xl shadow-sm border p-4 text-left hover:border-emerald-300 hover:shadow-md transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <User className="w-6 h-6 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-800">{child.first_name} {child.last_name}</h3>
+                    <p className="text-sm text-slate-500">Grade {child.grade} • {child.interventions?.length || 0} interventions</p>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Selected child view */}
+        {selectedChild && (
+          <div className="space-y-4">
+            {/* Back button (if multiple children) */}
+            {parentStudents.length > 1 && (
+              <button
+                onClick={() => setSelectedChild(null)}
+                className="flex items-center gap-2 text-emerald-600 font-medium"
+              >
+                <ChevronLeft className="w-5 h-5" />
+                Back to Children
+              </button>
+            )}
+
+            {/* Child header card */}
+            <div className="bg-white rounded-xl shadow-sm border p-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
+                  <User className="w-7 h-7 text-emerald-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">{selectedChild.first_name} {selectedChild.last_name}</h2>
+                  <p className="text-slate-500">Grade {selectedChild.grade}</p>
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${tierColors[selectedChild.tier]?.badge || 'bg-slate-100 text-slate-700'}`}>
+                  Tier {selectedChild.tier}
+                </span>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${areaColors[selectedChild.area]?.badge || 'bg-slate-100 text-slate-700'}`}>
+                  {selectedChild.area}
+                </span>
+              </div>
+            </div>
+
+            {/* Interventions */}
+            <div className="space-y-3">
+              <h3 className="font-semibold text-slate-700">Active Interventions</h3>
+              
+              {(!selectedChild.interventions || selectedChild.interventions.length === 0) && (
+                <div className="bg-white rounded-xl shadow-sm border p-6 text-center">
+                  <ClipboardList className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-slate-500">No active interventions</p>
+                </div>
+              )}
+
+              {selectedChild.interventions?.map(intervention => (
+                <div key={intervention.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                  {/* Intervention header - clickable to expand */}
+                  <button
+                    onClick={() => setExpandedIntervention(
+                      expandedIntervention === intervention.id ? null : intervention.id
+                    )}
+                    className="w-full p-4 text-left flex items-center justify-between"
+                  >
+                    <div>
+                      <h4 className="font-medium text-slate-800">{intervention.name}</h4>
+                      <p className="text-sm text-slate-500">
+                        Started {new Date(intervention.start_date).toLocaleDateString()}
+                        {intervention.log_frequency && (
+                          <span className="ml-2">• 📅 {intervention.log_frequency}</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className={`transform transition-transform ${expandedIntervention === intervention.id ? 'rotate-180' : ''}`}>
+                      <ChevronDown className="w-5 h-5 text-slate-400" />
+                    </div>
+                  </button>
+
+                  {/* Expanded content */}
+{expandedIntervention === intervention.id && (
+  <div className="px-4 pb-4 border-t">
+    {/* Intervention name */}
+    <h4 className="font-semibold text-slate-800 mt-3 mb-2">{intervention.name}</h4>
+    
+    {/* Goal if exists */}
+    {intervention.goal_description && (
+                        <div className="mt-3 p-3 bg-amber-50 rounded-lg">
+                          <p className="text-xs font-medium text-amber-700 mb-1">🎯 Goal</p>
+                          <p className="text-sm text-amber-800">{intervention.goal_description}</p>
+                          {intervention.goal_target_date && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              Target: {new Date(intervention.goal_target_date).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      {intervention.notes && (
+                        <div className="mt-3 p-3 bg-slate-50 rounded-lg">
+                          <p className="text-xs font-medium text-slate-500 mb-1">Notes</p>
+                          <p className="text-sm text-slate-700">{intervention.notes}</p>
+                        </div>
+                      )}
+
+                      {/* Log Progress Button */}
+                      <button
+                        onClick={() => {
+                          setSelectedInterventionForParentProgress(intervention);
+                          setShowParentProgressForm(true);
+                        }}
+                        className="mt-4 w-full py-3 px-4 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 active:bg-emerald-800 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-5 h-5" />
+                        Log Progress
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Progress Logging Modal */}
+      {showParentProgressForm && selectedInterventionForParentProgress && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b px-4 py-3 flex justify-between items-center">
+              <h3 className="font-semibold text-lg">Log Progress</h3>
+              <button
+                onClick={() => setShowParentProgressForm(false)}
+                className="p-2 hover:bg-slate-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleParentProgressSubmit} className="p-4 space-y-4">
+              {/* Intervention name */}
+              <div className="p-3 bg-emerald-50 rounded-lg">
+                <p className="text-sm font-medium text-emerald-800">
+                  {selectedInterventionForParentProgress.name}
+                </p>
+              </div>
+
+              {/* Week of */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Week Of</label>
+                <input
+                  type="date"
+                  value={parentProgressData.week_of}
+                  onChange={(e) => setParentProgressData({...parentProgressData, week_of: e.target.value})}
+                  className="w-full px-4 py-3 border rounded-xl text-base"
+                  required
+                />
+              </div>
+
+              {/* Implementation Status */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Did you implement this intervention?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Implemented as Planned', 'Partially Implemented', 'Not Implemented', 'Student Absent'].map(status => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setParentProgressData({...parentProgressData, status})}
+                      className={`p-3 rounded-xl border text-sm font-medium transition-all ${
+                        parentProgressData.status === status
+                          ? 'bg-emerald-100 border-emerald-500 text-emerald-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Progress Rating */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  How did your child do?
+                </label>
+                <div className="flex gap-2 justify-between">
+                  {[1, 2, 3, 4, 5].map(rating => (
+                    <button
+                      key={rating}
+                      type="button"
+                      onClick={() => setParentProgressData({...parentProgressData, rating})}
+                      className={`flex-1 py-4 rounded-xl border text-lg font-bold transition-all ${
+                        parentProgressData.rating === rating
+                          ? rating >= 4 ? 'bg-emerald-100 border-emerald-500 text-emerald-700'
+                          : rating >= 3 ? 'bg-amber-100 border-amber-500 text-amber-700'
+                          : 'bg-rose-100 border-rose-500 text-rose-700'
+                          : 'bg-white border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {rating}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex justify-between mt-1 px-1">
+                  <span className="text-xs text-slate-400">No Progress</span>
+                  <span className="text-xs text-slate-400">Great Progress</span>
+                </div>
+              </div>
+
+              {/* Student Response */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  How did your child respond?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {['Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted'].map(response => (
+                    <button
+                      key={response}
+                      type="button"
+                      onClick={() => setParentProgressData({...parentProgressData, response})}
+                      className={`p-3 rounded-xl border text-sm font-medium transition-all ${
+                        parentProgressData.response === response
+                          ? 'bg-blue-100 border-blue-500 text-blue-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      {response}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={parentProgressData.notes}
+                  onChange={(e) => setParentProgressData({...parentProgressData, notes: e.target.value})}
+                  className="w-full px-4 py-3 border rounded-xl text-base"
+                  rows={3}
+                  placeholder="Any observations or comments..."
+                />
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={!parentProgressData.status || !parentProgressData.rating}
+                className="w-full py-4 bg-emerald-600 text-white rounded-xl font-semibold text-lg hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                Save Progress
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// END OF PARENT PORTAL VIEW COMPONENT
+// ============================================
+  
+  // Show parent portal for parent users
+if (isParent) {
+  return <ParentPortalView />;
+}
+  return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50">
       {/* Navigation */}
       <nav className="bg-white border-b border-slate-200 sticky top-0 z-50">
@@ -6040,7 +7158,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     </div>
   </div>
 )}
-
+{showAssignmentManager && <AssignmentManager />}
+      
       {/* Template Editor Modal */}
       {showTemplateEditor && selectedAdminTemplate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

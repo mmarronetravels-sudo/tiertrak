@@ -30,15 +30,19 @@ const interventionLogsRoutes = require('./routes/interventionLogs');
 const prereferralFormsRoutes = require('./routes/prereferralForms');
 const csvImportRoutes = require('./routes/csvImport');
 const weeklyProgressRoutes = require('./routes/weeklyProgress');
-const prereferralFormsRoutes = require('./routes/prereferralForms');
 const mtssMeetingsRoutes = require('./routes/mtssMeetings');
+const interventionAssignmentsRoutes = require('./routes/interventionAssignments');
+const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
+interventionAssignmentsRoutes.initializePool(pool);
+parentLinksRoutes.initializePool(pool);
 adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
-// Auto-create tables if they don't exist
+interventionAssignmentsRoutes.initializePool(pool);
+parentLinksRoutes.initializePool(pool);// Auto-create tables if they don't exist
 const createTables = async () => {
   try {
     // Migration 007: Pre-Referral Forms
@@ -158,6 +162,79 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
+    // Migration 010: Role-Based Student Access
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS school_wide_access BOOLEAN DEFAULT FALSE
+    `);
+    
+    await pool.query(`
+      UPDATE users SET school_wide_access = TRUE 
+      WHERE role IN ('counselor', 'school_admin') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS parent_student_links (
+        id SERIAL PRIMARY KEY,
+        parent_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        relationship VARCHAR(50) DEFAULT 'parent',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(parent_user_id, student_id)
+      )
+    `);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS intervention_assignments (
+        id SERIAL PRIMARY KEY,
+        student_intervention_id INTEGER REFERENCES student_interventions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        assignment_type VARCHAR(20) CHECK (assignment_type IN ('staff', 'parent')),
+        can_log_progress BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(student_intervention_id, user_id)
+      )
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_parent_student_links_parent ON parent_student_links(parent_user_id);
+      CREATE INDEX IF NOT EXISTS idx_parent_student_links_student ON parent_student_links(student_id);
+      CREATE INDEX IF NOT EXISTS idx_intervention_assignments_intervention ON intervention_assignments(student_intervention_id);
+      CREATE INDEX IF NOT EXISTS idx_intervention_assignments_user ON intervention_assignments(user_id)
+    `);
+    console.log('Role-based access tables ready');
+
+    // Update role constraint to include new roles
+    await pool.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check 
+        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'));
+    `);
+    console.log('Role constraint updated');
+
+    // Seed test users (only if they don't exist)
+    // Update role constraint to include new roles
+    await pool.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check 
+        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'));
+    `);
+    console.log('Role constraint updated');
+
+    // Seed test users (only if they don't exist)
+    // Seed test users (only if they don't exist)
+    const testUsers = await pool.query(`SELECT id FROM users WHERE email = 'teacher1@lincoln.edu'`);
+    if (testUsers.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO users (tenant_id, email, password_hash, full_name, role, school_wide_access) VALUES
+        (3, 'teacher1@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Maria Santos', 'teacher', FALSE),
+        (3, 'teacher2@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'James Wilson', 'teacher', FALSE),
+        (3, 'specialist@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Dr. Angela Thompson', 'student_support_specialist', TRUE),
+        (3, 'parent1@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Sarah Johnson', 'parent', FALSE),
+        (3, 'parent2@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Michael Davis', 'parent', FALSE)
+      `);
+      console.log('Test users seeded');
+    }
     // Migration 009: Intervention Plan Templates
     await pool.query(`
       DO $$ 
@@ -233,8 +310,12 @@ app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
+app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
+app.use('/api/parent-links', parentLinksRoutes);
 app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
+app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
+app.use('/api/parent-links', parentLinksRoutes);
 
 // Test route
 app.get('/', (req, res) => {
