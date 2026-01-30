@@ -7097,28 +7097,22 @@ if (isParent) {
           const staffLogs = interventionLogs.filter(log => log.logged_by_role !== 'parent');
           const parentLogs = interventionLogs.filter(log => log.logged_by_role === 'parent');
           
-          // Get all unique weeks from both sets
-          const allWeeks = [...new Set(interventionLogs.map(log => log.week_of))].sort((a, b) => new Date(a) - new Date(b));
+          // Create chart data showing ALL individual log entries
+          const chartData = interventionLogs.map(log => ({
+            week: new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            weekOf: log.week_of,
+            rating: log.rating,
+            isParent: log.logged_by_role === 'parent',
+            status: log.status,
+            response: log.response,
+            notes: log.notes,
+            loggerName: log.logged_by_name,
+            loggerRole: log.logged_by_role
+          }));
           
-          // Create combined chart data with both staff and parent ratings
-          const chartData = allWeeks.map(weekOf => {
-            const staffLog = staffLogs.find(log => log.week_of === weekOf);
-            const parentLog = parentLogs.find(log => log.week_of === weekOf);
-            return {
-              week: new Date(weekOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-              weekOf: weekOf,
-              staffRating: staffLog?.rating || null,
-              parentRating: parentLog?.rating || null,
-              staffStatus: staffLog?.status,
-              parentStatus: parentLog?.status,
-              staffResponse: staffLog?.response,
-              parentResponse: parentLog?.response,
-              staffNotes: staffLog?.notes,
-              parentNotes: parentLog?.notes,
-              staffLogger: staffLog?.logged_by_name,
-              parentLogger: parentLog?.logged_by_name
-            };
-          });
+          // Separate data for the two lines
+          const staffChartData = chartData.filter(d => !d.isParent);
+          const parentChartData = chartData.filter(d => d.isParent);
 
           const goalRating = selectedInterventionForChart.goal_target_rating;
           const hasStaffData = staffLogs.length > 0;
@@ -7156,27 +7150,18 @@ if (isParent) {
                       content={({ active, payload }) => {
                         if (active && payload && payload.length) {
                           const data = payload[0].payload;
+                          const borderColor = data.isParent ? 'border-emerald-500' : 'border-blue-500';
+                          const label = data.isParent ? 'Parent' : 'Staff';
                           return (
                             <div className="bg-white p-3 rounded-lg shadow-lg border border-slate-200">
                               <p className="font-medium text-slate-800">{data.week}</p>
-                              {data.staffRating && (
-                                <div className="mt-1 border-l-2 border-blue-500 pl-2">
-                                  <p className={`text-sm ${getRatingColor(data.staffRating)}`}>
-                                    Staff: {data.staffRating}/5 - {getRatingLabel(data.staffRating)}
-                                  </p>
-                                  {data.staffLogger && <p className="text-xs text-slate-500">Logged by: {data.staffLogger}</p>}
-                                  {data.staffNotes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.staffNotes}</p>}
-                                </div>
-                              )}
-                              {data.parentRating && (
-                                <div className="mt-2 border-l-2 border-emerald-500 pl-2">
-                                  <p className={`text-sm ${getRatingColor(data.parentRating)}`}>
-                                    Parent: {data.parentRating}/5 - {getRatingLabel(data.parentRating)}
-                                  </p>
-                                  {data.parentLogger && <p className="text-xs text-slate-500">Logged by: {data.parentLogger}</p>}
-                                  {data.parentNotes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.parentNotes}</p>}
-                                </div>
-                              )}
+                              <div className={`mt-1 border-l-2 ${borderColor} pl-2`}>
+                                <p className={`text-sm ${getRatingColor(data.rating)}`}>
+                                  {label}: {data.rating}/5 - {getRatingLabel(data.rating)}
+                                </p>
+                                {data.loggerName && <p className="text-xs text-slate-500">Logged by: {data.loggerName}</p>}
+                                {data.notes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.notes}</p>}
+                              </div>
                             </div>
                           );
                         }
@@ -7191,16 +7176,16 @@ if (isParent) {
                         label={{ value: `Goal: ${goalRating}`, position: 'right', fill: '#6366f1', fontSize: 12 }}
                       />
                     )}
-                    {/* Staff Rating Line (Blue) */}
+                   {/* Staff Rating Line (Blue) */}
                     {hasStaffData && (
                       <Line 
                         type="monotone" 
-                        dataKey="staffRating" 
+                        data={staffChartData}
+                        dataKey="rating" 
                         stroke="#3b82f6" 
                         strokeWidth={3}
                         dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#1d4ed8' }}
-                        connectNulls={true}
                         name="Staff"
                       />
                     )}
@@ -7208,12 +7193,12 @@ if (isParent) {
                     {hasParentData && (
                       <Line 
                         type="monotone" 
-                        dataKey="parentRating" 
+                        data={parentChartData}
+                        dataKey="rating" 
                         stroke="#10b981" 
                         strokeWidth={3}
                         dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
                         activeDot={{ r: 8, fill: '#059669' }}
-                        connectNulls={true}
                         name="Parent"
                       />
                     )}
