@@ -7105,7 +7105,7 @@ if (isParent) {
             const staffLog = staffLogs.find(log => log.week_of === weekOf);
             const parentLog = parentLogs.find(log => log.week_of === weekOf);
             return {
-              week: new Date(weekOf + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              week: new Date(weekOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
               weekOf: weekOf,
               staffRating: staffLog?.rating || null,
               parentRating: parentLog?.rating || null,
