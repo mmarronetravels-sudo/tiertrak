@@ -214,6 +214,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
 
   // Progress tracking state
   const [weeklyProgressLogs, setWeeklyProgressLogs] = useState([]);
+  const [expandedProgressLogs, setExpandedProgressLogs] = useState({});
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [selectedInterventionForProgress, setSelectedInterventionForProgress] = useState(null);
   const [progressFormData, setProgressFormData] = useState({
@@ -2637,7 +2638,7 @@ const filterByDateRange = (items, dateField) => {
                   {/* Weekly Progress Logs Display */}
                   {weeklyProgressLogs
                     .filter(log => log.student_intervention_id === intervention.id)
-                    .slice(0, 3)
+                    .slice(0, expandedProgressLogs[intervention.id] ? undefined : 3)
                     .map(log => (
                       <div key={log.id} className="text-sm bg-white p-2 rounded border border-slate-100 mt-2">
                         <div className="flex justify-between items-center">
@@ -2668,6 +2669,21 @@ const filterByDateRange = (items, dateField) => {
                       </p>
                     </div>
                   ))}
+                  {weeklyProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 3 && (
+                    <button
+                      onClick={() => setExpandedProgressLogs(prev => ({
+                        ...prev,
+                        [intervention.id]: !prev[intervention.id]
+                      }))}
+                      className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 flex items-center gap-1"
+                    >
+                      {expandedProgressLogs[intervention.id] ? (
+                        <>Show Less</>
+                      ) : (
+                        <>Show More ({weeklyProgressLogs.filter(log => log.student_intervention_id === intervention.id).length - 3} more)</>
+                      )}
+                    </button>
+                  )}
                 </div>
               ))}
               {(!selectedStudent.interventions || selectedStudent.interventions.length === 0) && (
