@@ -64,7 +64,8 @@ router.get('/student/:studentId', async (req, res) => {
         si.goal_description,
         si.goal_target_date,
         si.goal_target_rating,
-        u.full_name as logged_by_name
+        u.full_name as logged_by_name,
+        u.role as logged_by_role
       FROM weekly_progress wp
       JOIN student_interventions si ON wp.student_intervention_id = si.id
       LEFT JOIN users u ON wp.logged_by = u.id
@@ -108,7 +109,8 @@ router.get('/intervention/:interventionId', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         wp.*,
-        u.full_name as logged_by_name
+        u.full_name as logged_by_name,
+        u.role as logged_by_role
       FROM weekly_progress wp
       LEFT JOIN users u ON wp.logged_by = u.id
       WHERE wp.student_intervention_id = $1
