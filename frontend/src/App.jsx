@@ -6328,16 +6328,18 @@ const ParentPortalView = () => {
           
           // Fetch interventions for each student
           const studentsWithInterventions = await Promise.all(
-            students.map(async (student) => {
-              const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`);
-              if (intRes.ok) {
-                student.interventions = await intRes.json();
-              } else {
-                student.interventions = [];
-              }
-              return student;
-            })
-          );
+  students.map(async (student) => {
+    const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`);
+    if (intRes.ok) {
+      const interventions = await intRes.json();
+      // Add student_id to each intervention so it's available when logging progress
+      student.interventions = interventions.map(int => ({...int, student_id: student.id}));
+    } else {
+      student.interventions = [];
+    }
+    return student;
+  })
+);
           
           setParentStudents(studentsWithInterventions);
           
