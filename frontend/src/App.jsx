@@ -6879,7 +6879,7 @@ if (isParent) {
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Student Response</label>
                       <div className="flex gap-2">
-                        {['Positive', 'Neutral', 'Resistant'].map(response => (
+                        {['Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted'].map(response => (
                           <button
                             key={response}
                             type="button"
