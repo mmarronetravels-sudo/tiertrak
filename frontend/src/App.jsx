@@ -6612,7 +6612,7 @@ const ParentPortalView = () => {
                               .map(log => (
                                 <div key={log.id} className="p-3 bg-slate-50 rounded-lg text-sm">
                                   <div className="flex justify-between items-start mb-1">
-                                    <span className="text-slate-600">{new Date(log.week_of + 'T00:00:00').toLocaleDateString()}</span>
+                                    <span className="text-slate-600">{log.week_of ? new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date'}</span>
                                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                       log.status === 'Implemented as Planned' ? 'bg-emerald-100 text-emerald-700' :
                                       log.status === 'Partially Implemented' ? 'bg-amber-100 text-amber-700' :
