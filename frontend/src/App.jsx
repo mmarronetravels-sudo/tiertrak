@@ -156,6 +156,8 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
   });
   const [editorPreviewMode, setEditorPreviewMode] = useState(false);
   const [duplicateSourceId, setDuplicateSourceId] = useState('');
+
+  
   
   // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -1111,6 +1113,7 @@ const removeInterventionAssignment = async (assignmentId) => {
         setSelectedStudent(data);
         fetchInterventionLogs(studentId);
         fetchWeeklyProgress(studentId);
+        fetchStudentDocuments(studentId);
         // Fetch MTSS meetings for Tier 2+ students
         if (data.tier > 1) {
           fetchMTSSMeetings(studentId);
@@ -1121,6 +1124,100 @@ const removeInterventionAssignment = async (assignmentId) => {
       console.error('Error fetching student details:', error);
     }
   };
+
+  // Handle document upload
+const handleDocumentUpload = async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  
+  formData.append('student_id', selectedStudent.id);
+  formData.append('tenant_id', user.tenant_id);
+  formData.append('uploaded_by', user.id);
+  
+  setDocumentUploadLoading(true);
+  
+  try {
+    const response = await fetch(`${API_URL}/student-documents/upload`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    
+    if (response.ok) {
+      await fetchStudentDocuments(selectedStudent.id);
+      setShowDocumentUpload(false);
+      form.reset();
+    } else {
+      const error = await response.json();
+      alert('Upload failed: ' + error.error);
+    }
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    alert('Upload failed: ' + error.message);
+  } finally {
+    setDocumentUploadLoading(false);
+  }
+};
+
+// Handle document download
+const handleDocumentDownload = async (documentId) => {
+  try {
+    const response = await fetch(`${API_URL}/student-documents/download/${documentId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      window.open(data.url, '_blank');
+    } else {
+      alert('Download failed');
+    }
+  } catch (error) {
+    console.error('Error downloading document:', error);
+    alert('Download failed: ' + error.message);
+  }
+};
+
+// Handle document delete
+const handleDocumentDelete = async (documentId) => {
+  if (!confirm('Are you sure you want to delete this document? This cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`${API_URL}/student-documents/${documentId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+      await fetchStudentDocuments(selectedStudent.id);
+    } else {
+      alert('Delete failed');
+    }
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    alert('Delete failed: ' + error.message);
+  }
+};
+
+  // Fetch student documents
+const fetchStudentDocuments = async (studentId) => {
+  try {
+    const response = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setStudentDocuments(data);
+    }
+  } catch (error) {
+    console.error('Error fetching student documents:', error);
+  }
+};
+
+
 
   // Fetch intervention logs for a student
   const fetchInterventionLogs = async (studentId) => {
@@ -2804,7 +2901,173 @@ const filterByDateRange = (items, dateField) => {
             </div>
           </div>
         </div>
-          
+
+         {/* Student Documents Section */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <FileText size={20} className="text-slate-400" />
+              <h2 className="text-lg font-semibold text-slate-800">Documents</h2>
+              <span className="text-sm text-slate-500">({studentDocuments.length})</span>
+            </div>
+            {!selectedStudent.archived && (
+              <button
+                onClick={() => setShowDocumentUpload(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+              >
+                <Upload size={16} />
+                Upload Document
+              </button>
+            )}
+          </div>
+
+          {/* Upload Form */}
+          {showDocumentUpload && (
+            <div className="mb-6 p-4 bg-indigo-50 rounded-xl border border-indigo-200">
+              <h3 className="font-medium text-slate-800 mb-3">Upload New Document</h3>
+              <form onSubmit={handleDocumentUpload}>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">File *</label>
+                    <input
+                      type="file"
+                      name="file"
+                      required
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">PDF, DOC, DOCX, PNG, JPG (max 25MB)</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+                    <select
+                      name="document_category"
+                      required
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    >
+                      <option value="">Select category...</option>
+                      {documentCategories.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                    <input
+                      type="text"
+                      name="description"
+                      placeholder="Optional description..."
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Expiration Date</label>
+                    <input
+                      type="date"
+                      name="expiration_date"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Auto-set for 504/IEP (1 year)</p>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDocumentUpload(false)}
+                    className="px-4 py-2 text-slate-600 hover:text-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={documentUploadLoading}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {documentUploadLoading ? 'Uploading...' : 'Upload'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Documents List */}
+          {studentDocuments.length === 0 ? (
+            <p className="text-sm text-slate-500 italic text-center py-8">No documents uploaded yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {studentDocuments.map(doc => (
+                <div 
+                  key={doc.id} 
+                  className={`p-4 rounded-xl border ${
+                    doc.expiring_soon 
+                      ? 'bg-amber-50 border-amber-300' 
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <FileText size={20} className={doc.expiring_soon ? 'text-amber-600' : 'text-slate-400'} />
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        doc.document_category === '504 Plan' ? 'bg-blue-100 text-blue-700' :
+                        doc.document_category === 'IEP' ? 'bg-purple-100 text-purple-700' :
+                        doc.document_category === 'Evaluation Report' ? 'bg-emerald-100 text-emerald-700' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {doc.document_category}
+                      </span>
+                    </div>
+                    {doc.expiring_soon && (
+                      <span className="text-xs px-2 py-0.5 bg-amber-200 text-amber-800 rounded-full flex items-center gap-1">
+                        <AlertCircle size={12} />
+                        Expiring Soon
+                      </span>
+                    )}
+                  </div>
+                  
+                  <h4 className="font-medium text-slate-800 text-sm truncate mb-1" title={doc.file_name}>
+                    {doc.file_name}
+                  </h4>
+                  
+                  {doc.description && (
+                    <p className="text-xs text-slate-500 mb-2 line-clamp-2">{doc.description}</p>
+                  )}
+                  
+                  <div className="text-xs text-slate-400 mb-3">
+                    <p>Uploaded by {doc.uploaded_by_name || 'Unknown'}</p>
+                    <p>{new Date(doc.uploaded_at).toLocaleDateString()}</p>
+                    {doc.expiration_date && (
+                      <p className={doc.expiring_soon ? 'text-amber-600 font-medium' : ''}>
+                        Expires: {new Date(doc.expiration_date).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleDocumentDownload(doc.id)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-xs hover:bg-indigo-200 transition-colors"
+                    >
+                      <Download size={14} />
+                      Download
+                    </button>
+                    {(user?.role === 'district_admin' || user?.role === 'school_admin') && (
+                      <button
+                        onClick={() => handleDocumentDelete(doc.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-xs hover:bg-rose-200 transition-colors"
+                      >
+                        <Trash2 size={14} />
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+         
         {/* MTSS Meeting Form Modal */}
       {showMTSSMeetingForm && selectedStudent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
