@@ -79,6 +79,21 @@ const archiveReasons = [
   'Other'
 ];
 
+// Get days until expiration and urgency level
+const getExpirationUrgency = (expirationDate) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expDate = new Date(expirationDate + 'T00:00:00');
+  const diffTime = expDate - today;
+  const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  let urgency = 'notice'; // 22-30 days
+  if (daysRemaining <= 7) urgency = 'critical';
+  else if (daysRemaining <= 21) urgency = 'warning';
+  
+  return { daysRemaining, urgency };
+};
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -97,9 +112,9 @@ export default function App() {
   const [filterArea, setFilterArea] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
   const [studentDocuments, setStudentDocuments] = useState([]);
-const [showDocumentUpload, setShowDocumentUpload] = useState(false);
-const [documentUploadLoading, setDocumentUploadLoading] = useState(false);
-const [documentCategories] = useState(['504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 'Parent Communication', 'Medical Record', 'Other']);
+  const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+  const [documentUploadLoading, setDocumentUploadLoading] = useState(false);
+  const [documentCategories] = useState(['504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 'Parent Communication', 'Medical Record', 'Other']);
   const [showAddIntervention, setShowAddIntervention] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddLog, setShowAddLog] = useState(false);
@@ -108,7 +123,9 @@ const [documentCategories] = useState(['504 Plan', 'IEP', 'Evaluation Report', '
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
   const progressNotesRef = useRef(null);
-  const interventionNotesRef = useRef(null);  
+  const interventionNotesRef = useRef(null); 
+  const [expiringDocuments, setExpiringDocuments] = useState([]);
+  const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false); 
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
@@ -232,7 +249,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   });
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showProgressChart, setShowProgressChart] = useState(false);
-const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
+  const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
   const [selectedInterventionForGoal, setSelectedInterventionForGoal] = useState(null);
   const [goalFormData, setGoalFormData] = useState({
     goal_description: '',
@@ -291,6 +308,13 @@ const isParent = user && user.role === 'parent';
     }
     setLoading(false);
   };
+
+  // Fetch expiring documents when dashboard loads
+useEffect(() => {
+  if (view === 'dashboard' && user?.tenant_id) {
+    fetchExpiringDocuments();
+  }
+}, [view, user?.tenant_id]);
 
   // Fetch log options
   const fetchLogOptions = async () => {
@@ -442,6 +466,22 @@ const removeInterventionAssignment = async (assignmentId) => {
       console.error('Error fetching pre-referral options:', error);
     }
   };
+
+// Fetch expiring documents
+const fetchExpiringDocuments = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const res = await fetch(`${API_URL}/student-documents/expiring/${user.tenant_id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setExpiringDocuments(data);
+    }
+  } catch (error) {
+    console.error('Error fetching expiring documents:', error);
+  }
+};
 
   // Fetch existing pre-referral form for a student
   const fetchPreReferralForm = async (studentId) => {
@@ -2206,7 +2246,80 @@ const filterByDateRange = (items, dateField) => {
         </div>
       )}
 
-      {/* Tier Overview Cards */}
+      {/* Expiring Documents Alert */}
+{expiringDocuments.length > 0 && (
+  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+    <div 
+      className="flex items-center justify-between cursor-pointer"
+      onClick={() => setShowExpiringDocsDetail(!showExpiringDocsDetail)}
+    >
+      <div className="flex items-center gap-2">
+        <FileText className="w-5 h-5 text-orange-600" />
+        <h3 className="font-semibold text-orange-800">
+          Documents Expiring Soon ({expiringDocuments.length})
+        </h3>
+      </div>
+      <ChevronRight 
+        className={`w-5 h-5 text-orange-400 transition-transform ${showExpiringDocsDetail ? 'rotate-90' : ''}`} 
+      />
+    </div>
+    
+    {showExpiringDocsDetail && (
+      <>
+        <p className="text-sm text-orange-700 mt-3 mb-3">
+          The following documents need renewal attention:
+        </p>
+        <div className="space-y-2 max-h-64 overflow-y-auto">
+          {expiringDocuments.map((doc) => {
+            const { daysRemaining, urgency } = getExpirationUrgency(doc.expiration_date);
+            return (
+              <div 
+                key={doc.id}
+                onClick={() => {
+                  setSelectedStudent({ id: doc.student_id });
+                  setView('student');
+                }}
+                className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-100 cursor-pointer hover:bg-orange-50 transition-colors"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-800">
+                      {doc.first_name} {doc.last_name}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      doc.document_category === '504 Plan' ? 'bg-blue-100 text-blue-700' :
+                      doc.document_category === 'IEP' ? 'bg-purple-100 text-purple-700' :
+                      doc.document_category === 'Medical Record' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-700'
+                    }`}>
+                      {doc.document_category}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-500 mt-1">{doc.file_name}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-right">
+                    <p className={`text-sm font-medium ${
+                      urgency === 'critical' ? 'text-red-600' :
+                      urgency === 'warning' ? 'text-orange-600' :
+                      'text-yellow-600'
+                    }`}>
+                      {daysRemaining <= 0 ? 'Expired!' : `${daysRemaining} days`}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {new Date(doc.expiration_date + 'T00:00:00').toLocaleDateString()}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    )}
+  </div>
+)}
 
       {/* Tier Overview Cards */}
       <div className="grid grid-cols-3 gap-6">
