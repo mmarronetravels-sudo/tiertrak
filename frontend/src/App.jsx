@@ -158,6 +158,12 @@ const [reportData, setReportData] = useState(null);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [passwordResetMode, setPasswordResetMode] = useState(null); // 'set' or 'reset'
+const [passwordToken, setPasswordToken] = useState(null);
+const [tokenEmail, setTokenEmail] = useState('');
+const [newPassword, setNewPassword] = useState('');
+const [confirmPassword, setConfirmPassword] = useState('');
+const [passwordMessage, setPasswordMessage] = useState('');
   const [loading, setLoading] = useState(true);
   
   // Admin state
@@ -1623,6 +1629,42 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
+// Handle Set/Reset Password Submit
+const handleSetPassword = async (e) => {
+  e.preventDefault();
+  setPasswordMessage('');
+  
+  if (newPassword.length < 8) {
+    setPasswordMessage('Password must be at least 8 characters.');
+    return;
+  }
+  
+  if (newPassword !== confirmPassword) {
+    setPasswordMessage('Passwords do not match.');
+    return;
+  }
+  
+  try {
+    const res = await fetch(`${API_URL}/auth/set-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: passwordToken, password: newPassword })
+    });
+    const data = await res.json();
+    
+    if (res.ok) {
+      setPasswordMessage('Password set successfully! Redirecting to login...');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+    } else {
+      setPasswordMessage(data.error || 'Failed to set password. Please try again.');
+    }
+  } catch (err) {
+    setPasswordMessage('Connection error. Please try again.');
+  }
+};
+
 // Handle Forgot Password
 const handleForgotPassword = async (e) => {
   e.preventDefault();
@@ -1640,6 +1682,32 @@ const handleForgotPassword = async (e) => {
     setLoginError('Connection error. Please try again.');
   }
 };
+
+// Check URL for password reset/set tokens
+useEffect(() => {
+  const path = window.location.pathname;
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('token');
+  
+  if (token && (path === '/set-password' || path === '/reset-password')) {
+    setPasswordToken(token);
+    setPasswordResetMode(path === '/set-password' ? 'set' : 'reset');
+    
+    // Verify token is valid
+    fetch(`${API_URL}/auth/verify-token/${token}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.valid) {
+          setTokenEmail(data.email);
+        } else {
+          setPasswordMessage('This link is invalid or has expired. Please request a new one.');
+        }
+      })
+      .catch(() => {
+        setPasswordMessage('Error verifying link. Please try again.');
+      });
+  }
+}, []);
 
 // Initialize Google Sign-In
 useEffect(() => {
@@ -2194,6 +2262,94 @@ const filterByDateRange = (items, dateField) => {
     );
   }
 
+  // Password Set/Reset Screen
+if (passwordResetMode) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <BarChart3 size={28} className="text-white" />
+          </div>
+          <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+        </div>
+        
+        <h2 className="text-xl font-semibold text-center mb-2">
+          {passwordResetMode === 'set' ? 'Set Up Your Password' : 'Reset Your Password'}
+        </h2>
+        
+        {tokenEmail && (
+          <p className="text-center text-slate-500 mb-6">for {tokenEmail}</p>
+        )}
+        
+        {passwordMessage && (
+          <div className={`p-3 rounded-lg mb-4 text-sm ${
+            passwordMessage.includes('successfully') 
+              ? 'bg-emerald-50 text-emerald-700' 
+              : 'bg-red-50 text-red-600'
+          }`}>
+            {passwordMessage}
+          </div>
+        )}
+        
+        {!passwordMessage?.includes('successfully') && !passwordMessage?.includes('invalid') && !passwordMessage?.includes('expired') && (
+          <form onSubmit={handleSetPassword} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="At least 8 characters"
+                required
+                minLength={8}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Enter password again"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+            >
+              {passwordResetMode === 'set' ? 'Create Password' : 'Reset Password'}
+            </button>
+          </form>
+        )}
+        
+        {(passwordMessage?.includes('invalid') || passwordMessage?.includes('expired')) && (
+          <button
+            onClick={() => window.location.href = '/'}
+            className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+          >
+            Go to Login
+          </button>
+        )}
+        
+        {/* FERPA Badge */}
+        <div className="mt-6 flex justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-emerald-800">FERPA Compliant</div>
+              <div className="text-xs text-emerald-600">Student data encrypted & protected</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+  
   // Login Screen
 if (!user) {
   return (
