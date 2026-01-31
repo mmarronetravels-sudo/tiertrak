@@ -2191,11 +2191,7 @@ const filterByDateRange = (items, dateField) => {
             </button>
           </form>
           
-          {/* FERPA Badge */}
-            <div className="mt-6 flex justify-center">
-              <FERPABadge />
-            </div>
-            
+                     
             {/* FERPA Badge */}
           <div className="mt-6 flex justify-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
