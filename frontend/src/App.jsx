@@ -2649,7 +2649,7 @@ if (passwordResetMode) {
         </div>
       </div>
     );
-  } 
+  }
 
 // Login Screen
 if (!user) {
