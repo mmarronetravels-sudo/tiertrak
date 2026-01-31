@@ -290,7 +290,21 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   // Check if user is a parent
 const isParent = user && user.role === 'parent';
   
-  // Check if logged in on load
+// Check URL for special pages (password setup, reset)
+  useEffect(() => {
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    
+    if (path === '/set-password' && params.get('token')) {
+      setCurrentPage('set-password');
+      setLoading(false);
+    } else if (path === '/reset-password' && params.get('token')) {
+      setCurrentPage('reset-password');
+      setLoading(false);
+    }
+  }, []);
+
+// Check if logged in on load
   useEffect(() => {
     if (token) {
       fetchUserInfo();
@@ -2355,7 +2369,153 @@ if (passwordResetMode) {
   );
 }
   
-  // Login Screen
+ // Set Password Page (for new parent accounts and password resets)
+  if (currentPage === 'set-password' || currentPage === 'reset-password') {
+    const params = new URLSearchParams(window.location.search);
+    const setupToken = params.get('token');
+    
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordError, setPasswordError] = useState('');
+    const [passwordSuccess, setPasswordSuccess] = useState(false);
+    const [tokenValid, setTokenValid] = useState(null);
+    const [userEmail, setUserEmail] = useState('');
+    
+    useEffect(() => {
+      // Verify token on load
+      const verifyToken = async () => {
+        try {
+          const res = await fetch(`${API_URL}/auth/verify-token/${setupToken}`);
+          const data = await res.json();
+          if (data.valid) {
+            setTokenValid(true);
+            setUserEmail(data.email);
+          } else {
+            setTokenValid(false);
+          }
+        } catch (err) {
+          setTokenValid(false);
+        }
+      };
+      verifyToken();
+    }, [setupToken]);
+    
+    const handleSetPassword = async (e) => {
+      e.preventDefault();
+      setPasswordError('');
+      
+      if (newPassword.length < 8) {
+        setPasswordError('Password must be at least 8 characters');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setPasswordError('Passwords do not match');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API_URL}/auth/set-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: setupToken, password: newPassword })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setPasswordSuccess(true);
+        } else {
+          setPasswordError(data.error || 'Failed to set password');
+        }
+      } catch (err) {
+        setPasswordError('An error occurred. Please try again.');
+      }
+    };
+    
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <BarChart3 size={28} className="text-white" />
+            </div>
+            <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+          </div>
+          
+          {tokenValid === null && (
+            <div className="text-center text-slate-600">Verifying link...</div>
+          )}
+          
+          {tokenValid === false && (
+            <div className="text-center">
+              <div className="text-red-600 bg-red-50 p-4 rounded-lg mb-4">
+                This link is invalid or has expired. Please request a new password reset.
+              </div>
+              <a href="/" className="text-indigo-600 hover:underline">Return to login</a>
+            </div>
+          )}
+          
+          {tokenValid === true && !passwordSuccess && (
+            <>
+              <h2 className="text-xl font-semibold text-slate-800 text-center mb-2">
+                {currentPage === 'set-password' ? 'Set Up Your Password' : 'Reset Your Password'}
+              </h2>
+              <p className="text-slate-500 text-center mb-6">{userEmail}</p>
+              
+              <form onSubmit={handleSetPassword} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="At least 8 characters"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Confirm your password"
+                    required
+                  />
+                </div>
+                {passwordError && (
+                  <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{passwordError}</div>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+                >
+                  Set Password
+                </button>
+              </form>
+            </>
+          )}
+          
+          {passwordSuccess && (
+            <div className="text-center">
+              <div className="text-emerald-600 bg-emerald-50 p-4 rounded-lg mb-4">
+                <CheckCircle className="w-8 h-8 mx-auto mb-2" />
+                Your password has been set successfully!
+              </div>
+              <a 
+                href="/" 
+                className="inline-block w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors text-center"
+              >
+                Sign In
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  } 
+
+// Login Screen
 if (!user) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
@@ -6846,6 +7006,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
 const AssignmentManager = () => {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState('app');
   const [selectedStaff, setSelectedStaff] = useState('');
   const [selectedParent, setSelectedParent] = useState('');
 
