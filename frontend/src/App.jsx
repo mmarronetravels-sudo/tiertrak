@@ -136,7 +136,8 @@ export default function App() {
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
   const progressNotesRef = useRef(null);
-  const interventionNotesRef = useRef(null); 
+  const interventionNotesRef = useRef(null);
+  const googleButtonRef = useRef(null); 
   const noteTextareaRef = useRef(null);
 const progressNotesRef = useRef(null);
 const interventionNotesRef = useRef(null);
@@ -1735,11 +1736,19 @@ useEffect(() => {
 
 // Initialize Google Sign-In
 useEffect(() => {
-  if (window.google && !user) {
+  if (window.google && !user && googleButtonRef.current) {
     window.google.accounts.id.initialize({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       callback: handleGoogleSignIn
     });
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 352,
+      text: 'signin_with'
+    });
+  }
+}, [user]);
     
     // Render the button if the ref exists
     if (googleButtonRef.current) {
@@ -2578,11 +2587,11 @@ if (!user) {
           <>
             {/* Google Sign-In Button */}
             <div className="mb-6">
-              <<div 
-  id="googleSignInButton" 
-  ref={googleButtonRef}
-  className="w-full"
-></div>
+              <div 
+                id="googleSignInButton" 
+                ref={googleButtonRef}
+                className="w-full"
+              ></div>
             </div>
             
             <div className="relative mb-6">
