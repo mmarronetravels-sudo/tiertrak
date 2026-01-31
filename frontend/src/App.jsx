@@ -4,7 +4,7 @@ import {
   FileText, Printer, BarChart3, LogIn, LogOut, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
-  MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
+  MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Shield
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -93,6 +93,19 @@ const getExpirationUrgency = (expirationDate) => {
   
   return { daysRemaining, urgency };
 };
+
+// FERPA Compliance Badge Component
+const FERPABadge = ({ compact = false }) => (
+  <div className={`flex items-center gap-2 ${compact ? 'bg-emerald-50/80' : 'bg-emerald-50'} border border-emerald-200 rounded-lg ${compact ? 'px-2 py-1' : 'px-3 py-2'}`}>
+    <Shield className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-emerald-600`} fill="currentColor" />
+    <div>
+      <span className={`text-emerald-800 font-semibold ${compact ? 'text-xs' : 'text-sm'}`}>FERPA Compliant</span>
+      {!compact && (
+        <span className="text-emerald-600 text-xs block">Student data encrypted & protected</span>
+      )}
+    </div>
+  </div>
+);
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -2178,9 +2191,14 @@ const filterByDateRange = (items, dateField) => {
             </button>
           </form>
           
-          <p className="mt-6 text-center text-sm text-slate-500">
-            Test login: demo@lincoln.edu / test123
-          </p>
+          {/* FERPA Badge */}
+            <div className="mt-6 flex justify-center">
+              <FERPABadge />
+            </div>
+            
+            <p className="mt-4 text-center text-sm text-slate-500">
+              Test login: demo@lincoln.edu / test123
+            </p>
         </div>
       </div>
     );
