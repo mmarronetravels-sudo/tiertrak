@@ -157,6 +157,7 @@ const [reportData, setReportData] = useState(null);
   });
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [loginError, setLoginError] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   
   // Admin state
@@ -1600,6 +1601,55 @@ const fetchStudentDocuments = async (studentId) => {
   };
 
 // Login
+// Handle Google Sign-In
+const handleGoogleSignIn = async (response) => {
+  try {
+    setLoginError('');
+    const res = await fetch(`${API_URL}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      setUser(data.user);
+    } else {
+      setLoginError(data.error || 'Google sign-in failed');
+    }
+  } catch (err) {
+    setLoginError('Connection error. Please try again.');
+  }
+};
+
+// Handle Forgot Password
+const handleForgotPassword = async (e) => {
+  e.preventDefault();
+  try {
+    const res = await fetch(`${API_URL}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: loginForm.email })
+    });
+    const data = await res.json();
+    setLoginError('');
+    alert(data.message || 'If an account exists, a reset link has been sent.');
+    setShowForgotPassword(false);
+  } catch (err) {
+    setLoginError('Connection error. Please try again.');
+  }
+};
+
+// Initialize Google Sign-In
+useEffect(() => {
+  if (window.google && !user) {
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      callback: handleGoogleSignIn
+    });
+  }
+}, [user]);
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -2145,18 +2195,21 @@ const filterByDateRange = (items, dateField) => {
   }
 
   // Login Screen
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <BarChart3 size={28} className="text-white" />
-            </div>
-            <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+if (!user) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <BarChart3 size={28} className="text-white" />
           </div>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
+          <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+        </div>
+        
+        {showForgotPassword ? (
+          // Forgot Password Form
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <p className="text-sm text-slate-600 mb-4">Enter your email address and we'll send you a link to reset your password.</p>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
               <input
@@ -2168,69 +2221,137 @@ const filterByDateRange = (items, dateField) => {
                 required
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={loginForm.password}
-                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
-                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="••••••••"
-                required
-              />
-            </div>
             {loginError && (
               <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{loginError}</div>
             )}
             <button
               type="submit"
-              className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
             >
-              <LogIn size={18} />
-              Sign In
+              Send Reset Link
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowForgotPassword(false); setLoginError(''); }}
+              className="w-full py-2 text-slate-600 hover:text-indigo-600 transition-colors text-sm"
+            >
+              ← Back to Sign In
             </button>
           </form>
-          
-                     
-            {/* FERPA Badge */}
-          <div className="mt-6 flex justify-center">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-              <div className="text-left">
-                <div className="text-sm font-semibold text-emerald-800">FERPA Compliant</div>
-                <div className="text-xs text-emerald-600">Student data encrypted & protected</div>
+        ) : (
+          // Regular Login Form
+          <>
+            {/* Google Sign-In Button */}
+            <div className="mb-6">
+              <div 
+                id="googleSignInButton" 
+                ref={(el) => {
+                  if (el && window.google) {
+                    window.google.accounts.id.renderButton(el, {
+                      theme: 'outline',
+                      size: 'large',
+                      width: '100%',
+                      text: 'signin_with'
+                    });
+                  }
+                }}
+                className="w-full"
+              ></div>
+            </div>
+            
+            <div className="relative mb-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white text-slate-500">or</span>
               </div>
             </div>
-          </div>
-          
-          <p className="mt-4 text-center text-sm text-slate-500">
-            Test login: demo@lincoln.edu / test123
-          </p>
-          
-          {/* Privacy Policy & Terms of Service */}
-          <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
-            <a 
-              href="https://www.scholarpathsystems.org/privacy.html" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="hover:text-indigo-600 transition-colors"
+            
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={loginForm.email}
+                  onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="you@school.edu"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={loginForm.password}
+                  onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              {loginError && (
+                <div className="text-red-600 text-sm bg-red-50 p-3 rounded-lg">{loginError}</div>
+              )}
+              <button
+                type="submit"
+                className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <LogIn size={18} />
+                Sign In
+              </button>
+            </form>
+            
+            <button
+              type="button"
+              onClick={() => { setShowForgotPassword(true); setLoginError(''); }}
+              className="w-full mt-4 text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
             >
-              Privacy Policy
-            </a>
-            <span>·</span>
-            <a 
-              href="https://www.scholarpathsystems.org/terms.html" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="hover:text-indigo-600 transition-colors"
-            >
-              Terms of Service
-            </a>
+              Forgot your password?
+            </button>
+          </>
+        )}
+        
+        {/* FERPA Badge */}
+        <div className="mt-6 flex justify-center">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+            <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-emerald-800">FERPA Compliant</div>
+              <div className="text-xs text-emerald-600">Student data encrypted & protected</div>
+            </div>
           </div>
         </div>
+        
+        <p className="mt-4 text-center text-sm text-slate-500">
+          Test login: demo@lincoln.edu / test123
+        </p>
+        
+        {/* Privacy Policy & Terms of Service */}
+        <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
+          <a 
+            href="https://www.scholarpathsystems.org/privacy.html" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="hover:text-indigo-600 transition-colors"
+          >
+            Privacy Policy
+          </a>
+          <span>·</span>
+          <a 
+            href="https://www.scholarpathsystems.org/terms.html" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="hover:text-indigo-600 transition-colors"
+          >
+            Terms of Service
+          </a>
+        </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
 // Dashboard View
   const DashboardView = () => (
