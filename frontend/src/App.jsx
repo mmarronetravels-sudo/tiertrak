@@ -3360,7 +3360,7 @@ if (!user) {
                         <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
                         {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan', 
                           'Crisis Safety Plan', 'Daily Behavior Report Card', 'Behavior Intervention Plan',
-                          'Token Economy System'].includes(intervention.intervention_name) && (
+                          'Token Economy System', 'ABC Behavior Tracker'].includes(intervention.intervention_name) && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
