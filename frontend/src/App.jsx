@@ -1756,7 +1756,7 @@ useEffect(() => {
       });
     }
   }
-}, [user]);
+ [user]
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
