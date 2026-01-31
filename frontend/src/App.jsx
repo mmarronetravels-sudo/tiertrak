@@ -212,6 +212,11 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     risk_level: 'low'
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
+  // Parent account creation state
+const [showCreateParent, setShowCreateParent] = useState(false);
+const [parentForm, setParentForm] = useState({ email: '', full_name: '', student_ids: [] });
+const [parentCreateMessage, setParentCreateMessage] = useState({ type: '', text: '' });
+const [parentCreateLoading, setParentCreateLoading] = useState(false);
   // Pre-Referral Form state
   const [showMTSSMeetingForm, setShowMTSSMeetingForm] = useState(false);
   // Intervention Plan state
@@ -1626,6 +1631,36 @@ const handleGoogleSignIn = async (response) => {
     }
   } catch (err) {
     setLoginError('Connection error. Please try again.');
+  }
+};
+
+// Handle Create Parent Account
+const handleCreateParent = async (e) => {
+  e.preventDefault();
+  setParentCreateLoading(true);
+  setParentCreateMessage({ type: '', text: '' });
+  
+  try {
+    const res = await fetch(`${API_URL}/auth/create-parent`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(parentForm)
+    });
+    const data = await res.json();
+    
+    if (res.ok) {
+      setParentCreateMessage({ type: 'success', text: `Account created! Setup email sent to ${parentForm.email}` });
+      setParentForm({ email: '', full_name: '', student_ids: [] });
+    } else {
+      setParentCreateMessage({ type: 'error', text: data.error || 'Failed to create account' });
+    }
+  } catch (err) {
+    setParentCreateMessage({ type: 'error', text: 'Connection error. Please try again.' });
+  } finally {
+    setParentCreateLoading(false);
   }
 };
 
@@ -5805,67 +5840,54 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     );
   };
 
-  // Create Parent Form Component
+ // Create Parent Form Component
 const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
-    password: 'parent123',
-    student_id: '',
-    relationship: 'parent'
+    student_ids: []
   });
   const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState({ type: '', text: '' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
+    setMessage({ type: '', text: '' });
     
     try {
-      // Create user account
-      const userRes = await fetch(`${API_URL}/users`, {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/auth/create-parent`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           email: formData.email,
-          password: formData.password,
           full_name: formData.full_name,
-          role: 'parent',
-          tenant_id: tenantId,
-          school_wide_access: false
+          student_ids: formData.student_ids
         })
       });
       
-      if (!userRes.ok) {
-        const err = await userRes.json();
-        alert(`Error creating parent: ${err.error}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error || 'Error creating parent account' });
         setSubmitting(false);
         return;
       }
       
-      const newUser = await userRes.json();
-      
-      // If student selected, create link
-      if (formData.student_id) {
-        await fetch(`${API_URL}/parent-links`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            parent_user_id: newUser.id,
-            student_id: formData.student_id,
-            relationship: formData.relationship
-          })
-        });
-      }
-      
-      alert(`Parent account created!\n\nEmail: ${formData.email}\nPassword: ${formData.password}`);
+      setMessage({ 
+        type: 'success', 
+        text: `Account created! A setup email has been sent to ${formData.email}` 
+      });
       
       // Reset form
       setFormData({
         full_name: '',
         email: '',
-        password: 'parent123',
-        student_id: '',
-        relationship: 'parent'
+        student_ids: []
       });
       
       // Notify parent component
@@ -5873,92 +5895,96 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
       
     } catch (error) {
       console.error('Error creating parent:', error);
-      alert('Error creating parent account');
+      setMessage({ type: 'error', text: 'Connection error. Please try again.' });
     }
     setSubmitting(false);
+  };
+
+  const toggleStudent = (studentId) => {
+    setFormData(prev => ({
+      ...prev,
+      student_ids: prev.student_ids.includes(studentId)
+        ? prev.student_ids.filter(id => id !== studentId)
+        : [...prev.student_ids, studentId]
+    }));
   };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border p-6">
       <h3 className="font-semibold text-lg mb-4">Create Parent Account</h3>
+      <p className="text-sm text-slate-500 mb-4">
+        Enter the parent's information. They will receive an email with a link to set up their password.
+      </p>
+      
+      {message.text && (
+        <div className={`p-3 rounded-lg mb-4 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+        }`}>
+          {message.text}
+        </div>
+      )}
+      
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Parent Name</label>
+            <label className="block text-sm font-medium mb-1">Full Name *</label>
             <input
               type="text"
               value={formData.full_name}
-              onChange={(e) => setFormData({...formData, full_name: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg"
-              placeholder="John Smith"
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Parent's full name"
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="block text-sm font-medium mb-1">Email Address *</label>
             <input
               type="email"
               value={formData.email}
-              onChange={(e) => setFormData({...formData, email: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg"
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="parent@email.com"
               required
             />
           </div>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Temporary Password</label>
-            <input
-              type="text"
-              value={formData.password}
-              onChange={(e) => setFormData({...formData, password: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg"
-              required
-            />
-            <p className="text-xs text-slate-500 mt-1">Share this with the parent to login</p>
+        <div>
+          <label className="block text-sm font-medium mb-2">Link to Student(s) <span className="text-slate-400 font-normal">(optional)</span></label>
+          <div className="border rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50">
+            {students.length === 0 ? (
+              <p className="text-slate-500 text-sm">No students available</p>
+            ) : (
+              <div className="space-y-2">
+                {students.map(student => (
+                  <label key={student.id} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={formData.student_ids.includes(student.id)}
+                      onChange={() => toggleStudent(student.id)}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className="text-sm">{student.last_name}, {student.first_name}</span>
+                    <span className="text-xs text-slate-400">Grade {student.grade}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Link to Student (optional)</label>
-            <select
-              value={formData.student_id}
-              onChange={(e) => setFormData({...formData, student_id: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg"
-            >
-              <option value="">-- Select Student --</option>
-              {students.map(s => (
-                <option key={s.id} value={s.id}>{s.last_name}, {s.first_name} (Grade {s.grade})</option>
-              ))}
-            </select>
-          </div>
+          {formData.student_ids.length > 0 && (
+            <p className="text-xs text-indigo-600 mt-1">
+              {formData.student_ids.length} student(s) selected
+            </p>
+          )}
         </div>
-
-        {formData.student_id && (
-          <div>
-            <label className="block text-sm font-medium mb-1">Relationship</label>
-            <select
-              value={formData.relationship}
-              onChange={(e) => setFormData({...formData, relationship: e.target.value})}
-              className="w-full px-3 py-2 border rounded-lg"
-            >
-              <option value="parent">Parent</option>
-              <option value="mother">Mother</option>
-              <option value="father">Father</option>
-              <option value="guardian">Guardian</option>
-              <option value="step-parent">Step-Parent</option>
-              <option value="grandparent">Grandparent</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-        )}
-
+        
         <button
           type="submit"
           disabled={submitting}
-          className="w-full py-2 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? 'Creating...' : 'Create Parent Account'}
+          {submitting ? 'Creating Account...' : 'Create Account & Send Setup Email'}
         </button>
       </form>
     </div>
