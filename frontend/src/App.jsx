@@ -69,6 +69,123 @@ const areaColors = {
   'Social-Emotional': { bg: 'bg-pink-50', badge: 'bg-pink-100 text-pink-700', border: 'border-pink-200' }
 };
 
+// Separate component to prevent re-render issues
+function AddStudentForm({ onSave, onCancel, gradeOptions }) {
+  const [form, setForm] = useState({
+    first_name: '',
+    last_name: '',
+    grade: '',
+    tier: '1',
+    area: '',
+    risk_level: 'low'
+  });
+
+  const handleSave = () => {
+    if (!form.first_name || !form.last_name || !form.grade) return;
+    onSave(form);
+  };
+
+  return (
+    <div className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-800">Add New Student</h3>
+        <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600">
+          <X size={20} />
+        </button>
+      </div>
+      
+      <div className="grid grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
+          <input
+            type="text"
+            value={form.first_name}
+            onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="First name"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
+          <input
+            type="text"
+            value={form.last_name}
+            onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            placeholder="Last name"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Grade *</label>
+          <select
+            value={form.grade}
+            onChange={(e) => setForm({ ...form, grade: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">Select grade...</option>
+            {gradeOptions.map(g => (
+              <option key={g} value={g}>{g}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Tier</label>
+          <select
+            value={form.tier}
+            onChange={(e) => setForm({ ...form, tier: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="1">Tier 1</option>
+            <option value="2">Tier 2</option>
+            <option value="3">Tier 3</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Area of Concern</label>
+          <select
+            value={form.area}
+            onChange={(e) => setForm({ ...form, area: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">None selected</option>
+            <option value="Academic">Academic</option>
+            <option value="Behavior">Behavior</option>
+            <option value="Social-Emotional">Social-Emotional</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Risk Level</label>
+          <select
+            value={form.risk_level}
+            onChange={(e) => setForm({ ...form, risk_level: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="low">Low</option>
+            <option value="moderate">Moderate</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      </div>
+      
+      <div className="flex justify-end gap-2 mt-4">
+        <button
+          onClick={onCancel}
+          className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+          <Save size={16} />
+          Add Student
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const gradeOptions = ['K', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
 
 const archiveReasons = [
@@ -6424,109 +6541,34 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
             </button>
           </div>
 
-          {(showAddStudent || editingStudent) && (
-  <div key="student-form" className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-800">
-                  {editingStudent ? 'Edit Student' : 'Add New Student'}
-                </h3>
-                <button
-                  onClick={() => { setShowAddStudent(false); setEditingStudent(null); resetStudentForm(); }}
-                  className="p-1 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
-                  <input
-                    type="text"
-                    value={studentForm.first_name}
-                    onChange={(e) => setStudentForm({ ...studentForm, first_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="First name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
-                  <input
-                    type="text"
-                    value={studentForm.last_name}
-                    onChange={(e) => setStudentForm({ ...studentForm, last_name: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Last name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Grade *</label>
-                  <select
-                    value={studentForm.grade}
-                    onChange={(e) => setStudentForm({ ...studentForm, grade: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select grade...</option>
-                    {gradeOptions.map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tier</label>
-                  <select
-                    value={studentForm.tier}
-                    onChange={(e) => setStudentForm({ ...studentForm, tier: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="1">Tier 1</option>
-                    <option value="2">Tier 2</option>
-                    <option value="3">Tier 3</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Area of Concern</label>
-                  <select
-                    value={studentForm.area}
-                    onChange={(e) => setStudentForm({ ...studentForm, area: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">None selected</option>
-                    <option value="Academic">Academic</option>
-                    <option value="Behavior">Behavior</option>
-                    <option value="Social-Emotional">Social-Emotional</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Risk Level</label>
-                  <select
-                    value={studentForm.risk_level}
-                    onChange={(e) => setStudentForm({ ...studentForm, risk_level: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="low">Low</option>
-                    <option value="moderate">Moderate</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => { setShowAddStudent(false); setEditingStudent(null); resetStudentForm(); }}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={editingStudent ? handleUpdateStudent : handleAddStudent}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                >
-                  <Save size={16} />
-                  {editingStudent ? 'Update Student' : 'Add Student'}
-                </button>
-              </div>
-            </div>
+          {showAddStudent && !editingStudent && (
+            <AddStudentForm
+              gradeOptions={gradeOptions}
+              onSave={async (formData) => {
+                try {
+                  const res = await fetch(`${API_URL}/students`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      tenant_id: user.tenant_id,
+                      first_name: formData.first_name,
+                      last_name: formData.last_name,
+                      grade: formData.grade,
+                      tier: parseInt(formData.tier),
+                      area: formData.area || null,
+                      risk_level: formData.risk_level
+                    })
+                  });
+                  if (res.ok) {
+                    fetchStudents(user.tenant_id, showArchived);
+                    setShowAddStudent(false);
+                  }
+                } catch (error) {
+                  console.error('Error adding student:', error);
+                }
+              }}
+              onCancel={() => setShowAddStudent(false)}
+            />
           )}
 
           <div className="relative mb-4">
