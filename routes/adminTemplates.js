@@ -13,6 +13,12 @@ const initializePool = (dbPool) => {
 // ============================================
 router.get('/templates', async (req, res) => {
   try {
+    const { tenant_id } = req.query;
+    
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+    
     const result = await pool.query(`
       SELECT 
         id,
@@ -33,8 +39,9 @@ router.get('/templates', async (req, res) => {
           ELSE 0
         END as section_count
       FROM intervention_templates
+      WHERE tenant_id = $1
       ORDER BY area, name
-    `);
+    `, [tenant_id]);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching templates:', error);

@@ -835,7 +835,7 @@ const fetchExpiringDocuments = async () => {
 
   const fetchAdminTemplates = async () => {
     try {
-      const response = await fetch(`${API_URL}/admin/templates`);
+      const response = await fetch(`${API_URL}/admin/templates?tenant_id=${user.tenant_id}`);
       if (response.ok) {
         const data = await response.json();
         setAdminTemplates(data);
