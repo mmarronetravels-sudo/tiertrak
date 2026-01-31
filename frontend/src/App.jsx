@@ -6415,7 +6415,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           </div>
 
           {(showAddStudent || editingStudent) && (
-            <div className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
+  <div key="student-form" className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-slate-800">
                   {editingStudent ? 'Edit Student' : 'Add New Student'}
