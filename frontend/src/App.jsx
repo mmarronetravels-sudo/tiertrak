@@ -1863,17 +1863,6 @@ useEffect(() => {
   }
 }, [user]);
     
-    // Render the button if the ref exists
-    if (googleButtonRef.current) {
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: 'outline',
-        size: 'large',
-        width: 352,
-        text: 'signin_with'
-      });
-    }
-  }
- [user]
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -8803,7 +8792,7 @@ if (isParent) {
       )}
     </div>
   );
-
+}
 
 // Force redeploy Sun Jan 25 16:54:04 PST 2026
 // Redeploy Sun Jan 25 18:51:20 PST 2026
