@@ -2196,9 +2196,41 @@ const filterByDateRange = (items, dateField) => {
               <FERPABadge />
             </div>
             
-            <p className="mt-4 text-center text-sm text-slate-500">
-              Test login: demo@lincoln.edu / test123
-            </p>
+            {/* FERPA Badge */}
+          <div className="mt-6 flex justify-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-emerald-800">FERPA Compliant</div>
+                <div className="text-xs text-emerald-600">Student data encrypted & protected</div>
+              </div>
+            </div>
+          </div>
+          
+          <p className="mt-4 text-center text-sm text-slate-500">
+            Test login: demo@lincoln.edu / test123
+          </p>
+          
+          {/* Privacy Policy & Terms of Service */}
+          <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
+            <a 
+              href="https://www.scholarpathsystems.org/privacy.html" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-indigo-600 transition-colors"
+            >
+              Privacy Policy
+            </a>
+            <span>·</span>
+            <a 
+              href="https://www.scholarpathsystems.org/terms.html" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hover:text-indigo-600 transition-colors"
+            >
+              Terms of Service
+            </a>
+          </div>
         </div>
       </div>
     );
@@ -7463,6 +7495,35 @@ if (isParent) {
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
       </main>
+      
+      {/* App Footer */}
+      <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <span>© 2026</span>
+              <a 
+                href="https://www.scholarpathsystems.org" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:text-indigo-700 font-medium"
+              >
+                ScholarPath Systems
+              </a>
+            </div>
+            <span className="hidden sm:inline text-slate-300">|</span>
+            <a 
+              href="https://gradtrak.scholarpathsystems.org" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="hidden sm:inline text-sm text-slate-500 hover:text-indigo-600"
+            >
+              GradTrak
+            </a>
+          </div>
+          <FERPABadge compact />
+        </div>
+      </footer>
       {/* Weekly Progress Form Modal */}
         {showProgressForm && selectedInterventionForProgress && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
