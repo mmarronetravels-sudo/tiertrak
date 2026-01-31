@@ -165,6 +165,7 @@ const [newPassword, setNewPassword] = useState('');
 const [confirmPassword, setConfirmPassword] = useState('');
 const [passwordMessage, setPasswordMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState('app');
   
   // Admin state
   const [adminTab, setAdminTab] = useState('interventions');
@@ -2373,7 +2374,6 @@ if (passwordResetMode) {
   if (currentPage === 'set-password' || currentPage === 'reset-password') {
     const params = new URLSearchParams(window.location.search);
     const setupToken = params.get('token');
-    
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [passwordError, setPasswordError] = useState('');
@@ -7006,7 +7006,6 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
 const AssignmentManager = () => {
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState('app');
   const [selectedStaff, setSelectedStaff] = useState('');
   const [selectedParent, setSelectedParent] = useState('');
 
