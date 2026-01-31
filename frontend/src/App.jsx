@@ -137,6 +137,10 @@ export default function App() {
   const noteTextareaRef = useRef(null);
   const progressNotesRef = useRef(null);
   const interventionNotesRef = useRef(null); 
+  const noteTextareaRef = useRef(null);
+const progressNotesRef = useRef(null);
+const interventionNotesRef = useRef(null);
+const googleButtonRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
   const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false); 
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
@@ -1736,6 +1740,16 @@ useEffect(() => {
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       callback: handleGoogleSignIn
     });
+    
+    // Render the button if the ref exists
+    if (googleButtonRef.current) {
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: 352,
+        text: 'signin_with'
+      });
+    }
   }
 }, [user]);
   const handleLogin = async (e) => {
@@ -2564,20 +2578,11 @@ if (!user) {
           <>
             {/* Google Sign-In Button */}
             <div className="mb-6">
-              <div 
-                id="googleSignInButton" 
-                ref={(el) => {
-                  if (el && window.google) {
-                    window.google.accounts.id.renderButton(el, {
-                      theme: 'outline',
-                      size: 'large',
-                      width: '100%',
-                      text: 'signin_with'
-                    });
-                  }
-                }}
-                className="w-full"
-              ></div>
+              <<div 
+  id="googleSignInButton" 
+  ref={googleButtonRef}
+  className="w-full"
+></div>
             </div>
             
             <div className="relative mb-6">
