@@ -1634,36 +1634,6 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
-// Handle Create Parent Account
-const handleCreateParent = async (e) => {
-  e.preventDefault();
-  setParentCreateLoading(true);
-  setParentCreateMessage({ type: '', text: '' });
-  
-  try {
-    const res = await fetch(`${API_URL}/auth/create-parent`, {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(parentForm)
-    });
-    const data = await res.json();
-    
-    if (res.ok) {
-      setParentCreateMessage({ type: 'success', text: `Account created! Setup email sent to ${parentForm.email}` });
-      setParentForm({ email: '', full_name: '', student_ids: [] });
-    } else {
-      setParentCreateMessage({ type: 'error', text: data.error || 'Failed to create account' });
-    }
-  } catch (err) {
-    setParentCreateMessage({ type: 'error', text: 'Connection error. Please try again.' });
-  } finally {
-    setParentCreateLoading(false);
-  }
-};
-
 // Handle Set/Reset Password Submit
 const handleSetPassword = async (e) => {
   e.preventDefault();
