@@ -136,12 +136,8 @@ export default function App() {
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
   const progressNotesRef = useRef(null);
-  const interventionNotesRef = useRef(null);
   const googleButtonRef = useRef(null); 
-  const noteTextareaRef = useRef(null);
-const progressNotesRef = useRef(null);
-const interventionNotesRef = useRef(null);
-const googleButtonRef = useRef(null);
+  const interventionNotesRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
   const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false); 
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
