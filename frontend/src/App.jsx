@@ -3397,6 +3397,15 @@ if (!user) {
                             <FileText size={12} />
                             Plan
                           </button>
+                            {intervention.plan_status === 'complete' && (
+  <span className="ml-1" title="Plan Complete">🟢</span>
+)}
+{intervention.plan_status === 'draft' && (
+  <span className="ml-1" title="Plan In Progress">🟡</span>
+)}
+{(!intervention.plan_status || intervention.plan_status === 'not_applicable') && (
+  <span className="ml-1" title="Plan Not Started">🟠</span>
+)}
                         )}
                       </div>
                       <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
