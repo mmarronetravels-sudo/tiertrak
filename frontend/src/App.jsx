@@ -3499,6 +3499,7 @@ if (!user) {
 >
   <Pencil className="w-3 h-3" />
 </button>
+                            <button
                               onClick={() => deleteWeeklyProgress(log.id)}
                               className="text-slate-400 hover:text-rose-600 p-1"
                               title="Delete log"
