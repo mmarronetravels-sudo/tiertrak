@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Settings, Users, User, UserPlus, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
   MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Shield
@@ -256,7 +256,8 @@ export default function App() {
   const googleButtonRef = useRef(null); 
   const interventionNotesRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
-  const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false); 
+  const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false);
+  const [editingProgressLog, setEditingProgressLog] = useState(null);
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
@@ -1201,46 +1202,58 @@ const fetchExpiringDocuments = async () => {
   };
   // Submit weekly progress
   const submitWeeklyProgress = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${API_URL}/weekly-progress`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+  e.preventDefault();
+  try {
+    const url = editingProgressLog 
+      ? `${API_URL}/weekly-progress/${editingProgressLog.id}`
+      : `${API_URL}/weekly-progress`;
+    
+    const method = editingProgressLog ? 'PUT' : 'POST';
+    
+    const body = editingProgressLog 
+      ? {
+          week_of: progressFormData.week_of,
+          status: progressFormData.status,
+          rating: progressFormData.rating || null,
+          response: progressFormData.response || null,
+          notes: progressNotesRef.current?.value || null
+        }
+      : {
           student_intervention_id: selectedInterventionForProgress.id,
-          student_id: selectedInterventionForProgress.student_id || selectedStudent?.id,
+          student_id: selectedStudent.id,
           week_of: progressFormData.week_of,
           status: progressFormData.status,
           rating: progressFormData.rating || null,
           response: progressFormData.response || null,
           notes: progressNotesRef.current?.value || null,
           logged_by: user.id
-        })
-      });
+        };
 
-      if (response.ok) {
-        setShowProgressForm(false);
-        setProgressFormData({
-          week_of: '',
-          status: '',
-          rating: '',
-          response: '',
-          notes: ''
-        });
-        const studentId = selectedInterventionForProgress.student_id || selectedStudent?.id;
-        if (studentId) fetchWeeklyProgress(studentId);
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        alert(errorData.error || 'Failed to save progress log. Please try again.');
-      }
-    } catch (err) {
-      console.error('Error submitting weekly progress:', err);
-      alert('Error saving progress log. Please try again.');
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (response.ok) {
+      setShowProgressForm(false);
+      setEditingProgressLog(null);
+      setProgressFormData({
+        week_of: '',
+        status: '',
+        rating: '',
+        response: '',
+        notes: ''
+      });
+      fetchWeeklyProgress(selectedStudent.id);
     }
-  };
+  } catch (err) {
+    console.error('Error submitting weekly progress:', err);
+  }
+};
 
   // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
@@ -1259,6 +1272,22 @@ const fetchExpiringDocuments = async () => {
       console.error('Error deleting weekly progress:', err);
     }
   };
+
+  // Edit weekly progress log
+const openEditProgressLog = (log, intervention) => {
+  setEditingProgressLog(log);
+  setSelectedInterventionForProgress(intervention);
+  setProgressFormData({
+    week_of: log.week_of?.split('T')[0] || '',
+    status: log.status || '',
+    rating: log.rating || '',
+    response: log.response || ''
+  });
+  if (progressNotesRef.current) {
+    progressNotesRef.current.value = log.notes || '';
+  }
+  setShowProgressForm(true);
+};
   
 
   // Update intervention goal
@@ -3464,6 +3493,13 @@ if (!user) {
                               {log.status}
                             </span>
                             <button
+                              <button
+  onClick={() => openEditProgressLog(log, intervention)}
+  className="text-slate-400 hover:text-blue-600 p-1"
+  title="Edit log"
+>
+  <Pencil className="w-3 h-3" />
+</button>
                               onClick={() => deleteWeeklyProgress(log.id)}
                               className="text-slate-400 hover:text-rose-600 p-1"
                               title="Delete log"
@@ -7997,10 +8033,10 @@ if (isParent) {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
               <div className="p-4 border-b flex justify-between items-center">
                 <div>
-                  <h3 className="font-semibold text-lg">Log Weekly Progress</h3>
+                  <h3 className="font-semibold text-lg">{editingProgressLog ? 'Edit Progress Log' : 'Log Weekly Progress'}</h3>
                   <p className="text-sm text-slate-500">{selectedInterventionForProgress.intervention_name}</p>
                 </div>
-                <button onClick={() => setShowProgressForm(false)} className="text-slate-500 hover:text-slate-700">
+                <button onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }} className="text-slate-500 hover:text-slate-700">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -8105,7 +8141,7 @@ if (isParent) {
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowProgressForm(false)}
+                    onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
                     className="flex-1 py-2 px-4 border rounded-lg hover:bg-slate-50"
                   >
                     Cancel
