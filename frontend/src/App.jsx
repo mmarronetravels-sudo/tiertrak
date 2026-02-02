@@ -3493,7 +3493,6 @@ if (!user) {
                               {log.status}
                             </span>
                             <button
-                              <button
   onClick={() => openEditProgressLog(log, intervention)}
   className="text-slate-400 hover:text-blue-600 p-1"
   title="Edit log"
