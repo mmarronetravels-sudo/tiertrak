@@ -204,19 +204,21 @@ router.post('/', async (req, res) => {
       created_by,
       intervention_reviews // Array of intervention evaluations
     } = req.body;
+// Convert empty strings to null for date fields
+    const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
     
     // Insert meeting
     const meetingResult = await client.query(`
       INSERT INTO mtss_meetings (
         student_id, tenant_id, meeting_date, meeting_number, meeting_type,
         attendees, parent_attended, progress_summary, tier_decision,
-        next_steps, next_meeting_date, created_by
+        next_steps, cleanNextMeetingDate, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
       student_id, tenant_id, meeting_date, meeting_number, meeting_type,
       JSON.stringify(attendees), parent_attended, progress_summary, tier_decision,
-      next_steps, next_meeting_date, created_by
+      next_steps, cleanNextMeetingDate, created_by
     ]);
     
     const meeting = meetingResult.rows[0];
