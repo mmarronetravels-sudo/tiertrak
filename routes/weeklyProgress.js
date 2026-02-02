@@ -290,4 +290,29 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// UPDATE a weekly progress log
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { week_of, status, rating, response, notes } = req.body;
+    
+    const result = await pool.query(
+      `UPDATE weekly_progress 
+       SET week_of = $1, status = $2, rating = $3, response = $4, notes = $5, updated_at = NOW()
+       WHERE id = $6
+       RETURNING *`,
+      [week_of, status, rating, response, notes, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Progress log not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating weekly progress:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;
