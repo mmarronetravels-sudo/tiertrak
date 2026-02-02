@@ -3239,10 +3239,14 @@ if (!user) {
           {/* Interventions */}
           <div className="col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <BookOpen size={20} className="text-slate-400" />
-                <h2 className="text-lg font-semibold text-slate-800">Interventions</h2>
-              </div>
+             <div className="flex items-center gap-2">
+  <BookOpen size={20} className="text-slate-400" />
+  <h2 className="text-lg font-semibold text-slate-800">Interventions</h2>
+  <span className="text-xs text-slate-400 ml-2">Plan Status:</span>
+  <span className="text-xs" title="Not Started">🟠</span>
+  <span className="text-xs" title="In Progress">🟡</span>
+  <span className="text-xs" title="Complete">🟢</span>
+</div>
               {!selectedStudent.archived && (
                 <button
                   onClick={() => {
