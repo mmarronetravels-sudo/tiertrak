@@ -212,7 +212,7 @@ router.post('/', async (req, res) => {
       INSERT INTO mtss_meetings (
         student_id, tenant_id, meeting_date, meeting_number, meeting_type,
         attendees, parent_attended, progress_summary, tier_decision,
-        next_steps, NextMeetingDate, created_by
+        next_steps, next_meeting_date, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING *
     `, [
