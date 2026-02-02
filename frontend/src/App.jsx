@@ -3243,9 +3243,9 @@ if (!user) {
   <BookOpen size={20} className="text-slate-400" />
   <h2 className="text-lg font-semibold text-slate-800">Interventions</h2>
   <span className="text-xs text-slate-400 ml-2">Plan Status:</span>
-  <span className="text-xs" title="Not Started">🟠</span>
-  <span className="text-xs" title="In Progress">🟡</span>
-  <span className="text-xs" title="Complete">🟢</span>
+  <span className="text-xs text-slate-400 ml-4 flex items-center gap-1">🟠 Not Started</span>
+<span className="text-xs text-slate-400 flex items-center gap-1">🟡 In Progress</span>
+<span className="text-xs text-slate-400 flex items-center gap-1">🟢 Complete</span>
 </div>
               {!selectedStudent.archived && (
                 <button
