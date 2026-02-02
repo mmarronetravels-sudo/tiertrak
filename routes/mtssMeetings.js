@@ -210,17 +210,17 @@ router.post('/', async (req, res) => {
     
     // Insert meeting
     const meetingResult = await client.query(`
-      INSERT INTO mtss_meetings (
-        student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-        attendees, parent_attended, progress_summary, cleanTierDecision,
-        next_steps, next_meeting_date, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *
-    `, [
-      student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-      JSON.stringify(attendees), parent_attended, progress_summary, tier_decision,
-      next_steps, cleanNextMeetingDate, created_by
-    ]);
+  INSERT INTO mtss_meetings (
+    student_id, tenant_id, meeting_date, meeting_number, meeting_type,
+    attendees, parent_attended, progress_summary, tier_decision,
+    next_steps, next_meeting_date, created_by
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  RETURNING *
+`, [
+  student_id, tenant_id, meeting_date, meeting_number, meeting_type,
+  JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+  next_steps, cleanNextMeetingDate, created_by
+]);
     
     const meeting = meetingResult.rows[0];
     
