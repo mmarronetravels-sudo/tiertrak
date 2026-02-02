@@ -2761,10 +2761,7 @@ if (!user) {
           </div>
         </div>
         
-        <p className="mt-4 text-center text-sm text-slate-500">
-          Test login: demo@lincoln.edu / test123
-        </p>
-        
+                
         {/* Privacy Policy & Terms of Service */}
         <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
           <a 
