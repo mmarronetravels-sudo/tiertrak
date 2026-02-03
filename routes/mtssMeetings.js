@@ -321,17 +321,26 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
         await client.query(`
+          // Insert intervention reviews
+    if (intervention_reviews && intervention_reviews.length > 0) {
+      for (const review of intervention_reviews) {
+        // Convert empty strings to null for fields with constraints
+        const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
+        const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
+        const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
+        
+        await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
             avg_rating, total_logs
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
-          id,
+          meeting.id,
           review.student_intervention_id,
-          review.implementation_fidelity,
-          review.progress_toward_goal,
-          review.recommendation,
+          cleanFidelity,
+          cleanProgress,
+          cleanRecommendation,
           review.notes,
           review.avg_rating,
           review.total_logs
