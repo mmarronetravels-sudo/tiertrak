@@ -303,11 +303,9 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
       WHERE id = $10
       RETURNING *
     `, [
-      ], [
-  meeting_date, meeting_number, meeting_type,
-  JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
-  next_steps, cleanNextMeetingDate, id
-]);
+      meeting_date, meeting_number, meeting_type,
+      JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+      next_steps, cleanNextMeetingDate, id
     ]);
     
     if (meetingResult.rows.length === 0) {
@@ -334,7 +332,7 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
             avg_rating, total_logs
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         `, [
-          meeting.id,
+          id,
           review.student_intervention_id,
           cleanFidelity,
           cleanProgress,
