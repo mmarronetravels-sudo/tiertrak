@@ -278,6 +278,9 @@ router.put('/:id', async (req, res) => {
       next_meeting_date,
       intervention_reviews
     } = req.body;
+    // Convert empty strings to null for fields with constraints
+const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
+const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     
     // Update meeting
     const meetingResult = await client.query(`
@@ -295,9 +298,11 @@ router.put('/:id', async (req, res) => {
       WHERE id = $10
       RETURNING *
     `, [
-      meeting_date, meeting_number, meeting_type,
-      JSON.stringify(attendees), parent_attended, progress_summary, tier_decision,
-      next_steps, next_meeting_date, id
+      ], [
+  meeting_date, meeting_number, meeting_type,
+  JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+  next_steps, cleanNextMeetingDate, id
+]);
     ]);
     
     if (meetingResult.rows.length === 0) {
