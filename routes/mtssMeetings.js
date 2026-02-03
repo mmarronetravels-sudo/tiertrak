@@ -318,9 +318,7 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     // Delete existing intervention reviews and re-insert
     await client.query('DELETE FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1', [id]);
     
-    if (intervention_reviews && intervention_reviews.length > 0) {
-      for (const review of intervention_reviews) {
-        await client.query(`
+   
           // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
