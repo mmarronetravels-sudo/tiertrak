@@ -7830,120 +7830,13 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
         onParentCreated={() => { fetchParentAccounts(); fetchAllParentLinks(); }} 
       />
     )}
+
     {/* ==================== STAFF TAB ==================== */}
 {adminTab === 'staff' && (
   <div className="bg-white rounded-xl border border-slate-200 p-6">
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-3">
-        <Users size={22} className="text-indigo-600" />
-        <h2 className="text-xl font-semibold text-slate-800">Staff Management</h2>
-      </div>
-      <button
-        onClick={() => { setStaffError(''); setNewStaff({ email: '', full_name: '', role: 'teacher' }); setShowAddStaffModal(true); }}
-        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
-      >
-        <Plus size={16} />
-        Add Staff
-      </button>
-    </div>
-
-    <p className="text-sm text-slate-500 mb-4">
-      Staff members log in with Google SSO using their school email. Create their account here first, then they can sign in.
-    </p>
-
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead>
-          <tr className="text-left text-sm text-slate-500 border-b border-slate-200">
-            <th className="pb-3 font-medium">Name</th>
-            <th className="pb-3 font-medium">Email</th>
-            <th className="pb-3 font-medium">Role</th>
-            <th className="pb-3 font-medium">Access</th>
-            <th className="pb-3 font-medium">SSO</th>
-            <th className="pb-3 font-medium text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {staffList.map((member) => (
-            <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50">
-              <td className="py-3">
-                <div className="flex items-center gap-2">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
-                    member.role === 'school_admin' || member.role === 'district_admin' ? 'bg-indigo-500' :
-                    member.role === 'counselor' ? 'bg-purple-500' :
-                    member.role === 'teacher' ? 'bg-emerald-500' :
-                    'bg-blue-500'
-                  }`}>
-                    {member.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                  </div>
-                  <span className="font-medium text-slate-800">{member.full_name}</span>
-                </div>
-              </td>
-              <td className="py-3 text-sm text-slate-600">{member.email}</td>
-              <td className="py-3">
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                  member.role === 'school_admin' || member.role === 'district_admin' 
-                    ? 'bg-indigo-100 text-indigo-700' :
-                  member.role === 'counselor' 
-                    ? 'bg-purple-100 text-purple-700' :
-                  member.role === 'teacher' 
-                    ? 'bg-emerald-100 text-emerald-700' :
-                  'bg-blue-100 text-blue-700'
-                }`}>
-                  {member.role === 'school_admin' ? 'Admin' :
-                   member.role === 'district_admin' ? 'District Admin' :
-                   member.role === 'counselor' ? 'Counselor' :
-                   member.role === 'teacher' ? 'Teacher' :
-                   member.role === 'behavior_specialist' ? 'Behavior Spec.' :
-                   member.role === 'student_support_specialist' ? 'Support Spec.' :
-                   member.role}
-                </span>
-              </td>
-              <td className="py-3">
-                <span className={`text-xs ${member.school_wide_access ? 'text-emerald-600' : 'text-slate-400'}`}>
-                  {member.school_wide_access ? 'All Students' : 'Assigned Only'}
-                </span>
-              </td>
-              <td className="py-3">
-                {member.google_id ? (
-                  <span className="text-xs text-emerald-600 flex items-center gap-1">
-                    <CheckCircle size={14} /> Connected
-                  </span>
-                ) : (
-                  <span className="text-xs text-slate-400">Not yet</span>
-                )}
-              </td>
-                <td className="py-3 text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 transition"
-                    title="Edit"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  {member.id !== user.id && (
-                    <button
-                      onClick={() => handleDeleteStaff(member.id, member.full_name)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 transition"
-                      title="Remove"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
-              </td>
-Commit that and let me know how it looks.
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-
-    <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
+    <h2>Staff tab is working!</h2>
   </div>
 )}
-
       {/* Manage Links */}
     {adminParentTab === 'links' && (
       <div className="space-y-6">
