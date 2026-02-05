@@ -7441,7 +7441,8 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     <Shield size={16} />
     Staff
   </div>
-</button>          
+</button>                    
+      <button           
         onClick={() => { setAdminTab('archived'); fetchArchivedStudents(user.tenant_id); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
             adminTab === 'archived' 
