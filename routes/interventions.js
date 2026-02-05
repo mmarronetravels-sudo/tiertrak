@@ -60,12 +60,14 @@ router.delete('/templates/:id', async (req, res) => {
 // Assign an intervention to a student
 router.post('/assign', async (req, res) => {
   try {
-    const { student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency = 'weekly' } = req.body;
+    const { student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency = 'weekly', start_date, end_date } = req.body;
+    const cleanStartDate = start_date || new Date().toISOString().split('T')[0];
+    const cleanEndDate = end_date === '' ? null : end_date || null;
     const result = await pool.query(
-      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency) 
-       VALUES ($1, $2, $3, $4, $5, $6) 
+      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, start_date, end_date) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
        RETURNING *`,
-      [student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency]
+      [student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, cleanStartDate, cleanEndDate]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
