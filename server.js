@@ -332,6 +332,20 @@ const createTables = async () => {
     `);
     console.log('Migration 013b: Status constraint updated');
 
+    // Migration 014: Referral Monitoring
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS referral_monitoring (
+        id SERIAL PRIMARY KEY,
+        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        tenant_id INTEGER REFERENCES tenants(id),
+        monitored_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_referral_monitoring_student ON referral_monitoring(student_id);
+      CREATE INDEX IF NOT EXISTS idx_referral_monitoring_tenant ON referral_monitoring(tenant_id);
+    `);
+    console.log('Migration 014: referral_monitoring table ready');
+
     // Update role constraint to include all roles
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
