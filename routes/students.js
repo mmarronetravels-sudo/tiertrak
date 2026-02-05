@@ -60,7 +60,6 @@ router.get('/tenant/:tenantId', async (req, res) => {
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1 
-          AND (s.is_archived IS NULL OR s.is_archived = false)
           AND (
             s.tier = 1
             OR s.id IN (
