@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, Plus, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
 MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
@@ -7677,7 +7677,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               onClick={() => { setShowAddStudent(true); setEditingStudent(null); resetStudentForm(); }}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
             >
-              <UserPlus size={18} />
+              <Plus size={18} />
               Add Student
             </button>
           </div>
