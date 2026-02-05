@@ -7931,17 +7931,26 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               <td className="py-3 text-right">
                 <div className="flex items-center justify-end gap-2">
                   <button
-                    onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
-                    className="p-1.5 text-slate-400 hover:text-blue-600 transition"
-                    title="Edit"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  {member.id !== user.id && (
-                    <button
-                      onClick={() => handleDeleteStaff(member.id, member.full_name)}
+                   onClick={() => handleDeleteStaff(member.id, member.full_name)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 transition"
+                      title="Remove"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
 
-    {/* Manage Links */}
+    <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
+  </div>
+)}
+
+      {/* Manage Links */}
     {adminParentTab === 'links' && (
       <div className="space-y-6">
         {/* Link a Parent */}
