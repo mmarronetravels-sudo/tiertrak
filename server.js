@@ -36,6 +36,7 @@ const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 const studentDocumentsRoutes = require('./routes/studentDocuments');
+const staffManagementRoutes = require('./routes/staffManagement');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -45,6 +46,7 @@ parentLinksRoutes.initializePool(pool);
 adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
 studentDocumentsRoutes.initializePool(pool);
+staffManagementRoutes.initializePool(pool);
 
 // Auto-create tables if they don't exist
 const createTables = async () => {
@@ -392,6 +394,7 @@ app.use('/api/parent-links', parentLinksRoutes);
 app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
 app.use('/api/student-documents', studentDocumentsRoutes);
+app.use('/api/staff', staffManagementRoutes);
 
 // Test route
 app.get('/', (req, res) => {
