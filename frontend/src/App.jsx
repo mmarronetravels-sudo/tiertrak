@@ -2067,14 +2067,6 @@ const handleUnlinkParent = async (linkId) => {
   }
 };
 
-try {
-    await fetch(`${API_URL}/parent-links/${linkId}`, { method: 'DELETE' });
-    fetchAllParentLinks();
-  } catch (error) {
-    console.error('Error unlinking parent:', error);
-  }
-};
-
   // Archive intervention
   const handleArchiveIntervention = async () => {
     // ... the full function ...
