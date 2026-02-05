@@ -204,26 +204,34 @@ router.post('/', async (req, res) => {
       created_by,
       intervention_reviews // Array of intervention evaluations
     } = req.body;
+// Convert empty strings to null for date fields
+    const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
+    const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     
     // Insert meeting
     const meetingResult = await client.query(`
-      INSERT INTO mtss_meetings (
-        student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-        attendees, parent_attended, progress_summary, tier_decision,
-        next_steps, next_meeting_date, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING *
-    `, [
-      student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-      JSON.stringify(attendees), parent_attended, progress_summary, tier_decision,
-      next_steps, next_meeting_date, created_by
-    ]);
+  INSERT INTO mtss_meetings (
+    student_id, tenant_id, meeting_date, meeting_number, meeting_type,
+    attendees, parent_attended, progress_summary, tier_decision,
+    next_steps, next_meeting_date, created_by
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+  RETURNING *
+`, [
+  student_id, tenant_id, meeting_date, meeting_number, meeting_type,
+  JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+  next_steps, cleanNextMeetingDate, created_by
+]);
     
     const meeting = meetingResult.rows[0];
     
     // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
+        // Convert empty strings to null for fields with constraints
+        const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
+        const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
+        const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
+        
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
@@ -233,9 +241,9 @@ router.post('/', async (req, res) => {
         `, [
           meeting.id,
           review.student_intervention_id,
-          review.implementation_fidelity,
-          review.progress_toward_goal,
-          review.recommendation,
+          cleanFidelity,
+          cleanProgress,
+          cleanRecommendation,
           review.notes,
           review.avg_rating,
           review.total_logs
@@ -275,6 +283,9 @@ router.put('/:id', async (req, res) => {
       next_meeting_date,
       intervention_reviews
     } = req.body;
+    // Convert empty strings to null for fields with constraints
+const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
+const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     
     // Update meeting
     const meetingResult = await client.query(`
@@ -293,8 +304,8 @@ router.put('/:id', async (req, res) => {
       RETURNING *
     `, [
       meeting_date, meeting_number, meeting_type,
-      JSON.stringify(attendees), parent_attended, progress_summary, tier_decision,
-      next_steps, next_meeting_date, id
+      JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+      next_steps, cleanNextMeetingDate, id
     ]);
     
     if (meetingResult.rows.length === 0) {
@@ -305,8 +316,15 @@ router.put('/:id', async (req, res) => {
     // Delete existing intervention reviews and re-insert
     await client.query('DELETE FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1', [id]);
     
+   
+          // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
+        // Convert empty strings to null for fields with constraints
+        const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
+        const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
+        const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
+        
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
@@ -316,9 +334,9 @@ router.put('/:id', async (req, res) => {
         `, [
           id,
           review.student_intervention_id,
-          review.implementation_fidelity,
-          review.progress_toward_goal,
-          review.recommendation,
+          cleanFidelity,
+          cleanProgress,
+          cleanRecommendation,
           review.notes,
           review.avg_rating,
           review.total_logs

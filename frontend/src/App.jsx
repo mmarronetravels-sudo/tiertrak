@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Settings, Users, User, UserPlus, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
   MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Shield
@@ -256,7 +256,8 @@ export default function App() {
   const googleButtonRef = useRef(null); 
   const interventionNotesRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
-  const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false); 
+  const [showExpiringDocsDetail, setShowExpiringDocsDetail] = useState(false);
+  const [editingProgressLog, setEditingProgressLog] = useState(null);
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
@@ -363,6 +364,9 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   intervention_reviews: []
 });  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
   const [preReferralForm, setPreReferralForm] = useState(null);
+  // MTSS Meeting Report state
+  const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
+  const [selectedMeetingForReport, setSelectedMeetingForReport] = useState(null);
   const [preReferralStep, setPreReferralStep] = useState(1);
   const [preReferralOptions, setPreReferralOptions] = useState(null);
   const [preReferralLoading, setPreReferralLoading] = useState(false);
@@ -1144,6 +1148,17 @@ const fetchExpiringDocuments = async () => {
     setShowMTSSMeetingForm(true);
   };
 
+  // Open MTSS Meeting Report for printing
+  const openMTSSMeetingReport = (meeting) => {
+    setSelectedMeetingForReport(meeting);
+    setShowMTSSMeetingReport(true);
+  };
+
+  // Print MTSS Meeting Report
+  const printMTSSMeetingReport = () => {
+    window.print();
+  };
+
   const saveMTSSMeeting = async () => {
     if (!selectedStudent) return;
     
@@ -1207,46 +1222,58 @@ const fetchExpiringDocuments = async () => {
   };
   // Submit weekly progress
   const submitWeeklyProgress = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${API_URL}/weekly-progress`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+  e.preventDefault();
+  try {
+    const url = editingProgressLog 
+      ? `${API_URL}/weekly-progress/${editingProgressLog.id}`
+      : `${API_URL}/weekly-progress`;
+    
+    const method = editingProgressLog ? 'PUT' : 'POST';
+    
+    const body = editingProgressLog 
+      ? {
+          week_of: progressFormData.week_of,
+          status: progressFormData.status,
+          rating: progressFormData.rating || null,
+          response: progressFormData.response || null,
+          notes: progressNotesRef.current?.value || null
+        }
+      : {
           student_intervention_id: selectedInterventionForProgress.id,
-          student_id: selectedInterventionForProgress.student_id || selectedStudent?.id,
+          student_id: selectedStudent.id,
           week_of: progressFormData.week_of,
           status: progressFormData.status,
           rating: progressFormData.rating || null,
           response: progressFormData.response || null,
           notes: progressNotesRef.current?.value || null,
           logged_by: user.id
-        })
-      });
+        };
 
-      if (response.ok) {
-        setShowProgressForm(false);
-        setProgressFormData({
-          week_of: '',
-          status: '',
-          rating: '',
-          response: '',
-          notes: ''
-        });
-        const studentId = selectedInterventionForProgress.student_id || selectedStudent?.id;
-        if (studentId) fetchWeeklyProgress(studentId);
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        alert(errorData.error || 'Failed to save progress log. Please try again.');
-      }
-    } catch (err) {
-      console.error('Error submitting weekly progress:', err);
-      alert('Error saving progress log. Please try again.');
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (response.ok) {
+      setShowProgressForm(false);
+      setEditingProgressLog(null);
+      setProgressFormData({
+        week_of: '',
+        status: '',
+        rating: '',
+        response: '',
+        notes: ''
+      });
+      fetchWeeklyProgress(selectedStudent.id);
     }
-  };
+  } catch (err) {
+    console.error('Error submitting weekly progress:', err);
+  }
+};
 
   // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
@@ -1265,6 +1292,22 @@ const fetchExpiringDocuments = async () => {
       console.error('Error deleting weekly progress:', err);
     }
   };
+
+  // Edit weekly progress log
+const openEditProgressLog = (log, intervention) => {
+  setEditingProgressLog(log);
+  setSelectedInterventionForProgress(intervention);
+  setProgressFormData({
+    week_of: log.week_of?.split('T')[0] || '',
+    status: log.status || '',
+    rating: log.rating || '',
+    response: log.response || ''
+  });
+  if (progressNotesRef.current) {
+    progressNotesRef.current.value = log.notes || '';
+  }
+  setShowProgressForm(true);
+};
   
 
   // Update intervention goal
@@ -2790,10 +2833,7 @@ if (!user) {
           </div>
         </div>
         
-        <p className="mt-4 text-center text-sm text-slate-500">
-          Test login: demo@lincoln.edu / test123
-        </p>
-        
+                
         {/* Privacy Policy & Terms of Service */}
         <div className="mt-4 flex items-center justify-center gap-4 text-xs text-slate-400">
           <a 
@@ -3242,10 +3282,14 @@ if (!user) {
           {/* Interventions */}
           <div className="col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <BookOpen size={20} className="text-slate-400" />
-                <h2 className="text-lg font-semibold text-slate-800">Interventions</h2>
-              </div>
+             <div className="flex items-center gap-2">
+  <BookOpen size={20} className="text-slate-400" />
+  <h2 className="text-lg font-semibold text-slate-800">Interventions</h2>
+  <span className="text-xs text-slate-400 ml-2">Plan Status:</span>
+  <span className="text-xs text-slate-400 ml-4 flex items-center gap-1">🟠 Not Started</span>
+<span className="text-xs text-slate-400 flex items-center gap-1">🟡 In Progress</span>
+<span className="text-xs text-slate-400 flex items-center gap-1">🟢 Complete</span>
+</div>
               {!selectedStudent.archived && (
                 <button
                   onClick={() => {
@@ -3400,7 +3444,17 @@ if (!user) {
                             <FileText size={12} />
                             Plan
                           </button>
+                            
                         )}
+                        {intervention.plan_status === 'complete' && (
+  <span className="ml-1" title="Plan Complete">🟢</span>
+)}
+{intervention.plan_status === 'draft' && (
+  <span className="ml-1" title="Plan In Progress">🟡</span>
+)}
+{(!intervention.plan_status || intervention.plan_status === 'not_applicable') && (
+  <span className="ml-1" title="Plan Not Started">🟠</span>
+)}
                       </div>
                       <p className="text-sm text-slate-500">Started {formatWeekOf(intervention.start_date)}</p>
                     </div>
@@ -3524,6 +3578,13 @@ if (!user) {
                             <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
                               {log.status}
                             </span>
+                            <button
+  onClick={() => openEditProgressLog(log, intervention)}
+  className="text-slate-400 hover:text-blue-600 p-1"
+  title="Edit log"
+>
+  <Pencil className="w-3 h-3" />
+</button>
                             <button
                               onClick={() => deleteWeeklyProgress(log.id)}
                               className="text-slate-400 hover:text-rose-600 p-1"
@@ -3717,6 +3778,12 @@ if (!user) {
                   )}
                   
                   <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => openMTSSMeetingReport(meeting)}
+                      className="text-xs text-indigo-600 hover:text-indigo-800"
+                    >
+                      Print
+                    </button>
                     <button
                       onClick={() => openMTSSMeetingForm(meeting)}
                       className="text-xs text-blue-600 hover:text-blue-800"
@@ -5309,6 +5376,279 @@ if (!user) {
     </div>
   </div>
 )}
+        {/* MTSS Meeting Report Modal */}
+{showMTSSMeetingReport && selectedStudent && selectedMeetingForReport && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 print:bg-white print:block print:relative">
+    <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto print:max-w-none print:max-h-none print:shadow-none print:rounded-none print:mx-0">
+      
+      {/* Modal Header - Hidden when printing */}
+      <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between print:hidden">
+        <h2 className="text-xl font-bold text-gray-900">MTSS Meeting Summary</h2>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={printMTSSMeetingReport}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+          >
+            <Printer size={18} />
+            Print
+          </button>
+          <button
+            onClick={() => setShowMTSSMeetingReport(false)}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X size={24} />
+          </button>
+        </div>
+      </div>
+
+      {/* Report Content */}
+      <div className="p-8 print:p-0">
+        
+        {/* Report Header */}
+        <div className="text-center mb-8 pb-6 border-b-2 border-gray-300">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">MTSS Progress Review Meeting</h1>
+          <p className="text-gray-600">Multi-Tiered System of Supports</p>
+          <p className="text-lg font-semibold text-indigo-600 mt-2">
+            Meeting #{selectedMeetingForReport.meeting_number} - {
+              selectedMeetingForReport.meeting_type === '4-week' ? '4-Week Review' : 
+              selectedMeetingForReport.meeting_type === '6-week' ? '6-Week Review' : 
+              selectedMeetingForReport.meeting_type === 'final-review' ? 'Final Review' : 'Other'
+            }
+          </p>
+        </div>
+
+        {/* Meeting Info */}
+        <div className="mb-8 p-4 bg-gray-50 rounded-lg print:bg-white print:border print:border-gray-300">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Student Name</p>
+              <p className="font-semibold text-gray-900">{selectedStudent.first_name} {selectedStudent.last_name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Grade</p>
+              <p className="font-semibold text-gray-900">{selectedStudent.grade || 'N/A'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Current Tier</p>
+              <p className={`font-semibold ${
+                selectedStudent.tier === 1 ? 'text-emerald-600' :
+                selectedStudent.tier === 2 ? 'text-amber-600' : 'text-rose-600'
+              }`}>Tier {selectedStudent.tier}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Focus Area</p>
+              <p className="font-semibold text-gray-900">{selectedStudent.area || 'N/A'}</p>
+            </div>
+          </div>
+          <div className="pt-4 border-t border-gray-200 grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Meeting Date</p>
+              <p className="font-semibold text-gray-900">
+                {selectedMeetingForReport.meeting_date 
+                  ? new Date(selectedMeetingForReport.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { 
+                      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
+                    })
+                  : 'Not set'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">Attendees</p>
+              <p className="font-semibold text-gray-900">
+                {selectedMeetingForReport.attendees 
+                  ? Object.entries(selectedMeetingForReport.attendees)
+                      .filter(([key, val]) => val === true)
+                      .map(([key]) => key.charAt(0).toUpperCase() + key.slice(1))
+                      .join(', ') || 'None recorded'
+                  : 'None recorded'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Intervention Reviews */}
+        <div className="mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">Intervention Progress Review</h2>
+          
+          {(!selectedMeetingForReport.intervention_reviews || selectedMeetingForReport.intervention_reviews.length === 0) ? (
+            <p className="text-gray-500 italic">No interventions reviewed in this meeting.</p>
+          ) : (
+            <div className="space-y-4">
+              {selectedMeetingForReport.intervention_reviews.map((review, idx) => (
+                <div key={idx} className="p-4 border rounded-lg print:break-inside-avoid">
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
+                    <div className="text-sm text-gray-500">
+                      Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} | 
+                      Total Logs: {review.total_logs || 0}
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Implementation Fidelity</p>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        review.implementation_fidelity === 'yes' ? 'bg-emerald-100 text-emerald-700' :
+                        review.implementation_fidelity === 'partial' ? 'bg-amber-100 text-amber-700' :
+                        review.implementation_fidelity === 'no' ? 'bg-rose-100 text-rose-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {review.implementation_fidelity === 'yes' ? 'Implemented as planned' :
+                         review.implementation_fidelity === 'partial' ? 'Partial' :
+                         review.implementation_fidelity === 'no' ? 'Not consistent' :
+                         'Not rated'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Progress Toward Goal</p>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        review.progress_toward_goal === 'met' ? 'bg-emerald-100 text-emerald-700' :
+                        review.progress_toward_goal === 'progressing' ? 'bg-blue-100 text-blue-700' :
+                        review.progress_toward_goal === 'minimal' ? 'bg-amber-100 text-amber-700' :
+                        review.progress_toward_goal === 'no_progress' ? 'bg-rose-100 text-rose-700' :
+                        review.progress_toward_goal === 'regression' ? 'bg-red-100 text-red-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {review.progress_toward_goal === 'met' ? 'Goal Met' :
+                         review.progress_toward_goal === 'progressing' ? 'Progressing' :
+                         review.progress_toward_goal === 'minimal' ? 'Minimal Progress' :
+                         review.progress_toward_goal === 'no_progress' ? 'No Progress' :
+                         review.progress_toward_goal === 'regression' ? 'Regression' :
+                         'Not rated'}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase mb-1">Recommendation</p>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        review.recommendation === 'continue' ? 'bg-blue-100 text-blue-700' :
+                        review.recommendation === 'modify' ? 'bg-amber-100 text-amber-700' :
+                        review.recommendation === 'discontinue_met' ? 'bg-emerald-100 text-emerald-700' :
+                        review.recommendation === 'discontinue_ineffective' ? 'bg-rose-100 text-rose-700' :
+                        review.recommendation === 'add_support' ? 'bg-purple-100 text-purple-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {review.recommendation === 'continue' ? 'Continue as-is' :
+                         review.recommendation === 'modify' ? 'Modify intervention' :
+                         review.recommendation === 'discontinue_met' ? 'Discontinue - Goal met' :
+                         review.recommendation === 'discontinue_ineffective' ? 'Discontinue - Ineffective' :
+                         review.recommendation === 'add_support' ? 'Add additional support' :
+                         'No recommendation'}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {review.notes && (
+                    <div className="mt-3 pt-3 border-t">
+                      <p className="text-xs text-gray-500 uppercase mb-1">Notes</p>
+                      <p className="text-sm text-gray-700">{review.notes}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Team Decision */}
+        <div className="mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">Team Decision</h2>
+          
+          <div className="space-y-4">
+            {/* Tier Decision */}
+            <div className="p-4 bg-indigo-50 rounded-lg print:bg-white print:border print:border-indigo-200">
+              <p className="text-xs text-indigo-600 uppercase font-medium mb-1">Tier Decision</p>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                selectedMeetingForReport.tier_decision === 'move_tier1' ? 'bg-emerald-100 text-emerald-700' :
+                selectedMeetingForReport.tier_decision === 'move_tier3' ? 'bg-rose-100 text-rose-700' :
+                selectedMeetingForReport.tier_decision?.includes('refer') ? 'bg-purple-100 text-purple-700' :
+                'bg-blue-100 text-blue-700'
+              }`}>
+                {selectedMeetingForReport.tier_decision === 'stay_tier2_continue' ? 'Continue at Tier 2 - Continue interventions' :
+                 selectedMeetingForReport.tier_decision === 'stay_tier2_modify' ? 'Continue at Tier 2 - Modify interventions' :
+                 selectedMeetingForReport.tier_decision === 'move_tier1' ? 'Move to Tier 1 - Goals met' :
+                 selectedMeetingForReport.tier_decision === 'move_tier3' ? 'Move to Tier 3 - Needs intensive support' :
+                 selectedMeetingForReport.tier_decision === 'refer_sped' ? 'Refer for Special Education evaluation' :
+                 selectedMeetingForReport.tier_decision === 'refer_504' ? 'Refer for 504 Plan' :
+                 'No decision recorded'}
+              </span>
+            </div>
+
+            {/* Progress Summary */}
+            {selectedMeetingForReport.progress_summary && (
+              <div className="p-4 border rounded-lg">
+                <p className="text-xs text-gray-500 uppercase font-medium mb-1">Progress Summary</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{selectedMeetingForReport.progress_summary}</p>
+              </div>
+            )}
+
+            {/* Next Steps */}
+            {selectedMeetingForReport.next_steps && (
+              <div className="p-4 border rounded-lg">
+                <p className="text-xs text-gray-500 uppercase font-medium mb-1">Next Steps</p>
+                <p className="text-gray-700 whitespace-pre-wrap">{selectedMeetingForReport.next_steps}</p>
+              </div>
+            )}
+
+            {/* Next Meeting Date */}
+            {selectedMeetingForReport.next_meeting_date && (
+              <div className="p-4 bg-gray-50 rounded-lg print:bg-white print:border">
+                <p className="text-xs text-gray-500 uppercase font-medium mb-1">Next Meeting Scheduled</p>
+                <p className="font-semibold text-gray-900">
+                  {new Date(selectedMeetingForReport.next_meeting_date + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
+                  })}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Signature Lines */}
+        <div className="mt-12 pt-8 border-t-2 border-gray-300 print:break-inside-avoid">
+          <h2 className="text-lg font-bold text-gray-900 mb-6">Signatures</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div>
+              <div className="border-b border-gray-400 mb-2 h-10"></div>
+              <p className="text-sm text-gray-600">Teacher</p>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-sm text-gray-500">Date:</span>
+                <div className="border-b border-gray-300 flex-1"></div>
+              </div>
+            </div>
+            
+            <div>
+              <div className="border-b border-gray-400 mb-2 h-10"></div>
+              <p className="text-sm text-gray-600">Parent/Guardian</p>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-sm text-gray-500">Date:</span>
+                <div className="border-b border-gray-300 flex-1"></div>
+              </div>
+            </div>
+            
+            <div>
+              <div className="border-b border-gray-400 mb-2 h-10"></div>
+              <p className="text-sm text-gray-600">Counselor/Administrator</p>
+              <div className="flex items-center gap-4 mt-2">
+                <span className="text-sm text-gray-500">Date:</span>
+                <div className="border-b border-gray-300 flex-1"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 pt-4 border-t text-center text-sm text-gray-500">
+          <p>Generated on {new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+          })}</p>
+          <p className="mt-1">TierTrak MTSS Management System</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+)}
+        
         {/* Archive Modal */}
         {showArchiveModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -8236,10 +8576,10 @@ if (isParent) {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
               <div className="p-4 border-b flex justify-between items-center">
                 <div>
-                  <h3 className="font-semibold text-lg">Log Weekly Progress</h3>
+                  <h3 className="font-semibold text-lg">{editingProgressLog ? 'Edit Progress Log' : 'Log Weekly Progress'}</h3>
                   <p className="text-sm text-slate-500">{selectedInterventionForProgress.intervention_name}</p>
                 </div>
-                <button onClick={() => setShowProgressForm(false)} className="text-slate-500 hover:text-slate-700">
+                <button onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }} className="text-slate-500 hover:text-slate-700">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -8344,7 +8684,7 @@ if (isParent) {
                 <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowProgressForm(false)}
+                    onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
                     className="flex-1 py-2 px-4 border rounded-lg hover:bg-slate-50"
                   >
                     Cancel
