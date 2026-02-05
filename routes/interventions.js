@@ -165,21 +165,88 @@ router.patch('/:id/goal', async (req, res) => {
     res.status(500).json({ error: 'Failed to update goal' });
   }
 });
-// ---- ADD THESE BEFORE module.exports ----
 
-// Archive an intervention
+// Archive an intervention (soft delete — preserves all data)
 router.put('/student-interventions/:id/archive', async (req, res) => {
-  // ... (code from the guide)
+  try {
+    const { id } = req.params;
+    const { archived_by, archive_reason } = req.body;
+    
+    const result = await pool.query(`
+      UPDATE student_interventions 
+      SET status = 'archived',
+          archived_at = CURRENT_TIMESTAMP,
+          archived_by = $1,
+          archive_reason = $2,
+          end_date = CURRENT_DATE
+      WHERE id = $3
+      RETURNING *
+    `, [archived_by, archive_reason || null, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Intervention not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error archiving intervention:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Unarchive an intervention
+
+// Unarchive an intervention (restore to active)
 router.put('/student-interventions/:id/unarchive', async (req, res) => {
-  // ... (code from the guide)
+  try {
+    const { id } = req.params;
+    
+    const result = await pool.query(`
+      UPDATE student_interventions 
+      SET status = 'active',
+          archived_at = NULL,
+          archived_by = NULL,
+          archive_reason = NULL,
+          end_date = NULL
+      WHERE id = $1
+      RETURNING *
+    `, [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Intervention not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error unarchiving intervention:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
-// Delete an intervention permanently
+// Delete an intervention permanently (admin only — for mistakes)
 router.delete('/student-interventions/:id', async (req, res) => {
-  // ... (code from the guide)
+  try {
+    const { id } = req.params;
+    
+    // First delete related records that reference this intervention
+    await pool.query('DELETE FROM weekly_progress WHERE student_intervention_id = $1', [id]);
+    await pool.query('DELETE FROM intervention_assignments WHERE student_intervention_id = $1', [id]);
+    await pool.query('DELETE FROM mtss_meeting_interventions WHERE student_intervention_id = $1', [id]);
+    
+    // Now delete the intervention itself
+    const result = await pool.query(
+      'DELETE FROM student_interventions WHERE id = $1 RETURNING *', 
+      [id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Intervention not found' });
+    }
+    
+    res.json({ success: true, message: 'Intervention permanently deleted' });
+  } catch (error) {
+    console.error('Error deleting intervention:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;
