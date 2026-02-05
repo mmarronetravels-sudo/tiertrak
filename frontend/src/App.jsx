@@ -238,7 +238,7 @@ export default function App() {
   const [interventionLogs, setInterventionLogs] = useState([]);
   const [logOptions, setLogOptions] = useState({ timeOfDay: [], location: [] });
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterTier, setFilterTier] = useState('all');
+  const [filterTier, setFilterTier] = useState('2_3');
   const [filterArea, setFilterArea] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
   const [studentDocuments, setStudentDocuments] = useState([]);
@@ -2474,7 +2474,7 @@ const filterByDateRange = (items, dateField) => {
   const filteredStudents = students.filter(student => {
     const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
     const matchesSearch = fullName.includes(searchTerm.toLowerCase());
-    const matchesTier = filterTier === 'all' || student.tier === parseInt(filterTier);
+    const matchesTier = filterTier === 'all' ? true : filterTier === '2_3' ? (student.tier === 2 || student.tier === 3) : student.tier === parseInt(filterTier);
     const matchesArea = filterArea === 'all' || student.area === filterArea;
     const matchesArchived = showArchived || !student.archived;
     return matchesSearch && matchesTier && matchesArea && matchesArchived;
@@ -3101,7 +3101,12 @@ if (!user) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-slate-800 tracking-tight">Students</h1>
-          <p className="text-slate-500 mt-1">Browse and manage student interventions</p>
+<p className="text-slate-500 mt-1">
+  {filterTier === '2_3' ? 'Active MTSS caseload — Tier 2 & 3 students' :
+   filterTier === '1' ? 'Tier 1 — Universal supports' :
+   filterTier === 'all' ? 'All students across all tiers' :
+   `Tier ${filterTier} students`}
+</p>
         </div>
       </div>
 
@@ -3122,10 +3127,11 @@ if (!user) {
           onChange={(e) => setFilterTier(e.target.value)}
           className="px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
         >
-          <option value="all">All Tiers</option>
-          <option value="1">Tier 1</option>
-          <option value="2">Tier 2</option>
-          <option value="3">Tier 3</option>
+          <option value="2_3">Tier 2 & 3</option>
+<option value="1">Tier 1</option>
+<option value="2">Tier 2</option>
+<option value="3">Tier 3</option>
+<option value="all">All Tiers</option>
         </select>
         <select
           value={filterArea}
@@ -3153,51 +3159,119 @@ if (!user) {
         </button>
       </div>
 
-      {/* Student Cards */}
-      <div className="grid grid-cols-2 gap-4">
-        {filteredStudents.map(student => (
-          <div
-            key={student.id}
-            className={`${tierColors[student.tier]?.bg || 'bg-slate-50'} ${tierColors[student.tier]?.border || 'border-slate-200'} border-2 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] ${student.archived ? 'opacity-60 border-dashed' : ''}`}
-            onClick={() => openStudentProfile(student)}
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'}`}>
-                  <User size={22} />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-800">{student.first_name} {student.last_name}</h3>
-                  <p className="text-sm text-slate-500">{student.grade} Grade</p>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className={`${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-sm font-semibold`}>
-                  Tier {student.tier}
-                </span>
-                {student.archived && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded-full">
-                    <Archive size={12} />
-                    Archived
-                  </span>
+      {/* Compact Table View - for Tier 1 and All Tiers */}
+      {(filterTier === '1' || filterTier === 'all') ? (
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Name</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Grade</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Tier</th>
+                <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Area</th>
+                {filterTier === 'all' && (
+                  <th className="text-left px-4 py-3 text-sm font-semibold text-slate-600">Status</th>
                 )}
-              </div>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredStudents.map((student, idx) => (
+                <tr
+                  key={student.id}
+                  onClick={() => openStudentProfile(student)}
+                  className={`border-b border-slate-100 cursor-pointer transition-colors hover:bg-indigo-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} ${student.archived ? 'opacity-60' : ''}`}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                        <User size={14} />
+                      </div>
+                      <span className="font-medium text-slate-800">{student.last_name}, {student.first_name}</span>
+                      {student.archived && <Archive size={12} className="text-gray-400" />}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-600">{student.grade}</td>
+                  <td className="px-4 py-3">
+                    <span className={`${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'} px-2 py-0.5 rounded-full text-xs font-semibold`}>
+                      Tier {student.tier}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {student.area && (
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${areaColors[student.area]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                        {student.area}
+                      </span>
+                    )}
+                  </td>
+                  {filterTier === 'all' && (
+                    <td className="px-4 py-3">
+                      {student.archived && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded-full">
+                          Archived
+                        </span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredStudents.length > 0 && (
+            <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-sm text-slate-500">
+              Showing {filteredStudents.length} student{filteredStudents.length !== 1 ? 's' : ''}
             </div>
-            {student.area && (
-              <div className="flex items-center gap-2">
-                <span className={`px-2 py-1 rounded-full text-xs ${areaColors[student.area]?.badge || 'bg-slate-100 text-slate-600'}`}>
-                  {student.area}
-                </span>
+          )}
+        </div>
+      ) : (
+        /* Card Grid View - for Tier 2, Tier 3, and Tier 2 & 3 */
+        <div className="grid grid-cols-2 gap-4">
+          {filteredStudents.map(student => (
+            <div
+              key={student.id}
+              className={`${tierColors[student.tier]?.bg || 'bg-slate-50'} ${tierColors[student.tier]?.border || 'border-slate-200'} border-2 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] ${student.archived ? 'opacity-60 border-dashed' : ''}`}
+              onClick={() => openStudentProfile(student)}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                    <User size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-800">{student.first_name} {student.last_name}</h3>
+                    <p className="text-sm text-slate-500">{student.grade} Grade</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'} px-3 py-1 rounded-full text-sm font-semibold`}>
+                    Tier {student.tier}
+                  </span>
+                  {student.archived && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-200 text-gray-600 text-xs font-medium rounded-full">
+                      <Archive size={12} />
+                      Archived
+                    </span>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+              {student.area && (
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-1 rounded-full text-xs ${areaColors[student.area]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                    {student.area}
+                  </span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {filteredStudents.length === 0 && (
         <div className="text-center py-12 text-slate-400">
           <Users size={48} className="mx-auto mb-4 opacity-50" />
           <p className="text-lg">No students found</p>
+          {filterTier === '2_3' && students.filter(s => !s.archived).length > 0 && (
+            <p className="text-sm mt-2">No Tier 2 or 3 students yet. Check Tier 1 to see all students.</p>
+          )}
         </div>
       )}
     </div>
