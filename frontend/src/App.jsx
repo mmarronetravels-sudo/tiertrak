@@ -506,7 +506,7 @@ const handleReferralMonitoring = async (studentId, action) => {
   } catch (error) {
     console.error('Error updating monitoring:', error);
   }
-};ß
+};
   
 // Fetch admin templates when admin view loads
   useEffect(() => {
