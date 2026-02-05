@@ -7831,13 +7831,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
       />
     )}
 
-    {/* ==================== STAFF TAB ==================== */}
-{adminTab === 'staff' && (
-  <div className="bg-white rounded-xl border border-slate-200 p-6">
-    <h2>Staff tab is working!</h2>
-  </div>
-)}
-      {/* Manage Links */}
+         {/* Manage Links */}
     {adminParentTab === 'links' && (
       <div className="space-y-6">
         {/* Link a Parent */}
@@ -7916,7 +7910,12 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     )}
   </div>
 )}
-
+      {/* ==================== STAFF TAB ==================== */}
+      {adminTab === 'staff' && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h2>Staff tab is working!</h2>
+        </div>
+      )}
       {/* Archived Students Tab */}
       {adminTab === 'archived' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
