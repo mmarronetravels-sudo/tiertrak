@@ -4,7 +4,7 @@ import {
   FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
-MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, UserPlus, Shield
+MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, UserPlus
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
