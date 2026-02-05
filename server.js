@@ -324,6 +324,14 @@ const createTables = async () => {
     `);
     console.log('Migration 013: Archive/Delete interventions columns ready');
 
+    // Migration 013b: Update status constraint to include 'archived'
+    await pool.query(`
+      ALTER TABLE student_interventions DROP CONSTRAINT IF EXISTS student_interventions_status_check;
+      ALTER TABLE student_interventions ADD CONSTRAINT student_interventions_status_check 
+        CHECK (status IN ('active', 'completed', 'discontinued', 'archived'));
+    `);
+    console.log('Migration 013b: Status constraint updated');
+
     // Update role constraint to include all roles
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
