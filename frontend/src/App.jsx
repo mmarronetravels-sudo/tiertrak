@@ -7089,9 +7089,6 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             </div>
           </div>
         )}
-      </div>
-    );
-  };
 
 {/* Add Staff Modal */}
 {showAddStaffModal && (
