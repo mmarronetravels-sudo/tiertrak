@@ -659,7 +659,7 @@ const removeInterventionAssignment = async (assignmentId) => {
   }
 
   // Fetch staff list
-const fetchStaffList = async () => {
+const loadStaffList = async () => {
   if (!user?.tenant_id) return;
   try {
     const response = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
@@ -690,7 +690,7 @@ const handleAddStaff = async () => {
     if (response.ok) {
       setShowAddStaffModal(false);
       setNewStaff({ email: '', full_name: '', role: 'teacher' });
-      fetchStaffList();
+      loadStaffList();
     } else {
       const err = await response.json();
       setStaffError(err.error || 'Failed to create staff member');
@@ -715,7 +715,7 @@ const handleUpdateStaff = async () => {
     if (response.ok) {
       setShowEditStaffModal(false);
       setSelectedStaffMember(null);
-      fetchStaffList();
+      loadStaffList();
     }
   } catch (error) {
     console.error('Error updating staff:', error);
@@ -731,7 +731,7 @@ const handleDeleteStaff = async (staffId, staffName) => {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     if (response.ok) {
-      fetchStaffList();
+      loadStaffList();
     }
   } catch (error) {
     console.error('Error deleting staff:', error);
@@ -2056,7 +2056,7 @@ useEffect(() => {
         fetchStudents(data.user.tenant_id);
         fetchInterventionTemplates(data.user.tenant_id);
         fetchLogOptions();
-        fetchStaffList(data.user.tenant_id);
+        loadStaffList(data.user.tenant_id);
         fetchParentsList(data.user.tenant_id);
       } else {
         setLoginError(data.error || 'Login failed');
