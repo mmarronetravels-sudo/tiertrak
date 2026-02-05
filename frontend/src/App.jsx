@@ -1965,6 +1965,7 @@ useEffect(() => {
           start_date: newIntervention.start_date || new Date().toISOString().split('T')[0],
           end_date: newIntervention.end_date || null
         })
+      });
       if (res.ok) {
         fetchStudentDetails(selectedStudent.id);
         setNewIntervention({ name: '', notes: '', log_frequency: 'weekly', start_date: '', end_date: '' });
