@@ -136,6 +136,91 @@ router.get('/tenant/:tenantId/tier/:tier', async (req, res) => {
   }
 });
 
+// Helper function for referral flag reasons
+function getFlagReasons(student) {
+  const reasons = [];
+  const interventions = parseInt(student.active_interventions);
+  const logs = parseInt(student.total_logs);
+  const avg = student.avg_rating ? parseFloat(student.avg_rating) : null;
+  
+  if (interventions >= 3) {
+    reasons.push(`${interventions} active interventions`);
+  }
+  if (logs >= 4 && avg !== null && avg <= 2.0) {
+    reasons.push(`Avg rating ${avg}/5 across ${logs} logs`);
+  }
+  if (interventions >= 2 && logs >= 2 && avg !== null && avg < 3.0) {
+    reasons.push(`Low progress (${avg}/5) with ${interventions} interventions`);
+  }
+  return reasons;
+}
+
+// GET referral candidates - Tier 1 students who may need MTSS referral
+router.get('/referral-candidates/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        s.id,
+        s.first_name,
+        s.last_name,
+        s.grade,
+        s.area,
+        s.tier,
+        COUNT(DISTINCT si.id) AS active_interventions,
+        COUNT(DISTINCT wp.id) AS total_logs,
+        ROUND(AVG(wp.rating)::numeric, 2) AS avg_rating,
+        MIN(si.start_date) AS earliest_intervention,
+        pf.id AS prereferral_id,
+        pf.status AS prereferral_status
+      FROM students s
+      INNER JOIN student_interventions si 
+        ON s.id = si.student_id AND si.status = 'active'
+      LEFT JOIN weekly_progress wp 
+        ON si.id = wp.student_intervention_id
+      LEFT JOIN prereferral_forms pf 
+        ON s.id = pf.student_id AND pf.status IN ('draft', 'submitted', 'approved')
+      WHERE s.tenant_id = $1
+        AND s.tier = 1
+        AND s.archived = false
+      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, pf.id, pf.status
+      HAVING 
+        COUNT(DISTINCT si.id) >= 3
+        OR (COUNT(DISTINCT wp.id) >= 4 AND AVG(wp.rating) <= 2.0)
+        OR (COUNT(DISTINCT si.id) >= 2 AND COUNT(DISTINCT wp.id) >= 2 AND AVG(wp.rating) < 3.0)
+      ORDER BY 
+        COALESCE(AVG(wp.rating), 0) ASC,
+        COUNT(DISTINCT si.id) DESC
+    `, [tenantId]);
+
+    // Filter out students who already have submitted/approved pre-referral forms
+    const candidates = result.rows.filter(s => 
+      !s.prereferral_status || s.prereferral_status === 'draft'
+    );
+
+    res.json({
+      count: candidates.length,
+      candidates: candidates.map(s => ({
+        id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        grade: s.grade,
+        area: s.area,
+        active_interventions: parseInt(s.active_interventions),
+        total_logs: parseInt(s.total_logs),
+        avg_rating: s.avg_rating ? parseFloat(s.avg_rating) : null,
+        earliest_intervention: s.earliest_intervention,
+        has_prereferral_draft: s.prereferral_status === 'draft',
+        flag_reasons: getFlagReasons(s)
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error fetching referral candidates:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 // Get a single student with their interventions and notes
 router.get('/:id', async (req, res) => {
   try {
