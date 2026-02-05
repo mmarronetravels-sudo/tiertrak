@@ -7093,8 +7093,6 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
     );
   };
 
-)}
-
 {/* Add Staff Modal */}
 {showAddStaffModal && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
