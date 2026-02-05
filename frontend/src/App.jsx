@@ -7913,10 +7913,18 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                   <span className="text-xs text-slate-400">Not yet</span>
                 )}
               </td>
-              <td className="py-3 text-right">
+                <td className="py-3 text-right">
                 <div className="flex items-center justify-end gap-2">
                   <button
-                   onClick={() => handleDeleteStaff(member.id, member.full_name)}
+                    onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 transition"
+                    title="Edit"
+                  >
+                    <Edit size={16} />
+                  </button>
+                  {member.id !== user.id && (
+                    <button
+                      onClick={() => handleDeleteStaff(member.id, member.full_name)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 transition"
                       title="Remove"
                     >
@@ -7925,6 +7933,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                   )}
                 </div>
               </td>
+Commit that and let me know how it looks.
             </tr>
           ))}
         </tbody>
