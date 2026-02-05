@@ -69,7 +69,6 @@ router.get('/tenant/:tenantId', async (req, res) => {
               WHERE si.status = 'active' AND ia.user_id = $2
             )
           )
-        ORDER BY s.last_name, s.first_name
       `;
       params = [tenantId, userId];
     }
