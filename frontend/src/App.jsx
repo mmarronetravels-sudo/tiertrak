@@ -7415,7 +7415,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           </div>
         </button>
         <button
-  onClick={() => { setAdminTab('staff'); fetchStaffList(); }}
+  onClick={() => { setAdminTab('staff'); }}
   className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
     adminTab === 'staff' 
       ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
