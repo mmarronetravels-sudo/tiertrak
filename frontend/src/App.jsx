@@ -3228,43 +3228,41 @@ if (!user) {
           {filteredStudents.map(student => (
             <div
               key={student.id}
-              <div
-  key={student.id}
-  className={`${tierColors[student.tier]?.bg || 'bg-slate-50'} ${tierColors[student.tier]?.border || 'border-slate-200'} border rounded-xl p-3 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01] ${student.archived ? 'opacity-60 border-dashed' : ''}`}
-  onClick={() => openStudentProfile(student)}
->
-  <div className="flex items-center gap-2.5">
-    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'}`}>
-      <User size={16} />
-    </div>
-    <div className="flex-1 min-w-0">
-      <h3 className="font-semibold text-sm text-slate-800 truncate">{student.last_name}, {student.first_name}</h3>
-      <div className="flex items-center gap-1.5 mt-0.5">
-        <span className="text-xs text-slate-500">{student.grade}</span>
-        <span className="text-slate-300">·</span>
-        <span className={`text-xs font-medium ${tierColors[student.tier]?.text || 'text-slate-600'}`}>T{student.tier}</span>
-        {student.area && (
-          <>
-            <span className="text-slate-300">·</span>
-            <span className={`text-xs px-1.5 rounded ${areaColors[student.area]?.badge || 'bg-slate-100 text-slate-600'}`}>
-              {student.area === 'Social-Emotional' ? 'SEL' : student.area.slice(0, 4)}
-            </span>
-          </>
-        )}
-        {student.archived && (
-          <>
-            <span className="text-slate-300">·</span>
-            <span className="inline-flex items-center gap-0.5 text-xs text-gray-500">
-              <Archive size={10} />
-              Archived
-            </span>
-          </>
-        )}
-      </div>
-    </div>
-    <ChevronRight size={14} className="text-slate-400 shrink-0" />
-  </div>
-</div>
+              className={`${tierColors[student.tier]?.bg || 'bg-slate-50'} ${tierColors[student.tier]?.border || 'border-slate-200'} border rounded-xl p-3 cursor-pointer transition-all hover:shadow-md hover:scale-[1.01] ${student.archived ? 'opacity-60 border-dashed' : ''}`}
+              onClick={() => openStudentProfile(student)}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${tierColors[student.tier]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                  <User size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm text-slate-800 truncate">{student.last_name}, {student.first_name}</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-xs text-slate-500">{student.grade}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className={`text-xs font-medium ${tierColors[student.tier]?.text || 'text-slate-600'}`}>T{student.tier}</span>
+                    {student.area && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className={`text-xs px-1.5 rounded ${areaColors[student.area]?.badge || 'bg-slate-100 text-slate-600'}`}>
+                          {student.area === 'Social-Emotional' ? 'SEL' : student.area.slice(0, 4)}
+                        </span>
+                      </>
+                    )}
+                    {student.archived && (
+                      <>
+                        <span className="text-slate-300">·</span>
+                        <span className="inline-flex items-center gap-0.5 text-xs text-gray-500">
+                          <Archive size={10} />
+                          Archived
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight size={14} className="text-slate-400 shrink-0" />
+              </div>
+            </div>
           ))}
         </div>
       )}
