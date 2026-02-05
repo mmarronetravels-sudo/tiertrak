@@ -165,4 +165,21 @@ router.patch('/:id/goal', async (req, res) => {
     res.status(500).json({ error: 'Failed to update goal' });
   }
 });
+// ---- ADD THESE BEFORE module.exports ----
+
+// Archive an intervention
+router.put('/student-interventions/:id/archive', async (req, res) => {
+  // ... (code from the guide)
+});
+
+// Unarchive an intervention
+router.put('/student-interventions/:id/unarchive', async (req, res) => {
+  // ... (code from the guide)
+});
+
+// Delete an intervention permanently
+router.delete('/student-interventions/:id', async (req, res) => {
+  // ... (code from the guide)
+});
+
 module.exports = router;

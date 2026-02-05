@@ -36,15 +36,17 @@ const parentLinksRoutes = require('./routes/parentLinks');
 const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 const studentDocumentsRoutes = require('./routes/studentDocuments');
+
+// Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
 parentLinksRoutes.initializePool(pool);
 adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
-interventionAssignmentsRoutes.initializePool(pool);
-parentLinksRoutes.initializePool(pool);// Auto-create tables if they don't exist
 studentDocumentsRoutes.initializePool(pool);
+
+// Auto-create tables if they don't exist
 const createTables = async () => {
   try {
     // Migration 007: Pre-Referral Forms
@@ -164,42 +166,56 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_mtss_meetings_tenant ON mtss_meetings(tenant_id);
     `);
     console.log('MTSS meetings tables ready');
-    // Migration 012: Student Documents
+
+    // Migration 009: Intervention Plan Templates
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS student_documents (
-        id SERIAL PRIMARY KEY,
-        tenant_id INTEGER REFERENCES tenants(id),
-        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'intervention_templates' AND column_name = 'plan_template'
+        ) THEN
+          ALTER TABLE intervention_templates ADD COLUMN plan_template JSONB DEFAULT NULL;
+        END IF;
         
-        -- File info
-        file_name VARCHAR(255) NOT NULL,
-        file_url TEXT NOT NULL,
-        file_type VARCHAR(50),
-        file_size INTEGER,
-        s3_key VARCHAR(500),
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'intervention_templates' AND column_name = 'has_plan_template'
+        ) THEN
+          ALTER TABLE intervention_templates ADD COLUMN has_plan_template BOOLEAN DEFAULT FALSE;
+        END IF;
         
-        -- Document metadata
-        document_category VARCHAR(50) CHECK (document_category IN (
-          '504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 
-          'Parent Communication', 'Medical Record', 'Other'
-        )),
-        description TEXT,
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_data'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_data JSONB DEFAULT NULL;
+        END IF;
         
-        -- Expiration tracking
-        expiration_date DATE,
-        expiration_alert_sent BOOLEAN DEFAULT FALSE,
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_status'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_status VARCHAR(20) DEFAULT 'not_applicable';
+        END IF;
         
-        -- Audit trail
-        uploaded_by INTEGER REFERENCES users(id),
-        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_student_documents_student ON student_documents(student_id);
-      CREATE INDEX IF NOT EXISTS idx_student_documents_tenant ON student_documents(tenant_id);
-      CREATE INDEX IF NOT EXISTS idx_student_documents_expiration ON student_documents(expiration_date) 
-        WHERE expiration_date IS NOT NULL;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_at'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_completed_at TIMESTAMP;
+        END IF;
+        
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_by'
+        ) THEN
+          ALTER TABLE student_interventions ADD COLUMN plan_completed_by INTEGER REFERENCES users(id);
+        END IF;
+      END $$;
     `);
-    console.log('student_documents table ready');
+    console.log('Intervention plan columns ready');
+
     // Migration 010: Role-Based Student Access
     await pool.query(`
       ALTER TABLE users 
@@ -242,7 +258,73 @@ const createTables = async () => {
     `);
     console.log('Role-based access tables ready');
 
-    // Update role constraint to include new roles
+    // Migration 011: Update weekly_progress response options
+    try {
+      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS weekly_progress_response_check`);
+      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS check_response`);
+      await pool.query(`
+        ALTER TABLE weekly_progress ADD CONSTRAINT weekly_progress_response_check 
+          CHECK (response IS NULL OR response IN ('Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted', 'Positive', 'Neutral'))
+      `);
+      console.log('weekly_progress response constraint updated');
+    } catch (err) {
+      console.log('Response constraint update skipped or failed:', err.message);
+    }
+
+    // Migration 012: Student Documents
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS student_documents (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER REFERENCES tenants(id),
+        student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+        
+        -- File info
+        file_name VARCHAR(255) NOT NULL,
+        file_url TEXT NOT NULL,
+        file_type VARCHAR(50),
+        file_size INTEGER,
+        s3_key VARCHAR(500),
+        
+        -- Document metadata
+        document_category VARCHAR(50) CHECK (document_category IN (
+          '504 Plan', 'IEP', 'Evaluation Report', 'Progress Report', 
+          'Parent Communication', 'Medical Record', 'Other'
+        )),
+        description TEXT,
+        
+        -- Expiration tracking
+        expiration_date DATE,
+        expiration_alert_sent BOOLEAN DEFAULT FALSE,
+        
+        -- Audit trail
+        uploaded_by INTEGER REFERENCES users(id),
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_student_documents_student ON student_documents(student_id);
+      CREATE INDEX IF NOT EXISTS idx_student_documents_tenant ON student_documents(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_student_documents_expiration ON student_documents(expiration_date) 
+        WHERE expiration_date IS NOT NULL;
+    `);
+    console.log('student_documents table ready');
+
+    // Migration 013: Archive/Delete Interventions Support
+    await pool.query(`
+      ALTER TABLE student_interventions 
+      ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
+      
+      ALTER TABLE student_interventions 
+      ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(id);
+      
+      ALTER TABLE student_interventions 
+      ADD COLUMN IF NOT EXISTS archive_reason VARCHAR(100);
+      
+      ALTER TABLE student_interventions
+      ADD COLUMN IF NOT EXISTS end_date DATE;
+    `);
+    console.log('Migration 013: Archive/Delete interventions columns ready');
+
+    // Update role constraint to include all roles
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
       ALTER TABLE users ADD CONSTRAINT users_role_check 
@@ -250,16 +332,6 @@ const createTables = async () => {
     `);
     console.log('Role constraint updated');
 
-    // Seed test users (only if they don't exist)
-    // Update role constraint to include new roles
-    await pool.query(`
-      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-      ALTER TABLE users ADD CONSTRAINT users_role_check 
-        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'));
-    `);
-    console.log('Role constraint updated');
-
-    // Seed test users (only if they don't exist)
     // Seed test users (only if they don't exist)
     const testUsers = await pool.query(`SELECT id FROM users WHERE email = 'teacher1@lincoln.edu'`);
     if (testUsers.rows.length === 0) {
@@ -272,73 +344,6 @@ const createTables = async () => {
         (3, 'parent2@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Michael Davis', 'parent', FALSE)
       `);
       console.log('Test users seeded');
-    }
-    // Migration 009: Intervention Plan Templates
-    await pool.query(`
-      DO $$ 
-      BEGIN
-        -- Add plan_template column to intervention_templates
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'intervention_templates' AND column_name = 'plan_template'
-        ) THEN
-          ALTER TABLE intervention_templates ADD COLUMN plan_template JSONB DEFAULT NULL;
-        END IF;
-        
-        -- Add has_plan_template flag to intervention_templates
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'intervention_templates' AND column_name = 'has_plan_template'
-        ) THEN
-          ALTER TABLE intervention_templates ADD COLUMN has_plan_template BOOLEAN DEFAULT FALSE;
-        END IF;
-        
-        -- Add plan_data column to student_interventions
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'student_interventions' AND column_name = 'plan_data'
-        ) THEN
-          ALTER TABLE student_interventions ADD COLUMN plan_data JSONB DEFAULT NULL;
-        END IF;
-        
-        -- Add plan_status column to student_interventions
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'student_interventions' AND column_name = 'plan_status'
-        ) THEN
-          ALTER TABLE student_interventions ADD COLUMN plan_status VARCHAR(20) DEFAULT 'not_applicable';
-        END IF;
-        
-        -- Add plan_completed_at column to student_interventions
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_at'
-        ) THEN
-          ALTER TABLE student_interventions ADD COLUMN plan_completed_at TIMESTAMP;
-        END IF;
-        
-        -- Add plan_completed_by column to student_interventions
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name = 'student_interventions' AND column_name = 'plan_completed_by'
-        ) THEN
-          ALTER TABLE student_interventions ADD COLUMN plan_completed_by INTEGER REFERENCES users(id);
-        END IF;
-      END $$;
-    `);
-    console.log('Intervention plan columns ready');
-
-   // Migration 011: Update weekly_progress response options
-    try {
-      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS weekly_progress_response_check`);
-      await pool.query(`ALTER TABLE weekly_progress DROP CONSTRAINT IF EXISTS check_response`);
-      await pool.query(`
-        ALTER TABLE weekly_progress ADD CONSTRAINT weekly_progress_response_check 
-          CHECK (response IS NULL OR response IN ('Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted', 'Positive', 'Neutral'))
-      `);
-      console.log('weekly_progress response constraint updated');
-    } catch (err) {
-      console.log('Response constraint update skipped or failed:', err.message);
     }
 
   } catch (error) {
@@ -359,14 +364,11 @@ app.use('/api/intervention-logs', interventionLogsRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/csv', csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
-app.use('/api/prereferral-forms', prereferralFormsRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
 app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
 app.use('/api/parent-links', parentLinksRoutes);
 app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
-app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
-app.use('/api/parent-links', parentLinksRoutes);
 app.use('/api/student-documents', studentDocumentsRoutes);
 
 // Test route
@@ -391,6 +393,7 @@ app.get('/health', async (req, res) => {
     });
   }
 });
+
 // Start server
 app.listen(PORT, () => {
   console.log(`TierTrak server running at http://localhost:${PORT}`);

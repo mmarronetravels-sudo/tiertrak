@@ -395,6 +395,12 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   const [showProgressChart, setShowProgressChart] = useState(false);
   const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
   const [selectedInterventionForGoal, setSelectedInterventionForGoal] = useState(null);
+  // Archive/Delete Intervention state
+  const [showArchiveInterventionModal, setShowArchiveInterventionModal] = useState(false);
+  const [showDeleteInterventionModal, setShowDeleteInterventionModal] = useState(false);
+  const [selectedInterventionForAction, setSelectedInterventionForAction] = useState(null);
+  const [interventionArchiveReason, setInterventionArchiveReason] = useState('');
+  const [showArchivedInterventions, setShowArchivedInterventions] = useState(false);
   const [goalFormData, setGoalFormData] = useState({
     goal_description: '',
     goal_target_date: '',
@@ -2018,7 +2024,30 @@ const handleUnlinkParent = async (linkId) => {
   }
 };
 
-  // Add progress note
+try {
+    await fetch(`${API_URL}/parent-links/${linkId}`, { method: 'DELETE' });
+    fetchAllParentLinks();
+  } catch (error) {
+    console.error('Error unlinking parent:', error);
+  }
+};
+
+  // Archive intervention
+  const handleArchiveIntervention = async () => {
+    // ... the full function ...
+  };
+
+  // Unarchive intervention
+  const handleUnarchiveIntervention = async (interventionId) => {
+    // ... the full function ...
+  };
+
+  // Delete intervention permanently
+  const handleDeleteIntervention = async () => {
+    // ... the full function ...
+  };
+
+// Add progress note
   const handleAddNote = async () => {
     const noteText = noteTextareaRef.current?.value || '';
     if (!noteText || !selectedStudent) return;
@@ -3352,7 +3381,7 @@ if (!user) {
             )}
 
             <div className="space-y-4 max-h-80 overflow-y-auto">
-              {selectedStudent.interventions?.map(intervention => (
+              {selectedStudent.interventions?.filter(i => i.status !== 'archived').map(intervention => (
                 <div key={intervention.id} className="p-4 bg-slate-50 rounded-xl">
                   <div className="flex items-start justify-between mb-2">
                     <div>
@@ -3453,6 +3482,35 @@ if (!user) {
                       <Users className="w-3 h-3" />
                       Assign
                     </button>
+                    {/* Archive button - all staff */}
+                    {intervention.status === 'active' && (
+                      <button
+                        onClick={() => {
+                          setSelectedInterventionForAction(intervention);
+                          setInterventionArchiveReason('');
+                          setShowArchiveInterventionModal(true);
+                        }}
+                        className="px-3 py-1.5 border border-amber-300 text-amber-700 text-sm rounded-lg hover:bg-amber-50 flex items-center gap-1"
+                        title="Archive intervention"
+                      >
+                        <Archive className="w-3 h-3" />
+                        Archive
+                      </button>
+                    )}
+                    {/* Delete button - admin only */}
+                    {(user.role === 'school_admin' || user.role === 'district_admin') && (
+                      <button
+                        onClick={() => {
+                          setSelectedInterventionForAction(intervention);
+                          setShowDeleteInterventionModal(true);
+                        }}
+                        className="px-3 py-1.5 border border-rose-300 text-rose-600 text-sm rounded-lg hover:bg-rose-50 flex items-center gap-1"
+                        title="Delete intervention permanently"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Delete
+                      </button>
+                    )}
                   </div>
                   {/* Weekly Progress Logs Display */}
                   {weeklyProgressLogs
@@ -3505,10 +3563,82 @@ if (!user) {
                   )}
                 </div>
               ))}
-              {(!selectedStudent.interventions || selectedStudent.interventions.length === 0) && (
-                <p className="text-center py-8 text-slate-400">No interventions yet</p>
+              {(!selectedStudent.interventions || selectedStudent.interventions.filter(i => i.status !== 'archived').length === 0) && (
+                <p className="text-center py-8 text-slate-400">No active interventions</p>
               )}
             </div>
+
+            {/* Archived Interventions Section */}
+            {selectedStudent.interventions?.filter(i => i.status === 'archived').length > 0 && (
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowArchivedInterventions(!showArchivedInterventions)}
+                  className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700 mb-2"
+                >
+                  <Archive size={14} />
+                  {showArchivedInterventions ? 'Hide' : 'Show'} Archived Interventions 
+                  ({selectedStudent.interventions?.filter(i => i.status === 'archived').length})
+                  <ChevronRight size={14} className={`transform transition-transform ${showArchivedInterventions ? 'rotate-90' : ''}`} />
+                </button>
+                
+                {showArchivedInterventions && (
+                  <div className="space-y-3">
+                    {selectedStudent.interventions
+                      ?.filter(i => i.status === 'archived')
+                      .map(intervention => (
+                        <div key={intervention.id} className="p-4 bg-gray-50 rounded-xl border border-gray-200 opacity-75">
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <h4 className="font-medium text-slate-600">{intervention.intervention_name}</h4>
+                              <p className="text-sm text-slate-400">
+                                Started {formatWeekOf(intervention.start_date)}
+                                {intervention.end_date && ` • Ended ${formatWeekOf(intervention.end_date)}`}
+                              </p>
+                              {intervention.archive_reason && (
+                                <p className="text-xs text-slate-400 mt-1">Reason: {intervention.archive_reason}</p>
+                              )}
+                            </div>
+                            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
+                              archived
+                            </span>
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => handleUnarchiveIntervention(intervention.id)}
+                              className="px-3 py-1.5 bg-emerald-100 text-emerald-700 text-sm rounded-lg hover:bg-emerald-200 flex items-center gap-1"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Restore
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedInterventionForChart(intervention);
+                                setShowProgressChart(true);
+                              }}
+                              className="px-3 py-1.5 border border-slate-300 text-slate-600 text-sm rounded-lg hover:bg-slate-100 flex items-center gap-1"
+                            >
+                              <TrendingUp className="w-3 h-3" />
+                              View Chart
+                            </button>
+                            {(user.role === 'school_admin' || user.role === 'district_admin') && (
+                              <button
+                                onClick={() => {
+                                  setSelectedInterventionForAction(intervention);
+                                  setShowDeleteInterventionModal(true);
+                                }}
+                                className="px-3 py-1.5 border border-rose-300 text-rose-600 text-sm rounded-lg hover:bg-rose-50 flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           {/* MTSS Meetings */}
@@ -6081,7 +6211,113 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             </div>
           </div>
         )}
+{/* Archive Intervention Modal */}
+        {showArchiveInterventionModal && selectedInterventionForAction && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-amber-100 rounded-full">
+                  <Archive size={20} className="text-amber-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Archive Intervention</h3>
+              </div>
+              
+              <p className="text-gray-600 mb-2">
+                Are you sure you want to archive <strong>{selectedInterventionForAction.intervention_name}</strong>?
+              </p>
+              <p className="text-sm text-gray-500 mb-4">
+                All progress logs, meeting data, and plans will be preserved. You can restore it at any time.
+              </p>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>
+                <select
+                  value={interventionArchiveReason}
+                  onChange={(e) => setInterventionArchiveReason(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select a reason...</option>
+                  <option value="Goal met">Goal met</option>
+                  <option value="Replaced with new intervention">Replaced with new intervention</option>
+                  <option value="Student moved tiers">Student moved tiers</option>
+                  <option value="No longer appropriate">No longer appropriate</option>
+                  <option value="End of school year">End of school year</option>
+                  <option value="Student transferred">Student transferred</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowArchiveInterventionModal(false);
+                    setSelectedInterventionForAction(null);
+                    setInterventionArchiveReason('');
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleArchiveIntervention}
+                  className="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2"
+                >
+                  <Archive size={16} />
+                  Archive Intervention
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
+        {/* Delete Intervention Modal */}
+        {showDeleteInterventionModal && selectedInterventionForAction && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-rose-100 rounded-full">
+                  <Trash2 size={20} className="text-rose-600" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-900">Delete Intervention</h3>
+              </div>
+              
+              <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 mb-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={16} className="text-rose-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-rose-800">This cannot be undone!</p>
+                    <p className="text-sm text-rose-700 mt-1">
+                      Permanently deleting <strong>{selectedInterventionForAction.intervention_name}</strong> will also remove all progress logs, staff/parent assignments, and MTSS meeting review data for this intervention.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <p className="text-sm text-gray-500 mb-4">
+                If the intervention is real but no longer needed, use <strong>Archive</strong> instead to preserve the data.
+              </p>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowDeleteInterventionModal(false);
+                    setSelectedInterventionForAction(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteIntervention}
+                  className="px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 flex items-center gap-2"
+                >
+                  <Trash2 size={16} />
+                  Permanently Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
