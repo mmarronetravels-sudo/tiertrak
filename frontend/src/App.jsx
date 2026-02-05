@@ -606,18 +606,6 @@ const fetchAllParentLinks = async () => {
     }
   };
 
-const fetchStaffList = async (tenantId) => {
-  try {
-    const response = await fetch(`${API_URL}/users/staff?tenant_id=${tenantId}`);
-    if (response.ok) {
-      const data = await response.json();
-      setStaffList(data);
-    }
-  } catch (error) {
-    console.error('Error fetching staff:', error);
-  }
-};
-
 const fetchParentsList = async (tenantId) => {
   try {
     const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
