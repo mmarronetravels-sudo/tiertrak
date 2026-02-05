@@ -2069,17 +2069,65 @@ const handleUnlinkParent = async (linkId) => {
 
   // Archive intervention
   const handleArchiveIntervention = async () => {
-    // ... the full function ...
+    console.log('Archive clicked, intervention:', selectedInterventionForAction);
+    if (!selectedInterventionForAction) return;
+    try {
+      const res = await fetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}/archive`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          archived_by: user.id,
+          archive_reason: interventionArchiveReason || null
+        })
+      });
+      if (res.ok) {
+        fetchStudentDetails(selectedStudent.id);
+        setShowArchiveInterventionModal(false);
+        setSelectedInterventionForAction(null);
+        setInterventionArchiveReason('');
+      } else {
+        const data = await res.json();
+        console.error('Archive failed:', res.status, data);
+        alert('Archive failed: ' + (data.error || res.status));
+      }
+    } catch (error) {
+      console.error('Error archiving intervention:', error);
+    }
   };
 
   // Unarchive intervention
   const handleUnarchiveIntervention = async (interventionId) => {
-    // ... the full function ...
+    try {
+      const res = await fetch(`${API_URL}/interventions/student-interventions/${interventionId}/unarchive`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        fetchStudentDetails(selectedStudent.id);
+      }
+    } catch (error) {
+      console.error('Error unarchiving intervention:', error);
+    }
   };
 
   // Delete intervention permanently
   const handleDeleteIntervention = async () => {
-    // ... the full function ...
+    if (!selectedInterventionForAction) return;
+    try {
+      const res = await fetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        fetchStudentDetails(selectedStudent.id);
+        setShowDeleteInterventionModal(false);
+        setSelectedInterventionForAction(null);
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Could not delete intervention');
+      }
+    } catch (error) {
+      console.error('Error deleting intervention:', error);
+    }
   };
 
 // Add progress note
