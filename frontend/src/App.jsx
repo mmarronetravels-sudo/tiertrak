@@ -266,6 +266,7 @@ const [reportDateRange, setReportDateRange] = useState({
   endDate: new Date().toISOString().split('T')[0]
 });
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
+const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
 const [reportData, setReportData] = useState(null);
   const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
@@ -445,10 +446,27 @@ const isParent = user && user.role === 'parent';
   // Fetch missing logs when dashboard loads
 
   useEffect(() => {
-    if (view === 'dashboard' && user?.tenant_id) {
-      fetchMissingLogs();
+  if (view === 'dashboard' && user?.tenant_id) {
+    fetchMissingLogs();
+    fetchReferralCandidates();
+  }
+}, [view, user?.tenant_id]);
+
+  // Fetch MTSS referral candidates for dashboard
+const fetchReferralCandidates = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const response = await fetch(`${API_URL}/students/referral-candidates/${user.tenant_id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setReferralCandidates(data);
     }
-  }, [view, user?.tenant_id]);
+  } catch (error) {
+    console.error('Error fetching referral candidates:', error);
+  }
+};
   
 // Fetch admin templates when admin view loads
   useEffect(() => {
@@ -3035,6 +3053,65 @@ if (!user) {
     )}
   </div>
 )}
+
+      {/* MTSS Referral Candidates Alert */}
+      {referralCandidates.count > 0 && user?.role !== 'teacher' && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="w-5 h-5 text-orange-600" />
+            <h3 className="font-semibold text-orange-800">
+              MTSS Referral Candidates ({referralCandidates.count})
+            </h3>
+          </div>
+          <p className="text-sm text-orange-700 mb-3">
+            These Tier 1 students are receiving significant supports with limited progress — consider starting a Pre-Referral Form.
+          </p>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {referralCandidates.candidates.map((student) => (
+              <div 
+                key={student.id}
+                onClick={() => {
+                  setSelectedStudent({ id: student.id });
+                  setView('student');
+                }}
+                className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-100 cursor-pointer hover:bg-orange-50 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-800">
+                      {student.last_name}, {student.first_name}
+                    </span>
+                    <span className="text-xs text-slate-500">{student.grade}</span>
+                    {student.has_prereferral_draft && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                        Draft Started
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                    <span>{student.active_interventions} intervention{student.active_interventions !== 1 ? 's' : ''}</span>
+                    <span>•</span>
+                    <span>{student.total_logs} log{student.total_logs !== 1 ? 's' : ''}</span>
+                    {student.avg_rating !== null && (
+                      <>
+                        <span>•</span>
+                        <span className={student.avg_rating < 3 ? 'text-rose-600 font-medium' : 'text-amber-600'}>
+                          Avg: {student.avg_rating}/5
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 ml-3">
+                  <span className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">
+                    Review →
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tier Overview Cards */}
       <div className="grid grid-cols-3 gap-6">
