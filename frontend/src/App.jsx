@@ -7435,7 +7435,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
   }`}
 >
   <div className="flex items-center gap-2">
-    <Shield size={16} />
+    <Users size={16} />
     Staff
   </div>
 </button>                    
@@ -7847,7 +7847,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
   <div className="bg-white rounded-xl border border-slate-200 p-6">
     <div className="flex items-center justify-between mb-6">
       <div className="flex items-center gap-3">
-        <Shield size={22} className="text-indigo-600" />
+        <Users size={22} className="text-indigo-600" />
         <h2 className="text-xl font-semibold text-slate-800">Staff Management</h2>
       </div>
       <button
