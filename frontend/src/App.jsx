@@ -4,7 +4,7 @@ import {
   FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
-MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, UserPlus
+MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -7854,7 +7854,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
         onClick={() => { setStaffError(''); setNewStaff({ email: '', full_name: '', role: 'teacher' }); setShowAddStaffModal(true); }}
         className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
       >
-        <UserPlus size={16} />
+        <Plus size={16} />
         Add Staff
       </button>
     </div>
