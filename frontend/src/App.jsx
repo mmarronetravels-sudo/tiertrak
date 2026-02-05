@@ -8051,7 +8051,22 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                 </div>
                 <div className="flex gap-3 mt-6">
                   <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
-                  <button onClick={handleAddStaff} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
+                  <button onClick={async () => {
+  if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
+  try {
+    const res = await fetch(`${API_URL}/staff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
+    });
+    const data = await res.json();
+    if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
+    setShowAddStaffModal(false);
+    const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+    const listData = await listRes.json();
+    setStaffList(listData);
+  } catch (err) { setStaffError('Connection error'); }
+}} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
                 </div>
               </div>
             </div>
