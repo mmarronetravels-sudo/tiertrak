@@ -545,11 +545,6 @@ useEffect(() => {
   }
 }, [view, user?.tenant_id]);
   
-// Fetch staff list when staff tab is selected
-  useEffect(() => {
-    if (adminTab === 'staff' && user?.tenant_id) {
-      fetchStaffList();
-    }
   }, [adminTab]);  // Fetch log options
   const fetchLogOptions = async () => {
     try {
@@ -7917,7 +7912,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
 )}
       {/* ==================== STAFF TAB ==================== */}
       {adminTab === 'staff' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="bg-white rounded-xl border border-slate-200 p-6" ref={(el) => { if (el && staffList.length === 0) { fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }}).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Users size={22} className="text-indigo-600" />
