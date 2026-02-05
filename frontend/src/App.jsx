@@ -544,8 +544,13 @@ useEffect(() => {
     fetchExpiringDocuments();
   }
 }, [view, user?.tenant_id]);
-
-  // Fetch log options
+  
+// Fetch staff list when staff tab is selected
+  useEffect(() => {
+    if (adminTab === 'staff' && user?.tenant_id) {
+      fetchStaffList();
+    }
+  }, [adminTab]);  // Fetch log options
   const fetchLogOptions = async () => {
     try {
       const res = await fetch(`${API_URL}/intervention-logs/options`);
@@ -7415,7 +7420,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           </div>
         </button>
         <button
-  onClick={() => { setAdminTab('staff'); fetchStaffList(); }}
+  onClick={() => { setAdminTab('staff'); }}
   className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
     adminTab === 'staff' 
       ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
