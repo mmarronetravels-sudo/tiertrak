@@ -230,6 +230,11 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
   const [staffList, setStaffList] = useState([]);
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [showEditStaffModal, setShowEditStaffModal] = useState(false);
+  const [selectedStaffMember, setSelectedStaffMember] = useState(null);
+  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
+  const [staffError, setStaffError] = useState('');
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
@@ -320,15 +325,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
   const [editorPreviewMode, setEditorPreviewMode] = useState(false);
   const [duplicateSourceId, setDuplicateSourceId] = useState('');
 
-  // Staff Management state
-const [staffList, setStaffList] = useState([]);
-const [showAddStaffModal, setShowAddStaffModal] = useState(false);
-const [showEditStaffModal, setShowEditStaffModal] = useState(false);
-const [selectedStaffMember, setSelectedStaffMember] = useState(null);
-const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
-const [staffError, setStaffError] = useState('');
-  
-  // Student management state
+    // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
   const [studentForm, setStudentForm] = useState({
