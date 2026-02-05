@@ -545,7 +545,6 @@ useEffect(() => {
   }
 }, [view, user?.tenant_id]);
   
-  }, [adminTab]);  // Fetch log options
   const fetchLogOptions = async () => {
     try {
       const res = await fetch(`${API_URL}/intervention-logs/options`);
