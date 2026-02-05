@@ -267,6 +267,7 @@ const [reportDateRange, setReportDateRange] = useState({
 });
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
+const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
 const [reportData, setReportData] = useState(null);
   const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
@@ -449,6 +450,7 @@ const isParent = user && user.role === 'parent';
   if (view === 'dashboard' && user?.tenant_id) {
     fetchMissingLogs();
     fetchReferralCandidates();
+    fetchMonitoredStudents();
   }
 }, [view, user?.tenant_id]);
 
@@ -467,6 +469,44 @@ const fetchReferralCandidates = async () => {
     console.error('Error fetching referral candidates:', error);
   }
 };
+
+// Fetch monitored referral students
+const fetchMonitoredStudents = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const response = await fetch(`${API_URL}/students/referral-monitoring/${user.tenant_id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setMonitoredStudents(data);
+    }
+  } catch (error) {
+    console.error('Error fetching monitored students:', error);
+  }
+};
+
+// Mark student as monitoring or remove from monitoring
+const handleReferralMonitoring = async (studentId, action) => {
+  try {
+    if (action === 'monitor') {
+      await fetch(`${API_URL}/students/referral-monitoring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
+      });
+    } else if (action === 'remove') {
+      await fetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+    }
+    fetchReferralCandidates();
+    fetchMonitoredStudents();
+  } catch (error) {
+    console.error('Error updating monitoring:', error);
+  }
+};ß
   
 // Fetch admin templates when admin view loads
   useEffect(() => {
@@ -3070,13 +3110,15 @@ if (!user) {
             {referralCandidates.candidates.map((student) => (
               <div 
                 key={student.id}
-                onClick={() => {
-                  setSelectedStudent({ id: student.id });
-                  setView('student');
-                }}
-                className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-100 cursor-pointer hover:bg-orange-50 transition-colors"
+                className="flex items-center justify-between p-3 bg-white rounded-lg border border-orange-100"
               >
-                <div className="flex-1 min-w-0">
+                <div 
+                  className="flex-1 min-w-0 cursor-pointer hover:bg-orange-50 -m-2 p-2 rounded-lg transition-colors"
+                  onClick={() => {
+                    setSelectedStudent({ id: student.id });
+                    setView('student');
+                  }}
+                >
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-800">
                       {student.last_name}, {student.first_name}
@@ -3103,8 +3145,90 @@ if (!user) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-3">
-                  <span className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">
+                  <button
+                    onClick={() => handleReferralMonitoring(student.id, 'monitor')}
+                    className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap"
+                  >
+                    👁 Monitor
+                  </button>
+                  <span 
+                    onClick={() => {
+                      setSelectedStudent({ id: student.id });
+                      setView('student');
+                    }}
+                    className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 cursor-pointer hover:bg-orange-200 whitespace-nowrap"
+                  >
                     Review →
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Monitoring Section */}
+      {monitoredStudents.count > 0 && user?.role !== 'teacher' && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Eye className="w-5 h-5 text-slate-600" />
+            <h3 className="font-semibold text-slate-700">
+              Monitoring ({monitoredStudents.count})
+            </h3>
+          </div>
+          <p className="text-sm text-slate-500 mb-3">
+            These students have been acknowledged and are being monitored. Stats update automatically.
+          </p>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {monitoredStudents.monitored.map((student) => (
+              <div 
+                key={student.id}
+                className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-100"
+              >
+                <div 
+                  className="flex-1 min-w-0 cursor-pointer hover:bg-slate-50 -m-2 p-2 rounded-lg transition-colors"
+                  onClick={() => {
+                    setSelectedStudent({ id: student.id });
+                    setView('student');
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-800">
+                      {student.last_name}, {student.first_name}
+                    </span>
+                    <span className="text-xs text-slate-500">{student.grade}</span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                    <span>{student.active_interventions} intervention{student.active_interventions !== 1 ? 's' : ''}</span>
+                    <span>•</span>
+                    <span>{student.total_logs} log{student.total_logs !== 1 ? 's' : ''}</span>
+                    {student.avg_rating !== null && (
+                      <>
+                        <span>•</span>
+                        <span className={student.avg_rating < 3 ? 'text-rose-600 font-medium' : 'text-amber-600'}>
+                          Avg: {student.avg_rating}/5
+                        </span>
+                      </>
+                    )}
+                    <span>•</span>
+                    <span>Since {new Date(student.monitoring_since).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 ml-3">
+                  <button
+                    onClick={() => handleReferralMonitoring(student.id, 'remove')}
+                    className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap"
+                  >
+                    ✕ Remove
+                  </button>
+                  <span 
+                    onClick={() => {
+                      setSelectedStudent({ id: student.id });
+                      setView('student');
+                    }}
+                    className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700 cursor-pointer hover:bg-orange-200 whitespace-nowrap"
+                  >
+                    Start Referral →
                   </span>
                 </div>
               </div>

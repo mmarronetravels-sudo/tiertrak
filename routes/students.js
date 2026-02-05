@@ -184,6 +184,7 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
       WHERE s.tenant_id = $1
         AND s.tier = 1
         AND s.archived = false
+        AND s.id NOT IN (SELECT student_id FROM referral_monitoring)
       GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, pf.id, pf.status
       HAVING 
         COUNT(DISTINCT si.id) >= 3
@@ -218,6 +219,98 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching referral candidates:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+// GET monitored referral students with live stats
+router.get('/referral-monitoring/:tenantId', async (req, res) => {
+  try {
+    const { tenantId } = req.params;
+    
+    const result = await pool.query(`
+      SELECT 
+        s.id,
+        s.first_name,
+        s.last_name,
+        s.grade,
+        s.area,
+        s.tier,
+        rm.id AS monitoring_id,
+        rm.notes AS monitoring_notes,
+        rm.created_at AS monitoring_since,
+        u.full_name AS monitored_by_name,
+        COUNT(DISTINCT si.id) AS active_interventions,
+        COUNT(DISTINCT wp.id) AS total_logs,
+        ROUND(AVG(wp.rating)::numeric, 2) AS avg_rating
+      FROM referral_monitoring rm
+      INNER JOIN students s ON rm.student_id = s.id
+      LEFT JOIN users u ON rm.monitored_by = u.id
+      LEFT JOIN student_interventions si 
+        ON s.id = si.student_id AND si.status = 'active'
+      LEFT JOIN weekly_progress wp 
+        ON si.id = wp.student_intervention_id
+      WHERE rm.tenant_id = $1
+        AND s.tier = 1
+        AND s.archived = false
+      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, 
+               rm.id, rm.notes, rm.created_at, u.full_name
+      ORDER BY COALESCE(AVG(wp.rating), 0) ASC
+    `, [tenantId]);
+
+    res.json({
+      count: result.rows.length,
+      monitored: result.rows.map(s => ({
+        id: s.id,
+        first_name: s.first_name,
+        last_name: s.last_name,
+        grade: s.grade,
+        area: s.area,
+        monitoring_id: s.monitoring_id,
+        monitoring_notes: s.monitoring_notes,
+        monitoring_since: s.monitoring_since,
+        monitored_by_name: s.monitored_by_name,
+        active_interventions: parseInt(s.active_interventions),
+        total_logs: parseInt(s.total_logs),
+        avg_rating: s.avg_rating ? parseFloat(s.avg_rating) : null
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error fetching monitored students:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST mark student as monitoring
+router.post('/referral-monitoring', async (req, res) => {
+  try {
+    const { student_id, tenant_id, monitored_by, notes } = req.body;
+    
+    const result = await pool.query(`
+      INSERT INTO referral_monitoring (student_id, tenant_id, monitored_by, notes)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (student_id) DO UPDATE SET 
+        notes = $4, 
+        monitored_by = $3,
+        created_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [student_id, tenant_id, monitored_by, notes || null]);
+
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Error marking as monitoring:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE remove from monitoring (to start referral or dismiss)
+router.delete('/referral-monitoring/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    await pool.query('DELETE FROM referral_monitoring WHERE student_id = $1', [studentId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing monitoring:', error);
     res.status(500).json({ error: error.message });
   }
 });
