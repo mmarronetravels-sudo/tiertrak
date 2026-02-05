@@ -53,15 +53,24 @@ router.get('/tenant/:tenantId', async (req, res) => {
       `;
       params = [tenantId, userId];
     }
-    // Teachers/staff see only students where they have an intervention assignment
+    // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
       query = `
         SELECT DISTINCT s.*, u.full_name as teacher_name 
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
-        INNER JOIN student_interventions si ON s.id = si.student_id AND si.status = 'active'
-        INNER JOIN intervention_assignments ia ON si.id = ia.student_intervention_id
-        WHERE s.tenant_id = $1 AND ia.user_id = $2
+        WHERE s.tenant_id = $1 
+          AND (s.is_archived IS NULL OR s.is_archived = false)
+          AND (
+            s.tier = 1
+            OR s.id IN (
+              SELECT si.student_id 
+              FROM student_interventions si
+              INNER JOIN intervention_assignments ia ON si.id = ia.student_intervention_id
+              WHERE si.status = 'active' AND ia.user_id = $2
+            )
+          )
+        ORDER BY s.last_name, s.first_name
       `;
       params = [tenantId, userId];
     }
