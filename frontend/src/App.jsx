@@ -457,6 +457,15 @@ const isParent = user && user.role === 'parent';
   }
 }, [view, user?.tenant_id]);
 
+  useEffect(() => {
+  const handler = () => {
+    setSelectedStaffMember(window.__editStaffMember);
+    setShowEditStaffModal(true);
+  };
+  window.addEventListener('editStaff', handler);
+  return () => window.removeEventListener('editStaff', handler);
+}, []);
+
   // Fetch MTSS referral candidates for dashboard
 const fetchReferralCandidates = async () => {
   if (!user?.tenant_id) return;
@@ -7074,81 +7083,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
           </div>
         )}
 
-{/* Edit Staff Modal */}
-{showEditStaffModal && selectedStaffMember && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-slate-800">Edit Staff Member</h3>
-        <button onClick={() => setShowEditStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-          <X size={20} />
-        </button>
-      </div>
 
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-          <input
-            type="text"
-            value={selectedStaffMember.full_name}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, full_name: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-          <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">{selectedStaffMember.email}</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-          <select
-            value={selectedStaffMember.role}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, role: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="teacher">Teacher</option>
-            <option value="counselor">Counselor</option>
-            <option value="school_admin">Admin</option>
-            <option value="behavior_specialist">Behavior Specialist</option>
-            <option value="student_support_specialist">Student Support Specialist</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={() => setShowEditStaffModal(false)}
-          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-        >
-          Cancel
-        </button>
-        <button
-onClick={async () => {
-            try {
-              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
-              });
-              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
-              setShowEditStaffModal(false);
-              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
-              const listData = await listRes.json();
-              setStaffList(listData);
-            } catch (err) { alert('Connection error'); }
-          }}
-          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-        >
-          Save Changes
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-      </div>
-    );
-  };
- 
  // Create Parent Form Component
 const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
   const [formData, setFormData] = useState({
@@ -7930,7 +7865,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
+                          onClick={() => { window.__editStaffMember = {...member}; window.dispatchEvent(new Event('editStaff')); }}
                           className="p-1.5 text-slate-400 hover:text-blue-600 transition"
                           title="Edit"
                         >
@@ -9220,6 +9155,80 @@ if (isParent) {
         </div>
       )}
 
+            {/* Edit Staff Modal */}
+{showEditStaffModal && selectedStaffMember && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-slate-800">Edit Staff Member</h3>
+        <button onClick={() => setShowEditStaffModal(false)} className="text-slate-400 hover:text-slate-600">
+          <X size={20} />
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+          <input
+            type="text"
+            value={selectedStaffMember.full_name}
+            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, full_name: e.target.value})}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">{selectedStaffMember.email}</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+          <select
+            value={selectedStaffMember.role}
+            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, role: e.target.value})}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="teacher">Teacher</option>
+            <option value="counselor">Counselor</option>
+            <option value="school_admin">Admin</option>
+            <option value="behavior_specialist">Behavior Specialist</option>
+            <option value="student_support_specialist">Student Support Specialist</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={() => setShowEditStaffModal(false)}
+          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
+        <button
+onClick={async () => {
+            try {
+              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
+              });
+              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
+              setShowEditStaffModal(false);
+              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
+              const listData = await listRes.json();
+              setStaffList(listData);
+            } catch (err) { alert('Connection error'); }
+          }}
+          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+        >
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+      </div>
+    );
+  };
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
