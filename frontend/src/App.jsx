@@ -419,7 +419,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   const isAdmin = user && (user.role === 'district_admin' || user.role === 'school_admin');
   
   // Check if user can archive (admins and counselors)
-  const canArchive = user && ['district_admin', 'school_admin', 'counselor'].includes(user.role);
+  const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
 
   // Check if user is a parent
 const isParent = user && user.role === 'parent';
@@ -9166,8 +9166,8 @@ if (isParent) {
                   <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
                   <option value="counselor">Counselor — sees all students, manages referrals</option>
                   <option value="school_admin">Admin — full access, manages everything</option>
-                  <option value="behavior_specialist">Behavior Specialist — sees all students</option>
-                  <option value="student_support_specialist">Student Support Specialist — sees all students</option>
+                  <option value="behavior_specialist">Behavior Specialist — sees all students, manages referrals</option>
+                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
                 </select>
               </div>
             </div>
