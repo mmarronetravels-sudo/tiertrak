@@ -7414,7 +7414,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           </div>
         </button>
         <button
-  onClick={() => { setAdminTab('staff'); }}
+  onClick={() => { setAdminTab('staff'); fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }}).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}
   className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
     adminTab === 'staff' 
       ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
@@ -7911,7 +7911,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
 )}
       {/* ==================== STAFF TAB ==================== */}
       {adminTab === 'staff' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6" ref={(el) => { if (el && staffList.length === 0) { fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }}).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}}>
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Users size={22} className="text-indigo-600" />
