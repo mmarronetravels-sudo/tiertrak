@@ -9223,13 +9223,17 @@ onClick={async () => {
           }}
           className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
         >
-          Save Changes
+         Save Changes
         </button>
       </div>
     </div>
   </div>
 )}
-        
+
+      </div>
+    );
+  };
+
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
