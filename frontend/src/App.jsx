@@ -9154,6 +9154,9 @@ if (isParent) {
           </div>
         </div>
       )}
+      </div>
+    );
+  };
 
             {/* Edit Staff Modal */}
 {showEditStaffModal && selectedStaffMember && (
@@ -9226,9 +9229,7 @@ onClick={async () => {
     </div>
   </div>
 )}
-      </div>
-    );
-  };
+        
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
