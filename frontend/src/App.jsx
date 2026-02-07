@@ -7942,61 +7942,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
         </div>
       )}
-      {showAddStaffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">Add Staff Member</h3>
-              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">Create an account so this person can sign in with Google SSO. No password needed.</p>
-            {staffError && (
-              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-                <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
-                <input type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} placeholder="jsmith@summitlc.org" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                  <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
-                  <option value="counselor">Counselor — sees all students, manages referrals</option>
-                  <option value="school_admin">Admin — full access, manages everything</option>
-                  <option value="behavior_specialist">Behavior Specialist — sees all students</option>
-                  <option value="student_support_specialist">Student Support Specialist — sees all students</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
-              <button onClick={async () => {
-                if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
-                try {
-                  const res = await fetch(`${API_URL}/staff`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
-                  });
-                  const data = await res.json();
-                  if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
-                  setShowAddStaffModal(false);
-                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
-                  const listData = await listRes.json();
-                  setStaffList(listData);
-                } catch (err) { setStaffError('Connection error'); }
-              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
-            </div>
-          </div>
-        </div>
-      )}
+      
       {/* Archived Students Tab */}
       {adminTab === 'archived' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -9190,8 +9136,64 @@ if (isParent) {
         {view === 'students' && <StudentsListView />}
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
-      </main>
-      
+     </main>
+
+      {showAddStaffModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-800">Add Staff Member</h3>
+              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">Create an account so this person can sign in with Google SSO. No password needed.</p>
+            {staffError && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
+                <input type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} placeholder="jsmith@summitlc.org" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                  <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
+                  <option value="counselor">Counselor — sees all students, manages referrals</option>
+                  <option value="school_admin">Admin — full access, manages everything</option>
+                  <option value="behavior_specialist">Behavior Specialist — sees all students</option>
+                  <option value="student_support_specialist">Student Support Specialist — sees all students</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
+              <button onClick={async () => {
+                if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
+                try {
+                  const res = await fetch(`${API_URL}/staff`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
+                  setShowAddStaffModal(false);
+                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+                  const listData = await listRes.json();
+                  setStaffList(listData);
+                } catch (err) { setStaffError('Connection error'); }
+              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
