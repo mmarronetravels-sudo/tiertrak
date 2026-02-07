@@ -7123,16 +7123,16 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
           Cancel
         </button>
         <button
-          onClick={async () => {
+onClick={async () => {
             try {
-              const res = await fetch(`${API_URL}/staff/${selectedStaffMember.id}`, {
+              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
               });
               if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
               setShowEditStaffModal(false);
-              const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
               const listData = await listRes.json();
               setStaffList(listData);
             } catch (err) { alert('Connection error'); }
@@ -7939,14 +7939,14 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                         {member.id !== user.id && (
                           <button
                             onClick={async () => {
-                              if (!confirm(`Remove ${member.full_name}? They will no longer be able to log in.`)) return;
+                              if (!confirm('Remove ' + member.full_name + '? They will no longer be able to log in.')) return;
                               try {
-                                const res = await fetch(`${API_URL}/staff/${member.id}`, {
+                                const res = await fetch(API_URL + '/staff/' + member.id, {
                                   method: 'DELETE',
-                                  headers: { 'Authorization': `Bearer ${token}` }
+                                  headers: { 'Authorization': 'Bearer ' + token }
                                 });
                                 if (res.ok) {
-                                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+                                  const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
                                   const listData = await listRes.json();
                                   setStaffList(listData);
                                 }
