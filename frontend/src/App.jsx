@@ -7123,7 +7123,20 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
           Cancel
         </button>
         <button
-          onClick={handleUpdateStaff}
+          onClick={async () => {
+            try {
+              const res = await fetch(`${API_URL}/staff/${selectedStaffMember.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
+              });
+              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
+              setShowEditStaffModal(false);
+              const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+              const listData = await listRes.json();
+              setStaffList(listData);
+            } catch (err) { alert('Connection error'); }
+          }}
           className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
         >
           Save Changes
@@ -7925,7 +7938,20 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                         </button>
                         {member.id !== user.id && (
                           <button
-                            onClick={() => handleDeleteStaff(member.id, member.full_name)}
+                            onClick={async () => {
+                              if (!confirm(`Remove ${member.full_name}? They will no longer be able to log in.`)) return;
+                              try {
+                                const res = await fetch(`${API_URL}/staff/${member.id}`, {
+                                  method: 'DELETE',
+                                  headers: { 'Authorization': `Bearer ${token}` }
+                                });
+                                if (res.ok) {
+                                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+                                  const listData = await listRes.json();
+                                  setStaffList(listData);
+                                }
+                              } catch (err) { alert('Connection error'); }
+                            }}
                             className="p-1.5 text-slate-400 hover:text-rose-600 transition"
                             title="Remove"
                           >
