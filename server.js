@@ -7,9 +7,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON
-app.use(express.json());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: [
+    'https://tiertrak.scholarpathsystems.org',
+    'https://www.scholarpathsystems.org',
+    'https://scholarpathsystems.org'
+  ],
   credentials: true
 }));
 
