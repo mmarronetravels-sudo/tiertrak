@@ -526,7 +526,19 @@ const handleReferralMonitoring = async (studentId, action) => {
       fetchAdminTemplates();
       fetchFieldTypes();
     }
-  }, [view]);  // Fetch user info
+  }, [view]);  // Fetch admin templates
+
+  // Listen for Edit Staff event from AdminView (bridging scope gap)
+  useEffect(() => {
+    const handler = () => {
+      setSelectedStaffMember(window.__editStaffMember);
+      setShowEditStaffModal(true);
+    };
+    window.addEventListener('editStaff', handler);
+    return () => window.removeEventListener('editStaff', handler);
+  }, []);
+
+  // Fetch user info
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
@@ -9154,11 +9166,12 @@ if (isParent) {
           </div>
         </div>
       )}
+      
       </div>
     );
   };
 
-            {/* Edit Staff Modal */}
+      {/* Edit Staff Modal */}
 {showEditStaffModal && selectedStaffMember && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
@@ -9168,7 +9181,6 @@ if (isParent) {
           <X size={20} />
         </button>
       </div>
-
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
@@ -9198,7 +9210,6 @@ if (isParent) {
           </select>
         </div>
       </div>
-
       <div className="flex gap-3 mt-6">
         <button
           onClick={() => setShowEditStaffModal(false)}
@@ -9229,10 +9240,6 @@ onClick={async () => {
     </div>
   </div>
 )}
-
-      </div>
-    );
-  };
 
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
