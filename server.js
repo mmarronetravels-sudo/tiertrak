@@ -444,6 +444,48 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Contact form endpoint (ScholarPath website demo requests)
+app.post('/api/contact', async (req, res) => {
+  try {
+    const { firstName, lastName, email, school, website, students, role, products, needs } = req.body;
+    
+    if (!firstName || !lastName || !email || !school) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const { data, error } = await resend.emails.send({
+      from: 'ScholarPath Systems <noreply@scholarpathsystems.org>',
+      to: ['sps@scholarpathsystems.org'],
+      reply_to: email,
+      subject: 'New Demo Request: ' + school + ' - ' + firstName + ' ' + lastName,
+      html: '<div style="font-family: Arial, sans-serif; max-width: 600px;">' +
+        '<h2 style="color: #4f46e5;">New Demo Request</h2>' +
+        '<table style="width: 100%; border-collapse: collapse;">' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Name</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + firstName + ' ' + lastName + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Email</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + email + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">School</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + school + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Website</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + (website || 'Not provided') + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Students</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + students + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Role</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + role + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold; border-bottom: 1px solid #eee;">Products</td><td style="padding: 8px; border-bottom: 1px solid #eee;">' + (Array.isArray(products) ? products.join(', ') : products) + '</td></tr>' +
+        '<tr><td style="padding: 8px; font-weight: bold;">Needs</td><td style="padding: 8px;">' + (needs || 'Not provided') + '</td></tr>' +
+        '</table>' +
+        '<p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">Submitted via scholarpathsystems.org contact form</p>' +
+        '</div>'
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      return res.status(500).json({ error: 'Email failed to send' });
+    }
+
+    res.json({ success: true, id: data.id });
+  } catch (err) {
+    console.error('Contact form error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`TierTrak server running at http://localhost:${PORT}`);
