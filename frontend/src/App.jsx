@@ -7406,85 +7406,6 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
             </button>
           </div>
 
-          {showAddTemplate && (
-            <div className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-800">New Custom Intervention</h3>
-                <button
-                  onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
-                  className="p-1 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Intervention Name *</label>
-                  <input
-                    type="text"
-                    value={newTemplate.name}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="e.g., Shortened Assignments"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
-                  <select
-                    value={newTemplate.area}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, area: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select category...</option>
-                    <option value="Academic">Academic</option>
-                    <option value="Behavior">Behavior</option>
-                    <option value="Social-Emotional">Social-Emotional</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier</label>
-                  <select
-                    value={newTemplate.tier}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, tier: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Any tier</option>
-                    <option value="1">Tier 1</option>
-                    <option value="2">Tier 2</option>
-                    <option value="3">Tier 3</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={newTemplate.description}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Brief description of the intervention"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddTemplate}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                >
-                  <Save size={16} />
-                  Save Intervention
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="flex gap-2 mb-6">
             <button
               onClick={() => setAdminAreaFilter('all')}
@@ -9296,6 +9217,86 @@ if (isParent) {
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
      </main>
+     {/* Add Custom Intervention Modal */}
+      {showAddTemplate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-semibold text-lg text-slate-800">New Custom Intervention</h3>
+              <button
+                onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Intervention Name *</label>
+                <input
+                  type="text"
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g., Shortened Assignments"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+                <select
+                  value={newTemplate.area}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, area: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select category...</option>
+                  <option value="Academic">Academic</option>
+                  <option value="Behavior">Behavior</option>
+                  <option value="Social-Emotional">Social-Emotional</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier</label>
+                <select
+                  value={newTemplate.tier}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, tier: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Any tier</option>
+                  <option value="1">Tier 1</option>
+                  <option value="2">Tier 2</option>
+                  <option value="3">Tier 3</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <input
+                  type="text"
+                  value={newTemplate.description}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Brief description of the intervention"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t bg-slate-50 flex justify-end gap-2 rounded-b-xl">
+              <button
+                onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddTemplate}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Save size={16} />
+                Save Intervention
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddStaffModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
