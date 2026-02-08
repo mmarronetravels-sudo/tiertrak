@@ -9,18 +9,32 @@ const pool = new Pool({
 });
 
 // Get all intervention templates for a tenant (includes system defaults)
+// GET /templates/tenant/:tenantId — used by "New Intervention" modal when assigning to student
 router.get('/templates/tenant/:tenantId', async (req, res) => {
   try {
     const { tenantId } = req.params;
-    const result = await pool.query(
-      `SELECT * FROM intervention_templates 
-       WHERE tenant_id = $1 OR is_system_default = TRUE
-       ORDER BY is_system_default DESC, name`,
-      [tenantId]
-    );
+    
+    const result = await pool.query(`
+      -- Activated bank interventions
+      SELECT it.*, 'bank' as source
+      FROM intervention_templates it
+      JOIN tenant_intervention_bank tib ON tib.template_id = it.id
+      WHERE tib.tenant_id = $1 AND it.tenant_id IS NULL
+      
+      UNION ALL
+      
+      -- Custom tenant interventions (not legacy)
+      SELECT it.*, 'custom' as source
+      FROM intervention_templates it
+      WHERE it.tenant_id = $1 AND (it.is_legacy IS NULL OR it.is_legacy = FALSE)
+      
+      ORDER BY area, name
+    `, [tenantId]);
+
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching templates:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

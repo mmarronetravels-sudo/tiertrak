@@ -47,7 +47,25 @@ router.post('/', async (req, res) => {
        RETURNING *`,
       [name, type, subdomain, settings || {}]
     );
-    res.status(201).json(result.rows[0]);
+    
+    const newTenant = result.rows[0];
+    
+    // Auto-seed starter interventions from the bank
+    const starterResult = await pool.query(
+      'SELECT id FROM intervention_templates WHERE tenant_id IS NULL AND is_starter = TRUE'
+    );
+    const starterIds = starterResult.rows.map(r => r.id);
+    
+    if (starterIds.length > 0) {
+      await pool.query(
+        `INSERT INTO tenant_intervention_bank (tenant_id, template_id)
+         SELECT $1, unnest($2::int[])
+         ON CONFLICT DO NOTHING`,
+        [newTenant.id, starterIds]
+      );
+    }
+    
+    res.status(201).json(newTenant);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

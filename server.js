@@ -37,6 +37,7 @@ const adminTemplatesRoutes = require('./routes/adminTemplates');
 const interventionPlansRoutes = require('./routes/interventionPlans');
 const studentDocumentsRoutes = require('./routes/studentDocuments');
 const staffManagementRoutes = require('./routes/staffManagement');
+const interventionBankRoutes = require('./routes/interventionBank');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -47,6 +48,7 @@ adminTemplatesRoutes.initializePool(pool);
 interventionPlansRoutes.initializePool(pool);
 studentDocumentsRoutes.initializePool(pool);
 staffManagementRoutes.initializePool(pool);
+interventionBankRoutes.initializePool(pool);
 
 // Auto-create tables if they don't exist
 const createTables = async () => {
@@ -370,6 +372,28 @@ const createTables = async () => {
       console.log('Test users seeded');
     }
 
+    // Migration 016: Intervention Bank
+    await pool.query(`
+      ALTER TABLE intervention_templates 
+      ADD COLUMN IF NOT EXISTS is_starter BOOLEAN DEFAULT FALSE;
+      
+      ALTER TABLE intervention_templates 
+      ADD COLUMN IF NOT EXISTS is_legacy BOOLEAN DEFAULT FALSE;
+      
+      CREATE TABLE IF NOT EXISTS tenant_intervention_bank (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        template_id INTEGER NOT NULL REFERENCES intervention_templates(id) ON DELETE CASCADE,
+        activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        activated_by INTEGER REFERENCES users(id),
+        UNIQUE(tenant_id, template_id)
+      );
+      
+      CREATE INDEX IF NOT EXISTS idx_tenant_bank_tenant ON tenant_intervention_bank(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_tenant_bank_template ON tenant_intervention_bank(template_id);
+    `);
+    console.log('Migration 016: Intervention bank tables ready');
+
   } catch (error) {
     console.error('Error creating tables:', error);
   }
@@ -395,6 +419,7 @@ app.use('/api/admin', adminTemplatesRoutes);
 app.use('/api/intervention-plans', interventionPlansRoutes);
 app.use('/api/student-documents', studentDocumentsRoutes);
 app.use('/api/staff', staffManagementRoutes);
+app.use('/api/intervention-bank', interventionBankRoutes);
 
 // Test route
 app.get('/', (req, res) => {

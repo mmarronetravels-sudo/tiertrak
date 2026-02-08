@@ -298,6 +298,11 @@ const [passwordMessage, setPasswordMessage] = useState('');
   const [adminAreaFilter, setAdminAreaFilter] = useState('all');
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', area: '', tier: '' });
+  // Intervention Bank state
+  const [bankInterventions, setBankInterventions] = useState([]);
+  const [bankFilter, setBankFilter] = useState('all');
+  const [bankSearch, setBankSearch] = useState('');
+  const [bankView, setBankView] = useState('activated');
 
   // Parent management state
 const [adminParentTab, setAdminParentTab] = useState('accounts');
@@ -1501,6 +1506,21 @@ const openEditProgressLog = (log, intervention) => {
       }
     } catch (error) {
       console.error('Error fetching templates:', error);
+    }
+  };
+
+  // Fetch intervention bank
+  const fetchBankInterventions = async (tenantId) => {
+    try {
+      const res = await fetch(API_URL + '/intervention-bank/all?tenant_id=' + tenantId, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBankInterventions(data);
+      }
+    } catch (err) {
+      console.error('Error fetching bank:', err);
     }
   };
 
@@ -7351,6 +7371,21 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
             Plan Templates
           </div>
         </button>
+        {['school_admin', 'counselor', 'behavior_specialist'].includes(user.role) && (
+        <button
+          onClick={() => { setAdminTab('bank'); fetchBankInterventions(user.tenant_id); }}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            adminTab === 'bank' 
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} />
+            Intervention Bank
+          </div>
+        </button>
+        )}
       </div>   
         
         {/* Interventions Tab */}
@@ -7915,6 +7950,134 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
             </table>
           </div>
           <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
+        </div>
+      )}
+
+      {adminTab === 'bank' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <BookOpen size={24} className="text-indigo-600" />
+              <h2 className="text-xl font-semibold text-slate-800">Intervention Bank</h2>
+            </div>
+          </div>
+          <p className="text-sm text-slate-500 mb-4">Browse and activate interventions for your school. Active interventions appear when assigning to students.</p>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+              <button onClick={() => setBankView('activated')} className={'px-3 py-1.5 ' + (bankView === 'activated' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                My Active ({bankInterventions.filter(i => i.is_activated).length})
+              </button>
+              <button onClick={() => setBankView('available')} className={'px-3 py-1.5 border-l border-slate-200 ' + (bankView === 'available' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                Available ({bankInterventions.filter(i => !i.is_activated).length})
+              </button>
+              <button onClick={() => setBankView('all')} className={'px-3 py-1.5 border-l border-slate-200 ' + (bankView === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                All ({bankInterventions.length})
+              </button>
+            </div>
+
+            <select value={bankFilter} onChange={(e) => setBankFilter(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm">
+              <option value="all">All Areas</option>
+              <option value="Academic">Academic</option>
+              <option value="Behavior">Behavior</option>
+              <option value="Social-Emotional">Social-Emotional</option>
+            </select>
+
+            <input
+              type="text"
+              placeholder="Search interventions..."
+              value={bankSearch}
+              onChange={(e) => setBankSearch(e.target.value)}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm w-48"
+            />
+          </div>
+
+          {['Academic', 'Behavior', 'Social-Emotional']
+            .filter(area => bankFilter === 'all' || bankFilter === area)
+            .map(area => {
+              const areaItems = bankInterventions
+                .filter(i => i.area === area)
+                .filter(i => bankView === 'all' || (bankView === 'activated' ? i.is_activated : !i.is_activated))
+                .filter(i => !bankSearch || i.name.toLowerCase().includes(bankSearch.toLowerCase()));
+
+              if (areaItems.length === 0) return null;
+
+              return (
+                <div key={area} className="mb-6">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <span className={'w-2 h-2 rounded-full ' + (area === 'Academic' ? 'bg-blue-500' : area === 'Behavior' ? 'bg-amber-500' : 'bg-green-500')}></span>
+                    {area} ({areaItems.length})
+                  </h3>
+                  <div className="space-y-1">
+                    {areaItems.map(item => (
+                      <div key={item.id} className={'flex items-center justify-between px-4 py-2.5 rounded-lg border ' + (item.is_activated ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200')}>
+                        <div className="flex items-center gap-3">
+                          <span className={'text-lg ' + (item.is_activated ? 'text-green-500' : 'text-slate-300')}>
+                            {item.is_activated ? '✅' : '○'}
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-slate-800 text-sm">{item.name}</span>
+                              {item.has_plan_template && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">📋 Plan</span>}
+                              {item.is_starter && !item.is_activated && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended</span>}
+                            </div>
+                            {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                          </div>
+                        </div>
+                        <div>
+                          {item.is_activated ? (
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Remove "' + item.name + '" from your active interventions?')) return;
+                                try {
+                                  const res = await fetch(API_URL + '/intervention-bank/deactivate', {
+                                    method: 'DELETE',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                    body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id })
+                                  });
+                                  if (res.ok) {
+                                    fetchBankInterventions(user.tenant_id);
+                                  } else {
+                                    const data = await res.json();
+                                    alert(data.error || 'Could not remove intervention');
+                                  }
+                                } catch (err) { alert('Connection error'); }
+                              }}
+                              className="text-xs px-3 py-1 text-red-600 hover:bg-red-50 rounded-lg border border-red-200"
+                            >
+                              Remove
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(API_URL + '/intervention-bank/activate', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                    body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id, user_id: user.id })
+                                  });
+                                  if (res.ok) fetchBankInterventions(user.tenant_id);
+                                } catch (err) { alert('Connection error'); }
+                              }}
+                              className="text-xs px-3 py-1 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200"
+                            >
+                              + Add
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+          {bankInterventions.length === 0 && (
+            <div className="text-center py-8 text-slate-400">
+              <BookOpen size={32} className="mx-auto mb-2 opacity-50" />
+              <p>Loading intervention bank...</p>
+            </div>
+          )}
         </div>
       )}
       
