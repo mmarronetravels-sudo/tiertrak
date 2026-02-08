@@ -303,6 +303,7 @@ const [passwordMessage, setPasswordMessage] = useState('');
   const [bankFilter, setBankFilter] = useState('all');
   const [bankSearch, setBankSearch] = useState('');
   const [bankView, setBankView] = useState('activated');
+  const [bankTierFilter, setBankTierFilter] = useState('All');
 
   // Parent management state
 const [adminParentTab, setAdminParentTab] = useState('accounts');
@@ -7982,6 +7983,22 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               <option value="Behavior">Behavior</option>
               <option value="Social-Emotional">Social-Emotional</option>
             </select>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-500 font-medium mr-1">Tier:</span>
+              {['All', '1', '2', '3'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setBankTierFilter(t)}
+                  className={'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ' + (
+                    bankTierFilter === t
+                      ? (t === '1' ? 'bg-green-600 text-white' : t === '2' ? 'bg-yellow-500 text-white' : t === '3' ? 'bg-red-600 text-white' : 'bg-slate-700 text-white')
+                      : (t === '1' ? 'bg-green-50 text-green-700 hover:bg-green-100' : t === '2' ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : t === '3' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                  )}
+                >
+                  {t === 'All' ? 'All' : 'T' + t}
+                </button>
+              ))}
+            </div>
 
             <input
               type="text"
@@ -7998,7 +8015,8 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               const areaItems = bankInterventions
                 .filter(i => i.area === area)
                 .filter(i => bankView === 'all' || (bankView === 'activated' ? i.is_activated : !i.is_activated))
-                .filter(i => !bankSearch || i.name.toLowerCase().includes(bankSearch.toLowerCase()));
+                .filter(i => !bankSearch || i.name.toLowerCase().includes(bankSearch.toLowerCase()))
+                .filter(i => bankTierFilter === 'All' || String(i.tier) === bankTierFilter);
 
               if (areaItems.length === 0) return null;
 
@@ -8018,6 +8036,9 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-slate-800 text-sm">{item.name}</span>
+                              <span className="font-medium text-slate-800 text-sm">{item.name}</span>
+                              {item.tier && <span className={'px-1.5 py-0.5 rounded text-xs font-medium ' + (item.tier === 1 ? 'bg-green-100 text-green-700' : item.tier === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700')}>T{item.tier}</span>}
+                              {item.has_plan_template && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">📋 Plan</span>}
                               {item.has_plan_template && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">📋 Plan</span>}
                               {item.is_starter && !item.is_activated && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended</span>}
                             </div>
