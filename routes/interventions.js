@@ -57,6 +57,11 @@ router.post('/templates', async (req, res) => {
 // Delete a custom intervention template (cannot delete system defaults)
 router.delete('/templates/:id', async (req, res) => {
   try {
+    // Don't allow deleting bank interventions (tenant_id IS NULL)
+    const check = await pool.query('SELECT tenant_id FROM intervention_templates WHERE id = $1', [req.params.id]);
+    if (check.rows.length > 0 && check.rows[0].tenant_id === null) {
+      return res.status(403).json({ error: 'Bank interventions cannot be deleted. Use the Intervention Bank tab to remove them from your school.' });
+    }
     const { id } = req.params;
     const result = await pool.query(
       'DELETE FROM intervention_templates WHERE id = $1 AND is_system_default = FALSE RETURNING *',
