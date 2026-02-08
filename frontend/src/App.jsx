@@ -7094,7 +7094,9 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             </div>
           </div>
         )}
-
+</div>
+    );
+  };
 
  // Create Parent Form Component
 const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
