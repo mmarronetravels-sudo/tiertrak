@@ -9168,10 +9168,6 @@ if (isParent) {
           </div>
         </div>
       )}
-      
-      </div>
-    );
-  };
 
       {/* Edit Staff Modal */}
 {showEditStaffModal && selectedStaffMember && (
