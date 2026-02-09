@@ -2067,17 +2067,32 @@ useEffect(() => {
 
 // Initialize Google Sign-In
 useEffect(() => {
-  if (window.google && !user && googleButtonRef.current) {
-    window.google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      callback: handleGoogleSignIn
-    });
-    window.google.accounts.id.renderButton(googleButtonRef.current, {
-      theme: 'outline',
-      size: 'large',
-      width: 352,
-      text: 'signin_with'
-    });
+  const initGoogle = () => {
+    if (window.google && !user && googleButtonRef.current) {
+      window.google.accounts.id.initialize({
+        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+        callback: handleGoogleSignIn
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        width: 352,
+        text: 'signin_with'
+      });
+    }
+  };
+
+  initGoogle();
+
+  // If Google script hasn't loaded yet, wait for it
+  if (!window.google) {
+    const interval = setInterval(() => {
+      if (window.google) {
+        clearInterval(interval);
+        initGoogle();
+      }
+    }, 100);
+    return () => clearInterval(interval);
   }
 }, [user]);
     
