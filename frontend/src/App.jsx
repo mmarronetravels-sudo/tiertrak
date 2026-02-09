@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, UserPlus, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
-  MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Shield
+MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -214,7 +214,7 @@ const getExpirationUrgency = (expirationDate) => {
 // FERPA Compliance Badge Component
 const FERPABadge = ({ compact = false }) => (
   <div className={`flex items-center gap-2 ${compact ? 'bg-emerald-50/80' : 'bg-emerald-50'} border border-emerald-200 rounded-lg ${compact ? 'px-2 py-1' : 'px-3 py-2'}`}>
-    <Shield className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-emerald-600`} fill="currentColor" />
+    <CheckCircle className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-emerald-600`} fill="currentColor" />
     <div>
       <span className={`text-emerald-800 font-semibold ${compact ? 'text-xs' : 'text-sm'}`}>FERPA Compliant</span>
       {!compact && (
@@ -230,6 +230,11 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
   const [staffList, setStaffList] = useState([]);
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [showEditStaffModal, setShowEditStaffModal] = useState(false);
+  const [selectedStaffMember, setSelectedStaffMember] = useState(null);
+  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
+  const [staffError, setStaffError] = useState('');
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
@@ -293,6 +298,12 @@ const [passwordMessage, setPasswordMessage] = useState('');
   const [adminAreaFilter, setAdminAreaFilter] = useState('all');
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', area: '', tier: '' });
+  // Intervention Bank state
+  const [bankInterventions, setBankInterventions] = useState([]);
+  const [bankFilter, setBankFilter] = useState('all');
+  const [bankSearch, setBankSearch] = useState('');
+  const [bankView, setBankView] = useState('activated');
+  const [bankTierFilter, setBankTierFilter] = useState('All');
 
   // Parent management state
 const [adminParentTab, setAdminParentTab] = useState('accounts');
@@ -320,9 +331,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
   const [editorPreviewMode, setEditorPreviewMode] = useState(false);
   const [duplicateSourceId, setDuplicateSourceId] = useState('');
 
-  
-  
-  // Student management state
+    // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
   const [studentForm, setStudentForm] = useState({
@@ -416,7 +425,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   const isAdmin = user && (user.role === 'district_admin' || user.role === 'school_admin');
   
   // Check if user can archive (admins and counselors)
-  const canArchive = user && ['district_admin', 'school_admin', 'counselor'].includes(user.role);
+  const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
 
   // Check if user is a parent
 const isParent = user && user.role === 'parent';
@@ -453,6 +462,15 @@ const isParent = user && user.role === 'parent';
     fetchMonitoredStudents();
   }
 }, [view, user?.tenant_id]);
+
+  useEffect(() => {
+  const handler = () => {
+    setSelectedStaffMember(window.__editStaffMember);
+    setShowEditStaffModal(true);
+  };
+  window.addEventListener('editStaff', handler);
+  return () => window.removeEventListener('editStaff', handler);
+}, []);
 
   // Fetch MTSS referral candidates for dashboard
 const fetchReferralCandidates = async () => {
@@ -506,7 +524,7 @@ const handleReferralMonitoring = async (studentId, action) => {
   } catch (error) {
     console.error('Error updating monitoring:', error);
   }
-};ß
+};
   
 // Fetch admin templates when admin view loads
   useEffect(() => {
@@ -514,7 +532,19 @@ const handleReferralMonitoring = async (studentId, action) => {
       fetchAdminTemplates();
       fetchFieldTypes();
     }
-  }, [view]);  // Fetch user info
+  }, [view]);  // Fetch admin templates
+
+  // Listen for Edit Staff event from AdminView (bridging scope gap)
+  useEffect(() => {
+    const handler = () => {
+      setSelectedStaffMember(window.__editStaffMember);
+      setShowEditStaffModal(true);
+    };
+    window.addEventListener('editStaff', handler);
+    return () => window.removeEventListener('editStaff', handler);
+  }, []);
+
+  // Fetch user info
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
@@ -541,8 +571,7 @@ useEffect(() => {
     fetchExpiringDocuments();
   }
 }, [view, user?.tenant_id]);
-
-  // Fetch log options
+  
   const fetchLogOptions = async () => {
     try {
       const res = await fetch(`${API_URL}/intervention-logs/options`);
@@ -603,18 +632,6 @@ const fetchAllParentLinks = async () => {
     }
   };
 
-const fetchStaffList = async (tenantId) => {
-  try {
-    const response = await fetch(`${API_URL}/users/staff?tenant_id=${tenantId}`);
-    if (response.ok) {
-      const data = await response.json();
-      setStaffList(data);
-    }
-  } catch (error) {
-    console.error('Error fetching staff:', error);
-  }
-};
-
 const fetchParentsList = async (tenantId) => {
   try {
     const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
@@ -667,7 +684,86 @@ const removeInterventionAssignment = async (assignmentId) => {
   } catch (error) {
     console.error('Error removing assignment:', error);
   }
-};  // Fetch archived students
+
+  // Fetch staff list
+const loadStaffList = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const response = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setStaffList(data);
+    }
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+  }
+};
+
+// Add new staff member
+const handleAddStaff = async () => {
+  setStaffError('');
+  if (!newStaff.email || !newStaff.full_name) {
+    setStaffError('Email and full name are required');
+    return;
+  }
+  try {
+    const response = await fetch(`${API_URL}/staff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
+    });
+    if (response.ok) {
+      setShowAddStaffModal(false);
+      setNewStaff({ email: '', full_name: '', role: 'teacher' });
+      loadStaffList();
+    } else {
+      const err = await response.json();
+      setStaffError(err.error || 'Failed to create staff member');
+    }
+  } catch (error) {
+    setStaffError('Network error. Please try again.');
+  }
+};
+
+// Update staff member role/name
+const handleUpdateStaff = async () => {
+  if (!selectedStaffMember) return;
+  try {
+    const response = await fetch(`${API_URL}/staff/${selectedStaffMember.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ 
+        full_name: selectedStaffMember.full_name, 
+        role: selectedStaffMember.role 
+      })
+    });
+    if (response.ok) {
+      setShowEditStaffModal(false);
+      setSelectedStaffMember(null);
+      loadStaffList();
+    }
+  } catch (error) {
+    console.error('Error updating staff:', error);
+  }
+};
+
+// Delete staff member
+const handleDeleteStaff = async (staffId, staffName) => {
+  if (!confirm(`Remove ${staffName}? This will revoke their access to TierTrak.`)) return;
+  try {
+    const response = await fetch(`${API_URL}/staff/${staffId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      loadStaffList();
+    }
+  } catch (error) {
+    console.error('Error deleting staff:', error);
+  }
+};};  // Fetch archived students
   const fetchArchivedStudents = async (tenantId) => {
     try {
       const res = await fetch(`${API_URL}/students/tenant/${tenantId}?onlyArchived=true`);
@@ -1414,6 +1510,21 @@ const openEditProgressLog = (log, intervention) => {
     }
   };
 
+  // Fetch intervention bank
+  const fetchBankInterventions = async (tenantId) => {
+    try {
+      const res = await fetch(API_URL + '/intervention-bank/all?tenant_id=' + tenantId, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBankInterventions(data);
+      }
+    } catch (err) {
+      console.error('Error fetching bank:', err);
+    }
+  };
+
   // Fetch single student with details
   const fetchStudentDetails = async (studentId) => {
     try {
@@ -1956,32 +2067,17 @@ useEffect(() => {
 
 // Initialize Google Sign-In
 useEffect(() => {
-  const initGoogle = () => {
-    if (window.google && !user && googleButtonRef.current) {
-      window.google.accounts.id.initialize({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        callback: handleGoogleSignIn
-      });
-      window.google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: 'outline',
-        size: 'large',
-        width: 352,
-        text: 'signin_with'
-      });
-    }
-  };
-
-  initGoogle();
-
-  // If Google script hasn't loaded yet, wait for it
-  if (!window.google) {
-    const interval = setInterval(() => {
-      if (window.google) {
-        clearInterval(interval);
-        initGoogle();
-      }
-    }, 100);
-    return () => clearInterval(interval);
+  if (window.google && !user && googleButtonRef.current) {
+    window.google.accounts.id.initialize({
+      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+      callback: handleGoogleSignIn
+    });
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      width: 352,
+      text: 'signin_with'
+    });
   }
 }, [user]);
     
@@ -2002,7 +2098,7 @@ useEffect(() => {
         fetchStudents(data.user.tenant_id);
         fetchInterventionTemplates(data.user.tenant_id);
         fetchLogOptions();
-        fetchStaffList(data.user.tenant_id);
+        loadStaffList(data.user.tenant_id);
         fetchParentsList(data.user.tenant_id);
       } else {
         setLoginError(data.error || 'Login failed');
@@ -7019,7 +7115,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
             </div>
           </div>
         )}
-      </div>
+</div>
     );
   };
 
@@ -7225,7 +7321,20 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           </div>
         </button>
         <button
-          onClick={() => { setAdminTab('archived'); fetchArchivedStudents(user.tenant_id); }}
+  onClick={() => { setAdminTab('staff'); fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }}).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}
+  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+    adminTab === 'staff' 
+      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+      : 'text-slate-600 hover:bg-slate-100'
+  }`}
+>
+  <div className="flex items-center gap-2">
+    <Users size={16} />
+    Staff
+  </div>
+</button>                    
+      <button           
+        onClick={() => { setAdminTab('archived'); fetchArchivedStudents(user.tenant_id); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
             adminTab === 'archived' 
               ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
@@ -7263,6 +7372,21 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
             Plan Templates
           </div>
         </button>
+        {['school_admin', 'counselor', 'behavior_specialist'].includes(user.role) && (
+        <button
+          onClick={() => { setAdminTab('bank'); fetchBankInterventions(user.tenant_id); }}
+          className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+            adminTab === 'bank' 
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <BookOpen size={16} />
+            Intervention Bank
+          </div>
+        </button>
+        )}
       </div>   
         
         {/* Interventions Tab */}
@@ -7281,85 +7405,6 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               Add Custom Intervention
             </button>
           </div>
-
-          {showAddTemplate && (
-            <div className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-slate-800">New Custom Intervention</h3>
-                <button
-                  onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
-                  className="p-1 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Intervention Name *</label>
-                  <input
-                    type="text"
-                    value={newTemplate.name}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="e.g., Shortened Assignments"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
-                  <select
-                    value={newTemplate.area}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, area: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Select category...</option>
-                    <option value="Academic">Academic</option>
-                    <option value="Behavior">Behavior</option>
-                    <option value="Social-Emotional">Social-Emotional</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier</label>
-                  <select
-                    value={newTemplate.tier}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, tier: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">Any tier</option>
-                    <option value="1">Tier 1</option>
-                    <option value="2">Tier 2</option>
-                    <option value="3">Tier 3</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={newTemplate.description}
-                    onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Brief description of the intervention"
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddTemplate}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-                >
-                  <Save size={16} />
-                  Save Intervention
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="flex gap-2 mb-6">
             <button
@@ -7462,7 +7507,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               onClick={() => { setShowAddStudent(true); setEditingStudent(null); resetStudentForm(); }}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
             >
-              <UserPlus size={18} />
+              <Plus size={18} />
               Add Student
             </button>
           </div>
@@ -7628,7 +7673,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
       />
     )}
 
-    {/* Manage Links */}
+         {/* Manage Links */}
     {adminParentTab === 'links' && (
       <div className="space-y-6">
         {/* Link a Parent */}
@@ -7707,7 +7752,275 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     )}
   </div>
 )}
+      {/* ==================== STAFF TAB ==================== */}
+      {adminTab === 'staff' && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Users size={22} className="text-indigo-600" />
+              <h2 className="text-xl font-semibold text-slate-800">Staff Management</h2>
+            </div>
+            <button
+              onClick={() => { setStaffError(''); setNewStaff({ email: '', full_name: '', role: 'teacher' }); setShowAddStaffModal(true); }}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
+            >
+              <Plus size={16} />
+              Add Staff
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 mb-4">
+            Staff members log in with Google SSO using their school email. Create their account here first, then they can sign in.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-sm text-slate-500 border-b border-slate-200">
+                  <th className="pb-3 font-medium">Name</th>
+                  <th className="pb-3 font-medium">Email</th>
+                  <th className="pb-3 font-medium">Role</th>
+                  <th className="pb-3 font-medium">Access</th>
+                  <th className="pb-3 font-medium">SSO</th>
+                  <th className="pb-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staffList.map((member) => (
+                  <tr key={member.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                          member.role === 'school_admin' || member.role === 'district_admin' ? 'bg-indigo-500' :
+                          member.role === 'counselor' ? 'bg-purple-500' :
+                          member.role === 'teacher' ? 'bg-emerald-500' :
+                          'bg-blue-500'
+                        }`}>
+                          {member.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                        <span className="font-medium text-slate-800">{member.full_name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 text-sm text-slate-600">{member.email}</td>
+                    <td className="py-3">
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        member.role === 'school_admin' || member.role === 'district_admin' 
+                          ? 'bg-indigo-100 text-indigo-700' :
+                        member.role === 'counselor' 
+                          ? 'bg-purple-100 text-purple-700' :
+                        member.role === 'teacher' 
+                          ? 'bg-emerald-100 text-emerald-700' :
+                        'bg-blue-100 text-blue-700'
+                      }`}>
+                        {member.role === 'school_admin' ? 'Admin' :
+                         member.role === 'district_admin' ? 'District Admin' :
+                         member.role === 'counselor' ? 'Counselor' :
+                         member.role === 'teacher' ? 'Teacher' :
+                         member.role === 'behavior_specialist' ? 'Behavior Spec.' :
+                         member.role === 'student_support_specialist' ? 'Support Spec.' :
+                         member.role}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      <span className={`text-xs ${member.school_wide_access ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {member.school_wide_access ? 'All Students' : 'Assigned Only'}
+                      </span>
+                    </td>
+                    <td className="py-3">
+                      {member.google_id ? (
+                        <span className="text-xs text-emerald-600 flex items-center gap-1">
+                          <CheckCircle size={14} /> Connected
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">Not yet</span>
+                      )}
+                    </td>
+                    <td className="py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => { window.__editStaffMember = {...member}; window.dispatchEvent(new Event('editStaff')); }}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 transition"
+                          title="Edit"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        {member.id !== user.id && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Remove ' + member.full_name + '? They will no longer be able to log in.')) return;
+                              try {
+                                const res = await fetch(API_URL + '/staff/' + member.id, {
+                                  method: 'DELETE',
+                                  headers: { 'Authorization': 'Bearer ' + token }
+                                });
+                                if (res.ok) {
+                                  const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
+                                  const listData = await listRes.json();
+                                  setStaffList(listData);
+                                }
+                              } catch (err) { alert('Connection error'); }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 transition"
+                            title="Remove"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
+        </div>
+      )}
 
+      {adminTab === 'bank' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <BookOpen size={24} className="text-indigo-600" />
+              <h2 className="text-xl font-semibold text-slate-800">Intervention Bank</h2>
+            </div>
+          </div>
+          <p className="text-sm text-slate-500 mb-4">Browse and activate interventions for your school. Active interventions appear when assigning to students.</p>
+
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+              <button onClick={() => setBankView('activated')} className={'px-3 py-1.5 ' + (bankView === 'activated' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                My Active ({bankInterventions.filter(i => i.is_activated).length})
+              </button>
+              <button onClick={() => setBankView('available')} className={'px-3 py-1.5 border-l border-slate-200 ' + (bankView === 'available' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                Available ({bankInterventions.filter(i => !i.is_activated).length})
+              </button>
+              <button onClick={() => setBankView('all')} className={'px-3 py-1.5 border-l border-slate-200 ' + (bankView === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                All ({bankInterventions.length})
+              </button>
+            </div>
+
+            <select value={bankFilter} onChange={(e) => setBankFilter(e.target.value)} className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm">
+              <option value="all">All Areas</option>
+              <option value="Academic">Academic</option>
+              <option value="Behavior">Behavior</option>
+              <option value="Social-Emotional">Social-Emotional</option>
+            </select>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-500 font-medium mr-1">Tier:</span>
+              {['All', '1', '2', '3'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setBankTierFilter(t)}
+                  className={'px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ' + (
+                    bankTierFilter === t
+                      ? (t === '1' ? 'bg-green-600 text-white' : t === '2' ? 'bg-yellow-500 text-white' : t === '3' ? 'bg-red-600 text-white' : 'bg-slate-700 text-white')
+                      : (t === '1' ? 'bg-green-50 text-green-700 hover:bg-green-100' : t === '2' ? 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100' : t === '3' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200')
+                  )}
+                >
+                  {t === 'All' ? 'All' : 'T' + t}
+                </button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              placeholder="Search interventions..."
+              value={bankSearch}
+              onChange={(e) => setBankSearch(e.target.value)}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm w-48"
+            />
+          </div>
+
+          {['Academic', 'Behavior', 'Social-Emotional']
+            .filter(area => bankFilter === 'all' || bankFilter === area)
+            .map(area => {
+              const areaItems = bankInterventions
+                .filter(i => i.area === area)
+                .filter(i => bankView === 'all' || (bankView === 'activated' ? i.is_activated : !i.is_activated))
+                .filter(i => !bankSearch || i.name.toLowerCase().includes(bankSearch.toLowerCase()))
+                .filter(i => bankTierFilter === 'All' || String(i.tier) === bankTierFilter);
+
+              if (areaItems.length === 0) return null;
+
+              return (
+                <div key={area} className="mb-6">
+                  <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <span className={'w-2 h-2 rounded-full ' + (area === 'Academic' ? 'bg-blue-500' : area === 'Behavior' ? 'bg-amber-500' : 'bg-green-500')}></span>
+                    {area} ({areaItems.length})
+                  </h3>
+                  <div className="space-y-1">
+                    {areaItems.map(item => (
+                      <div key={item.id} className={'flex items-center justify-between px-4 py-2.5 rounded-lg border ' + (item.is_activated ? 'bg-green-50 border-green-200' : 'bg-white border-slate-200')}>
+                        <div className="flex items-center gap-3">
+                          <span className={'text-lg ' + (item.is_activated ? 'text-green-500' : 'text-slate-300')}>
+                            {item.is_activated ? '✅' : '○'}
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-slate-800 text-sm">{item.name}</span>
+                              {item.tier && <span className={'px-1.5 py-0.5 rounded text-xs font-medium ' + (item.tier === 1 ? 'bg-green-100 text-green-700' : item.tier === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700')}>T{item.tier}</span>}
+                              {item.has_plan_template && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">📋 Plan</span>}
+                              {item.is_starter && !item.is_activated && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended</span>}
+                            </div>
+                            {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+                          </div>
+                        </div>
+                        <div>
+                          {item.is_activated ? (
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Remove "' + item.name + '" from your active interventions?')) return;
+                                try {
+                                  const res = await fetch(API_URL + '/intervention-bank/deactivate', {
+                                    method: 'DELETE',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                    body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id })
+                                  });
+                                  if (res.ok) {
+                                    fetchBankInterventions(user.tenant_id);
+                                  } else {
+                                    const data = await res.json();
+                                    alert(data.error || 'Could not remove intervention');
+                                  }
+                                } catch (err) { alert('Connection error'); }
+                              }}
+                              className="text-xs px-3 py-1 text-red-600 hover:bg-red-50 rounded-lg border border-red-200"
+                            >
+                              Remove
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(API_URL + '/intervention-bank/activate', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                    body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id, user_id: user.id })
+                                  });
+                                  if (res.ok) fetchBankInterventions(user.tenant_id);
+                                } catch (err) { alert('Connection error'); }
+                              }}
+                              className="text-xs px-3 py-1 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200"
+                            >
+                              + Add
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+
+          {bankInterventions.length === 0 && (
+            <div className="text-center py-8 text-slate-400">
+              <BookOpen size={32} className="mx-auto mb-2 opacity-50" />
+              <p>Loading intervention bank...</p>
+            </div>
+          )}
+        </div>
+      )}
+      
       {/* Archived Students Tab */}
       {adminTab === 'archived' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -8901,8 +9214,214 @@ if (isParent) {
         {view === 'students' && <StudentsListView />}
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
-      </main>
-      
+     </main>
+     {/* Add Custom Intervention Modal */}
+      {showAddTemplate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-semibold text-lg text-slate-800">New Custom Intervention</h3>
+              <button
+                onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Intervention Name *</label>
+                <input
+                  type="text"
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="e.g., Shortened Assignments"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+                <select
+                  value={newTemplate.area}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, area: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Select category...</option>
+                  <option value="Academic">Academic</option>
+                  <option value="Behavior">Behavior</option>
+                  <option value="Social-Emotional">Social-Emotional</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier</label>
+                <select
+                  value={newTemplate.tier}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, tier: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Any tier</option>
+                  <option value="1">Tier 1</option>
+                  <option value="2">Tier 2</option>
+                  <option value="3">Tier 3</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+                <input
+                  type="text"
+                  value={newTemplate.description}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Brief description of the intervention"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t bg-slate-50 flex justify-end gap-2 rounded-b-xl">
+              <button
+                onClick={() => { setShowAddTemplate(false); setNewTemplate({ name: '', description: '', area: '', tier: '' }); }}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddTemplate}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Save size={16} />
+                Save Intervention
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddStaffModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-slate-800">Add Staff Member</h3>
+              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">Create an account so this person can sign in with Google SSO. No password needed.</p>
+            {staffError && (
+              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
+            )}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
+                <input type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} placeholder="jsmith@summitlc.org" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                  <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
+                  <option value="counselor">Counselor — sees all students, manages referrals</option>
+                  <option value="school_admin">Admin — full access, manages everything</option>
+                  <option value="behavior_specialist">Behavior Specialist — sees all students, manages referrals</option>
+                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
+              <button onClick={async () => {
+                if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
+                try {
+                  const res = await fetch(`${API_URL}/staff`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
+                  });
+                  const data = await res.json();
+                  if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
+                  setShowAddStaffModal(false);
+                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
+                  const listData = await listRes.json();
+                  setStaffList(listData);
+                } catch (err) { setStaffError('Connection error'); }
+              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Staff Modal */}
+{showEditStaffModal && selectedStaffMember && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-slate-800">Edit Staff Member</h3>
+        <button onClick={() => setShowEditStaffModal(false)} className="text-slate-400 hover:text-slate-600">
+          <X size={20} />
+        </button>
+      </div>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+          <input
+            type="text"
+            value={selectedStaffMember.full_name}
+            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, full_name: e.target.value})}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">{selectedStaffMember.email}</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+          <select
+            value={selectedStaffMember.role}
+            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, role: e.target.value})}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="teacher">Teacher</option>
+            <option value="counselor">Counselor</option>
+            <option value="school_admin">Admin</option>
+            <option value="behavior_specialist">Behavior Specialist</option>
+            <option value="student_support_specialist">Student Support Specialist</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={() => setShowEditStaffModal(false)}
+          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
+        <button
+onClick={async () => {
+            try {
+              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
+              });
+              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
+              setShowEditStaffModal(false);
+              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
+              const listData = await listRes.json();
+              setStaffList(listData);
+            } catch (err) { alert('Connection error'); }
+          }}
+          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+        >
+         Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
       {/* App Footer */}
       <footer className="mt-auto py-4 px-6 border-t border-slate-200 bg-white/80">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
