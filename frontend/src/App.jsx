@@ -3230,7 +3230,7 @@ if (!user) {
 )}
 
       {/* MTSS Referral Candidates Alert */}
-      {referralCandidates.count > 0 && user?.role !== 'teacher' && (
+      {referralCandidates.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-5 h-5 text-orange-600" />
@@ -3303,7 +3303,7 @@ if (!user) {
       )}
 
       {/* Monitoring Section */}
-      {monitoredStudents.count > 0 && user?.role !== 'teacher' && (
+      {monitoredStudents.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Eye className="w-5 h-5 text-slate-600" />
@@ -3446,6 +3446,15 @@ if (!user) {
    `Tier ${filterTier} students`}
 </p>
         </div>
+        {canAddStudents && !isAdmin && (
+          <button
+            onClick={() => { setShowAddStudent(true); setEditingStudent(null); resetStudentForm(); }}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          >
+            <UserPlus size={18} />
+            Add Student
+          </button>
+        )}
       </div>
 
       {/* Filters */}
