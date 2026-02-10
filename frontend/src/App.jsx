@@ -421,13 +421,22 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
     goal_target_date: '',
     goal_target_rating: 3
   });
-  // Check if user is admin
-  const isAdmin = user && (user.role === 'district_admin' || user.role === 'school_admin');
+  // Check if user is admin (includes counselor and behavior_specialist with full admin access)
+const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
   
   // Check if user can archive (admins and counselors)
-  const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
+const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
+  
+// Check if user can add students (admins + mtss_support)
+const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'mtss_support'].includes(user.role);
 
-  // Check if user is a parent
+// Check if user can assign interventions and log progress (everyone except mtss_support and parent)
+const canManageInterventions = user && user.role !== 'mtss_support' && user.role !== 'parent';
+
+// Check if user can delete documents (admin-level only)
+const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
+
+// Check if user is a parent
 const isParent = user && user.role === 'parent';
   
 // Check URL for special pages (password setup, reset)
@@ -3735,7 +3744,7 @@ if (!user) {
 <span className="text-xs text-slate-400 flex items-center gap-1">🟡 In Progress</span>
 <span className="text-xs text-slate-400 flex items-center gap-1">🟢 Complete</span>
 </div>
-              {!selectedStudent.archived && (
+              {!selectedStudent.archived && canManageInterventions && (
                 <button
                   onClick={() => {
                     setShowAddIntervention(true);
@@ -3955,7 +3964,7 @@ if (!user) {
                     <span className="text-sm font-medium text-slate-600">{intervention.progress || 0}%</span>
                   </div>
                   <div className="flex gap-2 mt-3">
-                    <button
+                    {canManageInterventions && <button
                       onClick={() => {
                         setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
                         setProgressFormData({
@@ -3973,7 +3982,7 @@ if (!user) {
                       <Plus className="w-3 h-3" />
                       Log Progress
                     </button>
-                    <button
+                    }{canManageInterventions && <button
                       onClick={() => {
                         setSelectedInterventionForGoal(intervention);
                         setGoalFormData({
@@ -3987,7 +3996,7 @@ if (!user) {
                     >
                       <Target className="w-3 h-3" />
                       {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
-                    </button>
+                    </button>}
                     <button
                       onClick={() => {
                         setSelectedInterventionForChart(intervention);
@@ -3998,7 +4007,7 @@ if (!user) {
                       <TrendingUp className="w-3 h-3" />
                       View Chart
                     </button>
-                    <button
+                    {canManageInterventions && <button
                       onClick={() => {
                         setSelectedInterventionForAssignment(intervention);
                         setShowAssignmentManager(true);
@@ -4007,7 +4016,7 @@ if (!user) {
                     >
                       <Users className="w-3 h-3" />
                       Assign
-                    </button>
+                    </button>}
                     {/* Archive button - all staff */}
                     {intervention.status === 'active' && (
                       <button
@@ -4024,7 +4033,7 @@ if (!user) {
                       </button>
                     )}
                     {/* Delete button - admin only */}
-                    {(user.role === 'school_admin' || user.role === 'district_admin') && (
+                    {isAdmin && (
                       <button
                         onClick={() => {
                           setSelectedInterventionForAction(intervention);
@@ -4153,7 +4162,7 @@ if (!user) {
                               <TrendingUp className="w-3 h-3" />
                               View Chart
                             </button>
-                            {(user.role === 'school_admin' || user.role === 'district_admin') && (
+                            {isAdmin && (
                               <button
                                 onClick={() => {
                                   setSelectedInterventionForAction(intervention);
