@@ -403,6 +403,17 @@ const createTables = async () => {
   } catch (error) {
     console.error('Error creating tables:', error);
   }
+
+  {
+  id: 17,
+  name: 'add_mtss_support_role',
+  sql: `
+    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+    ALTER TABLE users ADD CONSTRAINT users_role_check 
+      CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
+  `
+}
+
 };
 
 createTables();
