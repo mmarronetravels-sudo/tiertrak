@@ -411,6 +411,7 @@ const createTables = async () => {
   } catch (error) {
     console.error('Error creating tables:', error);
   }
+};
 
 createTables();
 
