@@ -1,4 +1,4 @@
-const express = require('express');
+Staff_const express = require('express');
 const router = express.Router();
 
 let pool;
@@ -13,7 +13,8 @@ const STAFF_ROLES = [
   'counselor', 
   'teacher',
   'behavior_specialist',
-  'student_support_specialist'
+  'student_support_specialist',
+  'mtss_support'
 ];
 
 // GET /api/staff/:tenantId - List all staff for a tenant
@@ -64,7 +65,7 @@ router.post('/', async (req, res) => {
     }
 
     // Set school_wide_access based on role
-    const schoolWideAccess = ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist'].includes(role);
+    const schoolWideAccess = ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support'].includes(role);
 
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
@@ -93,7 +94,7 @@ router.put('/:id', async (req, res) => {
 
     // Recalculate school_wide_access if role changed
     const schoolWideAccess = role 
-      ? ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist'].includes(role)
+      ? ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support'].includes(role)
       : undefined;
 
     const result = await pool.query(

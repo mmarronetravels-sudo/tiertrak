@@ -93,6 +93,9 @@ router.post('/login', async (req, res) => {
     const user = result.rows[0];
     
     // Check password
+    if (!user.password_hash) {
+      return res.status(401).json({ error: 'This account uses Google Sign-In. Please use the Google button to log in.' });
+    }
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid email or password' });
@@ -275,7 +278,7 @@ router.post('/create-parent', async (req, res) => {
       [decoded.id]
     );
     
-    const allowedRoles = ['district_admin', 'school_admin', 'student_support_specialist'];
+const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'student_support_specialist'];
     if (!adminCheck.rows.length || !allowedRoles.includes(adminCheck.rows[0].role)) {
       return res.status(403).json({ error: 'You do not have permission to create parent accounts' });
     }

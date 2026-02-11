@@ -9359,6 +9359,7 @@ if (isParent) {
                   <option value="school_admin">Admin — full access, manages everything</option>
                   <option value="behavior_specialist">Behavior Specialist — sees all students, manages referrals</option>
                   <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
+                 <option value="mtss_support">MTSS Support — sees all students, adds students, uploads documents</option>
                 </select>
               </div>
             </div>
@@ -9421,6 +9422,7 @@ if (isParent) {
             <option value="school_admin">Admin</option>
             <option value="behavior_specialist">Behavior Specialist</option>
             <option value="student_support_specialist">Student Support Specialist</option>
+            <option value="mtss_support">MTSS Support</option>
           </select>
         </div>
       </div>

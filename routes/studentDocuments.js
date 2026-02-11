@@ -181,6 +181,13 @@ router.delete('/:id', async (req, res) => {
     
     const document = docResult.rows[0];
     
+    // Only admins, counselors, and behavior specialists can delete documents
+    const userRole = req.headers['x-user-role'];
+    const allowedDeleteRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'];
+    if (!allowedDeleteRoles.includes(userRole)) {
+      return res.status(403).json({ error: 'You do not have permission to delete documents' });
+    }
+    
     // Delete from S3
     const deleteParams = {
       Bucket: process.env.AWS_S3_BUCKET,
