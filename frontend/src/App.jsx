@@ -9355,10 +9355,9 @@ if (isParent) {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
                 <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
                   <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
-                  <option value="counselor">Counselor — sees all students, manages referrals</option>
-                  <option value="school_admin">Admin — full access, manages everything</option>
-                  <option value="behavior_specialist">Behavior Specialist — sees all students, manages referrals</option>
-                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
+<option value="counselor">Counselor — full admin access</option>                  
+<option value="school_admin">Admin — full access, manages everything</option>
+<option value="behavior_specialist">Behavior Specialist — full admin access</option>                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
                  <option value="mtss_support">MTSS Support — sees all students, adds students, uploads documents</option>
                 </select>
               </div>

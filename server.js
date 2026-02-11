@@ -405,14 +405,13 @@ const createTables = async () => {
   }
 
   {
-  id: 17,
-  name: 'add_mtss_support_role',
-  sql: `
-    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-    ALTER TABLE users ADD CONSTRAINT users_role_check 
-      CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
-  `
-}
+  // Migration 017: Add mtss_support role
+    await pool.query(`
+      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+      ALTER TABLE users ADD CONSTRAINT users_role_check 
+        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
+    `);
+    console.log('Migration 017: mtss_support role added');
 
 };
 
