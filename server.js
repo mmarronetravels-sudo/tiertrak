@@ -400,12 +400,7 @@ const createTables = async () => {
     `);
     console.log('Migration 016: Intervention bank tables ready');
 
-  } catch (error) {
-    console.error('Error creating tables:', error);
-  }
-
-  {
-  // Migration 017: Add mtss_support role
+ // Migration 017: Add mtss_support role
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
       ALTER TABLE users ADD CONSTRAINT users_role_check 
@@ -413,7 +408,9 @@ const createTables = async () => {
     `);
     console.log('Migration 017: mtss_support role added');
 
-};
+  } catch (error) {
+    console.error('Error creating tables:', error);
+  }
 
 createTables();
 
