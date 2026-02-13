@@ -378,7 +378,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   // MTSS Meeting Report state
   const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
   const [selectedMeetingForReport, setSelectedMeetingForReport] = useState(null);
-  const [preReferralStep, setPreReferralStep] = useState(1);
+  const [preReferralStep, SetPreReferralStep] = useState(1);
   const [preReferralOptions, setPreReferralOptions] = useState(null);
   const [preReferralLoading, setPreReferralLoading] = useState(false);
 
@@ -911,7 +911,7 @@ const fetchExpiringDocuments = async () => {
       setPreReferralForm(newForm);
     }
     
-    setPreReferralStep(1);
+    SetPreReferralStep(1);
     setPreReferralLoading(false);
     setShowPreReferralForm(true);
   };
@@ -5500,7 +5500,7 @@ if (!user) {
               <div>
                 {preReferralStep > 1 && (
                   <button
-                    onClick={() => setPreReferralStep(preReferralStep - 1)}
+                    onClick={() => SetPreReferralStep(preReferralStep - 1)}
                     className="px-4 py-2 text-slate-600 hover:text-slate-800 flex items-center gap-1"
                   >
                     <ArrowLeft className="w-4 h-4" /> Previous
@@ -5518,7 +5518,7 @@ if (!user) {
                 
                 {preReferralStep < 11 ? (
                   <button
-                    onClick={() => setPreReferralStep(preReferralStep + 1)}
+                    onClick={() => SetPreReferralStep(preReferralStep + 1)}
                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
                   >
                     Next <ArrowRight className="w-4 h-4" />
@@ -5529,7 +5529,7 @@ if (!user) {
                       onClick={async () => {
                         if (!preReferralForm.parent_name || !preReferralForm.contact_date || !preReferralForm.parent_input) {
                           alert('Please complete the Parent Contact section (Step 9) before submitting.');
-                          setPreReferralStep(9);
+                          SetPreReferralStep(9);
                           return;
                         }
                         if (!preReferralForm.recommended_tier) {
@@ -6206,7 +6206,7 @@ if (!user) {
                 <button
                   onClick={() => {
                     setShowPreReferralForm(false);
-                    setpreReferralStep(1);
+                    SetPreReferralStep(1);
                   }}
                   className="p-2 hover:bg-amber-100 rounded-lg transition"
                 >
@@ -6963,7 +6963,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
               {/* Footer with Navigation */}
               <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between">
                 <button
-                  onClick={() => setpreReferralStep(Math.max(1, preReferralStep - 1))}
+                  onClick={() => SetPreReferralStep(Math.max(1, preReferralStep - 1))}
                   disabled={preReferralStep === 1}
                   className="px-6 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -6980,7 +6980,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                   
                   {preReferralStep < 11 ? (
                     <button
-                      onClick={() => setpreReferralStep(preReferralStep + 1)}
+                      onClick={() => SetPreReferralStep(preReferralStep + 1)}
                       className="px-6 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition"
                     >
                       Next →
