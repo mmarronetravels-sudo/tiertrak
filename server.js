@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors({
   origin: [
+    /\.vercel\.app$/,
     'https://tiertrak.scholarpathsystems.org',
     'https://www.scholarpathsystems.org',
     'https://scholarpathsystems.org'
