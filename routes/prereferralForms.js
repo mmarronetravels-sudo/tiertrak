@@ -332,7 +332,7 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'No valid fields to update' });
     }
     
-    setClauses.push(`updated_at = CURRENT_TIMESTAMP`);
+    setClauses.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
     
     const query = `
