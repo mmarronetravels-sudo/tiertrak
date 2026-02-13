@@ -317,7 +317,7 @@ router.put('/:id', async (req, res) => {
     
     for (const [key, value] of Object.entries(updates)) {
       if (allowedFields.includes(key)) {
-        setClauses.push(`${key} = $${paramCount}`);
+        setClauses.push(key + ' = $' + paramCount);
         // Handle JSONB fields
         if (['concern_areas', 'specific_concerns', 'concern_settings', 'current_plans', 'prior_interventions', 'recommended_interventions'].includes(key)) {
           values.push(JSON.stringify(value));
