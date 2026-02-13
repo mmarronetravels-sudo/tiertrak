@@ -6200,13 +6200,13 @@ if (!user) {
                 <div>
                   <h2 className="text-xl font-bold text-slate-800">Pre-Referral Form</h2>
                   <p className="text-sm text-slate-600">
-                    {selectedStudent?.first_name} {selectedStudent?.last_name} • Step {preReferralFormStep} of 11
+                    {selectedStudent?.first_name} {selectedStudent?.last_name} • Step {preReferralStep} of 11
                   </p>
                 </div>
                 <button
                   onClick={() => {
                     setShowPreReferralForm(false);
-                    setPreReferralFormStep(1);
+                    setpreReferralStep(1);
                   }}
                   className="p-2 hover:bg-amber-100 rounded-lg transition"
                 >
@@ -6221,7 +6221,7 @@ if (!user) {
                     <div
                       key={step}
                       className={`h-2 flex-1 rounded-full ${
-                        step <= preReferralFormStep ? 'bg-amber-500' : 'bg-slate-200'
+                        step <= preReferralStep ? 'bg-amber-500' : 'bg-slate-200'
                       }`}
                     />
                   ))}
@@ -6235,7 +6235,7 @@ if (!user) {
               {/* Form Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 {/* Step 1: Referral Info */}
-                {preReferralFormStep === 1 && (
+                {preReferralStep === 1 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 1: Referral Information</h3>
                     
@@ -6291,7 +6291,7 @@ if (!user) {
                 )}
 
                 {/* Step 2: Area of Concern */}
-                {preReferralFormStep === 2 && (
+                {preReferralStep === 2 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 2: Area of Concern</h3>
                     
@@ -6323,7 +6323,7 @@ if (!user) {
                 )}
 
                 {/* Step 3: Detailed Description */}
-                {preReferralFormStep === 3 && (
+                {preReferralStep === 3 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 3: Detailed Description</h3>
                     
@@ -6381,7 +6381,7 @@ if (!user) {
                 )}
 
                 {/* Step 4: Medical/Background */}
-                {preReferralFormStep === 4 && (
+                {preReferralStep === 4 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 4: Medical & Background Information</h3>
                     
@@ -6457,7 +6457,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 5: Academic Performance */}
-                {preReferralFormStep === 5 && (
+                {preReferralStep === 5 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 5: Current Academic Performance</h3>
                     
@@ -6500,7 +6500,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 6: Existing Plans */}
-                {preReferralFormStep === 6 && (
+                {preReferralStep === 6 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 6: Existing Plans & Supports</h3>
                     
@@ -6556,7 +6556,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 7: Prior Interventions */}
-                {preReferralFormStep === 7 && (
+                {preReferralStep === 7 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 7: Prior Interventions Attempted</h3>
                     
@@ -6634,7 +6634,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 8: Student Strengths */}
-                {preReferralFormStep === 8 && (
+                {preReferralStep === 8 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 8: Student Strengths</h3>
                     
@@ -6689,7 +6689,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 9: Parent Contact */}
-                {preReferralFormStep === 9 && (
+                {preReferralStep === 9 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 9: Parent/Guardian Contact & Input</h3>
                     <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
@@ -6838,7 +6838,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 10: Reason for Referral */}
-                {preReferralFormStep === 10 && (
+                {preReferralStep === 10 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 10: Reason for Referral</h3>
                     
@@ -6881,7 +6881,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 11: Recommendations */}
-                {preReferralFormStep === 11 && (
+                {preReferralStep === 11 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 11: Recommendations</h3>
                     
@@ -6963,8 +6963,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
               {/* Footer with Navigation */}
               <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between">
                 <button
-                  onClick={() => setPreReferralFormStep(Math.max(1, preReferralFormStep - 1))}
-                  disabled={preReferralFormStep === 1}
+                  onClick={() => setpreReferralStep(Math.max(1, preReferralStep - 1))}
+                  disabled={preReferralStep === 1}
                   className="px-6 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   ← Previous
@@ -6978,9 +6978,9 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                     Save Draft
                   </button>
                   
-                  {preReferralFormStep < 11 ? (
+                  {preReferralStep < 11 ? (
                     <button
-                      onClick={() => setPreReferralFormStep(preReferralFormStep + 1)}
+                      onClick={() => setpreReferralStep(preReferralStep + 1)}
                       className="px-6 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition"
                     >
                       Next →
