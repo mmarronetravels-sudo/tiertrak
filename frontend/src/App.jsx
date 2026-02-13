@@ -10,6 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
 import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
 import TemplateEditorModal from './components/Modals/TemplateEditorModal';
+import ProgressFormModal from './components/Modals/ProgressFormModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -9075,136 +9076,13 @@ onClick={async () => {
           <FERPABadge compact />
         </div>
       </footer>
-      {/* Weekly Progress Form Modal */}
-        {showProgressForm && selectedInterventionForProgress && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-              <div className="p-4 border-b flex justify-between items-center">
-                <div>
-                  <h3 className="font-semibold text-lg">{editingProgressLog ? 'Edit Progress Log' : 'Log Weekly Progress'}</h3>
-                  <p className="text-sm text-slate-500">{selectedInterventionForProgress.intervention_name}</p>
-                </div>
-                <button onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }} className="text-slate-500 hover:text-slate-700">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form key={selectedInterventionForProgress?.id} onSubmit={submitWeeklyProgress} className="p-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={progressFormData.week_of}
-                    onChange={(e) => setProgressFormData({ ...progressFormData, week_of: e.target.value })}
-                    className="w-full p-2 border rounded-lg"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Implementation Status *</label>
-                  <select
-                    value={progressFormData.status}
-                    onChange={(e) => {
-  const newStatus = e.target.value;
-  if (newStatus === 'Student Absent') {
-    setProgressFormData({ ...progressFormData, status: newStatus, rating: null, response: '' });
-  } else {
-    setProgressFormData({ ...progressFormData, status: newStatus });
-  }
-}}
-                    className="w-full p-2 border rounded-lg"
-                    required
-                  >
-                    <option value="">Select status...</option>
-                    <option value="Implemented as Planned">Implemented as Planned</option>
-                    <option value="Partially Implemented">Partially Implemented</option>
-                    <option value="Not Implemented">Not Implemented</option>
-                    <option value="Student Absent">Student Absent</option>
-                  </select>
-                </div>
-
-                {progressFormData.status !== 'Student Absent' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Progress Rating (1-5)</label>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 4, 5].map(rating => (
-                          <button
-                            key={rating}
-                            type="button"
-                            onClick={() => setProgressFormData({ ...progressFormData, rating })}
-                            className={`flex-1 py-2 px-3 rounded-lg border-2 transition-all ${
-                              progressFormData.rating === rating
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            {rating}
-                          </button>
-                        ))}
-                      </div>
-                      {progressFormData.rating && (
-                        <p className={`text-sm mt-1 ${getRatingColor(progressFormData.rating)}`}>
-                          {getRatingLabel(progressFormData.rating)}
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Student Response</label>
-                      <div className="flex gap-2">
-                        {['Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted'].map(response => (
-                          <button
-                            key={response}
-                            type="button"
-                            onClick={() => setProgressFormData({ ...progressFormData, response })}
-                            className={`flex-1 py-2 px-3 rounded-lg border-2 transition-all ${
-                              progressFormData.response === response
-                                ? response === 'Positive' ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                                  : response === 'Neutral' ? 'border-amber-500 bg-amber-50 text-amber-700'
-                                  : 'border-rose-500 bg-rose-50 text-rose-700'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            {response}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                  <textarea
-  ref={progressNotesRef}
-  defaultValue=""
-  className="w-full p-2 border rounded-lg"
-  rows="3"
-  placeholder="Observations, adjustments made, student behavior..."
-/>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
-                    className="flex-1 py-2 px-4 border rounded-lg hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Save Progress Log
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+      {showProgressForm && selectedInterventionForProgress && (
+  <ProgressFormModal
+    intervention={selectedInterventionForProgress}
+    editingLog={editingProgressLog}
+    onClose={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
+  />
+)}
 
         {/* Goal Setting Modal */}
         {showGoalForm && selectedInterventionForGoal && (
