@@ -855,7 +855,7 @@ const fetchExpiringDocuments = async () => {
 
   // Save pre-referral form draft
   const savePreReferralForm = async (formId, updates) => {
-    console.log('SAVE FORM - formId:', formId, 'type:', typeof formId);
+    const actualId = typeof formId === 'object' ? formId.id : formId;
     try {
       const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
         method: 'PUT',
@@ -876,7 +876,7 @@ const fetchExpiringDocuments = async () => {
   // Submit pre-referral form for approval
   const submitPreReferralForm = async (formId, staffName) => {
     try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}/submit`, {
+      const res = await fetch(`${API_URL}/prereferral-forms/${actualId}/submit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referring_staff_name: staffName })
