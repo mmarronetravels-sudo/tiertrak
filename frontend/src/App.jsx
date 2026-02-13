@@ -13,6 +13,7 @@ import TemplateEditorModal from './components/Modals/TemplateEditorModal';
 import ProgressFormModal from './components/Modals/ProgressFormModal';
 import GoalFormModal from './components/Modals/GoalFormModal';
 import ProgressChartModal from './components/Modals/ProgressChartModal';
+import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/ArchiveModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -205,8 +206,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   // Archive state
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
-  const [archiveReason, setArchiveReason] = useState('');
-  const [archivedStudents, setArchivedStudents] = useState([]);
+   const [archivedStudents, setArchivedStudents] = useState([]);
   const [archivedStudentSearch, setArchivedStudentSearch] = useState('');
 
   // Progress tracking state
@@ -1481,29 +1481,7 @@ const fetchStudentDocuments = async (studentId) => {
     }
   };
 
-  // Archive student
-  const handleArchiveStudent = async () => {
-    if (!archiveReason || !selectedStudent) return;
-    try {
-      const res = await fetch(`${API_URL}/students/${selectedStudent.id}/archive`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          archived_reason: archiveReason,
-          archived_by: user.id
-        })
-      });
-      if (res.ok) {
-        fetchStudents(user.tenant_id, showArchived);
-        fetchStudentDetails(selectedStudent.id);
-        setShowArchiveModal(false);
-        setArchiveReason('');
-      }
-    } catch (error) {
-      console.error('Error archiving student:', error);
-    }
-  };
-
+ 
   // Unarchive student
   const handleUnarchiveStudent = async (studentId = null) => {
     const id = studentId || selectedStudent?.id;
@@ -5694,57 +5672,11 @@ if (!user) {
 )}
         
         {/* Archive Modal */}
-        {showArchiveModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                  <Archive className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Archive Student</h3>
-                  <p className="text-sm text-gray-500">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-                </div>
-              </div>
-              
-              <p className="text-gray-600 mb-4">
-                Archiving will remove this student from the active list but preserve all intervention data and notes. You can reactivate them at any time.
-              </p>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reason for archiving <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={archiveReason}
-                  onChange={(e) => setArchiveReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="">Select a reason...</option>
-                  {archiveReasons.map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setShowArchiveModal(false); setArchiveReason(''); }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleArchiveStudent}
-                  disabled={!archiveReason}
-                  className="flex-1 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Archive Student
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+{showArchiveModal && (
+  <ArchiveStudentModal
+    onClose={() => { setShowArchiveModal(false); }}
+  />
+)}
         {/* Pre-Referral Form Modal */}
         {showPreReferralForm && preReferralForm && (
   <div key={preReferralForm.id} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -6554,47 +6486,12 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
         )}
 
         {/* Unarchive Modal */}
-        {showUnarchiveModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                  <RotateCcw className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Reactivate Student</h3>
-                  <p className="text-sm text-gray-500">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-                </div>
-              </div>
-              
-              <p className="text-gray-600 mb-2">
-                This will return the student to the active list. All previous intervention data and notes will be available.
-              </p>
-              
-              {selectedStudent.archived_reason && (
-                <p className="text-sm text-gray-500 mb-4">
-                  <span className="font-medium">Previously archived:</span> {selectedStudent.archived_reason}
-                  {selectedStudent.archived_at && ` on ${new Date(selectedStudent.archived_at).toLocaleDateString()}`}
-                </p>
-              )}
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowUnarchiveModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleUnarchiveStudent()}
-                  className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition"
-                >
-                  Reactivate Student
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+{showUnarchiveModal && (
+  <UnarchiveStudentModal
+    onClose={() => setShowUnarchiveModal(false)}
+    onUnarchive={() => handleUnarchiveStudent()}
+  />
+)}
 {/* Archive Intervention Modal */}
         {showArchiveInterventionModal && selectedInterventionForAction && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
