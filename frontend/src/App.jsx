@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
 MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
@@ -378,7 +378,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   // MTSS Meeting Report state
   const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
   const [selectedMeetingForReport, setSelectedMeetingForReport] = useState(null);
-  const [preReferralStep, SetPreReferralStep] = useState(1);
+  const [preReferralStep, setPreReferralStep] = useState(1);
   const [preReferralOptions, setPreReferralOptions] = useState(null);
   const [preReferralLoading, setPreReferralLoading] = useState(false);
 
@@ -911,7 +911,7 @@ const fetchExpiringDocuments = async () => {
       setPreReferralForm(newForm);
     }
     
-    SetPreReferralStep(1);
+    setPreReferralStep(1);
     setPreReferralLoading(false);
     setShowPreReferralForm(true);
   };
@@ -1994,8 +1994,8 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
-// Handle Set/Reset Password Submit
-const handleSetPassword = async (e) => {
+// Handle set/Reset Password Submit
+const handlesetPassword = async (e) => {
   e.preventDefault();
   setPasswordMessage('');
   
@@ -2592,7 +2592,7 @@ const generateReport = async () => {
       }, null)
     : new Date().toISOString().split('T')[0];
   
-  // Set default date range if not set
+  // set default date range if not set
   if (!reportDateRange.startDate) {
     setReportDateRange(prev => ({
       ...prev,
@@ -2714,7 +2714,7 @@ const filterByDateRange = (items, dateField) => {
     );
   }
 
-  // Password Set/Reset Screen
+  // Password set/Reset Screen
 if (passwordResetMode) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
@@ -2727,7 +2727,7 @@ if (passwordResetMode) {
         </div>
         
         <h2 className="text-xl font-semibold text-center mb-2">
-          {passwordResetMode === 'set' ? 'Set Up Your Password' : 'Reset Your Password'}
+          {passwordResetMode === 'set' ? 'set Up Your Password' : 'Reset Your Password'}
         </h2>
         
         {tokenEmail && (
@@ -2745,7 +2745,7 @@ if (passwordResetMode) {
         )}
         
         {!passwordMessage?.includes('successfully') && !passwordMessage?.includes('invalid') && !passwordMessage?.includes('expired') && (
-          <form onSubmit={handleSetPassword} className="space-y-4">
+          <form onSubmit={handlesetPassword} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
               <input
@@ -2802,7 +2802,7 @@ if (passwordResetMode) {
   );
 }
   
- // Set Password Page (for new parent accounts and password resets)
+ // set Password Page (for new parent accounts and password resets)
   if (currentPage === 'set-password' || currentPage === 'reset-password') {
     const params = new URLSearchParams(window.location.search);
     const setupToken = params.get('token');
@@ -2832,7 +2832,7 @@ if (passwordResetMode) {
       verifyToken();
     }, [setupToken]);
     
-    const handleSetPassword = async (e) => {
+    const handlesetPassword = async (e) => {
       e.preventDefault();
       setPasswordError('');
       
@@ -2888,11 +2888,11 @@ if (passwordResetMode) {
           {tokenValid === true && !passwordSuccess && (
             <>
               <h2 className="text-xl font-semibold text-slate-800 text-center mb-2">
-                {currentPage === 'set-password' ? 'Set Up Your Password' : 'Reset Your Password'}
+                {currentPage === 'set-password' ? 'set Up Your Password' : 'Reset Your Password'}
               </h2>
               <p className="text-slate-500 text-center mb-6">{userEmail}</p>
               
-              <form onSubmit={handleSetPassword} className="space-y-4">
+              <form onSubmit={handlesetPassword} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
                   <input
@@ -2922,7 +2922,7 @@ if (passwordResetMode) {
                   type="submit"
                   className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
                 >
-                  Set Password
+                  set Password
                 </button>
               </form>
             </>
@@ -4004,7 +4004,7 @@ if (!user) {
                       className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-100 flex items-center gap-1"
                     >
                       <Target className="w-3 h-3" />
-                      {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
+                      {intervention.goal_description ? 'Edit Goal' : 'set Goal'}
                     </button>}
                     <button
                       onClick={() => {
@@ -5500,7 +5500,7 @@ if (!user) {
               <div>
                 {preReferralStep > 1 && (
                   <button
-                    onClick={() => SetPreReferralStep(preReferralStep - 1)}
+                    onClick={() => setPreReferralStep(preReferralStep - 1)}
                     className="px-4 py-2 text-slate-600 hover:text-slate-800 flex items-center gap-1"
                   >
                     <ArrowLeft className="w-4 h-4" /> Previous
@@ -5518,7 +5518,7 @@ if (!user) {
                 
                 {preReferralStep < 11 ? (
                   <button
-                    onClick={() => SetPreReferralStep(preReferralStep + 1)}
+                    onClick={() => setPreReferralStep(preReferralStep + 1)}
                     className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
                   >
                     Next <ArrowRight className="w-4 h-4" />
@@ -5529,7 +5529,7 @@ if (!user) {
                       onClick={async () => {
                         if (!preReferralForm.parent_name || !preReferralForm.contact_date || !preReferralForm.parent_input) {
                           alert('Please complete the Parent Contact section (Step 9) before submitting.');
-                          SetPreReferralStep(9);
+                          setPreReferralStep(9);
                           return;
                         }
                         if (!preReferralForm.recommended_tier) {
@@ -6206,7 +6206,7 @@ if (!user) {
                 <button
                   onClick={() => {
                     setShowPreReferralForm(false);
-                    SetPreReferralStep(1);
+                    setPreReferralStep(1);
                   }}
                   className="p-2 hover:bg-amber-100 rounded-lg transition"
                 >
@@ -6963,7 +6963,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
               {/* Footer with Navigation */}
               <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between">
                 <button
-                  onClick={() => SetPreReferralStep(Math.max(1, preReferralStep - 1))}
+                  onClick={() => setPreReferralStep(Math.max(1, preReferralStep - 1))}
                   disabled={preReferralStep === 1}
                   className="px-6 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -6980,7 +6980,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                   
                   {preReferralStep < 11 ? (
                     <button
-                      onClick={() => SetPreReferralStep(preReferralStep + 1)}
+                      onClick={() => setPreReferralStep(preReferralStep + 1)}
                       className="px-6 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition"
                     >
                       Next →
@@ -7296,7 +7296,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           disabled={submitting}
           className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? 'Creating Account...' : 'Create Account & Send Setup Email'}
+          {submitting ? 'Creating Account...' : 'Create Account & Send setup Email'}
         </button>
       </form>
     </div>
@@ -9218,7 +9218,7 @@ if (isParent) {
                       view === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <Settings size={16} />
+                    <settings size={16} />
                     Admin
                   </button>
                 )}
@@ -9615,13 +9615,13 @@ onClick={async () => {
           </div>
         )}
 
-        {/* Goal Setting Modal */}
+        {/* Goal setting Modal */}
         {showGoalForm && selectedInterventionForGoal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
               <div className="p-4 border-b flex justify-between items-center">
                 <div>
-                  <h3 className="font-semibold text-lg">Set Intervention Goal</h3>
+                  <h3 className="font-semibold text-lg">set Intervention Goal</h3>
                   <p className="text-sm text-slate-500">{selectedInterventionForGoal.intervention_name}</p>
                 </div>
                 <button onClick={() => setShowGoalForm(false)} className="text-slate-500 hover:text-slate-700">
@@ -10045,7 +10045,7 @@ onClick={async () => {
                 <div className="space-y-4">
                   {/* Template Metadata */}
                   <div className="bg-slate-50 rounded-lg p-4">
-                    <h4 className="font-medium text-slate-700 mb-3">Template Settings</h4>
+                    <h4 className="font-medium text-slate-700 mb-3">Template settings</h4>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-600 mb-1">Template Name</label>
