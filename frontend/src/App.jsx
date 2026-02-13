@@ -6973,7 +6973,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => savePreReferralForm(preReferralForm)}
+                   onClick={() => savePreReferralForm(preReferralForm.id, {})}
                     className="px-6 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50 transition"
                   >
                     Save Draft
