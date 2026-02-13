@@ -857,7 +857,7 @@ const fetchExpiringDocuments = async () => {
   const savePreReferralForm = async (formId, updates) => {
     const actualId = typeof formId === 'object' ? formId.id : formId;
     try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
+      const res = await fetch(API_URL + '/prereferral-forms/' + actualId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -872,11 +872,10 @@ const fetchExpiringDocuments = async () => {
     }
     return null;
   };
-
   // Submit pre-referral form for approval
   const submitPreReferralForm = async (formId, staffName) => {
     try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${actualId}/submit`, {
+      const res = await fetch(API_URL + '/prereferral-forms/' + formId + '/submit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referring_staff_name: staffName })
@@ -891,7 +890,7 @@ const fetchExpiringDocuments = async () => {
     }
     return null;
   };
-
+  
   // Open pre-referral form (creates new or opens existing)
   const openPreReferralForm = async (student) => {
     setPreReferralLoading(true);
