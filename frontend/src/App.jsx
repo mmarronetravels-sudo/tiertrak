@@ -855,6 +855,7 @@ const fetchExpiringDocuments = async () => {
 
   // Save pre-referral form draft
   const savePreReferralForm = async (formId, updates) => {
+    console.log('SAVE FORM - formId:', formId, 'type:', typeof formId);
     try {
       const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
         method: 'PUT',
