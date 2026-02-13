@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
 MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
@@ -855,8 +855,9 @@ const fetchExpiringDocuments = async () => {
 
   // Save pre-referral form draft
   const savePreReferralForm = async (formId, updates) => {
+    const actualId = typeof formId === 'object' ? formId.id : formId;
     try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
+      const res = await fetch(API_URL + '/prereferral-forms/' + actualId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -871,11 +872,10 @@ const fetchExpiringDocuments = async () => {
     }
     return null;
   };
-
   // Submit pre-referral form for approval
   const submitPreReferralForm = async (formId, staffName) => {
     try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}/submit`, {
+      const res = await fetch(API_URL + '/prereferral-forms/' + formId + '/submit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referring_staff_name: staffName })
@@ -890,7 +890,7 @@ const fetchExpiringDocuments = async () => {
     }
     return null;
   };
-
+  
   // Open pre-referral form (creates new or opens existing)
   const openPreReferralForm = async (student) => {
     setPreReferralLoading(true);
@@ -1994,8 +1994,8 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
-// Handle Set/Reset Password Submit
-const handleSetPassword = async (e) => {
+// Handle set/Reset Password Submit
+const handlesetPassword = async (e) => {
   e.preventDefault();
   setPasswordMessage('');
   
@@ -2592,7 +2592,7 @@ const generateReport = async () => {
       }, null)
     : new Date().toISOString().split('T')[0];
   
-  // Set default date range if not set
+  // set default date range if not set
   if (!reportDateRange.startDate) {
     setReportDateRange(prev => ({
       ...prev,
@@ -2714,7 +2714,7 @@ const filterByDateRange = (items, dateField) => {
     );
   }
 
-  // Password Set/Reset Screen
+  // Password set/Reset Screen
 if (passwordResetMode) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
@@ -2727,7 +2727,7 @@ if (passwordResetMode) {
         </div>
         
         <h2 className="text-xl font-semibold text-center mb-2">
-          {passwordResetMode === 'set' ? 'Set Up Your Password' : 'Reset Your Password'}
+          {passwordResetMode === 'set' ? 'set Up Your Password' : 'Reset Your Password'}
         </h2>
         
         {tokenEmail && (
@@ -2745,7 +2745,7 @@ if (passwordResetMode) {
         )}
         
         {!passwordMessage?.includes('successfully') && !passwordMessage?.includes('invalid') && !passwordMessage?.includes('expired') && (
-          <form onSubmit={handleSetPassword} className="space-y-4">
+          <form onSubmit={handlesetPassword} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
               <input
@@ -2802,7 +2802,7 @@ if (passwordResetMode) {
   );
 }
   
- // Set Password Page (for new parent accounts and password resets)
+ // set Password Page (for new parent accounts and password resets)
   if (currentPage === 'set-password' || currentPage === 'reset-password') {
     const params = new URLSearchParams(window.location.search);
     const setupToken = params.get('token');
@@ -2832,7 +2832,7 @@ if (passwordResetMode) {
       verifyToken();
     }, [setupToken]);
     
-    const handleSetPassword = async (e) => {
+    const handlesetPassword = async (e) => {
       e.preventDefault();
       setPasswordError('');
       
@@ -2888,11 +2888,11 @@ if (passwordResetMode) {
           {tokenValid === true && !passwordSuccess && (
             <>
               <h2 className="text-xl font-semibold text-slate-800 text-center mb-2">
-                {currentPage === 'set-password' ? 'Set Up Your Password' : 'Reset Your Password'}
+                {currentPage === 'set-password' ? 'set Up Your Password' : 'Reset Your Password'}
               </h2>
               <p className="text-slate-500 text-center mb-6">{userEmail}</p>
               
-              <form onSubmit={handleSetPassword} className="space-y-4">
+              <form onSubmit={handlesetPassword} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
                   <input
@@ -2922,7 +2922,7 @@ if (passwordResetMode) {
                   type="submit"
                   className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
                 >
-                  Set Password
+                  set Password
                 </button>
               </form>
             </>
@@ -4004,7 +4004,7 @@ if (!user) {
                       className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-100 flex items-center gap-1"
                     >
                       <Target className="w-3 h-3" />
-                      {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
+                      {intervention.goal_description ? 'Edit Goal' : 'set Goal'}
                     </button>}
                     <button
                       onClick={() => {
@@ -6200,13 +6200,13 @@ if (!user) {
                 <div>
                   <h2 className="text-xl font-bold text-slate-800">Pre-Referral Form</h2>
                   <p className="text-sm text-slate-600">
-                    {selectedStudent?.first_name} {selectedStudent?.last_name} • Step {preReferralFormStep} of 11
+                    {selectedStudent?.first_name} {selectedStudent?.last_name} • Step {preReferralStep} of 11
                   </p>
                 </div>
                 <button
                   onClick={() => {
                     setShowPreReferralForm(false);
-                    setPreReferralFormStep(1);
+                    setPreReferralStep(1);
                   }}
                   className="p-2 hover:bg-amber-100 rounded-lg transition"
                 >
@@ -6221,7 +6221,7 @@ if (!user) {
                     <div
                       key={step}
                       className={`h-2 flex-1 rounded-full ${
-                        step <= preReferralFormStep ? 'bg-amber-500' : 'bg-slate-200'
+                        step <= preReferralStep ? 'bg-amber-500' : 'bg-slate-200'
                       }`}
                     />
                   ))}
@@ -6235,7 +6235,7 @@ if (!user) {
               {/* Form Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 {/* Step 1: Referral Info */}
-                {preReferralFormStep === 1 && (
+                {preReferralStep === 1 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 1: Referral Information</h3>
                     
@@ -6291,7 +6291,7 @@ if (!user) {
                 )}
 
                 {/* Step 2: Area of Concern */}
-                {preReferralFormStep === 2 && (
+                {preReferralStep === 2 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 2: Area of Concern</h3>
                     
@@ -6323,7 +6323,7 @@ if (!user) {
                 )}
 
                 {/* Step 3: Detailed Description */}
-                {preReferralFormStep === 3 && (
+                {preReferralStep === 3 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 3: Detailed Description</h3>
                     
@@ -6381,7 +6381,7 @@ if (!user) {
                 )}
 
                 {/* Step 4: Medical/Background */}
-                {preReferralFormStep === 4 && (
+                {preReferralStep === 4 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 4: Medical & Background Information</h3>
                     
@@ -6457,7 +6457,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 5: Academic Performance */}
-                {preReferralFormStep === 5 && (
+                {preReferralStep === 5 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 5: Current Academic Performance</h3>
                     
@@ -6500,7 +6500,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 6: Existing Plans */}
-                {preReferralFormStep === 6 && (
+                {preReferralStep === 6 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 6: Existing Plans & Supports</h3>
                     
@@ -6556,7 +6556,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 7: Prior Interventions */}
-                {preReferralFormStep === 7 && (
+                {preReferralStep === 7 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 7: Prior Interventions Attempted</h3>
                     
@@ -6634,7 +6634,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 8: Student Strengths */}
-                {preReferralFormStep === 8 && (
+                {preReferralStep === 8 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 8: Student Strengths</h3>
                     
@@ -6689,7 +6689,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 9: Parent Contact */}
-                {preReferralFormStep === 9 && (
+                {preReferralStep === 9 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 9: Parent/Guardian Contact & Input</h3>
                     <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
@@ -6838,7 +6838,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 10: Reason for Referral */}
-                {preReferralFormStep === 10 && (
+                {preReferralStep === 10 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 10: Reason for Referral</h3>
                     
@@ -6881,7 +6881,7 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 )}
 
                 {/* Step 11: Recommendations */}
-                {preReferralFormStep === 11 && (
+                {preReferralStep === 11 && (
                   <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-slate-800">Section 11: Recommendations</h3>
                     
@@ -6963,8 +6963,8 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
               {/* Footer with Navigation */}
               <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between">
                 <button
-                  onClick={() => setPreReferralFormStep(Math.max(1, preReferralFormStep - 1))}
-                  disabled={preReferralFormStep === 1}
+                  onClick={() => setPreReferralStep(Math.max(1, preReferralStep - 1))}
+                  disabled={preReferralStep === 1}
                   className="px-6 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   ← Previous
@@ -6972,15 +6972,15 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
                 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => savePreReferralForm(preReferralForm)}
+                   onClick={() => savePreReferralForm(preReferralForm.id, {})}
                     className="px-6 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50 transition"
                   >
                     Save Draft
                   </button>
                   
-                  {preReferralFormStep < 11 ? (
+                  {preReferralStep < 11 ? (
                     <button
-                      onClick={() => setPreReferralFormStep(preReferralFormStep + 1)}
+                      onClick={() => setPreReferralStep(preReferralStep + 1)}
                       className="px-6 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition"
                     >
                       Next →
@@ -7296,7 +7296,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           disabled={submitting}
           className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? 'Creating Account...' : 'Create Account & Send Setup Email'}
+          {submitting ? 'Creating Account...' : 'Create Account & Send setup Email'}
         </button>
       </form>
     </div>
@@ -9218,7 +9218,7 @@ if (isParent) {
                       view === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <Settings size={16} />
+                    <settings size={16} />
                     Admin
                   </button>
                 )}
@@ -9615,13 +9615,13 @@ onClick={async () => {
           </div>
         )}
 
-        {/* Goal Setting Modal */}
+        {/* Goal setting Modal */}
         {showGoalForm && selectedInterventionForGoal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
               <div className="p-4 border-b flex justify-between items-center">
                 <div>
-                  <h3 className="font-semibold text-lg">Set Intervention Goal</h3>
+                  <h3 className="font-semibold text-lg">set Intervention Goal</h3>
                   <p className="text-sm text-slate-500">{selectedInterventionForGoal.intervention_name}</p>
                 </div>
                 <button onClick={() => setShowGoalForm(false)} className="text-slate-500 hover:text-slate-700">
@@ -10045,7 +10045,7 @@ onClick={async () => {
                 <div className="space-y-4">
                   {/* Template Metadata */}
                   <div className="bg-slate-50 rounded-lg p-4">
-                    <h4 className="font-medium text-slate-700 mb-3">Template Settings</h4>
+                    <h4 className="font-medium text-slate-700 mb-3">Template settings</h4>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-600 mb-1">Template Name</label>
