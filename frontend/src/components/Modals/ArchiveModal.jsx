@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Archive, RotateCcw } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+
 
 const archiveReasons = [
   'Completed Interventions',
@@ -14,8 +14,7 @@ const archiveReasons = [
 // ARCHIVE MODAL (for archiving an active student)
 // ============================================
 
-export const ArchiveStudentModal = ({ onClose }) => {
-  const { user, selectedStudent, API_URL, fetchStudents, fetchStudentDetails } = useApp();
+export const ArchiveStudentModal = ({ onClose, user, selectedStudent, API_URL, fetchStudents, fetchStudentDetails }) => {
 
   const [archiveReason, setArchiveReason] = useState('');
 
@@ -97,8 +96,7 @@ export const ArchiveStudentModal = ({ onClose }) => {
 // UNARCHIVE MODAL (for reactivating an archived student)
 // ============================================
 
-export const UnarchiveStudentModal = ({ onClose, onUnarchive }) => {
-  const { selectedStudent } = useApp();
+export const UnarchiveStudentModal = ({ onClose, onUnarchive, selectedStudent }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

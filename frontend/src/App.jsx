@@ -5610,6 +5610,11 @@ if (!user) {
 {showArchiveModal && (
   <ArchiveStudentModal
     onClose={() => { setShowArchiveModal(false); }}
+    user={user}
+    selectedStudent={selectedStudent}
+    API_URL={API_URL}
+    fetchStudents={fetchStudents}
+    fetchStudentDetails={fetchStudentDetails}
   />
 )}
         {/* Pre-Referral Form Modal */}
@@ -6422,9 +6427,10 @@ onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralFo
 
         {/* Unarchive Modal */}
 {showUnarchiveModal && (
-  <UnarchiveStudentModal
+ <UnarchiveStudentModal
     onClose={() => setShowUnarchiveModal(false)}
     onUnarchive={() => handleUnarchiveStudent()}
+    selectedStudent={selectedStudent}
   />
 )}
 {/* Archive Intervention Modal */}
