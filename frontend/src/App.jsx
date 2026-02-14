@@ -3466,8 +3466,6 @@ if (!user) {
                     }{canManageInterventions && <button
                       onClick={() => {
                         setSelectedInterventionForGoal(intervention);
-                        setGoalFormData({
-                       });
                         setShowGoalForm(true);
                       }}
                       className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-100 flex items-center gap-1"
