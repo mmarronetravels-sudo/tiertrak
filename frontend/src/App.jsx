@@ -8771,8 +8771,8 @@ if (isParent) {
               rel="noopener noreferrer"
               className="hidden sm:inline text-sm text-slate-500 hover:text-indigo-600"
             >
-              GradTrak
-            </a>
+             TierTrak             
+             </a>
           </div>
           <FERPABadge compact />
         </div>
@@ -8814,7 +8814,7 @@ if (isParent) {
     onClose={() => setShowTemplateEditor(false)}
     onRefresh={fetchAdminTemplates}
   />
-)}r/component-split
+)}
     </div>
   );
 }
