@@ -58,6 +58,21 @@ export default function App() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showEditStaffModal, setShowEditStaffModal] = useState(false);
   const [selectedStaffMember, setSelectedStaffMember] = useState(null);
+  const loadStaffList = async (tenantId) => {
+    const tid = tenantId || user?.tenant_id;
+    if (!tid) return;
+    try {
+      const res = await fetch(`${API_URL}/staff/${tid}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStaffList(data);
+      }
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+    }
+  };
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
