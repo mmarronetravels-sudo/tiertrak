@@ -279,14 +279,18 @@ const isParent = user && user.role === 'parent';
   useEffect(() => {
     if (user) appContext.setUser(user);
   }, [user]);
-
   useEffect(() => {
     if (token) appContext.setToken(token);
   }, [token]);
-
   useEffect(() => {
     appContext.setSelectedStudent(selectedStudent);
   }, [selectedStudent]);
+  useEffect(() => {
+    appContext.setWeeklyProgressLogs(weeklyProgressLogs);
+  }, [weeklyProgressLogs]);
+  useEffect(() => {
+    appContext.setStaffList(staffList);
+  }, [staffList]);
 
   // Fetch missing logs when dashboard loads
 
