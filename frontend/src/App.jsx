@@ -14,6 +14,8 @@ import ProgressFormModal from './components/Modals/ProgressFormModal';
 import GoalFormModal from './components/Modals/GoalFormModal';
 import ProgressChartModal from './components/Modals/ProgressChartModal';
 import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/ArchiveModal';
+import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
+import { useApp } from './context/AppContext';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -47,6 +49,7 @@ const FERPABadge = ({ compact = false }) => (
 );
 
 export default function App() {
+  const appContext = useApp();
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [view, setView] = useState('dashboard');
@@ -55,8 +58,6 @@ export default function App() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showEditStaffModal, setShowEditStaffModal] = useState(false);
   const [selectedStaffMember, setSelectedStaffMember] = useState(null);
-  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
-  const [staffError, setStaffError] = useState('');
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
@@ -273,6 +274,20 @@ const isParent = user && user.role === 'parent';
       setLoading(false);
     }
   }, [token]);
+
+  // Sync App.jsx state into AppContext for extracted modals
+  useEffect(() => {
+    if (user) appContext.setUser(user);
+  }, [user]);
+
+  useEffect(() => {
+    if (token) appContext.setToken(token);
+  }, [token]);
+
+  useEffect(() => {
+    appContext.setSelectedStudent(selectedStudent);
+  }, [selectedStudent]);
+
   // Fetch missing logs when dashboard loads
 
   useEffect(() => {
@@ -283,16 +298,7 @@ const isParent = user && user.role === 'parent';
   }
 }, [view, user?.tenant_id]);
 
-  useEffect(() => {
-  const handler = () => {
-    setSelectedStaffMember(window.__editStaffMember);
-    setShowEditStaffModal(true);
-  };
-  window.addEventListener('editStaff', handler);
-  return () => window.removeEventListener('editStaff', handler);
-}, []);
-
-  // Fetch MTSS referral candidates for dashboard
+    // Fetch MTSS referral candidates for dashboard
 const fetchReferralCandidates = async () => {
   if (!user?.tenant_id) return;
   try {
@@ -354,17 +360,7 @@ const handleReferralMonitoring = async (studentId, action) => {
     }
   }, [view]);  // Fetch admin templates
 
-  // Listen for Edit Staff event from AdminView (bridging scope gap)
-  useEffect(() => {
-    const handler = () => {
-      setSelectedStaffMember(window.__editStaffMember);
-      setShowEditStaffModal(true);
-    };
-    window.addEventListener('editStaff', handler);
-    return () => window.removeEventListener('editStaff', handler);
-  }, []);
-
-  // Fetch user info
+    // Fetch user info
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
@@ -505,70 +501,7 @@ const removeInterventionAssignment = async (assignmentId) => {
     console.error('Error removing assignment:', error);
   }
 
-  // Fetch staff list
-const loadStaffList = async () => {
-  if (!user?.tenant_id) return;
-  try {
-    const response = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      setStaffList(data);
-    }
-  } catch (error) {
-    console.error('Error fetching staff:', error);
-  }
-};
-
-// Add new staff member
-const handleAddStaff = async () => {
-  setStaffError('');
-  if (!newStaff.email || !newStaff.full_name) {
-    setStaffError('Email and full name are required');
-    return;
-  }
-  try {
-    const response = await fetch(`${API_URL}/staff`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
-    });
-    if (response.ok) {
-      setShowAddStaffModal(false);
-      setNewStaff({ email: '', full_name: '', role: 'teacher' });
-      loadStaffList();
-    } else {
-      const err = await response.json();
-      setStaffError(err.error || 'Failed to create staff member');
-    }
-  } catch (error) {
-    setStaffError('Network error. Please try again.');
-  }
-};
-
-// Update staff member role/name
-const handleUpdateStaff = async () => {
-  if (!selectedStaffMember) return;
-  try {
-    const response = await fetch(`${API_URL}/staff/${selectedStaffMember.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ 
-        full_name: selectedStaffMember.full_name, 
-        role: selectedStaffMember.role 
-      })
-    });
-    if (response.ok) {
-      setShowEditStaffModal(false);
-      setSelectedStaffMember(null);
-      loadStaffList();
-    }
-  } catch (error) {
-    console.error('Error updating staff:', error);
-  }
-};
-
+ 
 // Delete staff member
 const handleDeleteStaff = async (staffId, staffName) => {
   if (!confirm(`Remove ${staffName}? This will revoke their access to TierTrak.`)) return;
@@ -7320,7 +7253,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => { window.__editStaffMember = {...member}; window.dispatchEvent(new Event('editStaff')); }}
+                          onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
                           className="p-1.5 text-slate-400 hover:text-blue-600 transition"
                           title="Edit"
                         >
@@ -8781,130 +8714,15 @@ if (isParent) {
       )}
 
       {showAddStaffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">Add Staff Member</h3>
-              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">Create an account so this person can sign in with Google SSO. No password needed.</p>
-            {staffError && (
-              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-                <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
-                <input type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} placeholder="jsmith@summitlc.org" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                  <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
-<option value="counselor">Counselor — full admin access</option>                  
-<option value="school_admin">Admin — full access, manages everything</option>
-<option value="behavior_specialist">Behavior Specialist — full admin access</option>                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
-                 <option value="mtss_support">MTSS Support — sees all students, adds students, uploads documents</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
-              <button onClick={async () => {
-                if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
-                try {
-                  const res = await fetch(`${API_URL}/staff`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
-                  });
-                  const data = await res.json();
-                  if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
-                  setShowAddStaffModal(false);
-                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
-                  const listData = await listRes.json();
-                  setStaffList(listData);
-                } catch (err) { setStaffError('Connection error'); }
-              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
-            </div>
-          </div>
-        </div>
-      )}
+  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} />
+)}
 
       {/* Edit Staff Modal */}
 {showEditStaffModal && selectedStaffMember && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-slate-800">Edit Staff Member</h3>
-        <button onClick={() => setShowEditStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-          <X size={20} />
-        </button>
-      </div>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-          <input
-            type="text"
-            value={selectedStaffMember.full_name}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, full_name: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-          <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">{selectedStaffMember.email}</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-          <select
-            value={selectedStaffMember.role}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, role: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="teacher">Teacher</option>
-            <option value="counselor">Counselor</option>
-            <option value="school_admin">Admin</option>
-            <option value="behavior_specialist">Behavior Specialist</option>
-            <option value="student_support_specialist">Student Support Specialist</option>
-            <option value="mtss_support">MTSS Support</option>
-          </select>
-        </div>
-      </div>
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={() => setShowEditStaffModal(false)}
-          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-        >
-          Cancel
-        </button>
-        <button
-onClick={async () => {
-            try {
-              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
-              });
-              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
-              setShowEditStaffModal(false);
-              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
-              const listData = await listRes.json();
-              setStaffList(listData);
-            } catch (err) { alert('Connection error'); }
-          }}
-          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-        >
-         Save Changes
-        </button>
-      </div>
-    </div>
-  </div>
+  <EditStaffModal
+    staffMember={selectedStaffMember}
+    onClose={() => { setShowEditStaffModal(false); setSelectedStaffMember(null); }}
+  />
 )}
 
       {/* App Footer */}
