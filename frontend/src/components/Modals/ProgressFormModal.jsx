@@ -38,6 +38,7 @@ const ProgressFormModal = ({ intervention, editingLog, onClose, user }) => {
   // SUBMIT HANDLER
   // ============================================
 
+  console.log('ProgressFormModal user prop:', user, 'token from context:', token);
   const submitWeeklyProgress = async (e) => {
     e.preventDefault();
     try {
