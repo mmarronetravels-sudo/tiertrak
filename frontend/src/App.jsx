@@ -8770,6 +8770,10 @@ if (isParent) {
   <GoalFormModal
     intervention={selectedInterventionForGoal}
     onClose={() => setShowGoalForm(false)}
+    token={token}
+    selectedStudent={selectedStudent}
+    API_URL={API_URL}
+    fetchStudentDetails={fetchStudentDetails}
   />
 )}
        {/* Progress Chart Modal */}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X, Target } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+
 
 // Rating label helper (import from utils/constants.js if already extracted)
 const getRatingLabel = (rating) => {
@@ -14,8 +14,7 @@ const getRatingLabel = (rating) => {
   return labels[rating] || '';
 };
 
-const GoalFormModal = ({ intervention, onClose }) => {
-  const { token, selectedStudent, API_URL, setSelectedStudent } = useApp();
+const GoalFormModal = ({ intervention, onClose, token, selectedStudent, API_URL, fetchStudentDetails }) => {
 
   // Local state — pre-filled from intervention's existing goal data
   const [goalFormData, setGoalFormData] = useState({
@@ -42,12 +41,7 @@ const GoalFormModal = ({ intervention, onClose }) => {
 
       if (response.ok) {
         // Refresh student data to reflect the updated goal
-        const studentResponse = await fetch(`${API_URL}/students/${selectedStudent.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (studentResponse.ok) {
-          setSelectedStudent(await studentResponse.json());
-        }
+        if (fetchStudentDetails) fetchStudentDetails(selectedStudent.id);
         onClose();
       } else {
         const errorData = await response.json().catch(() => ({}));
