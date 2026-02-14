@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { useApp } from '../../context/AppContext';
+
 
 // ============================================
 // ADD STAFF MODAL
 // ============================================
 
-export const AddStaffModal = ({ onClose }) => {
-  const { user, token, API_URL, setStaffList } = useApp();
+export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList }) => {
 
   const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
   const [staffError, setStaffError] = useState('');
@@ -31,7 +30,7 @@ export const AddStaffModal = ({ onClose }) => {
         });
         if (listRes.ok) {
           const listData = await listRes.json();
-          setStaffList(listData);
+          if (loadStaffList) loadStaffList();
         }
         onClose();
       } else {
@@ -90,8 +89,7 @@ export const AddStaffModal = ({ onClose }) => {
 // EDIT STAFF MODAL
 // ============================================
 
-export const EditStaffModal = ({ staffMember, onClose }) => {
-  const { user, token, API_URL, setStaffList } = useApp();
+export const EditStaffModal = ({ staffMember, onClose, user, token, API_URL, loadStaffList }) => {
 
   // Local copy of staff member for editing
   const [editData, setEditData] = useState({
@@ -113,7 +111,7 @@ export const EditStaffModal = ({ staffMember, onClose }) => {
         });
         if (listRes.ok) {
           const listData = await listRes.json();
-          setStaffList(listData);
+          if (loadStaffList) loadStaffList();
         }
         onClose();
       } else {

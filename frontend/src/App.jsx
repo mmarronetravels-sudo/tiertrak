@@ -7186,8 +7186,8 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               <h2 className="text-xl font-semibold text-slate-800">Staff Management</h2>
             </div>
             <button
-              onClick={() => { setStaffError(''); setNewStaff({ email: '', full_name: '', role: 'teacher' }); setShowAddStaffModal(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
+onClick={() => { setShowAddStaffModal(true); }}              
+className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
             >
               <Plus size={16} />
               Add Staff
@@ -8722,7 +8722,7 @@ if (isParent) {
       )}
 
       {showAddStaffModal && (
-  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} />
+  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} />
 )}
 
       {/* Edit Staff Modal */}
@@ -8730,6 +8730,7 @@ if (isParent) {
   <EditStaffModal
     staffMember={selectedStaffMember}
     onClose={() => { setShowEditStaffModal(false); setSelectedStaffMember(null); }}
+    user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList}
   />
 )}
 
