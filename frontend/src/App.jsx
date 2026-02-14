@@ -8759,6 +8759,7 @@ if (isParent) {
     editingLog={editingProgressLog}
     onClose={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
     user={user}
+    fetchWeeklyProgress={fetchWeeklyProgress}
   />
 )}
 
