@@ -20,8 +20,8 @@ const getRatingColor = (rating) => {
   return 'text-rose-600';
 };
 
-const ProgressFormModal = ({ intervention, editingLog, onClose }) => {
-  const { user, token, selectedStudent, API_URL, fetchWeeklyProgress } = useApp();
+const ProgressFormModal = ({ intervention, editingLog, onClose, user }) => {
+  const { token, selectedStudent, API_URL, fetchWeeklyProgress } = useApp();
 
   // Local state — pre-fill if editing an existing log
   const [progressFormData, setProgressFormData] = useState({

@@ -8758,6 +8758,7 @@ if (isParent) {
     intervention={selectedInterventionForProgress}
     editingLog={editingProgressLog}
     onClose={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
+    user={user}
   />
 )}
 
