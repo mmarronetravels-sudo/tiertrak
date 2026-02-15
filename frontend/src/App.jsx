@@ -99,7 +99,6 @@ export default function App() {
   const [newIntervention, setNewIntervention] = useState({ name: '', notes: '' });
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
-  const progressNotesRef = useRef(null);
   const googleButtonRef = useRef(null); 
   const interventionNotesRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
@@ -111,8 +110,7 @@ const [showReport, setShowReport] = useState(false);
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
 const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
-const [reportData, setReportData] = useState(null);
-  const [newLog, setNewLog] = useState({ 
+const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
     log_date: new Date().toISOString().split('T')[0], 
     time_of_day: '', 
@@ -210,13 +208,6 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   const [expandedProgressLogs, setExpandedProgressLogs] = useState({});
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [selectedInterventionForProgress, setSelectedInterventionForProgress] = useState(null);
-  const [progressFormData, setProgressFormData] = useState({
-    week_of: '',
-    status: '',
-    rating: '',
-    response: '',
-    notes: ''
-  });
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showProgressChart, setShowProgressChart] = useState(false);
   const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
@@ -658,62 +649,7 @@ const openMTSSMeetingForm = (meeting = null) => {
     }
   };
 
-    // Submit weekly progress
-  const submitWeeklyProgress = async (e) => {
-  e.preventDefault();
-  try {
-    const url = editingProgressLog 
-      ? `${API_URL}/weekly-progress/${editingProgressLog.id}`
-      : `${API_URL}/weekly-progress`;
-    
-    const method = editingProgressLog ? 'PUT' : 'POST';
-    
-    const body = editingProgressLog 
-      ? {
-          week_of: progressFormData.week_of,
-          status: progressFormData.status,
-          rating: progressFormData.rating || null,
-          response: progressFormData.response || null,
-          notes: progressNotesRef.current?.value || null
-        }
-      : {
-          student_intervention_id: selectedInterventionForProgress.id,
-          student_id: selectedStudent.id,
-          week_of: progressFormData.week_of,
-          status: progressFormData.status,
-          rating: progressFormData.rating || null,
-          response: progressFormData.response || null,
-          notes: progressNotesRef.current?.value || null,
-          logged_by: user.id
-        };
-
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (response.ok) {
-      setShowProgressForm(false);
-      setEditingProgressLog(null);
-      setProgressFormData({
-        week_of: '',
-        status: '',
-        rating: '',
-        response: '',
-        notes: ''
-      });
-      fetchWeeklyProgress(selectedStudent.id);
-    }
-  } catch (err) {
-    console.error('Error submitting weekly progress:', err);
-  }
-};
-
-  // Delete weekly progress log
+      // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
     if (!confirm('Are you sure you want to delete this progress log?')) return;
     try {
@@ -731,19 +667,9 @@ const openMTSSMeetingForm = (meeting = null) => {
     }
   };
 
-  // Edit weekly progress log
-const openEditProgressLog = (log, intervention) => {
+  const openEditProgressLog = (log, intervention) => {
   setEditingProgressLog(log);
   setSelectedInterventionForProgress(intervention);
-  setProgressFormData({
-    week_of: log.week_of?.split('T')[0] || '',
-    status: log.status || '',
-    rating: log.rating || '',
-    response: log.response || ''
-  });
-  if (progressNotesRef.current) {
-    progressNotesRef.current.value = log.notes || '';
-  }
   setShowProgressForm(true);
 };
   
@@ -2873,17 +2799,10 @@ if (!user) {
                   <div className="flex gap-2 mt-3">
                     {canManageInterventions && <button
                       onClick={() => {
-                        setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
-                        setProgressFormData({
-                          week_of: new Date().toISOString().split('T')[0],
-                          status: '',
-                          rating: '',
-                          response: '',
-                          notes: ''
-                        });
-                        if (progressNotesRef.current) progressNotesRef.current.value = '';
-                        setShowProgressForm(true);
-                      }}
+  setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
+  setEditingProgressLog(null);
+  setShowProgressForm(true);
+}}
                       className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" />
