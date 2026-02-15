@@ -3451,15 +3451,7 @@ if (!user) {
             token={token}
           />
         )}
-        {/* Pre-Referral Form Modal */}
-        {showPreReferralForm && selectedStudent && (
-          <PreReferralFormModal
-            onClose={() => setShowPreReferralForm(false)}
-            user={user}
-            selectedStudent={selectedStudent}
-            API_URL={API_URL}
-          />
-        )}
+        
         {/* MTSS Meeting Report Modal */}
 {showMTSSMeetingReport && selectedStudent && selectedMeetingForReport && (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 print:bg-white print:block print:relative">
@@ -6119,6 +6111,17 @@ if (isParent) {
     onRefresh={fetchAdminTemplates}
   />
 )}
+
+{/* Pre-Referral Form Modal */}
+        {showPreReferralForm && selectedStudent && (
+          <PreReferralFormModal
+            onClose={() => setShowPreReferralForm(false)}
+            user={user}
+            selectedStudent={selectedStudent}
+            API_URL={API_URL}
+          />
+        )}
+
     </div>
   );
 }
