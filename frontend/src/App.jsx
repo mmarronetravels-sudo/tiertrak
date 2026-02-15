@@ -4451,8 +4451,6 @@ if (!user) {
     fetchStudentDetails={fetchStudentDetails}
   />
 )}
-       {showPreReferralForm && preReferralForm && (
-
         {/* Unarchive Modal */}
 {showUnarchiveModal && (
  <UnarchiveStudentModal
