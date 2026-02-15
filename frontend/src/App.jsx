@@ -544,12 +544,7 @@ const fetchExpiringDocuments = async () => {
   }
 };
 
-  // Fetch expiring documents
-const fetchExpiringDocuments = async () => {
-  ...the existing function stays...
-};
-
-  const openPreReferralForm = () => {
+   const openPreReferralForm = () => {
     setShowPreReferralForm(true);
   };
 
