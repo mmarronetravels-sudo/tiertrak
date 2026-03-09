@@ -715,7 +715,7 @@ const openMTSSMeetingForm = (meeting = null) => {
     if (filters.period)     params.append('period', filters.period);
     if (filters.subject)    params.append('subject', filters.subject);
     const res = await fetch(
-      API_URL + '/api/screener-results/' + tenantId + '?' + params.toString(),
+      API_URL + '/screener-results/' + user.tenant_id + '?' + params.toString(),
       { headers: { Authorization: 'Bearer ' + token } }
     );
     const data = await res.json();
@@ -6285,7 +6285,7 @@ if (isParent) {
     onClose={() => setShowScreenerUpload(false)}
     user={user}
     API_URL={API_URL}
-    tenantId={tenantId}
+    tenantId={user.tenant_id}
     onUploadComplete={() => {
       setShowScreenerUpload(false);
       fetchScreenerResults(screenerFilters);
