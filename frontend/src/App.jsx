@@ -4200,11 +4200,9 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             <BookOpen size={16} />
             Intervention Bank
           </div>
-        </button>
+       </button>
         )}
-      </div>   
-
-      <button
+        <button
   onClick={() => {
     setAdminTab('screener');
     if (screenerResults.length === 0) {
@@ -4218,6 +4216,8 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
 >
   Screener Data
 </button>
+      </div>
+   
         
         {/* Interventions Tab */}
       {adminTab === 'interventions' && (
