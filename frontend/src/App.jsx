@@ -9,6 +9,7 @@ MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
 import ReportModal from './components/Modals/ReportModal';
+import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
 import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
@@ -62,6 +63,10 @@ export default function App() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showEditStaffModal, setShowEditStaffModal] = useState(false);
   const [selectedStaffMember, setSelectedStaffMember] = useState(null);
+  const [screenerResults, setScreenerResults] = useState([]);
+const [screenerFilters, setScreenerFilters] = useState({ schoolYear: '2025-2026', period: 'Fall', subject: 'Reading' });
+const [showScreenerUpload, setShowScreenerUpload] = useState(false);
+const [screenerLoading, setScreenerLoading] = useState(false);
   const loadStaffList = async (tenantId) => {
     const tid = tenantId || user?.tenant_id;
     if (!tid) return;
@@ -701,6 +706,26 @@ const openMTSSMeetingForm = (meeting = null) => {
       console.error('Error fetching bank:', err);
     }
   };
+
+  const fetchScreenerResults = async (filters) => {
+  setScreenerLoading(true);
+  try {
+    var params = new URLSearchParams();
+    if (filters.schoolYear) params.append('schoolYear', filters.schoolYear);
+    if (filters.period)     params.append('period', filters.period);
+    if (filters.subject)    params.append('subject', filters.subject);
+    const res = await fetch(
+      API_URL + '/api/screener-results/' + tenantId + '?' + params.toString(),
+      { headers: { Authorization: 'Bearer ' + token } }
+    );
+    const data = await res.json();
+    setScreenerResults(Array.isArray(data) ? data : []);
+  } catch (err) {
+    console.error('Failed to fetch screener results:', err);
+  } finally {
+    setScreenerLoading(false);
+  }
+};
 
   // Fetch single student with details
   const fetchStudentDetails = async (studentId) => {
@@ -3924,6 +3949,141 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     </div>
   );
 };
+
+const BENCHMARK_ORDER = ['At/Above Benchmark','Near Benchmark','Below Benchmark','Urgent Intervention'];
+const BENCHMARK_COLORS_CHART = {
+  'At/Above Benchmark':  '#16A34A',
+  'Near Benchmark':      '#CA8A04',
+  'Below Benchmark':     '#EA580C',
+  'Urgent Intervention': '#DC2626',
+};
+
+const ScreenerBenchmarkChart = ({ results }) => {
+  const byGrade = {};
+  results.forEach(r => {
+    const g = r.grade || 'Unknown';
+    if (!byGrade[g]) byGrade[g] = [];
+    byGrade[g].push(r);
+  });
+  const grades = Object.keys(byGrade).sort();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-4 mb-4 flex-wrap">
+        {BENCHMARK_ORDER.map(cat => (
+          <div key={cat} className="flex items-center gap-1 text-xs text-gray-600">
+            <div className="w-3 h-3 rounded-sm" style={{background:BENCHMARK_COLORS_CHART[cat]}}></div>
+            {cat}
+          </div>
+        ))}
+      </div>
+      {grades.map(grade => {
+        const gradeRows = byGrade[grade];
+        const total = gradeRows.length;
+        const counts = {};
+        BENCHMARK_ORDER.forEach(c => { counts[c] = 0; });
+        gradeRows.forEach(r => {
+          if (counts[r.benchmark_category] !== undefined)
+            counts[r.benchmark_category]++;
+        });
+        const pct = {};
+        BENCHMARK_ORDER.forEach(c => {
+          pct[c] = total > 0 ? Math.round((counts[c] / total) * 100) : 0;
+        });
+        return (
+          <div key={grade} className="flex items-center gap-3">
+            <div className="w-16 text-xs text-gray-600 text-right font-medium">Gr. {grade}</div>
+            <div className="flex-1 flex h-8 rounded overflow-hidden">
+              {BENCHMARK_ORDER.map(cat => {
+                if (pct[cat] === 0) return null;
+                return (
+                  <div key={cat}
+                    style={{width: pct[cat]+'%', background: BENCHMARK_COLORS_CHART[cat]}}
+                    className="flex items-center justify-center"
+                    title={cat + ': ' + counts[cat] + ' students (' + pct[cat] + '%)'}
+                  >
+                    {pct[cat] >= 10 && (
+                      <span className="text-white text-xs font-medium">{pct[cat]}%</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="w-24 text-xs text-gray-500">{total} students</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const ScreenerAtRiskList = ({ results, onReview }) => {
+  const atRisk = results.filter(r =>
+    r.benchmark_category === 'Below Benchmark' ||
+    r.benchmark_category === 'Urgent Intervention'
+  ).sort((a, b) => {
+    if (a.benchmark_category !== b.benchmark_category) {
+      return a.benchmark_category === 'Urgent Intervention' ? -1 : 1;
+    }
+    return (a.grade || '').localeCompare(b.grade || '');
+  });
+
+  if (atRisk.length === 0) {
+    return (
+      <div className="rounded p-4" style={{background:'#DCFCE7', border:'1px solid #86EFAC'}}>
+        <p className="text-sm" style={{color:'#166534'}}>
+          ✓ No students in Below Benchmark or Urgent Intervention for this period.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr style={{background:'#0D4F4F'}}>
+            {['Student','Grade','Score','Percentile','Risk Level',''].map(h => (
+              <th key={h} className="px-3 py-2 text-left text-white text-xs font-medium">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {atRisk.map((r, i) => {
+            const isUrgent = r.benchmark_category === 'Urgent Intervention';
+            return (
+              <tr key={r.id} className={i%2===0?'bg-white':'bg-gray-50'}>
+                <td className="px-3 py-2 font-medium">{r.student_first_name} {r.student_last_name}</td>
+                <td className="px-3 py-2 text-gray-600">{r.grade}</td>
+                <td className="px-3 py-2 text-gray-600">{r.scaled_score || '—'}</td>
+                <td className="px-3 py-2 text-gray-600">{r.percentile_rank ? r.percentile_rank+'th' : '—'}</td>
+                <td className="px-3 py-2">
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                    style={{
+                      background: isUrgent ? '#FEE2E2' : '#FFEDD5',
+                      color: isUrgent ? '#991B1B' : '#9A3412'
+                    }}>
+                    {isUrgent ? 'Urgent' : 'Below'}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  {r.student_id && (
+                    <button onClick={() => onReview(r.student_id)}
+                      className="text-xs px-2 py-1 rounded text-white"
+                      style={{background:'#0E7C7B'}}>
+                      Review
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
   // Admin View
   const AdminView = () => (
     <div className="space-y-6">
@@ -4043,6 +4203,21 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
         </button>
         )}
       </div>   
+
+      <button
+  onClick={() => {
+    setAdminTab('screener');
+    if (screenerResults.length === 0) {
+      fetchScreenerResults(screenerFilters);
+    }
+  }}
+  className={'px-4 py-2 rounded-lg text-sm font-medium transition-colors ' +
+    (adminTab === 'screener'
+      ? 'bg-teal-800 text-white'
+      : 'text-slate-600 hover:bg-slate-100')}
+>
+  Screener Data
+</button>
         
         {/* Interventions Tab */}
       {adminTab === 'interventions' && (
@@ -4671,6 +4846,70 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
             <div className="text-center py-8 text-slate-400">
               <BookOpen size={32} className="mx-auto mb-2 opacity-50" />
               <p>Loading intervention bank...</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {adminTab === 'screener' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex flex-wrap gap-3 items-end mb-6">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">School Year</label>
+              <select value={screenerFilters.schoolYear}
+                onChange={e => { const f={...screenerFilters,schoolYear:e.target.value}; setScreenerFilters(f); fetchScreenerResults(f); }}
+                className="border rounded px-2 py-1 text-sm">
+                <option>2025-2026</option><option>2026-2027</option><option>2024-2025</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Period</label>
+              <select value={screenerFilters.period}
+                onChange={e => { const f={...screenerFilters,period:e.target.value}; setScreenerFilters(f); fetchScreenerResults(f); }}
+                className="border rounded px-2 py-1 text-sm">
+                <option>Fall</option><option>Winter</option><option>Spring</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Subject</label>
+              <select value={screenerFilters.subject}
+                onChange={e => { const f={...screenerFilters,subject:e.target.value}; setScreenerFilters(f); fetchScreenerResults(f); }}
+                className="border rounded px-2 py-1 text-sm">
+                <option>Reading</option><option>Math</option><option>Early Literacy</option>
+              </select>
+            </div>
+            <button onClick={() => setShowScreenerUpload(true)}
+              className="px-4 py-2 rounded-lg text-white text-sm font-medium ml-auto"
+              style={{background:'#0D4F4F'}}>
+              + Upload Screener Data
+            </button>
+          </div>
+
+          {screenerLoading && <p className="text-gray-500 text-sm">Loading...</p>}
+
+          {!screenerLoading && screenerResults.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              <p className="text-lg mb-2">No screener data yet</p>
+              <p className="text-sm">Upload a STAR CSV to get started</p>
+            </div>
+          )}
+
+          {!screenerLoading && screenerResults.length > 0 && (
+            <div>
+              <h3 className="font-semibold text-gray-800 mb-3">
+                Benchmark by Grade — {screenerFilters.period} {screenerFilters.schoolYear}
+              </h3>
+              <ScreenerBenchmarkChart results={screenerResults} />
+              <h3 className="font-semibold text-gray-800 mt-8 mb-3">
+                At-Risk Students (Below Benchmark / Urgent Intervention)
+              </h3>
+              <ScreenerAtRiskList
+                results={screenerResults}
+                onReview={(studentId) => {
+                  const s = students.find(st => st.id === studentId);
+                  if (s) openStudentProfile(s);
+                }}
+              />
             </div>
           )}
         </div>
@@ -6040,6 +6279,19 @@ if (isParent) {
             API_URL={API_URL}
           />
         )}
+
+{showScreenerUpload && (
+  <ScreenerUploadModal
+    onClose={() => setShowScreenerUpload(false)}
+    user={user}
+    API_URL={API_URL}
+    tenantId={tenantId}
+    onUploadComplete={() => {
+      setShowScreenerUpload(false);
+      fetchScreenerResults(screenerFilters);
+    }}
+  />
+)}
 
     </div>
   );
