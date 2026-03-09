@@ -79,6 +79,11 @@ router.delete('/templates/:id', async (req, res) => {
 // Assign an intervention to a student
 router.post('/assign', async (req, res) => {
   try {
+    // mtss_support cannot assign interventions
+    const userRole = req.headers['x-user-role'];
+    if (userRole === 'mtss_support') {
+      return res.status(403).json({ error: 'MTSS Support staff cannot assign interventions' });
+    }
     const { student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency = 'weekly', start_date, end_date } = req.body;
     const cleanStartDate = start_date || new Date().toISOString().split('T')[0];
     const cleanEndDate = end_date === '' ? null : end_date || null;

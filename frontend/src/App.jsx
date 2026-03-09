@@ -1,200 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
-  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
+  FileText, Printer, BarChart3, LogIn, LogOut, Pencil, settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
 MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
+import ReportModal from './components/Modals/ReportModal';
+import PreReferralFormModal from './components/Modals/PreReferralFormModal';
+import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
+import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
+import TemplateEditorModal from './components/Modals/TemplateEditorModal';
+import ProgressFormModal from './components/Modals/ProgressFormModal';
+import GoalFormModal from './components/Modals/GoalFormModal';
+import ProgressChartModal from './components/Modals/ProgressChartModal';
+import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/ArchiveModal';
+import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
+import { useApp } from './context/AppContext';
+import InterventionPlanModal from './components/Modals/InterventionPlanModal';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-// Get Monday of the current week
-const getCurrentWeekStart = () => {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(now.setDate(diff)).toISOString().split('T')[0];
-};
-
-const formatWeekOf = (dateStr) => {
-  if (!dateStr) return 'No date';
-  // If the date string already has a T (ISO format), don't add another one
-  const date = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00');
-  if (isNaN(date.getTime())) return 'Invalid date';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-};
-
-// Get rating label
-const getRatingLabel = (rating) => {
-  const labels = {
-    1: 'No Progress',
-    2: 'Minimal Progress',
-    3: 'Some Progress',
-    4: 'Good Progress',
-    5: 'Significant Progress'
-  };
-  return labels[rating] || '';
-};
-
-// Get rating color
-const getRatingColor = (rating) => {
-  if (rating >= 4) return 'text-emerald-600';
-  if (rating >= 3) return 'text-amber-600';
-  return 'text-rose-600';
-};
-
-// Get status color
-const getStatusColor = (status) => {
-  switch (status) {
-    case 'Implemented as Planned': return 'bg-emerald-100 text-emerald-800';
-    case 'Partially Implemented': return 'bg-amber-100 text-amber-800';
-    case 'Not Implemented': return 'bg-rose-100 text-rose-800';
-    case 'Student Absent': return 'bg-gray-100 text-gray-800';
-    default: return 'bg-gray-100 text-gray-800';
-  }
-};
-
-// Tier colors
-const tierColors = {
-  1: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800', accent: '#059669' },
-  2: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-800', accent: '#d97706' },
-  3: { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', badge: 'bg-rose-100 text-rose-800', accent: '#dc2626' }
-};
-
-// Area colors
-const areaColors = {
-  'Academic': { bg: 'bg-blue-50', badge: 'bg-blue-100 text-blue-700', border: 'border-blue-200' },
-  'Behavior': { bg: 'bg-purple-50', badge: 'bg-purple-100 text-purple-700', border: 'border-purple-200' },
-  'Social-Emotional': { bg: 'bg-pink-50', badge: 'bg-pink-100 text-pink-700', border: 'border-pink-200' }
-};
-
-// Separate component to prevent re-render issues
-function AddStudentForm({ onSave, onCancel, gradeOptions }) {
-  const [form, setForm] = useState({
-    first_name: '',
-    last_name: '',
-    grade: '',
-    tier: '1',
-    area: '',
-    risk_level: 'low'
-  });
-
-  const handleSave = () => {
-    if (!form.first_name || !form.last_name || !form.grade) return;
-    onSave(form);
-  };
-
-  return (
-    <div className="mb-6 p-6 bg-indigo-50 rounded-xl border border-indigo-200">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-slate-800">Add New Student</h3>
-        <button onClick={onCancel} className="p-1 text-slate-400 hover:text-slate-600">
-          <X size={20} />
-        </button>
-      </div>
-      
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">First Name *</label>
-          <input
-            type="text"
-            value={form.first_name}
-            onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="First name"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Last Name *</label>
-          <input
-            type="text"
-            value={form.last_name}
-            onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="Last name"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Grade *</label>
-          <select
-            value={form.grade}
-            onChange={(e) => setForm({ ...form, grade: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">Select grade...</option>
-            {gradeOptions.map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Tier</label>
-          <select
-            value={form.tier}
-            onChange={(e) => setForm({ ...form, tier: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="1">Tier 1</option>
-            <option value="2">Tier 2</option>
-            <option value="3">Tier 3</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Area of Concern</label>
-          <select
-            value={form.area}
-            onChange={(e) => setForm({ ...form, area: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">None selected</option>
-            <option value="Academic">Academic</option>
-            <option value="Behavior">Behavior</option>
-            <option value="Social-Emotional">Social-Emotional</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Risk Level</label>
-          <select
-            value={form.risk_level}
-            onChange={(e) => setForm({ ...form, risk_level: e.target.value })}
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="low">Low</option>
-            <option value="moderate">Moderate</option>
-            <option value="high">High</option>
-          </select>
-        </div>
-      </div>
-      
-      <div className="flex justify-end gap-2 mt-4">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-        >
-          <Save size={16} />
-          Add Student
-        </button>
-      </div>
-    </div>
-  );
-}
-
-const gradeOptions = ['K', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
-
-const archiveReasons = [
-  'Completed Interventions',
-  'End of School Year',
-  'Transferred Out',
-  'No Longer Needs Support',
-  'Other'
-];
 
 // Get days until expiration and urgency level
 const getExpirationUrgency = (expirationDate) => {
@@ -225,6 +53,7 @@ const FERPABadge = ({ compact = false }) => (
 );
 
 export default function App() {
+  const appContext = useApp();
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [view, setView] = useState('dashboard');
@@ -233,8 +62,21 @@ export default function App() {
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showEditStaffModal, setShowEditStaffModal] = useState(false);
   const [selectedStaffMember, setSelectedStaffMember] = useState(null);
-  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
-  const [staffError, setStaffError] = useState('');
+  const loadStaffList = async (tenantId) => {
+    const tid = tenantId || user?.tenant_id;
+    if (!tid) return;
+    try {
+      const res = await fetch(`${API_URL}/staff/${tid}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStaffList(data);
+      }
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+    }
+  };
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
@@ -257,7 +99,6 @@ export default function App() {
   const [newIntervention, setNewIntervention] = useState({ name: '', notes: '' });
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
-  const progressNotesRef = useRef(null);
   const googleButtonRef = useRef(null); 
   const interventionNotesRef = useRef(null);
   const [expiringDocuments, setExpiringDocuments] = useState([]);
@@ -266,15 +107,10 @@ export default function App() {
   const [noteDate, setNoteDate] = useState(new Date().toISOString().split('T')[0]);
   // Report state
 const [showReport, setShowReport] = useState(false);
-const [reportDateRange, setReportDateRange] = useState({
-  startDate: '',
-  endDate: new Date().toISOString().split('T')[0]
-});
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
 const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
-const [reportData, setReportData] = useState(null);
-  const [newLog, setNewLog] = useState({ 
+const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
     log_date: new Date().toISOString().split('T')[0], 
     time_of_day: '', 
@@ -323,13 +159,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
   const [selectedAdminTemplate, setSelectedAdminTemplate] = useState(null);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [fieldTypes, setFieldTypes] = useState([]);
-  const [templateEditorForm, setTemplateEditorForm] = useState({
-    name: '',
-    version: '1.0',
-    sections: []
-  });
-  const [editorPreviewMode, setEditorPreviewMode] = useState(false);
-  const [duplicateSourceId, setDuplicateSourceId] = useState('');
+  
 
     // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -353,34 +183,14 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   // Intervention Plan state
   const [showInterventionPlanModal, setShowInterventionPlanModal] = useState(false);
   const [currentPlanIntervention, setCurrentPlanIntervention] = useState(null);
-  const [planTemplate, setPlanTemplate] = useState(null);
-  const [planData, setPlanData] = useState({});
-  const [planStatus, setPlanStatus] = useState('not_applicable');
-  const [planLoading, setPlanLoading] = useState(false);
-  const [planSaving, setPlanSaving] = useState(false);
-const [mtssMeetings, setMTSSMeetings] = useState([]);
-const [mtssMeetingOptions, setMTSSMeetingOptions] = useState(null);
-const [interventionsSummary, setInterventionsSummary] = useState([]);
-const [currentMTSSMeeting, setCurrentMTSSMeeting] = useState(null);
-const [mtssMeetingForm, setMTSSMeetingForm] = useState({
-  meeting_date: new Date().toISOString().split('T')[0],
-  meeting_number: 1,
-  meeting_type: '6-week',
-  attendees: { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
-  parent_attended: false,
-  progress_summary: '',
-  tier_decision: '',
-  next_steps: '',
-  next_meeting_date: '',
-  intervention_reviews: []
-});  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
-  const [preReferralForm, setPreReferralForm] = useState(null);
+  const [mtssMeetings, setMTSSMeetings] = useState([]);
+  const [showPreReferralForm, setShowPreReferralForm] = useState(false);
+  
   // MTSS Meeting Report state
   const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
+  const [editingMTSSMeeting, setEditingMTSSMeeting] = useState(null);
   const [selectedMeetingForReport, setSelectedMeetingForReport] = useState(null);
-  const [preReferralStep, setPreReferralStep] = useState(1);
-  const [preReferralOptions, setPreReferralOptions] = useState(null);
-  const [preReferralLoading, setPreReferralLoading] = useState(false);
+   const [preReferralLoading, setPreReferralLoading] = useState(false);
 
   // CSV Import state
   const [csvFile, setCsvFile] = useState(null);
@@ -390,8 +200,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   // Archive state
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
-  const [archiveReason, setArchiveReason] = useState('');
-  const [archivedStudents, setArchivedStudents] = useState([]);
+   const [archivedStudents, setArchivedStudents] = useState([]);
   const [archivedStudentSearch, setArchivedStudentSearch] = useState('');
 
   // Progress tracking state
@@ -399,13 +208,6 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   const [expandedProgressLogs, setExpandedProgressLogs] = useState({});
   const [showProgressForm, setShowProgressForm] = useState(false);
   const [selectedInterventionForProgress, setSelectedInterventionForProgress] = useState(null);
-  const [progressFormData, setProgressFormData] = useState({
-    week_of: '',
-    status: '',
-    rating: '',
-    response: '',
-    notes: ''
-  });
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [showProgressChart, setShowProgressChart] = useState(false);
   const [selectedInterventionForChart, setSelectedInterventionForChart] = useState(null);
@@ -416,11 +218,7 @@ const [mtssMeetingForm, setMTSSMeetingForm] = useState({
   const [selectedInterventionForAction, setSelectedInterventionForAction] = useState(null);
   const [interventionArchiveReason, setInterventionArchiveReason] = useState('');
   const [showArchivedInterventions, setShowArchivedInterventions] = useState(false);
-  const [goalFormData, setGoalFormData] = useState({
-    goal_description: '',
-    goal_target_date: '',
-    goal_target_rating: 3
-  });
+  
   // Check if user is admin (includes counselor and behavior_specialist with full admin access)
 const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
   
@@ -462,6 +260,24 @@ const isParent = user && user.role === 'parent';
       setLoading(false);
     }
   }, [token]);
+
+  // Sync App.jsx state into AppContext for extracted modals
+  useEffect(() => {
+    if (user) appContext.setUser(user);
+  }, [user]);
+  useEffect(() => {
+    if (token) appContext.setToken(token);
+  }, [token]);
+  useEffect(() => {
+    appContext.setSelectedStudent(selectedStudent);
+  }, [selectedStudent]);
+  useEffect(() => {
+    appContext.setWeeklyProgressLogs(weeklyProgressLogs);
+  }, [weeklyProgressLogs]);
+  useEffect(() => {
+    appContext.setStaffList(staffList);
+  }, [staffList]);
+
   // Fetch missing logs when dashboard loads
 
   useEffect(() => {
@@ -472,16 +288,7 @@ const isParent = user && user.role === 'parent';
   }
 }, [view, user?.tenant_id]);
 
-  useEffect(() => {
-  const handler = () => {
-    setSelectedStaffMember(window.__editStaffMember);
-    setShowEditStaffModal(true);
-  };
-  window.addEventListener('editStaff', handler);
-  return () => window.removeEventListener('editStaff', handler);
-}, []);
-
-  // Fetch MTSS referral candidates for dashboard
+    // Fetch MTSS referral candidates for dashboard
 const fetchReferralCandidates = async () => {
   if (!user?.tenant_id) return;
   try {
@@ -543,17 +350,7 @@ const handleReferralMonitoring = async (studentId, action) => {
     }
   }, [view]);  // Fetch admin templates
 
-  // Listen for Edit Staff event from AdminView (bridging scope gap)
-  useEffect(() => {
-    const handler = () => {
-      setSelectedStaffMember(window.__editStaffMember);
-      setShowEditStaffModal(true);
-    };
-    window.addEventListener('editStaff', handler);
-    return () => window.removeEventListener('editStaff', handler);
-  }, []);
-
-  // Fetch user info
+    // Fetch user info
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
@@ -694,70 +491,7 @@ const removeInterventionAssignment = async (assignmentId) => {
     console.error('Error removing assignment:', error);
   }
 
-  // Fetch staff list
-const loadStaffList = async () => {
-  if (!user?.tenant_id) return;
-  try {
-    const response = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (response.ok) {
-      const data = await response.json();
-      setStaffList(data);
-    }
-  } catch (error) {
-    console.error('Error fetching staff:', error);
-  }
-};
-
-// Add new staff member
-const handleAddStaff = async () => {
-  setStaffError('');
-  if (!newStaff.email || !newStaff.full_name) {
-    setStaffError('Email and full name are required');
-    return;
-  }
-  try {
-    const response = await fetch(`${API_URL}/staff`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
-    });
-    if (response.ok) {
-      setShowAddStaffModal(false);
-      setNewStaff({ email: '', full_name: '', role: 'teacher' });
-      loadStaffList();
-    } else {
-      const err = await response.json();
-      setStaffError(err.error || 'Failed to create staff member');
-    }
-  } catch (error) {
-    setStaffError('Network error. Please try again.');
-  }
-};
-
-// Update staff member role/name
-const handleUpdateStaff = async () => {
-  if (!selectedStaffMember) return;
-  try {
-    const response = await fetch(`${API_URL}/staff/${selectedStaffMember.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ 
-        full_name: selectedStaffMember.full_name, 
-        role: selectedStaffMember.role 
-      })
-    });
-    if (response.ok) {
-      setShowEditStaffModal(false);
-      setSelectedStaffMember(null);
-      loadStaffList();
-    }
-  } catch (error) {
-    console.error('Error updating staff:', error);
-  }
-};
-
+ 
 // Delete staff member
 const handleDeleteStaff = async (staffId, staffName) => {
   if (!confirm(`Remove ${staffName}? This will revoke their access to TierTrak.`)) return;
@@ -785,19 +519,6 @@ const handleDeleteStaff = async (staffId, staffName) => {
     }
   };
 
-  // Fetch pre-referral form options
-  const fetchPreReferralOptions = async () => {
-    try {
-      const res = await fetch(`${API_URL}/prereferral-forms/options`);
-      if (res.ok) {
-        const data = await res.json();
-        setPreReferralOptions(data);
-      }
-    } catch (error) {
-      console.error('Error fetching pre-referral options:', error);
-    }
-  };
-
 // Fetch expiring documents
 const fetchExpiringDocuments = async () => {
   if (!user?.tenant_id) return;
@@ -814,105 +535,7 @@ const fetchExpiringDocuments = async () => {
   }
 };
 
-  // Fetch existing pre-referral form for a student
-  const fetchPreReferralForm = async (studentId) => {
-    try {
-      const res = await fetch(`${API_URL}/prereferral-forms/student/${studentId}`);
-      if (res.ok) {
-        const data = await res.json();
-        // Return the most recent non-archived form if exists
-        const activeForm = data.find(f => f.status !== 'archived');
-        return activeForm || null;
-      }
-    } catch (error) {
-      console.error('Error fetching pre-referral form:', error);
-    }
-    return null;
-  };
-
-  // Create new pre-referral form
-  const createPreReferralForm = async (studentId) => {
-    try {
-      const res = await fetch(`${API_URL}/prereferral-forms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          student_id: studentId,
-          tenant_id: user.tenant_id,
-          referred_by: user.id,
-          initiated_by: 'staff'
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return data;
-      }
-    } catch (error) {
-      console.error('Error creating pre-referral form:', error);
-    }
-    return null;
-  };
-
-  // Save pre-referral form draft
-  const savePreReferralForm = async (formId, updates) => {
-    try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPreReferralForm(data);
-        return data;
-      }
-    } catch (error) {
-      console.error('Error saving pre-referral form:', error);
-    }
-    return null;
-  };
-
-  // Submit pre-referral form for approval
-  const submitPreReferralForm = async (formId, staffName) => {
-    try {
-      const res = await fetch(`${API_URL}/prereferral-forms/${formId}/submit`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ referring_staff_name: staffName })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPreReferralForm(data);
-        return data;
-      }
-    } catch (error) {
-      console.error('Error submitting pre-referral form:', error);
-    }
-    return null;
-  };
-
-  // Open pre-referral form (creates new or opens existing)
-  const openPreReferralForm = async (student) => {
-    setPreReferralLoading(true);
-    
-    // Fetch options if not loaded
-    if (!preReferralOptions) {
-      await fetchPreReferralOptions();
-    }
-    
-    // Check for existing form
-    const existingForm = await fetchPreReferralForm(student.id);
-    
-    if (existingForm) {
-      setPreReferralForm(existingForm);
-    } else {
-      // Create new form
-      const newForm = await createPreReferralForm(student.id);
-      setPreReferralForm(newForm);
-    }
-    
-    setPreReferralStep(1);
-    setPreReferralLoading(false);
+   const openPreReferralForm = () => {
     setShowPreReferralForm(true);
   };
 
@@ -951,19 +574,7 @@ const fetchExpiringDocuments = async () => {
       console.error('Error fetching missing logs:', error);
     }
   };
-  // MTSS Meeting Functions
-  const fetchMTSSMeetingOptions = async () => {
-    try {
-      const response = await fetch(`${API_URL}/mtss-meetings/options`);
-      if (response.ok) {
-        const data = await response.json();
-        setMTSSMeetingOptions(data);
-      }
-    } catch (error) {
-      console.error('Error fetching MTSS meeting options:', error);
-    }
-  };
-
+  
   const fetchMTSSMeetings = async (studentId) => {
     try {
       const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}`);
@@ -976,33 +587,7 @@ const fetchExpiringDocuments = async () => {
     }
   };
 
-  const fetchInterventionsSummary = async (studentId) => {
-    try {
-      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}/interventions-summary`);
-      if (response.ok) {
-        const data = await response.json();
-        setInterventionsSummary(data);
-        return data;
-      }
-    } catch (error) {
-      console.error('Error fetching interventions summary:', error);
-    }
-    return [];
-  };
-
-  const fetchMeetingCount = async (studentId) => {
-    try {
-      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}/count`);
-      if (response.ok) {
-        const data = await response.json();
-        return data.count || 0;
-      }
-    } catch (error) {
-      console.error('Error fetching meeting count:', error);
-    }
-    return 0;
-  };
-  // ============================================
+    // ============================================
   // ADMIN TEMPLATE EDITOR FUNCTIONS
   // ============================================
 
@@ -1030,284 +615,9 @@ const fetchExpiringDocuments = async () => {
     }
   };
 
-  const openTemplateEditor = async (template) => {
-    setSelectedAdminTemplate(template);
-    setDuplicateSourceId('');
-    
-    if (template.has_plan_template) {
-      try {
-        const response = await fetch(`${API_URL}/admin/templates/${template.id}`);
-        if (response.ok) {
-          const data = await response.json();
-          setTemplateEditorForm({
-            name: data.plan_template?.name || template.name,
-            version: data.plan_template?.version || '1.0',
-            sections: data.plan_template?.sections || []
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching template details:', error);
-      }
-    } else {
-      setTemplateEditorForm({
-        name: template.name,
-        version: '1.0',
-        sections: []
-      });
-    }
-    
-    setEditorPreviewMode(false);
-    setShowTemplateEditor(true);
-  };
-
-  const saveTemplateEditor = async () => {
-    if (!selectedAdminTemplate) return;
-    
-    try {
-      const response = await fetch(`${API_URL}/admin/templates/${selectedAdminTemplate.id}/plan`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_template: templateEditorForm })
-      });
-      
-      if (response.ok) {
-        alert('Plan template saved successfully!');
-        fetchAdminTemplates();
-        setShowTemplateEditor(false);
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('Error saving template:', error);
-      alert('Failed to save template');
-    }
-  };
-
-  const removeTemplateEditor = async () => {
-    if (!selectedAdminTemplate) return;
-    
-    if (!confirm(`Are you sure you want to remove the plan template from "${selectedAdminTemplate.name}"?`)) {
-      return;
-    }
-    
-    try {
-      const response = await fetch(`${API_URL}/admin/templates/${selectedAdminTemplate.id}/plan`, {
-        method: 'DELETE'
-      });
-      
-      if (response.ok) {
-        alert('Plan template removed successfully!');
-        fetchAdminTemplates();
-        setShowTemplateEditor(false);
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('Error removing template:', error);
-      alert('Failed to remove template');
-    }
-  };
-
-  const duplicateTemplate = async () => {
-    if (!selectedAdminTemplate || !duplicateSourceId) return;
-    
-    try {
-      const response = await fetch(`${API_URL}/admin/templates/${selectedAdminTemplate.id}/duplicate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId: duplicateSourceId })
-      });
-      
-      if (response.ok) {
-        alert('Template duplicated successfully!');
-        openTemplateEditor(selectedAdminTemplate);
-        setDuplicateSourceId('');
-      } else {
-        const error = await response.json();
-        alert(`Error: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('Error duplicating template:', error);
-      alert('Failed to duplicate template');
-    }
-  };
-
-  // Section management
-  const addSection = () => {
-    const newSection = {
-      id: `section_${Date.now()}`,
-      title: 'New Section',
-      description: '',
-      fields: []
-    };
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: [...prev.sections, newSection]
-    }));
-  };
-
-  const updateSection = (sectionIndex, field, value) => {
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, i) => 
-        i === sectionIndex ? { ...s, [field]: value } : s
-      )
-    }));
-  };
-
-  const removeSection = (sectionIndex) => {
-    if (!confirm('Remove this section and all its fields?')) return;
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.filter((_, i) => i !== sectionIndex)
-    }));
-  };
-
-  const moveSectionUp = (sectionIndex) => {
-    if (sectionIndex === 0) return;
-    setTemplateEditorForm(prev => {
-      const sections = [...prev.sections];
-      [sections[sectionIndex - 1], sections[sectionIndex]] = [sections[sectionIndex], sections[sectionIndex - 1]];
-      return { ...prev, sections };
-    });
-  };
-
-  const moveSectionDown = (sectionIndex) => {
-    setTemplateEditorForm(prev => {
-      if (sectionIndex >= prev.sections.length - 1) return prev;
-      const sections = [...prev.sections];
-      [sections[sectionIndex], sections[sectionIndex + 1]] = [sections[sectionIndex + 1], sections[sectionIndex]];
-      return { ...prev, sections };
-    });
-  };
-
-  // Field management
-  const addField = (sectionIndex) => {
-    const newField = {
-      id: `field_${Date.now()}`,
-      type: 'text',
-      label: 'New Field',
-      placeholder: '',
-      required: false
-    };
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, i) => 
-        i === sectionIndex ? { ...s, fields: [...s.fields, newField] } : s
-      )
-    }));
-  };
-
-  const updateField = (sectionIndex, fieldIndex, property, value) => {
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, si) => 
-        si === sectionIndex ? {
-          ...s,
-          fields: s.fields.map((f, fi) => 
-            fi === fieldIndex ? { ...f, [property]: value } : f
-          )
-        } : s
-      )
-    }));
-  };
-
-  const removeField = (sectionIndex, fieldIndex) => {
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, si) => 
-        si === sectionIndex ? {
-          ...s,
-          fields: s.fields.filter((_, fi) => fi !== fieldIndex)
-        } : s
-      )
-    }));
-  };
-
-  const moveFieldUp = (sectionIndex, fieldIndex) => {
-    if (fieldIndex === 0) return;
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, si) => {
-        if (si !== sectionIndex) return s;
-        const fields = [...s.fields];
-        [fields[fieldIndex - 1], fields[fieldIndex]] = [fields[fieldIndex], fields[fieldIndex - 1]];
-        return { ...s, fields };
-      })
-    }));
-  };
-
-  const moveFieldDown = (sectionIndex, fieldIndex) => {
-    setTemplateEditorForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, si) => {
-        if (si !== sectionIndex) return s;
-        if (fieldIndex >= s.fields.length - 1) return s;
-        const fields = [...s.fields];
-        [fields[fieldIndex], fields[fieldIndex + 1]] = [fields[fieldIndex + 1], fields[fieldIndex]];
-        return { ...s, fields };
-      })
-    }));
-  };
-
-  const openMTSSMeetingForm = async (meeting = null) => {
-    if (!selectedStudent) return;
-    
-    await fetchMTSSMeetingOptions();
-    const interventions = await fetchInterventionsSummary(selectedStudent.id);
-    
-    if (meeting) {
-      // Editing existing meeting
-      setCurrentMTSSMeeting(meeting);
-      setMTSSMeetingForm({
-        meeting_date: meeting.meeting_date ? meeting.meeting_date.split('T')[0] : '',
-        meeting_number: meeting.meeting_number || 1,
-        meeting_type: meeting.meeting_type || '6-week',
-        attendees: meeting.attendees || { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
-        parent_attended: meeting.parent_attended || false,
-        progress_summary: meeting.progress_summary || '',
-        tier_decision: meeting.tier_decision || '',
-        next_steps: meeting.next_steps || '',
-        next_meeting_date: meeting.next_meeting_date ? meeting.next_meeting_date.split('T')[0] : '',
-        intervention_reviews: meeting.intervention_reviews || interventions.map(inv => ({
-          student_intervention_id: inv.id,
-          intervention_name: inv.intervention_name,
-          implementation_fidelity: '',
-          progress_toward_goal: '',
-          recommendation: '',
-          notes: '',
-          avg_rating: inv.avg_rating,
-          total_logs: inv.total_logs
-        }))
-      });
-    } else {
-      // New meeting
-      const count = await fetchMeetingCount(selectedStudent.id);
-      setCurrentMTSSMeeting(null);
-      setMTSSMeetingForm({
-        meeting_date: new Date().toISOString().split('T')[0],
-        meeting_number: Math.min(count + 1, 3),
-        meeting_type: '6-week',
-        attendees: { teacher: false, counselor: false, admin: false, parent: false, specialist: false, other: '' },
-        parent_attended: false,
-        progress_summary: '',
-        tier_decision: '',
-        next_steps: '',
-        next_meeting_date: '',
-        intervention_reviews: interventions.map(inv => ({
-          student_intervention_id: inv.id,
-          intervention_name: inv.intervention_name,
-          implementation_fidelity: '',
-          progress_toward_goal: '',
-          recommendation: '',
-          notes: '',
-          avg_rating: inv.avg_rating,
-          total_logs: inv.total_logs
-        }))
-      });
-    }
+  
+const openMTSSMeetingForm = (meeting = null) => {
+    setEditingMTSSMeeting(meeting || null);
     setShowMTSSMeetingForm(true);
   };
 
@@ -1322,41 +632,7 @@ const fetchExpiringDocuments = async () => {
     window.print();
   };
 
-  const saveMTSSMeeting = async () => {
-    if (!selectedStudent) return;
-    
-    try {
-      const payload = {
-        student_id: selectedStudent.id,
-        tenant_id: user.tenant_id,
-        created_by: user.id,
-        ...mtssMeetingForm
-      };
-      
-      const url = currentMTSSMeeting 
-        ? `${API_URL}/mtss-meetings/${currentMTSSMeeting.id}`
-        : `${API_URL}/mtss-meetings`;
-      
-      const response = await fetch(url, {
-        method: currentMTSSMeeting ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      
-      if (response.ok) {
-        setShowMTSSMeetingForm(false);
-        fetchMTSSMeetings(selectedStudent.id);
-        alert(currentMTSSMeeting ? 'Meeting updated!' : 'Meeting saved!');
-      } else {
-        const error = await response.json();
-        alert('Error saving meeting: ' + (error.error || 'Unknown error'));
-      }
-    } catch (error) {
-      console.error('Error saving MTSS meeting:', error);
-      alert('Error saving meeting');
-    }
-  };
-
+  
   const deleteMTSSMeeting = async (meetingId) => {
     if (!confirm('Delete this meeting? This cannot be undone.')) return;
     
@@ -1373,72 +649,7 @@ const fetchExpiringDocuments = async () => {
     }
   };
 
-  const updateInterventionReview = (interventionId, field, value) => {
-    setMTSSMeetingForm(prev => ({
-      ...prev,
-      intervention_reviews: prev.intervention_reviews.map(rev =>
-        rev.student_intervention_id === interventionId
-          ? { ...rev, [field]: value }
-          : rev
-      )
-    }));
-  };
-  // Submit weekly progress
-  const submitWeeklyProgress = async (e) => {
-  e.preventDefault();
-  try {
-    const url = editingProgressLog 
-      ? `${API_URL}/weekly-progress/${editingProgressLog.id}`
-      : `${API_URL}/weekly-progress`;
-    
-    const method = editingProgressLog ? 'PUT' : 'POST';
-    
-    const body = editingProgressLog 
-      ? {
-          week_of: progressFormData.week_of,
-          status: progressFormData.status,
-          rating: progressFormData.rating || null,
-          response: progressFormData.response || null,
-          notes: progressNotesRef.current?.value || null
-        }
-      : {
-          student_intervention_id: selectedInterventionForProgress.id,
-          student_id: selectedStudent.id,
-          week_of: progressFormData.week_of,
-          status: progressFormData.status,
-          rating: progressFormData.rating || null,
-          response: progressFormData.response || null,
-          notes: progressNotesRef.current?.value || null,
-          logged_by: user.id
-        };
-
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (response.ok) {
-      setShowProgressForm(false);
-      setEditingProgressLog(null);
-      setProgressFormData({
-        week_of: '',
-        status: '',
-        rating: '',
-        response: '',
-        notes: ''
-      });
-      fetchWeeklyProgress(selectedStudent.id);
-    }
-  } catch (err) {
-    console.error('Error submitting weekly progress:', err);
-  }
-};
-
-  // Delete weekly progress log
+      // Delete weekly progress log
   const deleteWeeklyProgress = async (logId) => {
     if (!confirm('Are you sure you want to delete this progress log?')) return;
     try {
@@ -1456,56 +667,13 @@ const fetchExpiringDocuments = async () => {
     }
   };
 
-  // Edit weekly progress log
-const openEditProgressLog = (log, intervention) => {
+  const openEditProgressLog = (log, intervention) => {
   setEditingProgressLog(log);
   setSelectedInterventionForProgress(intervention);
-  setProgressFormData({
-    week_of: log.week_of?.split('T')[0] || '',
-    status: log.status || '',
-    rating: log.rating || '',
-    response: log.response || ''
-  });
-  if (progressNotesRef.current) {
-    progressNotesRef.current.value = log.notes || '';
-  }
   setShowProgressForm(true);
 };
   
-
-  // Update intervention goal
-  const updateInterventionGoal = async (interventionId) => {
-    try {
-      const response = await fetch(`${API_URL}/interventions/${interventionId}/goal`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(goalFormData)
-      });
-
-      if (response.ok) {
-        setShowGoalForm(false);
-        setGoalFormData({
-          goal_description: '',
-          goal_target_date: '',
-          goal_target_rating: 3
-        });
-        // Refresh student data
-        const studentResponse = await fetch(`${API_URL}/students/${selectedStudent.id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (studentResponse.ok) {
-          setSelectedStudent(await studentResponse.json());
-        }
-      }
-    } catch (err) {
-      console.error('Error updating goal:', err);
-    }
-  };
-
-  
+    
   // Fetch intervention templates
   const fetchInterventionTemplates = async (tenantId) => {
     try {
@@ -1547,8 +715,7 @@ const openEditProgressLog = (log, intervention) => {
         // Fetch MTSS meetings for Tier 2+ students
         if (data.tier > 1) {
           fetchMTSSMeetings(studentId);
-          fetchMTSSMeetingOptions();
-        }
+       }
       }
     } catch (error) {
       console.error('Error fetching student details:', error);
@@ -1661,292 +828,13 @@ const fetchStudentDocuments = async (studentId) => {
       console.error('Error fetching intervention logs:', error);
     }
   };
-  // ========== INTERVENTION PLAN FUNCTIONS ==========
-  
-  // Fetch plan data for a student intervention
-  const fetchInterventionPlan = async (interventionId) => {
-    try {
-      setPlanLoading(true);
-      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${interventionId}/plan`);
-      if (response.ok) {
-        const data = await response.json();
-        setPlanTemplate(data.plan_template);
-        setPlanData(data.plan_data || {});
-        setPlanStatus(data.plan_status || 'not_applicable');
-        return data;
-      }
-    } catch (error) {
-      console.error('Error fetching intervention plan:', error);
-    } finally {
-      setPlanLoading(false);
-    }
-  };
-
-  // Open the plan modal for an intervention
-  const openInterventionPlanModal = async (intervention) => {
+ // Open the plan modal for an intervention
+  const openInterventionPlanModal = (intervention) => {
     setCurrentPlanIntervention(intervention);
-    await fetchInterventionPlan(intervention.id);
     setShowInterventionPlanModal(true);
   };
 
-  // Save plan data (auto-save on blur)
-  const savePlanData = async (fieldId, value) => {
-    if (!currentPlanIntervention) return;
-    
-    const updatedData = { ...planData, [fieldId]: value };
-    setPlanData(updatedData);
-    
-    try {
-      setPlanSaving(true);
-      await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_data: updatedData })
-      });
-      setPlanStatus('draft');
-    } catch (error) {
-      console.error('Error saving plan:', error);
-    } finally {
-      setPlanSaving(false);
-    }
-  };
-
-  // Mark plan as complete
-  const completePlan = async () => {
-    if (!currentPlanIntervention || !user) return;
-    
-    // Check required fields
-    if (planTemplate) {
-      const missingRequired = [];
-      planTemplate.sections.forEach(section => {
-        section.fields.forEach(field => {
-          if (field.required && !planData[field.id]) {
-            missingRequired.push(field.label);
-          }
-        });
-      });
-      
-      if (missingRequired.length > 0) {
-        alert(`Please complete these required fields:\n\n• ${missingRequired.slice(0, 5).join('\n• ')}${missingRequired.length > 5 ? `\n• ... and ${missingRequired.length - 5} more` : ''}`);
-        return;
-      }
-    }
-    
-    try {
-      setPlanSaving(true);
-      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_data: planData, user_id: user.id })
-      });
-      
-      if (response.ok) {
-        setPlanStatus('complete');
-        alert('Plan marked as complete!');
-      }
-    } catch (error) {
-      console.error('Error completing plan:', error);
-      alert('Error completing plan');
-    } finally {
-      setPlanSaving(false);
-    }
-  };
-
-  // Reopen a completed plan for editing
-  const reopenPlan = async () => {
-    if (!currentPlanIntervention) return;
-    
-    if (!confirm('This will reopen the plan for editing. Continue?')) return;
-    
-    try {
-      const response = await fetch(`${API_URL}/intervention-plans/student-interventions/${currentPlanIntervention.id}/plan/reopen`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      if (response.ok) {
-        setPlanStatus('draft');
-      }
-    } catch (error) {
-      console.error('Error reopening plan:', error);
-    }
-  };
-
-  // Close modal and reset state
-  const closeInterventionPlanModal = () => {
-    setShowInterventionPlanModal(false);
-    setCurrentPlanIntervention(null);
-    setPlanTemplate(null);
-    setPlanData({});
-    setPlanStatus('not_applicable');
-  };
-
-  // Helper function to render plan form fields
-  const renderPlanField = (field, isReadOnly) => {
-    const value = planData[field.id] || '';
-    
-    const baseInputClass = "w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
-    const readOnlyClass = isReadOnly ? "bg-gray-50 cursor-not-allowed" : "bg-white";
-    
-    switch (field.type) {
-      case 'text':
-        return (
-          <input
-            type="text"
-            defaultValue={value}
-            placeholder={field.placeholder || ''}
-            disabled={isReadOnly}
-            onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass}`}
-          />
-        );
-      
-      case 'textarea':
-        return (
-          <textarea
-            defaultValue={value}
-            placeholder={field.placeholder || ''}
-            rows={field.rows || 3}
-            disabled={isReadOnly}
-            onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass}`}
-          />
-        );
-      
-      case 'number':
-        return (
-          <input
-            type="number"
-            defaultValue={value}
-            min={field.min}
-            max={field.max}
-            disabled={isReadOnly}
-            onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass} w-32`}
-          />
-        );
-      
-      case 'date':
-        return (
-          <input
-            type="date"
-            defaultValue={value}
-            disabled={isReadOnly}
-            onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass} w-48`}
-          />
-        );
-      
-      case 'select':
-        return (
-          <select
-            defaultValue={value}
-            disabled={isReadOnly}
-            onChange={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass}`}
-          >
-            <option value="">Select...</option>
-            {field.options?.map(opt => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        );
-      
-      case 'checkbox':
-        return (
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={value === true || value === 'true'}
-              disabled={isReadOnly}
-              onChange={(e) => !isReadOnly && savePlanData(field.id, e.target.checked)}
-              className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-gray-700">{field.label}</span>
-          </label>
-        );
-      
-      case 'checkboxGroup':
-        const selectedItems = Array.isArray(value) ? value : [];
-        return (
-          <div className="space-y-2">
-            {field.options?.map(opt => (
-              <label key={opt} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedItems.includes(opt)}
-                  disabled={isReadOnly}
-                  onChange={(e) => {
-                    if (isReadOnly) return;
-                    const updated = e.target.checked
-                      ? [...selectedItems, opt]
-                      : selectedItems.filter(i => i !== opt);
-                    savePlanData(field.id, updated);
-                  }}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-gray-700">{opt}</span>
-              </label>
-            ))}
-          </div>
-        );
-      
-      case 'signature':
-        return (
-          <div className="space-y-1">
-            <input
-              type="text"
-              defaultValue={value}
-              placeholder="Type your full name to sign"
-              disabled={isReadOnly}
-              onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-              className={`${baseInputClass} ${readOnlyClass} italic`}
-              style={{ fontFamily: 'cursive, serif' }}
-            />
-            {value && (
-              <p className="text-xs text-gray-500">
-                Signed electronically
-              </p>
-            )}
-          </div>
-        );
-      
-      default:
-        return (
-          <input
-            type="text"
-            defaultValue={value}
-            disabled={isReadOnly}
-            onBlur={(e) => !isReadOnly && savePlanData(field.id, e.target.value)}
-            className={`${baseInputClass} ${readOnlyClass}`}
-          />
-        );
-    }
-  };
-
-  // Archive student
-  const handleArchiveStudent = async () => {
-    if (!archiveReason || !selectedStudent) return;
-    try {
-      const res = await fetch(`${API_URL}/students/${selectedStudent.id}/archive`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          archived_reason: archiveReason,
-          archived_by: user.id
-        })
-      });
-      if (res.ok) {
-        fetchStudents(user.tenant_id, showArchived);
-        fetchStudentDetails(selectedStudent.id);
-        setShowArchiveModal(false);
-        setArchiveReason('');
-      }
-    } catch (error) {
-      console.error('Error archiving student:', error);
-    }
-  };
-
+ 
   // Unarchive student
   const handleUnarchiveStudent = async (studentId = null) => {
     const id = studentId || selectedStudent?.id;
@@ -1994,8 +882,8 @@ const handleGoogleSignIn = async (response) => {
   }
 };
 
-// Handle Set/Reset Password Submit
-const handleSetPassword = async (e) => {
+// Handle set/Reset Password Submit
+const handlesetPassword = async (e) => {
   e.preventDefault();
   setPasswordMessage('');
   
@@ -2578,75 +1466,11 @@ const handleUnlinkParent = async (linkId) => {
     }
   };
 
-  // Generate report data
-const generateReport = async () => {
-  if (!selectedStudent) return;
-  
-  // Get the earliest intervention start date as default start
-  const interventions = selectedStudent.interventions || [];
-  const earliestStart = interventions.length > 0 
-    ? interventions.reduce((earliest, int) => {
-        const startDate = int.start_date ? int.start_date.split('T')[0] : null;
-        if (!startDate) return earliest;
-        return !earliest || startDate < earliest ? startDate : earliest;
-      }, null)
-    : new Date().toISOString().split('T')[0];
-  
-  // Set default date range if not set
-  if (!reportDateRange.startDate) {
-    setReportDateRange(prev => ({
-      ...prev,
-      startDate: earliestStart || new Date().toISOString().split('T')[0]
-    }));
-  }
-  
-  // Fetch weekly progress for all interventions
-  const progressPromises = interventions.map(async (intervention) => {
-    try {
-      const res = await fetch(`${API}/weekly-progress/intervention/${intervention.id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return { interventionId: intervention.id, progress: data };
-      }
-    } catch (err) {
-      console.error('Error fetching progress:', err);
-    }
-    return { interventionId: intervention.id, progress: [] };
-  });
-  
-  const progressResults = await Promise.all(progressPromises);
-  const progressMap = {};
-  progressResults.forEach(({ interventionId, progress }) => {
-    progressMap[interventionId] = progress;
-  });
-  
-  setReportData({
-    student: selectedStudent,
-    progressMap,
-    generatedAt: new Date().toISOString()
-  });
-  
-  setShowReport(true);
-};
+  const generateReport = () => {
+    setShowReport(true);
+  };
 
-// Print report
-const printReport = () => {
-  window.print();
-};
-
-// Filter data by date range
-const filterByDateRange = (items, dateField) => {
-  if (!items) return [];
-  return items.filter(item => {
-    const itemDate = item[dateField]?.split('T')[0];
-    if (!itemDate) return false;
-    return itemDate >= reportDateRange.startDate && itemDate <= reportDateRange.endDate;
-  });
-};
-
-  // Filter intervention templates by area
+   // Filter intervention templates by area
   const filteredInterventionTemplates = interventionTemplates.filter(t => {
     if (interventionAreaFilter === 'all') return true;
     return t.area === interventionAreaFilter;
@@ -2714,7 +1538,7 @@ const filterByDateRange = (items, dateField) => {
     );
   }
 
-  // Password Set/Reset Screen
+  // Password set/Reset Screen
 if (passwordResetMode) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-indigo-50 flex items-center justify-center p-4">
@@ -2727,7 +1551,7 @@ if (passwordResetMode) {
         </div>
         
         <h2 className="text-xl font-semibold text-center mb-2">
-          {passwordResetMode === 'set' ? 'Set Up Your Password' : 'Reset Your Password'}
+          {passwordResetMode === 'set' ? 'set Up Your Password' : 'Reset Your Password'}
         </h2>
         
         {tokenEmail && (
@@ -2745,7 +1569,7 @@ if (passwordResetMode) {
         )}
         
         {!passwordMessage?.includes('successfully') && !passwordMessage?.includes('invalid') && !passwordMessage?.includes('expired') && (
-          <form onSubmit={handleSetPassword} className="space-y-4">
+          <form onSubmit={handlesetPassword} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
               <input
@@ -2802,7 +1626,7 @@ if (passwordResetMode) {
   );
 }
   
- // Set Password Page (for new parent accounts and password resets)
+ // set Password Page (for new parent accounts and password resets)
   if (currentPage === 'set-password' || currentPage === 'reset-password') {
     const params = new URLSearchParams(window.location.search);
     const setupToken = params.get('token');
@@ -2832,7 +1656,7 @@ if (passwordResetMode) {
       verifyToken();
     }, [setupToken]);
     
-    const handleSetPassword = async (e) => {
+    const handlesetPassword = async (e) => {
       e.preventDefault();
       setPasswordError('');
       
@@ -2888,11 +1712,11 @@ if (passwordResetMode) {
           {tokenValid === true && !passwordSuccess && (
             <>
               <h2 className="text-xl font-semibold text-slate-800 text-center mb-2">
-                {currentPage === 'set-password' ? 'Set Up Your Password' : 'Reset Your Password'}
+                {currentPage === 'set-password' ? 'set Up Your Password' : 'Reset Your Password'}
               </h2>
               <p className="text-slate-500 text-center mb-6">{userEmail}</p>
               
-              <form onSubmit={handleSetPassword} className="space-y-4">
+              <form onSubmit={handlesetPassword} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
                   <input
@@ -2922,7 +1746,7 @@ if (passwordResetMode) {
                   type="submit"
                   className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
                 >
-                  Set Password
+                  set Password
                 </button>
               </form>
             </>
@@ -3709,7 +2533,7 @@ if (!user) {
 {/* Pre-Referral Form Button - Only for Tier 1 students */}
 {selectedStudent.tier === 1 && !selectedStudent.archived && (
   <button
-    onClick={() => openPreReferralForm(selectedStudent)}
+    onClick={() => openPreReferralForm()}
     disabled={preReferralLoading}
     className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition font-medium disabled:opacity-50"
   >
@@ -3975,17 +2799,10 @@ if (!user) {
                   <div className="flex gap-2 mt-3">
                     {canManageInterventions && <button
                       onClick={() => {
-                        setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
-                        setProgressFormData({
-                          week_of: new Date().toISOString().split('T')[0],
-                          status: '',
-                          rating: '',
-                          response: '',
-                          notes: ''
-                        });
-                        if (progressNotesRef.current) progressNotesRef.current.value = '';
-                        setShowProgressForm(true);
-                      }}
+  setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
+  setEditingProgressLog(null);
+  setShowProgressForm(true);
+}}
                       className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 flex items-center gap-1"
                     >
                       <Plus className="w-3 h-3" />
@@ -3994,17 +2811,12 @@ if (!user) {
                     }{canManageInterventions && <button
                       onClick={() => {
                         setSelectedInterventionForGoal(intervention);
-                        setGoalFormData({
-                          goal_description: intervention.goal_description || '',
-                          goal_target_date: intervention.goal_target_date || '',
-                          goal_target_rating: intervention.goal_target_rating || 3
-                        });
                         setShowGoalForm(true);
                       }}
                       className="px-3 py-1.5 border border-slate-300 text-slate-700 text-sm rounded-lg hover:bg-slate-100 flex items-center gap-1"
                     >
                       <Target className="w-3 h-3" />
-                      {intervention.goal_description ? 'Edit Goal' : 'Set Goal'}
+                      {intervention.goal_description ? 'Edit Goal' : 'set Goal'}
                     </button>}
                     <button
                       onClick={() => {
@@ -4478,1083 +3290,27 @@ if (!user) {
         </div>
 
         {/* MTSS Meeting Form Modal */}
-      {showMTSSMeetingForm && selectedStudent && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <h2 className="text-xl font-bold text-gray-800">
-                {currentMTSSMeeting ? 'Edit' : 'New'} MTSS Progress Review Meeting
-              </h2>
-              <button onClick={() => setShowMTSSMeetingForm(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              {/* Meeting Info Section */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <Calendar size={18} />
-                  Meeting Information
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Date</label>
-                    <input
-                      type="date"
-                      className="w-full px-3 py-2 border rounded-lg"
-                      defaultValue={mtssMeetingForm.meeting_date}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_date: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting #</label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg"
-                      defaultValue={mtssMeetingForm.meeting_number}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_number: parseInt(e.target.value) }))}
-                    >
-                      <option value={1}>1st Meeting</option>
-                      <option value={2}>2nd Meeting</option>
-                      <option value={3}>3rd Meeting</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Type</label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg"
-                      defaultValue={mtssMeetingForm.meeting_type}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, meeting_type: e.target.value }))}
-                    >
-                      <option value="4-week">4-Week Review</option>
-                      <option value="6-week">6-Week Review</option>
-                      <option value="final-review">Final Review</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                </div>
-                
-                {/* Attendees */}
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Attendees</label>
-                  <div className="flex flex-wrap gap-4">
-                    {['teacher', 'counselor', 'admin', 'parent', 'specialist'].map(role => (
-                      <label key={role} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={mtssMeetingForm.attendees[role] || false}
-                          onChange={(e) => setMTSSMeetingForm(prev => ({
-                            ...prev,
-                            attendees: { ...prev.attendees, [role]: e.target.checked },
-                            parent_attended: role === 'parent' ? e.target.checked : prev.parent_attended
-                          }))}
-                        />
-                        <span className="capitalize">{role}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Intervention Reviews Section */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <ClipboardList size={18} />
-                  Intervention Progress Review
-                </h3>
-                
-                {mtssMeetingForm.intervention_reviews.length === 0 ? (
-                  <p className="text-gray-500 italic">No active interventions to review.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {mtssMeetingForm.intervention_reviews.map((review, idx) => (
-                      <div key={idx} className="bg-white rounded-lg p-4 border">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
-                            <p className="text-sm text-gray-500">
-                              Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} | 
-                              Logs: {review.total_logs || 0}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Implementation Fidelity</label>
-                            <select
-                              className="w-full px-3 py-2 border rounded-lg text-sm"
-                              value={review.implementation_fidelity || ''}
-                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'implementation_fidelity', e.target.value)}
-                            >
-                              <option value="">Select...</option>
-                              <option value="yes">Yes - Implemented as planned</option>
-                              <option value="partial">Partial - Some modifications</option>
-                              <option value="no">No - Not implemented consistently</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Progress Toward Goal</label>
-                            <select
-                              className="w-full px-3 py-2 border rounded-lg text-sm"
-                              value={review.progress_toward_goal || ''}
-                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'progress_toward_goal', e.target.value)}
-                            >
-                              <option value="">Select...</option>
-                              <option value="met">Goal Met</option>
-                              <option value="progressing">Progressing</option>
-                              <option value="minimal">Minimal Progress</option>
-                              <option value="no_progress">No Progress</option>
-                              <option value="regression">Regression</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Recommendation</label>
-                            <select
-                              className="w-full px-3 py-2 border rounded-lg text-sm"
-                              value={review.recommendation || ''}
-                              onChange={(e) => updateInterventionReview(review.student_intervention_id, 'recommendation', e.target.value)}
-                            >
-                              <option value="">Select...</option>
-                              <option value="continue">Continue as-is</option>
-                              <option value="modify">Modify intervention</option>
-                              <option value="discontinue_met">Discontinue - Goal met</option>
-                              <option value="discontinue_ineffective">Discontinue - Ineffective</option>
-                              <option value="add_support">Add additional support</option>
-                            </select>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-3">
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                          <textarea
-                            className="w-full px-3 py-2 border rounded-lg text-sm"
-                            rows={2}
-                            placeholder="Notes about this intervention..."
-                            defaultValue={review.notes || ''}
-                            onBlur={(e) => updateInterventionReview(review.student_intervention_id, 'notes', e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Overall Decision Section */}
-              <div className="bg-green-50 rounded-lg p-4">
-                <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <CheckCircle size={18} />
-                  Team Decision
-                </h3>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Progress Summary</label>
-                    <textarea
-                      className="w-full px-3 py-2 border rounded-lg"
-                      rows={3}
-                      placeholder="Summarize the student's overall progress..."
-                      defaultValue={mtssMeetingForm.progress_summary}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, progress_summary: e.target.value }))}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tier Decision</label>
-                    <select
-                      className="w-full px-3 py-2 border rounded-lg"
-                      defaultValue={mtssMeetingForm.tier_decision}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, tier_decision: e.target.value }))}
-                    >
-                      <option value="">Select decision...</option>
-                      <option value="stay_tier2_continue">Stay at Tier 2 - Continue interventions</option>
-                      <option value="stay_tier2_modify">Stay at Tier 2 - Modify interventions</option>
-                      <option value="move_tier1">Move to Tier 1 - Goals met</option>
-                      <option value="move_tier3">Move to Tier 3 - Needs intensive support</option>
-                      <option value="refer_sped">Refer for Special Education evaluation</option>
-                      <option value="refer_504">Refer for 504 Plan</option>
-                    </select>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Steps</label>
-                    <textarea
-                      className="w-full px-3 py-2 border rounded-lg"
-                      rows={3}
-                      placeholder="Action items and next steps..."
-                      defaultValue={mtssMeetingForm.next_steps}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, next_steps: e.target.value }))}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Next Meeting Date</label>
-                    <input
-                      type="date"
-                      className="w-full px-3 py-2 border rounded-lg"
-                      defaultValue={mtssMeetingForm.next_meeting_date}
-                      onBlur={(e) => setMTSSMeetingForm(prev => ({ ...prev, next_meeting_date: e.target.value }))}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3">
-              <button
-                onClick={() => setShowMTSSMeetingForm(false)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveMTSSMeeting}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2"
-              >
-                <Save size={18} />
-                {currentMTSSMeeting ? 'Update Meeting' : 'Save Meeting'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}  
+        {showMTSSMeetingForm && selectedStudent && (
+          <MTSSMeetingFormModal
+            meeting={editingMTSSMeeting}
+            onClose={() => setShowMTSSMeetingForm(false)}
+            user={user}
+            selectedStudent={selectedStudent}
+            API_URL={API_URL}
+            fetchMTSSMeetings={fetchMTSSMeetings}
+          />
+        )}
       {/* Intervention Plan Modal */}
-      {showInterventionPlanModal && currentPlanIntervention && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex justify-between items-center">
-              <div>
-                <h2 className="text-xl font-bold flex items-center gap-2">
-                  <FileText size={24} />
-                  {planTemplate?.name || currentPlanIntervention.intervention_name}
-                </h2>
-                <p className="text-blue-100 text-sm mt-1">
-                  {selectedStudent?.first_name} {selectedStudent?.last_name}
-                  {planStatus === 'complete' && (
-                    <span className="ml-2 bg-green-500 text-white px-2 py-0.5 rounded text-xs">Complete</span>
-                  )}
-                  {planStatus === 'draft' && (
-                    <span className="ml-2 bg-yellow-500 text-white px-2 py-0.5 rounded text-xs">Draft</span>
-                  )}
-                </p>
-              </div>
-              <button
-                onClick={closeInterventionPlanModal}
-                className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-colors"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6">
-              {planLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="ml-3 text-gray-600">Loading plan...</span>
-                </div>
-              ) : !planTemplate ? (
-                <div className="text-center py-12">
-                  <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-                  <p className="text-gray-500">No plan template available for this intervention.</p>
-                </div>
-              ) : (
-                <div className="space-y-8">
-                  {planTemplate.sections.map((section, sectionIndex) => (
-                    <div key={section.id} className="border rounded-lg overflow-hidden">
-                      <div className="bg-gray-50 px-4 py-3 border-b">
-                        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                          <span className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm">
-                            {sectionIndex + 1}
-                          </span>
-                          {section.title}
-                        </h3>
-                        {section.description && (
-                          <p className="text-sm text-gray-500 mt-1 ml-8">{section.description}</p>
-                        )}
-                      </div>
-                      
-                      <div className="p-4 space-y-4">
-                        {section.fields.map(field => (
-                          <div key={field.id}>
-                            {field.type !== 'checkbox' && (
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                {field.label}
-                                {field.required && <span className="text-red-500 ml-1">*</span>}
-                              </label>
-                            )}
-                            {renderPlanField(field, planStatus === 'complete')}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            <div className="border-t bg-gray-50 px-6 py-4 flex justify-between items-center">
-              <div className="text-sm text-gray-500">
-                {planSaving && (
-                  <span className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                    Saving...
-                  </span>
-                )}
-                {!planSaving && planStatus === 'draft' && (
-                  <span className="text-green-600">✓ Auto-saved</span>
-                )}
-              </div>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={closeInterventionPlanModal}
-                  className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-                
-                {planStatus === 'complete' ? (
-                  <button
-                    onClick={reopenPlan}
-                    className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition-colors flex items-center gap-2"
-                  >
-                    <Edit size={18} />
-                    Edit Plan
-                  </button>
-                ) : planTemplate && (
-                  <button
-                    onClick={completePlan}
-                    disabled={planSaving}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50"
-                  >
-                    <CheckCircle size={18} />
-                    Mark Complete
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}      
-            {/* Pre-Referral Form Modal */}
-      {showPreReferralForm && preReferralForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Pre-Referral Form</h3>
-                <p className="text-sm text-slate-500">
-                  {selectedStudent?.first_name} {selectedStudent?.last_name} - Step {preReferralStep} of 11
-                </p>
-              </div>
-              <button 
-                onClick={() => setShowPreReferralForm(false)} 
-                className="text-slate-500 hover:text-slate-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="px-4 py-2 bg-slate-50">
-              <div className="flex gap-1">
-                {[1,2,3,4,5,6,7,8,9,10,11].map(step => (
-                  <div
-                    key={step}
-                    className={`h-2 flex-1 rounded ${step <= preReferralStep ? 'bg-indigo-500' : 'bg-slate-200'}`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Form Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              
-              {/* Step 1: Referral Information */}
-              {preReferralStep === 1 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 1: Referral Information</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                    <div>
-                      <span className="text-sm text-slate-500">Student Name</span>
-                      <p className="font-medium">{selectedStudent?.first_name} {selectedStudent?.last_name}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-slate-500">Grade</span>
-                      <p className="font-medium">{selectedStudent?.grade || 'N/A'}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-slate-500">Current Tier</span>
-                      <p className="font-medium">Tier {selectedStudent?.tier}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-slate-500">Area</span>
-                      <p className="font-medium">{selectedStudent?.area || 'N/A'}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Referral Initiated By</label>
-                    <select
-                      defaultValue={preReferralForm.initiated_by || 'staff'}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { initiated_by: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="staff">School Staff</option>
-                      <option value="parent">Parent/Guardian</option>
-                      <option value="student">Student Self-Referral</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Referral Date</label>
-                    <input
-                      type="date"
-                      defaultValue={preReferralForm.referral_date?.split('T')[0] || new Date().toISOString().split('T')[0]}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { referral_date: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 2: Area of Concern */}
-              {preReferralStep === 2 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 2: Area of Concern</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Primary Area(s) of Concern</label>
-                    <div className="space-y-2">
-                      {['Academic', 'Behavior', 'Social-Emotional'].map(area => (
-                        <label key={area} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            defaultChecked={preReferralForm.concern_areas?.includes(area)}
-                            onChange={(e) => {
-                              const current = preReferralForm.concern_areas || [];
-                              const updated = e.target.checked 
-                                ? [...current, area]
-                                : current.filter(a => a !== area);
-                              savePreReferralForm(preReferralForm.id, { concern_areas: updated });
-                            }}
-                            className="w-4 h-4 text-indigo-600 rounded"
-                          />
-                          <span>{area}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Specific Concerns</label>
-                    <textarea
-                      defaultValue={preReferralForm.specific_concerns || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { specific_concerns: e.target.value })}
-                      placeholder="Describe specific concerns..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={4}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Detailed Description */}
-              {preReferralStep === 3 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 3: Detailed Description</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Describe the concern in detail</label>
-                    <textarea
-                      defaultValue={preReferralForm.concern_description || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_description: e.target.value })}
-                      placeholder="Provide a detailed description of the concern..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={4}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">When did you first notice?</label>
-                      <select
-                        defaultValue={preReferralForm.concern_first_noticed || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_first_noticed: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="less_than_1_month">Less than 1 month ago</option>
-                        <option value="1_to_3_months">1-3 months ago</option>
-                        <option value="3_to_6_months">3-6 months ago</option>
-                        <option value="6_to_12_months">6-12 months ago</option>
-                        <option value="more_than_1_year">More than 1 year ago</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">How often does it occur?</label>
-                      <select
-                        defaultValue={preReferralForm.concern_frequency || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { concern_frequency: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="daily">Daily</option>
-                        <option value="several_times_week">Several times per week</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="occasionally">Occasionally</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 4: Medical & Background */}
-              {preReferralStep === 4 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 4: Medical & Background Information</h4>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Hearing tested in last 2 years?</label>
-                      <select
-                        defaultValue={preReferralForm.hearing_tested || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { hearing_tested: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                        <option value="unknown">Unknown</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Vision tested in last 2 years?</label>
-                      <select
-                        defaultValue={preReferralForm.vision_tested || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { vision_tested: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                        <option value="unknown">Unknown</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Known Medical Diagnoses</label>
-                    <textarea
-                      defaultValue={preReferralForm.medical_diagnoses || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { medical_diagnoses: e.target.value })}
-                      placeholder="List any known medical diagnoses..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Medications Affecting Learning</label>
-                    <textarea
-                      defaultValue={preReferralForm.medications || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { medications: e.target.value })}
-                      placeholder="List any medications that may affect learning..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 5: Academic Performance */}
-              {preReferralStep === 5 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 5: Current Academic Performance</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Grades/Progress</label>
-                    <textarea
-                      defaultValue={preReferralForm.current_grades || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { current_grades: e.target.value })}
-                      placeholder="Describe current academic performance..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Recent Assessment Scores</label>
-                    <textarea
-                      defaultValue={preReferralForm.assessment_scores || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { assessment_scores: e.target.value })}
-                      placeholder="List any recent assessment scores..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Support Classes</label>
-                    <textarea
-                      defaultValue={preReferralForm.support_classes || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { support_classes: e.target.value })}
-                      placeholder="List any current support classes or services..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 6: Existing Plans */}
-              {preReferralStep === 6 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 6: Existing Plans & Supports</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Current Plans</label>
-                    <div className="space-y-2">
-                      {['504 Plan', 'IEP', 'Safety Plan', 'Behavior Plan', 'None'].map(plan => (
-                        <label key={plan} className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            defaultChecked={preReferralForm.current_plans?.includes(plan)}
-                            onChange={(e) => {
-                              const current = preReferralForm.current_plans || [];
-                              const updated = e.target.checked 
-                                ? [...current, plan]
-                                : current.filter(p => p !== plan);
-                              savePreReferralForm(preReferralForm.id, { current_plans: updated });
-                            }}
-                            className="w-4 h-4 text-indigo-600 rounded"
-                          />
-                          <span>{plan}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Plan Details</label>
-                    <textarea
-                      defaultValue={preReferralForm.plan_details || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { plan_details: e.target.value })}
-                      placeholder="Provide details about existing plans..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">External Supports</label>
-                    <textarea
-                      defaultValue={preReferralForm.external_supports || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { external_supports: e.target.value })}
-                      placeholder="List any external supports (counseling, tutoring, community services)..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 7: Prior Interventions */}
-              {preReferralStep === 7 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 7: Prior Interventions Attempted</h4>
-                  
-                  {preReferralForm.prior_interventions?.length > 0 ? (
-                    <div className="space-y-3">
-                      <p className="text-sm text-slate-600">The following interventions were found in TierTrak:</p>
-                      {preReferralForm.prior_interventions.map((intervention, index) => (
-                        <div key={index} className="p-3 bg-slate-50 rounded-lg">
-                          <p className="font-medium">{intervention.intervention_name}</p>
-                          <p className="text-sm text-slate-500">Started: {intervention.start_date ? formatWeekOf(intervention.start_date) : 'Unknown'}</p>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <input
-                              type="text"
-                              placeholder="Duration used"
-                              defaultValue={intervention.duration || ''}
-                              onBlur={(e) => {
-                                const updated = [...preReferralForm.prior_interventions];
-                                updated[index].duration = e.target.value;
-                                savePreReferralForm(preReferralForm.id, { prior_interventions: updated });
-                              }}
-                              className="px-2 py-1 text-sm border border-slate-200 rounded"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Outcome/response"
-                              defaultValue={intervention.outcome || ''}
-                              onBlur={(e) => {
-                                const updated = [...preReferralForm.prior_interventions];
-                                updated[index].outcome = e.target.value;
-                                savePreReferralForm(preReferralForm.id, { prior_interventions: updated });
-                              }}
-                              className="px-2 py-1 text-sm border border-slate-200 rounded"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-slate-500 italic">No interventions found in TierTrak for this student.</p>
-                  )}
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Other Interventions Not Listed Above</label>
-                    <textarea
-                      defaultValue={preReferralForm.other_interventions || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { other_interventions: e.target.value })}
-                      placeholder="List any other interventions that were tried..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 8: Student Strengths */}
-              {preReferralStep === 8 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 8: Student Strengths</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Academic Strengths</label>
-                    <textarea
-                      defaultValue={preReferralForm.academic_strengths || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { academic_strengths: e.target.value })}
-                      placeholder="What are the student's academic strengths?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Social Strengths</label>
-                    <textarea
-                      defaultValue={preReferralForm.social_strengths || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { social_strengths: e.target.value })}
-                      placeholder="What are the student's social strengths?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Interests/Preferred Activities</label>
-                    <textarea
-                      defaultValue={preReferralForm.interests || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { interests: e.target.value })}
-                      placeholder="What does the student enjoy?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">What Motivates This Student?</label>
-                    <textarea
-                      defaultValue={preReferralForm.motivators || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { motivators: e.target.value })}
-                      placeholder="What motivates the student?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 9: Parent Contact */}
-              {preReferralStep === 9 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 9: Parent/Guardian Contact</h4>
-                  <p className="text-sm text-amber-600 bg-amber-50 p-2 rounded">⚠️ Parent contact is required before submitting this form.</p>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Parent/Guardian Name *</label>
-                      <input
-                        type="text"
-                        defaultValue={preReferralForm.parent_name || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_name: e.target.value })}
-                        placeholder="Enter name"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Relationship</label>
-                      <select
-                        defaultValue={preReferralForm.parent_relationship || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_relationship: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="mother">Mother</option>
-                        <option value="father">Father</option>
-                        <option value="guardian">Guardian</option>
-                        <option value="grandparent">Grandparent</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
-                      <input
-                        type="tel"
-                        defaultValue={preReferralForm.parent_phone || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_phone: e.target.value })}
-                        placeholder="(555) 555-5555"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                      <input
-                        type="email"
-                        defaultValue={preReferralForm.parent_email || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_email: e.target.value })}
-                        placeholder="email@example.com"
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Date of Contact *</label>
-                      <input
-                        type="date"
-                        defaultValue={preReferralForm.contact_date?.split('T')[0] || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { contact_date: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Contact Method *</label>
-                      <select
-                        defaultValue={preReferralForm.contact_method || ''}
-                        onBlur={(e) => savePreReferralForm(preReferralForm.id, { contact_method: e.target.value })}
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Select...</option>
-                        <option value="phone">Phone Call</option>
-                        <option value="email">Email</option>
-                        <option value="in_person">In Person</option>
-                        <option value="text">Text Message</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Parent Input/Concerns Shared *</label>
-                    <textarea
-                      defaultValue={preReferralForm.parent_input || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_input: e.target.value })}
-                      placeholder="What did the parent share during the conversation?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Supports Used at Home</label>
-                    <textarea
-                      defaultValue={preReferralForm.home_supports || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { home_supports: e.target.value })}
-                      placeholder="What strategies are working at home?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Parent Supports This Referral?</label>
-                    <select
-                      defaultValue={preReferralForm.parent_supports_referral || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { parent_supports_referral: e.target.value })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="">Select...</option>
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                      <option value="partial">Partially</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 10: Reason for Referral */}
-              {preReferralStep === 10 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 10: Reason for Referral</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Why are Tier 1 supports insufficient? *</label>
-                    <textarea
-                      defaultValue={preReferralForm.why_tier1_insufficient || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { why_tier1_insufficient: e.target.value })}
-                      placeholder="Explain why current Tier 1 supports are not meeting this student's needs..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={4}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">What data supports this referral?</label>
-                    <textarea
-                      defaultValue={preReferralForm.supporting_data || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { supporting_data: e.target.value })}
-                      placeholder="List data points that support this referral (grades, behavior incidents, assessments, etc.)..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Specific Event(s) Prompting Referral</label>
-                    <textarea
-                      defaultValue={preReferralForm.triggering_events || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { triggering_events: e.target.value })}
-                      placeholder="Were there specific events that prompted this referral?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Step 11: Recommendations */}
-              {preReferralStep === 11 && (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-gray-800 text-lg">Step 11: Recommendations</h4>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Tier *</label>
-                    <select
-                      defaultValue={preReferralForm.recommended_tier || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_tier: parseInt(e.target.value) || null })}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="">Select recommended tier...</option>
-                      <option value="2">Tier 2 - Targeted Support</option>
-                      <option value="3">Tier 3 - Intensive Support</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Interventions</label>
-                    <textarea
-                      defaultValue={preReferralForm.recommended_interventions || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_interventions: e.target.value })}
-                      placeholder="What interventions do you recommend?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Assessments</label>
-                    <textarea
-                      defaultValue={preReferralForm.recommended_assessments || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { recommended_assessments: e.target.value })}
-                      placeholder="What assessments should be conducted?"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Additional Recommendations</label>
-                    <textarea
-                      defaultValue={preReferralForm.additional_recommendations || ''}
-                      onBlur={(e) => savePreReferralForm(preReferralForm.id, { additional_recommendations: e.target.value })}
-                      placeholder="Any other recommendations..."
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                      rows={2}
-                    />
-                  </div>
-
-                  {preReferralForm.status === 'draft' && (
-                    <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
-                      <p className="text-sm text-amber-800 mb-2">
-                        <strong>Ready to submit?</strong> Make sure you have contacted the parent (Step 9) before submitting.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-
-            {/* Footer with Navigation */}
-            <div className="p-4 border-t border-slate-200 flex items-center justify-between">
-              <div>
-                {preReferralStep > 1 && (
-                  <button
-                    onClick={() => setPreReferralStep(preReferralStep - 1)}
-                    className="px-4 py-2 text-slate-600 hover:text-slate-800 flex items-center gap-1"
-                  >
-                    <ArrowLeft className="w-4 h-4" /> Previous
-                  </button>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowPreReferralForm(false)}
-                  className="px-4 py-2 text-slate-600 hover:text-slate-800"
-                >
-                  Save & Close
-                </button>
-                
-                {preReferralStep < 11 ? (
-                  <button
-                    onClick={() => setPreReferralStep(preReferralStep + 1)}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-1"
-                  >
-                    Next <ArrowRight className="w-4 h-4" />
-                  </button>
-                ) : (
-                  preReferralForm.status === 'draft' && (
-                    <button
-                      onClick={async () => {
-                        if (!preReferralForm.parent_name || !preReferralForm.contact_date || !preReferralForm.parent_input) {
-                          alert('Please complete the Parent Contact section (Step 9) before submitting.');
-                          setPreReferralStep(9);
-                          return;
-                        }
-                        if (!preReferralForm.recommended_tier) {
-                          alert('Please select a recommended tier before submitting.');
-                          return;
-                        }
-                        const staffName = prompt('Type your name to sign and submit this form:');
-                        if (staffName) {
-                          await submitPreReferralForm(preReferralForm.id, staffName);
-                          alert('Form submitted for counselor approval!');
-                          setShowPreReferralForm(false);
-                        }
-                      }}
-                      className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-1"
-                    >
-                      <CheckCircle className="w-4 h-4" /> Submit for Approval
-                    </button>
-                  )
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-        
+{showInterventionPlanModal && currentPlanIntervention && (
+  <InterventionPlanModal
+    intervention={currentPlanIntervention}
+    onClose={() => { setShowInterventionPlanModal(false); setCurrentPlanIntervention(null); }}
+    user={user}
+    selectedStudent={selectedStudent}
+    API_URL={API_URL}
+  />
+)}      
+           
         {/* MTSS Meeting Modal */}
         {showAddNote && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -5606,266 +3362,15 @@ if (!user) {
           </div>
         )}
         {/* MTSS Report Modal */}
-{showReport && selectedStudent && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 print:bg-white print:block print:relative">
-    <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto print:max-w-none print:max-h-none print:shadow-none print:rounded-none print:mx-0">
-      
-      {/* Modal Header - Hidden when printing */}
-      <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between print:hidden">
-        <h2 className="text-xl font-bold text-gray-900">MTSS Progress Report</h2>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">From:</label>
-            <input
-              type="date"
-              value={reportDateRange.startDate}
-              onChange={(e) => setReportDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-              className="px-2 py-1 border rounded text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">To:</label>
-            <input
-              type="date"
-              value={reportDateRange.endDate}
-              onChange={(e) => setReportDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-              className="px-2 py-1 border rounded text-sm"
-            />
-          </div>
-          <button
-            onClick={printReport}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-          >
-            <Printer size={18} />
-            Print
-          </button>
-          <button
-            onClick={() => setShowReport(false)}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X size={24} />
-          </button>
-        </div>
-      </div>
-
-      {/* Report Content */}
-      <div className="p-8 print:p-0">
+        {showReport && selectedStudent && (
+          <ReportModal
+            onClose={() => setShowReport(false)}
+            selectedStudent={selectedStudent}
+            API_URL={API_URL}
+            token={token}
+          />
+        )}
         
-        {/* Report Header */}
-        <div className="text-center mb-8 pb-6 border-b-2 border-gray-300">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">MTSS Progress Report</h1>
-          <p className="text-gray-600">Multi-Tiered System of Supports</p>
-        </div>
-
-        {/* Student Info */}
-        <div className="mb-8 p-4 bg-gray-50 rounded-lg print:bg-white print:border print:border-gray-300">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Student Name</p>
-              <p className="font-semibold text-gray-900">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Grade</p>
-              <p className="font-semibold text-gray-900">{selectedStudent.grade || 'N/A'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Current Tier</p>
-              <p className={`font-semibold ${
-                selectedStudent.tier === 1 ? 'text-emerald-600' :
-                selectedStudent.tier === 2 ? 'text-amber-600' : 'text-rose-600'
-              }`}>Tier {selectedStudent.tier}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Focus Area</p>
-              <p className="font-semibold text-gray-900">{selectedStudent.area || 'N/A'}</p>
-            </div>
-          </div>
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Report Period</p>
-            <p className="font-semibold text-gray-900">
-              {reportDateRange.startDate ? new Date(reportDateRange.startDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not set'} — {reportDateRange.endDate ? new Date(reportDateRange.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Not set'}
-            </p>
-          </div>
-        </div>
-
-        {/* Interventions & Progress */}
-        <div className="mb-8">
-          <h2 className="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">Interventions & Progress</h2>
-          
-          {(selectedStudent.interventions || []).length === 0 ? (
-            <p className="text-gray-500 italic">No interventions assigned.</p>
-          ) : (
-            (selectedStudent.interventions || []).map(intervention => {
-              const progressLogs = reportData?.progressMap?.[intervention.id] || [];
-              const filteredLogs = filterByDateRange(progressLogs, 'week_of');
-              
-              return (
-                <div key={intervention.id} className="mb-6 p-4 border rounded-lg print:break-inside-avoid">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{intervention.intervention_name}</h3>
-                      <p className="text-sm text-gray-500">
-                        Started: {intervention.start_date ? new Date(intervention.start_date + 'T00:00:00').toLocaleDateString() : 'N/A'}
-                        {intervention.status !== 'active' && (
-                          <span className="ml-2 text-amber-600">({intervention.status})</span>
-                        )}
-                      </p>
-                    </div>
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                      intervention.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                      intervention.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {intervention.status}
-                    </span>
-                  </div>
-
-                  {/* Goal if set */}
-                  {intervention.goal_description && (
-                    <div className="mb-3 p-3 bg-indigo-50 rounded print:bg-white print:border print:border-indigo-200">
-                      <p className="text-xs text-indigo-600 uppercase tracking-wide font-medium">Goal</p>
-                      <p className="text-sm text-gray-900">{intervention.goal_description}</p>
-                      {intervention.goal_target_date && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Target: {new Date(intervention.goal_target_date + 'T00:00:00').toLocaleDateString()} 
-                          {intervention.goal_target_rating && ` • Target Rating: ${intervention.goal_target_rating}/5`}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Notes */}
-                  {intervention.notes && (
-                    <p className="text-sm text-gray-600 mb-3">{intervention.notes}</p>
-                  )}
-
-                  {/* Progress Table */}
-                  {filteredLogs.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-gray-50">
-                            <th className="text-left py-2 px-3 font-medium text-gray-700">Week Of</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-700">Implementation</th>
-                            <th className="text-center py-2 px-3 font-medium text-gray-700">Rating</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-700">Response</th>
-                            <th className="text-left py-2 px-3 font-medium text-gray-700">Notes</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredLogs.sort((a, b) => new Date(b.week_of) - new Date(a.week_of)).map(log => (
-                            <tr key={log.id} className="border-b">
-                              <td className="py-2 px-3">{new Date(log.week_of + 'T00:00:00').toLocaleDateString()}</td>
-                              <td className="py-2 px-3">
-                                <span className={`px-2 py-0.5 rounded text-xs ${
-                                  log.status === 'Implemented as Planned' ? 'bg-emerald-100 text-emerald-700' :
-                                  log.status === 'Partially Implemented' ? 'bg-amber-100 text-amber-700' :
-                                  log.status === 'Student Absent' ? 'bg-gray-100 text-gray-600' :
-                                  'bg-rose-100 text-rose-700'
-                                }`}>
-                                  {log.status}
-                                </span>
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                {log.rating ? (
-                                  <span className={`font-medium ${
-                                    log.rating >= 4 ? 'text-emerald-600' :
-                                    log.rating === 3 ? 'text-amber-600' : 'text-rose-600'
-                                  }`}>
-                                    {log.rating}/5
-                                  </span>
-                                ) : '—'}
-                              </td>
-                              <td className="py-2 px-3">{log.response || '—'}</td>
-                              <td className="py-2 px-3 text-gray-600">{log.notes || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 italic">No progress logs during this period.</p>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* MTSS Meeting Notes */}
-        <div className="mb-8">
-          <h2 className="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">MTSS Meeting Notes</h2>
-          
-          {(() => {
-            const filteredNotes = filterByDateRange(selectedStudent.progress_notes || [], 'meeting_date');
-            return filteredNotes.length === 0 ? (
-              <p className="text-gray-500 italic">No meeting notes during this period.</p>
-            ) : (
-              <div className="space-y-4">
-                {filteredNotes.sort((a, b) => new Date(b.meeting_date) - new Date(a.meeting_date)).map(note => (
-                  <div key={note.id} className="p-4 border rounded-lg print:break-inside-avoid">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-medium text-gray-900">
-                        {note.meeting_date ? new Date(note.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { 
-                          weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
-                        }) : 'No date'}
-                      </p>
-                      <p className="text-sm text-gray-500">{note.author_name || 'Unknown'}</p>
-                    </div>
-                    <p className="text-gray-700 whitespace-pre-wrap">{note.note}</p>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* Signature Lines */}
-        <div className="mt-12 pt-8 border-t-2 border-gray-300 print:break-inside-avoid">
-          <h2 className="text-lg font-bold text-gray-900 mb-6">Signatures</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <div className="border-b border-gray-400 mb-2 h-10"></div>
-              <p className="text-sm text-gray-600">Counselor</p>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-sm text-gray-500">Date:</span>
-                <div className="border-b border-gray-300 flex-1"></div>
-              </div>
-            </div>
-            
-            <div>
-              <div className="border-b border-gray-400 mb-2 h-10"></div>
-              <p className="text-sm text-gray-600">Parent/Guardian</p>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-sm text-gray-500">Date:</span>
-                <div className="border-b border-gray-300 flex-1"></div>
-              </div>
-            </div>
-            
-            <div>
-              <div className="border-b border-gray-400 mb-2 h-10"></div>
-              <p className="text-sm text-gray-600">Administrator</p>
-              <div className="flex items-center gap-4 mt-2">
-                <span className="text-sm text-gray-500">Date:</span>
-                <div className="border-b border-gray-300 flex-1"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-8 pt-4 border-t text-center text-sm text-gray-500">
-          <p>Generated on {new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-          })}</p>
-          <p className="mt-1">TierTrak MTSS Management System</p>
-        </div>
-
-      </div>
-    </div>
-  </div>
-)}
         {/* MTSS Meeting Report Modal */}
 {showMTSSMeetingReport && selectedStudent && selectedMeetingForReport && (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 print:bg-white print:block print:relative">
@@ -6140,907 +3645,24 @@ if (!user) {
 )}
         
         {/* Archive Modal */}
-        {showArchiveModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                  <Archive className="w-5 h-5 text-amber-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Archive Student</h3>
-                  <p className="text-sm text-gray-500">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-                </div>
-              </div>
-              
-              <p className="text-gray-600 mb-4">
-                Archiving will remove this student from the active list but preserve all intervention data and notes. You can reactivate them at any time.
-              </p>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Reason for archiving <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={archiveReason}
-                  onChange={(e) => setArchiveReason(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="">Select a reason...</option>
-                  {archiveReasons.map(r => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setShowArchiveModal(false); setArchiveReason(''); }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleArchiveStudent}
-                  disabled={!archiveReason}
-                  className="flex-1 px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Archive Student
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* Pre-Referral Form Modal */}
-        {showPreReferralForm && preReferralForm && (
-  <div key={preReferralForm.id} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-              {/* Header */}
-              <div className="p-6 border-b border-slate-200 flex items-center justify-between bg-amber-50">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800">Pre-Referral Form</h2>
-                  <p className="text-sm text-slate-600">
-                    {selectedStudent?.first_name} {selectedStudent?.last_name} • Step {preReferralFormStep} of 11
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowPreReferralForm(false);
-                    setPreReferralFormStep(1);
-                  }}
-                  className="p-2 hover:bg-amber-100 rounded-lg transition"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="px-6 py-3 bg-slate-50 border-b">
-                <div className="flex gap-1">
-                  {[1,2,3,4,5,6,7,8,9,10,11].map(step => (
-                    <div
-                      key={step}
-                      className={`h-2 flex-1 rounded-full ${
-                        step <= preReferralFormStep ? 'bg-amber-500' : 'bg-slate-200'
-                      }`}
-                    />
-                  ))}
-                </div>
-                <div className="flex justify-between mt-2 text-xs text-slate-500">
-                  <span>Start</span>
-                  <span>Complete</span>
-                </div>
-              </div>
-
-              {/* Form Content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {/* Step 1: Referral Info */}
-                {preReferralFormStep === 1 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 1: Referral Information</h3>
-                    
-                    <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
-                      <div>
-                        <span className="text-sm text-slate-500">Student Name</span>
-                        <p className="font-medium">{selectedStudent?.first_name} {selectedStudent?.last_name}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-500">Grade</span>
-                        <p className="font-medium">{selectedStudent?.grade}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-500">Current Tier</span>
-                        <p className="font-medium">Tier {selectedStudent?.tier}</p>
-                      </div>
-                      <div>
-                        <span className="text-sm text-slate-500">Area</span>
-                        <p className="font-medium">{selectedStudent?.area || 'Not set'}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Who initiated this referral? *
-                      </label>
-                      <select
-                        value={preReferralForm.initiated_by || 'staff'}
-                        onChange={(e) => setPreReferralForm({...preReferralForm, initiated_by: e.target.value})}
-                        className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                      >
-                        <option value="staff">Staff Member</option>
-                        <option value="parent">Parent/Guardian</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-
-                    {preReferralForm.initiated_by === 'other' && (
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Please explain:
-                        </label>
-                        <input
-                          type="text"
-                          value={preReferralForm.initiated_by_other || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, initiated_by_other: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500"
-                          placeholder="Who initiated this referral?"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Step 2: Area of Concern */}
-                {preReferralFormStep === 2 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 2: Area of Concern</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-3">
-                        Select all areas of concern: *
-                      </label>
-                      <div className="space-y-2">
-                        {['Academic', 'Behavior', 'Social-Emotional'].map(area => (
-                          <label key={area} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={(preReferralForm.concern_areas || []).includes(area)}
-                              onChange={(e) => {
-                                const current = preReferralForm.concern_areas || [];
-                                const updated = e.target.checked
-                                  ? [...current, area]
-                                  : current.filter(a => a !== area);
-                                setPreReferralForm({...preReferralForm, concern_areas: updated});
-                              }}
-                              className="w-5 h-5 text-amber-500 rounded"
-                            />
-                            <span className="font-medium">{area}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 3: Detailed Description */}
-                {preReferralFormStep === 3 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 3: Detailed Description</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Describe the concern in detail: *
-                      </label>
-                      <textarea
-  defaultValue={preReferralForm.concern_description || ''}
-  onBlur={(e) => {
-  const value = e.target.value;
-  setTimeout(() => setPreReferralForm(prev => ({...prev, concern_description: value})), 100);
-}}
-                        className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500 h-32"
-                        placeholder="Describe what you've observed..."
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          When did you first notice this concern?
-                        </label>
-                        <select
-                          value={preReferralForm.concern_first_noticed || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, concern_first_noticed: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500"
-                        >
-                          <option value="">Select...</option>
-                          <option value="Less than 1 month">Less than 1 month</option>
-                          <option value="1-3 months">1-3 months</option>
-                          <option value="3-6 months">3-6 months</option>
-                          <option value="6-12 months">6-12 months</option>
-                          <option value="More than 1 year">More than 1 year</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          How often does the concern occur?
-                        </label>
-                        <select
-                          value={preReferralForm.concern_frequency || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, concern_frequency: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-amber-500"
-                        >
-                          <option value="">Select...</option>
-                          <option value="Daily">Daily</option>
-                          <option value="Several times per week">Several times per week</option>
-                          <option value="Weekly">Weekly</option>
-                          <option value="Occasionally">Occasionally</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 4: Medical/Background */}
-                {preReferralFormStep === 4 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 4: Medical & Background Information</h3>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Hearing tested in last 2 years?
-                        </label>
-                        <select
-                          value={preReferralForm.hearing_tested || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, hearing_tested: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        >
-                          <option value="">Select...</option>
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
-                          <option value="unknown">Unknown</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Vision tested in last 2 years?
-                        </label>
-                        <select
-                          value={preReferralForm.vision_tested || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, vision_tested: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        >
-                          <option value="">Select...</option>
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
-                          <option value="unknown">Unknown</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Known medical diagnoses
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.medical_diagnoses || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, medical_diagnoses: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="List any known medical diagnoses..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Known mental health diagnoses
-                      </label>
-                      <textarea
-  defaultValue={preReferralForm.mental_health_diagnoses || ''}
-  onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, mental_health_diagnoses: value})), 100); }}
-  className="w-full p-3 border border-slate-200 rounded-lg h-20"
-  placeholder="List any known mental health diagnoses..."
-/>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Current medications that may affect learning
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.medications || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, medications: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="List any relevant medications..."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 5: Academic Performance */}
-                {preReferralFormStep === 5 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 5: Current Academic Performance</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Current grades/progress
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.current_grades || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, current_grades: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="Describe current academic standing..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Recent assessment scores
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.assessment_scores || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, assessment_scores: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="List any relevant test scores or assessments..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Current support classes (if any)
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.support_classes || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, support_classes: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="E.g., Resource room, reading intervention, etc."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 6: Existing Plans */}
-                {preReferralFormStep === 6 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 6: Existing Plans & Supports</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-3">
-                        Does the student have any existing plans?
-                      </label>
-                      <div className="space-y-2">
-                        {['504', 'IEP', 'Safety Plan', 'Behavior Plan', 'None'].map(plan => (
-                          <label key={plan} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={(preReferralForm.current_plans || []).includes(plan)}
-                              onChange={(e) => {
-                                const current = preReferralForm.current_plans || [];
-                                const updated = e.target.checked
-                                  ? [...current, plan]
-                                  : current.filter(p => p !== plan);
-                                setPreReferralForm({...preReferralForm, current_plans: updated});
-                              }}
-                              className="w-5 h-5 text-amber-500 rounded"
-                            />
-                            <span>{plan}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Plan details (disability category, accommodations, etc.)
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.plan_details || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, plan_details: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="Provide details about existing plans..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        External supports (counseling, tutoring, community services)
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.external_supports || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, external_supports: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="List any external supports the student receives..."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 7: Prior Interventions */}
-                {preReferralFormStep === 7 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 7: Prior Interventions Attempted</h3>
-                    
-                    {(preReferralForm.prior_interventions || []).length > 0 ? (
-                      <div className="space-y-4">
-                        <p className="text-sm text-slate-600">
-                          The following interventions were auto-populated from TierTrak. Please add duration, frequency, and outcome for each:
-                        </p>
-                        {(preReferralForm.prior_interventions || []).map((intervention, index) => (
-                          <div key={index} className="p-4 border rounded-lg bg-slate-50">
-                            <p className="font-medium text-slate-800 mb-3">{intervention.intervention_name}</p>
-                            <div className="grid grid-cols-3 gap-3">
-                              <div>
-                                <label className="block text-xs text-slate-500 mb-1">Duration</label>
-                                <input
-                                  type="text"
-                                  defaultValue={intervention.duration || ''}
-onBlur={(e) => {
-  const updated = [...preReferralForm.prior_interventions];
-  updated[index].duration = e.target.value;
-  setPreReferralForm(prev => ({...prev, prior_interventions: updated}));
-}}
-                                  className="w-full p-2 border rounded text-sm"
-                                  placeholder="e.g., 6 weeks"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs text-slate-500 mb-1">Frequency</label>
-                                <input
-                                  type="text"
-                                  defaultValue={intervention.frequency || ''}
-onBlur={(e) => {
-  const updated = [...preReferralForm.prior_interventions];
-  updated[index].frequency = e.target.value;
-  setPreReferralForm(prev => ({...prev, prior_interventions: updated}));
-}}
-                                  className="w-full p-2 border rounded text-sm"
-                                  placeholder="e.g., 3x/week"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-xs text-slate-500 mb-1">Outcome</label>
-                                <input
-                                  type="text"
-                                  defaultValue={intervention.outcome || ''}
-onBlur={(e) => {
-  const updated = [...preReferralForm.prior_interventions];
-  updated[index].outcome = e.target.value;
-  setPreReferralForm(prev => ({...prev, prior_interventions: updated}));
-}}
-                                  className="w-full p-2 border rounded text-sm"
-                                  placeholder="e.g., Minimal progress"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-slate-500 italic">No interventions found in TierTrak for this student.</p>
-                    )}
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Other interventions not listed above
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.other_interventions || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, other_interventions: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="List any other interventions that were tried..."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 8: Student Strengths */}
-                {preReferralFormStep === 8 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 8: Student Strengths</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Academic strengths *
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.academic_strengths || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, academic_strengths: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="What subjects or academic skills does the student excel in?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Social strengths
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.social_strengths || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, social_strengths: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="What social skills or relationships are positive?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Interests and preferred activities
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.interests || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, interests: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="What does the student enjoy doing?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        What motivates this student?
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.motivators || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, motivators: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="What rewards, activities, or approaches work well?"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 9: Parent Contact */}
-                {preReferralFormStep === 9 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 9: Parent/Guardian Contact & Input</h3>
-                    <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">
-                      ⚠️ Parent contact is required before submitting this form.
-                    </p>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Parent/Guardian Name *
-                        </label>
-                        <input
-                          type="text"
-                          defaultValue={preReferralForm.parent_name || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, parent_name: value})), 100); }}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Relationship *
-                        </label>
-                        <select
-                          value={preReferralForm.parent_relationship || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, parent_relationship: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        >
-                          <option value="">Select...</option>
-                          <option value="Parent">Parent</option>
-                          <option value="Guardian">Guardian</option>
-                          <option value="Grandparent">Grandparent</option>
-                          <option value="Foster Parent">Foster Parent</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Phone Number *
-                        </label>
-                        <input
-                          type="tel"
-                          defaultValue={preReferralForm.parent_phone || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, parent_phone: value})), 100); }}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Email
-                        </label>
-                        <input
-                          type="email"
-                          defaultValue={preReferralForm.parent_email || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, parent_email: value})), 100); }}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Date of contact *
-                        </label>
-                        <input
-                          type="date"
-                          value={preReferralForm.contact_date || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, contact_date: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Contact method *
-                        </label>
-                        <select
-                          value={preReferralForm.contact_method || ''}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, contact_method: e.target.value})}
-                          className="w-full p-3 border border-slate-200 rounded-lg"
-                        >
-                          <option value="">Select...</option>
-                          <option value="Phone call">Phone call</option>
-                          <option value="Email">Email</option>
-                          <option value="In-person">In-person</option>
-                          <option value="Text">Text</option>
-                          <option value="Video call">Video call</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={preReferralForm.parent_informed || false}
-                          onChange={(e) => setPreReferralForm({...preReferralForm, parent_informed: e.target.checked})}
-                          className="w-5 h-5 text-amber-500 rounded"
-                        />
-                        <span className="font-medium">I confirm that I have informed the parent/guardian about the concerns *</span>
-                      </label>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Parent's input and concerns *
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.parent_input || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, parent_input: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="What did the parent share? What are their concerns?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        What supports are used at home?
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.home_supports || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, home_supports: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="What strategies or supports work at home?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Does the parent support this referral? *
-                      </label>
-                      <select
-                        value={preReferralForm.parent_supports_referral || ''}
-                        onChange={(e) => setPreReferralForm({...preReferralForm, parent_supports_referral: e.target.value})}
-                        className="w-full p-3 border border-slate-200 rounded-lg"
-                      >
-                        <option value="">Select...</option>
-                        <option value="yes">Yes</option>
-                        <option value="partial">Partially</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 10: Reason for Referral */}
-                {preReferralFormStep === 10 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 10: Reason for Referral</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Why are Tier 1 supports insufficient? *
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.why_tier1_insufficient || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, why_tier1_insufficient: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-32"
-                        placeholder="Explain why universal supports are not meeting this student's needs..."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        What data supports this referral? *
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.supporting_data || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, supporting_data: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="Include grades, test scores, behavior data, attendance, etc."
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Specific event(s) prompting this referral
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.triggering_events || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, triggering_events: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="Were there specific incidents that led to this referral?"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Step 11: Recommendations */}
-                {preReferralFormStep === 11 && (
-                  <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-slate-800">Section 11: Recommendations</h3>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Recommended Tier *
-                      </label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 p-4 border rounded-lg hover:bg-amber-50 cursor-pointer flex-1">
-                          <input
-                            type="radio"
-                            name="recommended_tier"
-                            value={2}
-                            checked={preReferralForm.recommended_tier === 2}
-                            onChange={(e) => setPreReferralForm({...preReferralForm, recommended_tier: 2})}
-                            className="w-5 h-5 text-amber-500"
-                          />
-                          <div>
-                            <span className="font-medium">Tier 2</span>
-                            <p className="text-sm text-slate-500">Targeted support</p>
-                          </div>
-                        </label>
-                        <label className="flex items-center gap-2 p-4 border rounded-lg hover:bg-rose-50 cursor-pointer flex-1">
-                          <input
-                            type="radio"
-                            name="recommended_tier"
-                            value={3}
-                            checked={preReferralForm.recommended_tier === 3}
-                            onChange={(e) => setPreReferralForm({...preReferralForm, recommended_tier: 3})}
-                            className="w-5 h-5 text-rose-500"
-                          />
-                          <div>
-                            <span className="font-medium">Tier 3</span>
-                            <p className="text-sm text-slate-500">Intensive support</p>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Recommended interventions
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.recommended_supports || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, recommended_supports: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-24"
-                        placeholder="What interventions do you recommend?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Recommended assessments
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.recommended_assessments || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, recommended_assessments: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="Are any assessments recommended?"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">
-                        Additional recommendations
-                      </label>
-                      <textarea
-                        defaultValue={preReferralForm.additional_recommendations || ''}
-onBlur={(e) => { const value = e.target.value; setTimeout(() => setPreReferralForm(prev => ({...prev, additional_recommendations: value})), 100); }}
-                        className="w-full p-3 border border-slate-200 rounded-lg h-20"
-                        placeholder="Any other recommendations..."
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer with Navigation */}
-              <div className="p-6 border-t border-slate-200 bg-slate-50 flex justify-between">
-                <button
-                  onClick={() => setPreReferralFormStep(Math.max(1, preReferralFormStep - 1))}
-                  disabled={preReferralFormStep === 1}
-                  className="px-6 py-2 border border-slate-300 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  ← Previous
-                </button>
-                
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => savePreReferralForm(preReferralForm)}
-                    className="px-6 py-2 border border-amber-500 text-amber-600 rounded-lg hover:bg-amber-50 transition"
-                  >
-                    Save Draft
-                  </button>
-                  
-                  {preReferralFormStep < 11 ? (
-                    <button
-                      onClick={() => setPreReferralFormStep(preReferralFormStep + 1)}
-                      className="px-6 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition"
-                    >
-                      Next →
-                    </button>
-                  ) : (
-                    <button
-                      onClick={submitPreReferralForm}
-                      className="px-6 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition"
-                    >
-                      Submit for Approval
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
+{showArchiveModal && (
+  <ArchiveStudentModal
+    onClose={() => { setShowArchiveModal(false); }}
+    user={user}
+    selectedStudent={selectedStudent}
+    API_URL={API_URL}
+    fetchStudents={fetchStudents}
+    fetchStudentDetails={fetchStudentDetails}
+  />
+)}
         {/* Unarchive Modal */}
-        {showUnarchiveModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
-                  <RotateCcw className="w-5 h-5 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Reactivate Student</h3>
-                  <p className="text-sm text-gray-500">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-                </div>
-              </div>
-              
-              <p className="text-gray-600 mb-2">
-                This will return the student to the active list. All previous intervention data and notes will be available.
-              </p>
-              
-              {selectedStudent.archived_reason && (
-                <p className="text-sm text-gray-500 mb-4">
-                  <span className="font-medium">Previously archived:</span> {selectedStudent.archived_reason}
-                  {selectedStudent.archived_at && ` on ${new Date(selectedStudent.archived_at).toLocaleDateString()}`}
-                </p>
-              )}
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowUnarchiveModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleUnarchiveStudent()}
-                  className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition"
-                >
-                  Reactivate Student
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+{showUnarchiveModal && (
+ <UnarchiveStudentModal
+    onClose={() => setShowUnarchiveModal(false)}
+    onUnarchive={() => handleUnarchiveStudent()}
+    selectedStudent={selectedStudent}
+  />
+)}
 {/* Archive Intervention Modal */}
         {showArchiveInterventionModal && selectedInterventionForAction && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -7296,7 +3918,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
           disabled={submitting}
           className="w-full py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? 'Creating Account...' : 'Create Account & Send Setup Email'}
+          {submitting ? 'Creating Account...' : 'Create Account & Send setup Email'}
         </button>
       </form>
     </div>
@@ -7794,8 +4416,8 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
               <h2 className="text-xl font-semibold text-slate-800">Staff Management</h2>
             </div>
             <button
-              onClick={() => { setStaffError(''); setNewStaff({ email: '', full_name: '', role: 'teacher' }); setShowAddStaffModal(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
+onClick={() => { setShowAddStaffModal(true); }}              
+className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition text-sm"
             >
               <Plus size={16} />
               Add Staff
@@ -7869,7 +4491,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                     <td className="py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => { window.__editStaffMember = {...member}; window.dispatchEvent(new Event('editStaff')); }}
+                          onClick={() => { setSelectedStaffMember({...member}); setShowEditStaffModal(true); }}
                           className="p-1.5 text-slate-400 hover:text-blue-600 transition"
                           title="Edit"
                         >
@@ -8304,7 +4926,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
                     </td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => openTemplateEditor(template)}
+                       onClick={() => { setSelectedAdminTemplate(template); setShowTemplateEditor(true); }}
                         className="text-indigo-600 hover:text-indigo-800 font-medium text-sm"
                       >
                         {template.has_plan_template ? 'Edit' : 'Add Template'}
@@ -9218,7 +5840,7 @@ if (isParent) {
                       view === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    <Settings size={16} />
+                    <settings size={16} />
                     Admin
                   </button>
                 )}
@@ -9330,129 +5952,16 @@ if (isParent) {
       )}
 
       {showAddStaffModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-slate-800">Add Staff Member</h3>
-              <button onClick={() => setShowAddStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-500 mb-4">Create an account so this person can sign in with Google SSO. No password needed.</p>
-            {staffError && (
-              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
-            )}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-                <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">School Email</label>
-                <input type="email" value={newStaff.email} onChange={(e) => setNewStaff({...newStaff, email: e.target.value})} placeholder="jsmith@summitlc.org" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                  <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
-                  <option value="counselor">Counselor — sees all students, manages referrals</option>
-                  <option value="school_admin">Admin — full access, manages everything</option>
-                  <option value="behavior_specialist">Behavior Specialist — sees all students, manages referrals</option>
-                  <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAddStaffModal(false)} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
-              <button onClick={async () => {
-                if (!newStaff.email || !newStaff.full_name) { setStaffError('Please fill in all fields'); return; }
-                try {
-                  const res = await fetch(`${API_URL}/staff`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ email: newStaff.email, full_name: newStaff.full_name, role: newStaff.role, tenant_id: user.tenant_id })
-                  });
-                  const data = await res.json();
-                  if (!res.ok) { setStaffError(data.error || 'Failed to create staff'); return; }
-                  setShowAddStaffModal(false);
-                  const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }});
-                  const listData = await listRes.json();
-                  setStaffList(listData);
-                } catch (err) { setStaffError('Connection error'); }
-              }} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
-            </div>
-          </div>
-        </div>
-      )}
+  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} />
+)}
 
       {/* Edit Staff Modal */}
 {showEditStaffModal && selectedStaffMember && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-slate-800">Edit Staff Member</h3>
-        <button onClick={() => setShowEditStaffModal(false)} className="text-slate-400 hover:text-slate-600">
-          <X size={20} />
-        </button>
-      </div>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
-          <input
-            type="text"
-            value={selectedStaffMember.full_name}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, full_name: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-          <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">{selectedStaffMember.email}</p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-          <select
-            value={selectedStaffMember.role}
-            onChange={(e) => setSelectedStaffMember({...selectedStaffMember, role: e.target.value})}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          >
-            <option value="teacher">Teacher</option>
-            <option value="counselor">Counselor</option>
-            <option value="school_admin">Admin</option>
-            <option value="behavior_specialist">Behavior Specialist</option>
-            <option value="student_support_specialist">Student Support Specialist</option>
-          </select>
-        </div>
-      </div>
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={() => setShowEditStaffModal(false)}
-          className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
-        >
-          Cancel
-        </button>
-        <button
-onClick={async () => {
-            try {
-              const res = await fetch(API_URL + '/staff/' + selectedStaffMember.id, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ full_name: selectedStaffMember.full_name, role: selectedStaffMember.role })
-              });
-              if (!res.ok) { const err = await res.json(); alert(err.error || 'Failed to update'); return; }
-              setShowEditStaffModal(false);
-              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
-              const listData = await listRes.json();
-              setStaffList(listData);
-            } catch (err) { alert('Connection error'); }
-          }}
-          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-        >
-         Save Changes
-        </button>
-      </div>
-    </div>
-  </div>
+  <EditStaffModal
+    staffMember={selectedStaffMember}
+    onClose={() => { setShowEditStaffModal(false); setSelectedStaffMember(null); }}
+    user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList}
+  />
 )}
 
       {/* App Footer */}
@@ -9477,808 +5986,61 @@ onClick={async () => {
               rel="noopener noreferrer"
               className="hidden sm:inline text-sm text-slate-500 hover:text-indigo-600"
             >
-              GradTrak
-            </a>
+             TierTrak             
+             </a>
           </div>
           <FERPABadge compact />
         </div>
       </footer>
-      {/* Weekly Progress Form Modal */}
-        {showProgressForm && selectedInterventionForProgress && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-              <div className="p-4 border-b flex justify-between items-center">
-                <div>
-                  <h3 className="font-semibold text-lg">{editingProgressLog ? 'Edit Progress Log' : 'Log Weekly Progress'}</h3>
-                  <p className="text-sm text-slate-500">{selectedInterventionForProgress.intervention_name}</p>
-                </div>
-                <button onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }} className="text-slate-500 hover:text-slate-700">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      {showProgressForm && selectedInterventionForProgress && (
+  <ProgressFormModal
+    intervention={selectedInterventionForProgress}
+    editingLog={editingProgressLog}
+    onClose={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
+    user={user}
+    fetchWeeklyProgress={fetchWeeklyProgress}
+  />
+)}
 
-              <form key={selectedInterventionForProgress?.id} onSubmit={submitWeeklyProgress} className="p-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={progressFormData.week_of}
-                    onChange={(e) => setProgressFormData({ ...progressFormData, week_of: e.target.value })}
-                    className="w-full p-2 border rounded-lg"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Implementation Status *</label>
-                  <select
-                    value={progressFormData.status}
-                    onChange={(e) => {
-  const newStatus = e.target.value;
-  if (newStatus === 'Student Absent') {
-    setProgressFormData({ ...progressFormData, status: newStatus, rating: null, response: '' });
-  } else {
-    setProgressFormData({ ...progressFormData, status: newStatus });
-  }
-}}
-                    className="w-full p-2 border rounded-lg"
-                    required
-                  >
-                    <option value="">Select status...</option>
-                    <option value="Implemented as Planned">Implemented as Planned</option>
-                    <option value="Partially Implemented">Partially Implemented</option>
-                    <option value="Not Implemented">Not Implemented</option>
-                    <option value="Student Absent">Student Absent</option>
-                  </select>
-                </div>
-
-                {progressFormData.status !== 'Student Absent' && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Progress Rating (1-5)</label>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 4, 5].map(rating => (
-                          <button
-                            key={rating}
-                            type="button"
-                            onClick={() => setProgressFormData({ ...progressFormData, rating })}
-                            className={`flex-1 py-2 px-3 rounded-lg border-2 transition-all ${
-                              progressFormData.rating === rating
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            {rating}
-                          </button>
-                        ))}
-                      </div>
-                      {progressFormData.rating && (
-                        <p className={`text-sm mt-1 ${getRatingColor(progressFormData.rating)}`}>
-                          {getRatingLabel(progressFormData.rating)}
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">Student Response</label>
-                      <div className="flex gap-2">
-                        {['Engaged', 'Cooperative', 'Resistant', 'Frustrated', 'Distracted'].map(response => (
-                          <button
-                            key={response}
-                            type="button"
-                            onClick={() => setProgressFormData({ ...progressFormData, response })}
-                            className={`flex-1 py-2 px-3 rounded-lg border-2 transition-all ${
-                              progressFormData.response === response
-                                ? response === 'Positive' ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
-                                  : response === 'Neutral' ? 'border-amber-500 bg-amber-50 text-amber-700'
-                                  : 'border-rose-500 bg-rose-50 text-rose-700'
-                                : 'border-slate-200 hover:border-slate-300'
-                            }`}
-                          >
-                            {response}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                  <textarea
-  ref={progressNotesRef}
-  defaultValue=""
-  className="w-full p-2 border rounded-lg"
-  rows="3"
-  placeholder="Observations, adjustments made, student behavior..."
-/>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => { setShowProgressForm(false); setEditingProgressLog(null); }}
-                    className="flex-1 py-2 px-4 border rounded-lg hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Save Progress Log
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Goal Setting Modal */}
-        {showGoalForm && selectedInterventionForGoal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
-              <div className="p-4 border-b flex justify-between items-center">
-                <div>
-                  <h3 className="font-semibold text-lg">Set Intervention Goal</h3>
-                  <p className="text-sm text-slate-500">{selectedInterventionForGoal.intervention_name}</p>
-                </div>
-                <button onClick={() => setShowGoalForm(false)} className="text-slate-500 hover:text-slate-700">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={(e) => { e.preventDefault(); updateInterventionGoal(selectedInterventionForGoal.id); }} className="p-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Goal Description</label>
-                  <textarea
-                    value={goalFormData.goal_description}
-                    onChange={(e) => setGoalFormData({ ...goalFormData, goal_description: e.target.value })}
-                    className="w-full p-2 border rounded-lg"
-                    rows="3"
-                    placeholder="e.g., Student will complete 80% of assignments independently..."
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Target Date</label>
-                  <input
-                    type="date"
-                    value={goalFormData.goal_target_date}
-                    onChange={(e) => setGoalFormData({ ...goalFormData, goal_target_date: e.target.value })}
-                    className="w-full p-2 border rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Target Rating</label>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map(rating => (
-                      <button
-                        key={rating}
-                        type="button"
-                        onClick={() => setGoalFormData({ ...goalFormData, goal_target_rating: rating })}
-                        className={`flex-1 py-2 px-3 rounded-lg border-2 transition-all ${
-                          goalFormData.goal_target_rating === rating
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        {rating}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-sm text-slate-500 mt-1">Target: {getRatingLabel(goalFormData.goal_target_rating)}</p>
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowGoalForm(false)}
-                    className="flex-1 py-2 px-4 border rounded-lg hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Save Goal
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-        {/* Progress Chart Modal */}
+       {/* Goal Setting Modal */}
+{showGoalForm && selectedInterventionForGoal && (
+  <GoalFormModal
+    intervention={selectedInterventionForGoal}
+    onClose={() => setShowGoalForm(false)}
+    token={token}
+    selectedStudent={selectedStudent}
+    API_URL={API_URL}
+    fetchStudentDetails={fetchStudentDetails}
+  />
+)}
+       {/* Progress Chart Modal */}
 {showProgressChart && selectedInterventionForChart && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
-      <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
-        <div>
-          <h3 className="font-semibold text-lg">Progress Over Time</h3>
-          <p className="text-sm text-slate-500">{selectedInterventionForChart.intervention_name}</p>
-        </div>
-        <button onClick={() => setShowProgressChart(false)} className="text-slate-500 hover:text-slate-700">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      <div className="p-6">
-        {(() => {
-          // Filter logs for this intervention
-          const interventionLogs = weeklyProgressLogs
-            .filter(log => log.student_intervention_id === selectedInterventionForChart.id && log.rating)
-            .sort((a, b) => new Date(a.week_of) - new Date(b.week_of));
-          
-          // Separate logs by who logged them (staff vs parent)
-          const staffLogs = interventionLogs.filter(log => log.logged_by_role !== 'parent');
-          const parentLogs = interventionLogs.filter(log => log.logged_by_role === 'parent');
-          
-          // Create chart data showing ALL individual log entries
-          // Each entry gets staffRating OR parentRating based on who logged it
-          const chartData = interventionLogs.map((log, index) => ({
-            index: index,
-            week: new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            weekOf: log.week_of,
-            staffRating: log.logged_by_role !== 'parent' ? log.rating : null,
-            parentRating: log.logged_by_role === 'parent' ? log.rating : null,
-            isParent: log.logged_by_role === 'parent',
-            status: log.status,
-            response: log.response,
-            notes: log.notes,
-            loggerName: log.logged_by_name,
-            loggerRole: log.logged_by_role
-          }));
-
-          const goalRating = selectedInterventionForChart.goal_target_rating;
-          const hasStaffData = staffLogs.length > 0;
-          const hasParentData = parentLogs.length > 0;
-
-          if (chartData.length === 0) {
-            return (
-              <div className="text-center py-12 text-slate-400">
-                <TrendingUp size={48} className="mx-auto mb-4 opacity-50" />
-                <p className="text-lg">No progress data yet</p>
-                <p className="text-sm mt-2">Log weekly progress to see the chart</p>
-              </div>
-            );
-          }
-
-          return (
-            <>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis 
-                      dataKey="week" 
-                      tick={{ fontSize: 12, fill: '#64748b' }}
-                      tickLine={{ stroke: '#cbd5e1' }}
-                    />
-                    <YAxis 
-                      domain={[0, 5]} 
-                      ticks={[1, 2, 3, 4, 5]}
-                      tick={{ fontSize: 12, fill: '#64748b' }}
-                      tickLine={{ stroke: '#cbd5e1' }}
-                      label={{ value: 'Rating', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 12 }}
-                    />
-                    <Tooltip 
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          const data = payload[0].payload;
-                          const borderColor = data.isParent ? 'border-emerald-500' : 'border-blue-500';
-                          const label = data.isParent ? 'Parent' : 'Staff';
-                          return (
-                            <div className="bg-white p-3 rounded-lg shadow-lg border border-slate-200">
-                              <p className="font-medium text-slate-800">{data.week}</p>
-                              <div className={`mt-1 border-l-2 ${borderColor} pl-2`}>
-                                <p className={`text-sm ${getRatingColor(data.rating)}`}>
-                                  {label}: {data.rating}/5 - {getRatingLabel(data.rating)}
-                                </p>
-                                {data.loggerName && <p className="text-xs text-slate-500">Logged by: {data.loggerName}</p>}
-                                {data.notes && <p className="text-xs text-slate-600 mt-1 max-w-xs">{data.notes}</p>}
-                              </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    {goalRating && (
-                      <ReferenceLine 
-                        y={goalRating} 
-                        stroke="#6366f1" 
-                        strokeDasharray="5 5" 
-                        label={{ value: `Goal: ${goalRating}`, position: 'right', fill: '#6366f1', fontSize: 12 }}
-                      />
-                    )}
-                   {/* Staff Rating Line (Blue) */}
-                    {hasStaffData && (
-                      <Line 
-                        type="monotone" 
-                        dataKey="staffRating" 
-                        stroke="#3b82f6" 
-                        strokeWidth={3}
-                        dot={{ fill: '#3b82f6', strokeWidth: 2, r: 6 }}
-                        activeDot={{ r: 8, fill: '#1d4ed8' }}
-                        connectNulls={true}
-                        name="Staff"
-                      />
-                    )}
-                    {/* Parent Rating Line (Green) */}
-                    {hasParentData && (
-                      <Line 
-                        type="monotone" 
-                        dataKey="parentRating" 
-                        stroke="#10b981" 
-                        strokeWidth={3}
-                        dot={{ fill: '#10b981', strokeWidth: 2, r: 6 }}
-                        activeDot={{ r: 8, fill: '#059669' }}
-                        connectNulls={true}
-                        name="Parent"
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* Legend */}
-              <div className="flex items-center justify-center gap-6 mt-4 text-sm flex-wrap">
-                {hasStaffData && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-1 bg-blue-500 rounded"></div>
-                    <span className="text-slate-600">Staff Rating ({staffLogs.length})</span>
-                  </div>
-                )}
-                {hasParentData && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-1 bg-emerald-500 rounded"></div>
-                    <span className="text-slate-600">Parent Rating ({parentLogs.length})</span>
-                  </div>
-                )}
-                {goalRating && (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-0.5 border-t-2 border-dashed border-indigo-500"></div>
-                    <span className="text-slate-600">Goal Target ({goalRating})</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Rating Scale Reference */}
-              <div className="mt-6 p-4 bg-slate-50 rounded-lg">
-                <p className="text-sm font-medium text-slate-700 mb-2">Rating Scale</p>
-                <div className="grid grid-cols-5 gap-2 text-xs">
-                  <div className="text-center p-2 bg-rose-100 rounded text-rose-700">1 - No Progress</div>
-                  <div className="text-center p-2 bg-rose-50 rounded text-rose-600">2 - Minimal</div>
-                  <div className="text-center p-2 bg-amber-100 rounded text-amber-700">3 - Some</div>
-                  <div className="text-center p-2 bg-emerald-50 rounded text-emerald-600">4 - Good</div>
-                  <div className="text-center p-2 bg-emerald-100 rounded text-emerald-700">5 - Significant</div>
-                </div>
-              </div>
-
-              {/* Summary Stats */}
-              {interventionLogs.length >= 1 && (
-                <div className="mt-4">
-                  {/* Staff Stats */}
-                  {hasStaffData && (
-                    <div className="mb-3">
-                      <p className="text-xs font-medium text-blue-700 mb-2 flex items-center gap-1">
-                        <div className="w-3 h-1 bg-blue-500 rounded"></div> Staff Progress
-                      </p>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="p-2 bg-blue-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-blue-700">
-                            {(staffLogs.reduce((sum, d) => sum + d.rating, 0) / staffLogs.length).toFixed(1)}
-                          </p>
-                          <p className="text-xs text-blue-600">Avg Rating</p>
-                        </div>
-                        <div className="p-2 bg-blue-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-blue-700">
-                            {Math.max(...staffLogs.map(d => d.rating))}
-                          </p>
-                          <p className="text-xs text-blue-600">Highest</p>
-                        </div>
-                        <div className="p-2 bg-blue-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-blue-700">{staffLogs.length}</p>
-                          <p className="text-xs text-blue-600">Entries</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Parent Stats */}
-                  {hasParentData && (
-                    <div>
-                      <p className="text-xs font-medium text-emerald-700 mb-2 flex items-center gap-1">
-                        <div className="w-3 h-1 bg-emerald-500 rounded"></div> Parent Progress
-                      </p>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-emerald-700">
-                            {(parentLogs.reduce((sum, d) => sum + d.rating, 0) / parentLogs.length).toFixed(1)}
-                          </p>
-                          <p className="text-xs text-emerald-600">Avg Rating</p>
-                        </div>
-                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-emerald-700">
-                            {Math.max(...parentLogs.map(d => d.rating))}
-                          </p>
-                          <p className="text-xs text-emerald-600">Highest</p>
-                        </div>
-                        <div className="p-2 bg-emerald-50 rounded-lg text-center">
-                          <p className="text-xl font-bold text-emerald-700">{parentLogs.length}</p>
-                          <p className="text-xs text-emerald-600">Entries</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          );
-        })()}
-      </div>
-
-      <div className="p-4 border-t bg-slate-50">
-        <button
-          onClick={() => setShowProgressChart(false)}
-          className="w-full py-2 px-4 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
+  <ProgressChartModal
+    intervention={selectedInterventionForChart}
+    onClose={() => setShowProgressChart(false)}
+  />
 )}
 {showAssignmentManager && <AssignmentManager />}
       
-      {/* Template Editor Modal */}
       {showTemplateEditor && selectedAdminTemplate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b bg-indigo-50">
-              <div>
-                <h2 className="text-xl font-bold text-indigo-800">
-                  {selectedAdminTemplate.has_plan_template ? 'Edit' : 'Create'} Plan Template
-                </h2>
-                <p className="text-sm text-indigo-600">{selectedAdminTemplate.name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setEditorPreviewMode(!editorPreviewMode)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
-                    editorPreviewMode 
-                      ? 'bg-indigo-600 text-white' 
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {editorPreviewMode ? '✏️ Edit' : '👁️ Preview'}
-                </button>
-                <button
-                  onClick={() => setShowTemplateEditor(false)}
-                  className="p-2 hover:bg-slate-100 rounded-full"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {editorPreviewMode ? (
-                /* Preview Mode */
-                <div className="max-w-2xl mx-auto">
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-4">
-                    <h3 className="text-lg font-bold text-indigo-800">{templateEditorForm.name}</h3>
-                    <p className="text-sm text-indigo-600">Version {templateEditorForm.version}</p>
-                  </div>
-                  
-                  {templateEditorForm.sections.map((section, sIdx) => (
-                    <div key={section.id} className="mb-6 border rounded-lg p-4">
-                      <h4 className="font-semibold text-slate-800 mb-1">{section.title}</h4>
-                      {section.description && (
-                        <p className="text-sm text-slate-500 mb-3">{section.description}</p>
-                      )}
-                      <div className="space-y-3">
-                        {section.fields.map(field => (
-                          <div key={field.id}>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                              {field.label}
-                              {field.required && <span className="text-red-500 ml-1">*</span>}
-                            </label>
-                            {field.type === 'text' && (
-                              <input type="text" placeholder={field.placeholder} className="w-full px-3 py-2 border rounded-lg bg-slate-50" disabled />
-                            )}
-                            {field.type === 'textarea' && (
-                              <textarea placeholder={field.placeholder} rows={field.rows || 3} className="w-full px-3 py-2 border rounded-lg bg-slate-50" disabled />
-                            )}
-                            {field.type === 'number' && (
-                              <input type="number" placeholder={field.placeholder} className="w-full px-3 py-2 border rounded-lg bg-slate-50" disabled />
-                            )}
-                            {field.type === 'date' && (
-                              <input type="date" className="w-full px-3 py-2 border rounded-lg bg-slate-50" disabled />
-                            )}
-                            {field.type === 'select' && (
-                              <select className="w-full px-3 py-2 border rounded-lg bg-slate-50" disabled>
-                                <option value="">Select...</option>
-                                {(field.options || []).map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </select>
-                            )}
-                            {field.type === 'checkbox' && (
-                              <label className="flex items-center gap-2">
-                                <input type="checkbox" disabled /> {field.label}
-                              </label>
-                            )}
-                            {field.type === 'checkboxGroup' && (
-                              <div className="space-y-1">
-                                {(field.options || []).map(opt => (
-                                  <label key={opt} className="flex items-center gap-2">
-                                    <input type="checkbox" disabled /> {opt}
-                                  </label>
-                                ))}
-                              </div>
-                            )}
-                            {field.type === 'signature' && (
-                              <div className="border-b-2 border-slate-300 py-2 text-slate-400 italic">
-                                Type name to sign
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  
-                  {templateEditorForm.sections.length === 0 && (
-                    <div className="text-center text-slate-500 py-8">
-                      No sections yet. Switch to Edit mode to add sections.
-                    </div>
-                  )}
-                </div>
-              ) : (
-                /* Edit Mode */
-                <div className="space-y-4">
-                  {/* Template Metadata */}
-                  <div className="bg-slate-50 rounded-lg p-4">
-                    <h4 className="font-medium text-slate-700 mb-3">Template Settings</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-600 mb-1">Template Name</label>
-                        <input
-                          type="text"
-                          value={templateEditorForm.name}
-                          onChange={(e) => setTemplateEditorForm(prev => ({ ...prev, name: e.target.value }))}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-600 mb-1">Version</label>
-                        <input
-                          type="text"
-                          value={templateEditorForm.version}
-                          onChange={(e) => setTemplateEditorForm(prev => ({ ...prev, version: e.target.value }))}
-                          className="w-full px-3 py-2 border rounded-lg"
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Duplicate from existing */}
-                    {!selectedAdminTemplate.has_plan_template && adminTemplates.filter(t => t.has_plan_template).length > 0 && (
-                      <div className="mt-4 pt-4 border-t">
-                        <label className="block text-sm font-medium text-slate-600 mb-1">
-                          Or duplicate from existing template:
-                        </label>
-                        <div className="flex gap-2">
-                          <select
-                            value={duplicateSourceId}
-                            onChange={(e) => setDuplicateSourceId(e.target.value)}
-                            className="flex-1 px-3 py-2 border rounded-lg"
-                          >
-                            <option value="">Select a template to copy...</option>
-                            {adminTemplates.filter(t => t.has_plan_template).map(t => (
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={duplicateTemplate}
-                            disabled={!duplicateSourceId}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            Duplicate
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Sections */}
-                  <div className="space-y-4">
-                    {templateEditorForm.sections.map((section, sIdx) => (
-                      <div key={section.id} className="border rounded-lg overflow-hidden">
-                        {/* Section Header */}
-                        <div className="bg-slate-100 px-4 py-2 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-slate-500 font-mono text-sm">§{sIdx + 1}</span>
-                            <input
-                              type="text"
-                              value={section.title}
-                              onChange={(e) => updateSection(sIdx, 'title', e.target.value)}
-                              className="font-medium bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none px-1"
-                              placeholder="Section Title"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button onClick={() => moveSectionUp(sIdx)} className="p-1 hover:bg-slate-200 rounded" title="Move up">↑</button>
-                            <button onClick={() => moveSectionDown(sIdx)} className="p-1 hover:bg-slate-200 rounded" title="Move down">↓</button>
-                            <button onClick={() => removeSection(sIdx)} className="p-1 hover:bg-red-100 text-red-600 rounded" title="Remove section">✕</button>
-                          </div>
-                        </div>
-                        
-                        {/* Section Content */}
-                        <div className="p-4 space-y-3">
-                          <div>
-                            <label className="block text-xs text-slate-500 mb-1">Section Description (optional)</label>
-                            <input
-                              type="text"
-                              value={section.description || ''}
-                              onChange={(e) => updateSection(sIdx, 'description', e.target.value)}
-                              className="w-full px-2 py-1 text-sm border rounded"
-                              placeholder="Brief description of this section..."
-                            />
-                          </div>
-                          
-                          {/* Fields */}
-                          <div className="space-y-2">
-                            {section.fields.map((field, fIdx) => (
-                              <div key={field.id} className="flex items-start gap-2 p-2 bg-slate-50 rounded-lg">
-                                <div className="flex flex-col gap-1">
-                                  <button onClick={() => moveFieldUp(sIdx, fIdx)} className="p-0.5 hover:bg-slate-200 rounded text-xs">↑</button>
-                                  <button onClick={() => moveFieldDown(sIdx, fIdx)} className="p-0.5 hover:bg-slate-200 rounded text-xs">↓</button>
-                                </div>
-                                
-                                <div className="flex-1 grid grid-cols-4 gap-2">
-                                  <div>
-                                    <label className="block text-xs text-slate-500">Type</label>
-                                    <select
-                                      value={field.type}
-                                      onChange={(e) => updateField(sIdx, fIdx, 'type', e.target.value)}
-                                      className="w-full px-2 py-1 text-sm border rounded"
-                                    >
-                                      <option value="text">Single Line Text</option>
-                                      <option value="textarea">Multi-Line Text</option>
-                                      <option value="number">Number</option>
-                                      <option value="date">Date</option>
-                                      <option value="select">Dropdown</option>
-                                      <option value="checkbox">Checkbox</option>
-                                      <option value="checkboxGroup">Checkbox Group</option>
-                                      <option value="signature">Signature</option>
-                                    </select>
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-slate-500">Label</label>
-                                    <input
-                                      type="text"
-                                      value={field.label}
-                                      onChange={(e) => updateField(sIdx, fIdx, 'label', e.target.value)}
-                                      className="w-full px-2 py-1 text-sm border rounded"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-slate-500">Placeholder</label>
-                                    <input
-                                      type="text"
-                                      value={field.placeholder || ''}
-                                      onChange={(e) => updateField(sIdx, fIdx, 'placeholder', e.target.value)}
-                                      className="w-full px-2 py-1 text-sm border rounded"
-                                    />
-                                  </div>
-                                  <div className="flex items-end gap-2">
-                                    <label className="flex items-center gap-1 text-xs">
-                                      <input
-                                        type="checkbox"
-                                        checked={field.required || false}
-                                        onChange={(e) => updateField(sIdx, fIdx, 'required', e.target.checked)}
-                                      />
-                                      Required
-                                    </label>
-                                  </div>
-                                </div>
-                                
-                                {/* Options for select/checkboxGroup */}
-                                {(field.type === 'select' || field.type === 'checkboxGroup') && (
-                                  <div className="w-48">
-                                    <label className="block text-xs text-slate-500">Options (comma-separated)</label>
-                                    <input
-                                      type="text"
-                                      value={(field.options || []).join(', ')}
-                                      onChange={(e) => updateField(sIdx, fIdx, 'options', e.target.value.split(',').map(o => o.trim()).filter(o => o))}
-                                      className="w-full px-2 py-1 text-sm border rounded"
-                                      placeholder="Option 1, Option 2"
-                                    />
-                                  </div>
-                                )}
-                                
-                                {/* Rows for textarea */}
-                                {field.type === 'textarea' && (
-                                  <div className="w-20">
-                                    <label className="block text-xs text-slate-500">Rows</label>
-                                    <input
-                                      type="number"
-                                      min="2"
-                                      max="10"
-                                      value={field.rows || 3}
-                                      onChange={(e) => updateField(sIdx, fIdx, 'rows', parseInt(e.target.value) || 3)}
-                                      className="w-full px-2 py-1 text-sm border rounded"
-                                    />
-                                  </div>
-                                )}
-                                
-                                <button
-                                  onClick={() => removeField(sIdx, fIdx)}
-                                  className="p-1 hover:bg-red-100 text-red-600 rounded"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          
-                          <button
-                            onClick={() => addField(sIdx)}
-                            className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-indigo-400 hover:text-indigo-600 text-sm"
-                          >
-                            + Add Field
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    <button
-                      onClick={addSection}
-                      className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-slate-500 hover:border-indigo-400 hover:text-indigo-600 font-medium"
-                    >
-                      + Add Section
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* Footer */}
-            <div className="p-4 border-t bg-slate-50 flex justify-between">
-              <div>
-                {selectedAdminTemplate.has_plan_template && (
-                  <button
-                    onClick={removeTemplateEditor}
-                    className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg"
-                  >
-                    Remove Template
-                  </button>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowTemplateEditor(false)}
-                  className="px-4 py-2 border rounded-lg hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveTemplateEditor}
-                  disabled={!templateEditorForm.name || templateEditorForm.sections.length === 0}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                >
-                  Save Template
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+<TemplateEditorModal
+    template={selectedAdminTemplate}
+    adminTemplates={adminTemplates}
+    onClose={() => setShowTemplateEditor(false)}
+    onRefresh={fetchAdminTemplates}
+  />
+)}
+
+{/* Pre-Referral Form Modal */}
+        {showPreReferralForm && selectedStudent && (
+          <PreReferralFormModal
+            onClose={() => setShowPreReferralForm(false)}
+            user={user}
+            selectedStudent={selectedStudent}
+            API_URL={API_URL}
+          />
+        )}
+
     </div>
   );
 }
