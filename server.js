@@ -504,7 +504,7 @@ app.post('/api/contact', async (req, res) => {
 // Start server
 // ── SCREENER RESULTS ──────────────────────────────────────────────────────
 
-app.get('/api/screener-results/student/:studentId', authenticateToken, async (req, res) => {
+app.get('/api/screener-results/student/:studentId', async (req, res) => {
   try {
     var result = await pool.query(
       'SELECT * FROM screener_results' +
@@ -518,7 +518,7 @@ app.get('/api/screener-results/student/:studentId', authenticateToken, async (re
     res.status(500).json({ error: 'Fetch failed' });
   }
 });
-app.get('/api/screener-results/:tenantId', authenticateToken, async (req, res) => {
+app.get('/api/screener-results/:tenantId', async (req, res) => {
   try {
     var tenantId = req.params.tenantId;
     var schoolYear = req.query.schoolYear || null;
@@ -546,7 +546,7 @@ app.get('/api/screener-results/:tenantId', authenticateToken, async (req, res) =
     res.status(500).json({ error: 'Fetch failed' });
   }
 });
-app.post('/api/screener-results/upload', authenticateToken, async (req, res) => {
+app.post('/api/screener-results/upload', async (req, res) => {
   try {
     var { tenantId, screeningPeriod, schoolYear, rows } = req.body;
     var uploadedBy = req.user.id;
