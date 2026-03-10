@@ -549,7 +549,7 @@ app.get('/api/screener-results/:tenantId', async (req, res) => {
 app.post('/api/screener-results/upload', async (req, res) => {
   try {
     var { tenantId, screeningPeriod, schoolYear, rows } = req.body;
-    var uploadedBy = req.user.id;
+    var uploadedBy = null;
     var matched = 0;
     var unmatched = [];
     var savedIds = [];
