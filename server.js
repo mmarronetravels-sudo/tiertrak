@@ -554,9 +554,19 @@ app.post('/api/screener-results/upload', async (req, res) => {
     var unmatched = [];
     var savedIds = [];
 
+    // Normalize YY-MM-DD to YYYY-MM-DD
+    function normalizeDate(dateStr) {
+      if (!dateStr) return null;
+      var parts = dateStr.split('-');
+      if (parts.length === 3 && parts[0].length === 2) {
+        return '20' + parts[0] + '-' + parts[1] + '-' + parts[2];
+      }
+      return dateStr;
+    }
+
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
-
+      var cleanDate = normalizeDate(row.testDate) || null;  
       var studentResult = await pool.query(
         'SELECT id FROM students WHERE tenant_id = $1' +
         ' AND LOWER(first_name) = LOWER($2) AND LOWER(last_name) = LOWER($3)',
