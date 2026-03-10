@@ -577,7 +577,7 @@ app.post('/api/screener-results/upload', async (req, res) => {
       if (studentId) { matched++; }
       else { unmatched.push(row.firstName + ' ' + row.lastName); }
 
-      var cleanDate  = row.testDate || null;
+      var cleanDate  = normalizeDate(row.testDate) || null;
       var cleanScore = row.scaledScore ? parseInt(row.scaledScore) : null;
       var cleanPct   = row.percentileRank ? parseInt(row.percentileRank) : null;
 
