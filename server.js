@@ -564,9 +564,17 @@ app.post('/api/screener-results/upload', async (req, res) => {
   }
   return dateStr;
 }
+function normalizeBenchmark(val) {
+      if (!val) return val;
+      var v = val.trim();
+      if (v === 'Intervention') return 'Below Benchmark';
+      if (v === 'On Watch') return 'Near Benchmark';
+      return v;
+    }
 
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
+       row.benchmarkCategory = normalizeBenchmark(row.benchmarkCategory);
       var cleanDate = normalizeDate(row.testDate) || null;  
       var studentResult = await pool.query(
         'SELECT id FROM students WHERE tenant_id = $1' +
