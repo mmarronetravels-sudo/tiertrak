@@ -533,7 +533,7 @@ app.get('/api/screener-results/:tenantId', async (req, res) => {
     if (period)     { conditions.push('screening_period = $' + idx); idx++; values.push(period); }
     if (subject)    { conditions.push('subject = $' + idx); idx++; values.push(subject); }
 
-    var sql = 'SELECT sr.*, s.first_name, s.last_name, s.grade_level' +
+var sql = 'SELECT sr.*, s.first_name, s.last_name, s.grade' +
       ' FROM screener_results sr' +
       ' LEFT JOIN students s ON sr.student_id = s.id' +
       ' WHERE ' + conditions.join(' AND ') +
