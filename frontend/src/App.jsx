@@ -6280,7 +6280,6 @@ if (isParent) {
           />
         )}
 
-{showScreenerUpload && (
   {showScreenerUpload && (
   <ScreenerUploadModal
     onClose={() => setShowScreenerUpload(false)}
