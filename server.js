@@ -556,13 +556,14 @@ app.post('/api/screener-results/upload', async (req, res) => {
 
     // Normalize YY-MM-DD to YYYY-MM-DD
     function normalizeDate(dateStr) {
-      if (!dateStr) return null;
-      var parts = dateStr.split('-');
-      if (parts.length === 3 && parts[0].length === 2) {
-        return '20' + parts[0] + '-' + parts[1] + '-' + parts[2];
-      }
-      return dateStr;
-    }
+  if (!dateStr) return null;
+  if (dateStr.trim() === '-' || dateStr.trim() === '') return null;
+  var parts = dateStr.split('-');
+  if (parts.length === 3 && parts[0].length === 2) {
+    return '20' + parts[0] + '-' + parts[1] + '-' + parts[2];
+  }
+  return dateStr;
+}
 
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
