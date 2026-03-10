@@ -6281,9 +6281,11 @@ if (isParent) {
         )}
 
 {showScreenerUpload && (
+  {showScreenerUpload && (
   <ScreenerUploadModal
     onClose={() => setShowScreenerUpload(false)}
     user={user}
+    token={token}
     API_URL={API_URL}
     tenantId={user.tenant_id}
     onUploadComplete={() => {
@@ -6292,6 +6294,7 @@ if (isParent) {
     }}
   />
 )}
+
 
     </div>
   );

@@ -17,7 +17,8 @@ function parseDateToISO(dateStr) {
   return dateStr;
 }
 
-export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, onUploadComplete }) {
+export default function ScreenerUploadModal({ onClose, user, token, API_URL, tenantId, onUploadComplete }) {
+
   const [step, setStep] = useState('configure');
   const [screeningPeriod, setScreeningPeriod] = useState('Fall');
   const [schoolYear, setSchoolYear] = useState('2025-2026');
@@ -74,12 +75,12 @@ export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, 
   async function handleConfirm() {
     setStep('uploading');
     try {
-      var res = await fetch(API_URL + '/api/screener-results/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + user.token
-        },
+      var res = await fetch(API_URL + '/screener-results/upload', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + token
+  },
         body: JSON.stringify({
           tenantId: tenantId,
           screeningPeriod: screeningPeriod,
