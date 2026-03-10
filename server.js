@@ -579,8 +579,8 @@ app.post('/api/screener-results/upload', async (req, res) => {
       else { unmatched.push(row.firstName + ' ' + row.lastName); }
 
       var cleanDate  = normalizeDate(row.testDate) || null;
-      var cleanScore = row.scaledScore ? parseInt(row.scaledScore) : null;
-      var cleanPct   = row.percentileRank ? parseInt(row.percentileRank) : null;
+var cleanScore = (row.scaledScore && row.scaledScore.trim() !== '-' && row.scaledScore.trim() !== '') ? parseInt(row.scaledScore) : null;
+var cleanPct   = (row.percentileRank && row.percentileRank.trim() !== '-' && row.percentileRank.trim() !== '') ? parseInt(row.percentileRank) : null;
 
       var insertResult = await pool.query(
         'INSERT INTO screener_results' +
