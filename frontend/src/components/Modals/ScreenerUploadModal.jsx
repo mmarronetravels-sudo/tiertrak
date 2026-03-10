@@ -10,10 +10,20 @@ const BENCHMARK_COLORS = {
 
 function parseDateToISO(dateStr) {
   if (!dateStr) return null;
-  var parts = dateStr.split('/');
-  if (parts.length === 3) {
-    return parts[2] + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+  
+  // Handle MM/DD/YYYY format
+  var slashParts = dateStr.split('/');
+  if (slashParts.length === 3) {
+    return slashParts[2] + '-' + slashParts[0].padStart(2,'0') + '-' + slashParts[1].padStart(2,'0');
   }
+  
+  // Handle YY-MM-DD format (e.g. "26-01-22" → "2026-01-22")
+  var dashParts = dateStr.split('-');
+  if (dashParts.length === 3 && dashParts[0].length === 2) {
+    return '20' + dashParts[0] + '-' + dashParts[1].padStart(2,'0') + '-' + dashParts[2].padStart(2,'0');
+  }
+  
+  // Already in YYYY-MM-DD or unknown format, return as-is
   return dateStr;
 }
 
