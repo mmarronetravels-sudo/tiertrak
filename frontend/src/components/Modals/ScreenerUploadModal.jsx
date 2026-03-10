@@ -42,26 +42,29 @@ export default function ScreenerUploadModal({ onClose, user, token, API_URL, ten
           return;
         }
         var firstRow = results.data[0];
-        var required = ['Student Last Name', 'Student First Name', 'Benchmark'];
+        var required = ['Student', 'Benchmark Category Level'];
         var missing = required.filter(function(c) { return !(c in firstRow); });
         if (missing.length > 0) {
           setError('Missing columns: ' + missing.join(', ') + '. Is this a STAR export?');
           return;
         }
         var rows = results.data.map(function(row) {
-          return {
-            firstName:         row['Student First Name'] || '',
-            lastName:          row['Student Last Name']  || '',
-            externalStudentId: row['Student ID']         || '',
-            grade:             row['Grade']              || '',
-            screenerName:      row['Assessment Name']    || ('STAR ' + subject),
-            subject:           subject,
-            testDate:          parseDateToISO(row['Test Date']),
-            scaledScore:       row['Scaled Score']       || null,
-            percentileRank:    row['Percentile Rank']    || null,
-            benchmarkCategory: row['Benchmark']          || '',
-          };
-        });
+  var studentRaw = row['Student'] || '';
+  var parts = studentRaw.split(',');
+  var lastName  = parts[0] ? parts[0].trim() : '';
+  var firstName = parts[1] ? parts[1].trim() : '';
+  return {
+    firstName:         firstName,
+    lastName:          lastName,
+    grade:             row['Grade']                    || '',
+    screenerName:      'STAR ' + subject,
+    subject:           subject,
+    testDate:          parseDateToISO(row['Test Date']),
+    scaledScore:       row['SS (Star Unified)']        || null,
+    percentileRank:    row['PR']                       || null,
+    benchmarkCategory: row['Benchmark Category Level'] || '',
+  };
+});
         rows = rows.filter(function(r) { return r.benchmarkCategory && r.lastName; });
         setParsedRows(rows);
         setStep('preview');

@@ -38,3 +38,17 @@ export const getStatusColor = (status) => {
     default: return 'bg-gray-100 text-gray-800';
   }
 };
+// Get days until expiration and urgency level for documents
+export const getExpirationUrgency = (expirationDate) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expDate = new Date(expirationDate + 'T00:00:00');
+  const diffTime = expDate - today;
+  const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  let urgency = 'notice'; // 22-30 days
+  if (daysRemaining <= 7) urgency = 'critical';
+  else if (daysRemaining <= 21) urgency = 'warning';
+
+  return { daysRemaining, urgency };
+};
