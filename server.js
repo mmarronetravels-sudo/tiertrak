@@ -525,7 +525,7 @@ app.get('/api/screener-results/:tenantId', async (req, res) => {
     var period = req.query.period || null;
     var subject = req.query.subject || null;
 
-    var conditions = ['tenant_id = $1'];
+   var conditions = ['sr.tenant_id = $1'];
     var values = [tenantId];
     var idx = 2;
 
