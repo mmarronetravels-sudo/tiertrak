@@ -105,7 +105,7 @@ export default function ScreenerUploadModal({ onClose, user, token, API_URL, ten
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       setUploadResult(data);
       setStep('done');
-      if (onUploadComplete) onUploadComplete();
+     if (onUploadComplete) onUploadComplete(screeningPeriod, schoolYear, subject);
     } catch (err) {
       setError(err.message);
       setStep('preview');

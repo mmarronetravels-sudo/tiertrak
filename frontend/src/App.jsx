@@ -6287,10 +6287,12 @@ if (isParent) {
     token={token}
     API_URL={API_URL}
     tenantId={user.tenant_id}
-    onUploadComplete={() => {
-      setShowScreenerUpload(false);
-      fetchScreenerResults(screenerFilters);
-    }}
+    onUploadComplete={(period, schoolYear, subject) => {
+  setShowScreenerUpload(false);
+  var newFilters = { ...screenerFilters, period: period, schoolYear: schoolYear, subject: subject };
+  setScreenerFilters(newFilters);
+  fetchScreenerResults(newFilters);
+}}
   />
 )}
 
