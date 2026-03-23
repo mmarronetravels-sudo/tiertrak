@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { logError } from '../logError';
+import { logError } from '../../utils/logError';
 
 // Rating helpers (import from utils/constants.js if already extracted)
 const getRatingLabel = (rating) => {

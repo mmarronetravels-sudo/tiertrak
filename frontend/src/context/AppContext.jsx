@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { logError } from './logError';
+import { logError } from '../utils/logError';
 
 const AppContext = createContext();
 

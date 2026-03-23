@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
-import { logError } from '../logError';
+import { logError } from '../../utils/logError';
 
 var formatWeekOf = function(dateStr) {
   if (!dateStr) return 'No date';

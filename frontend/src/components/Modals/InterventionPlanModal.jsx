@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Edit, CheckCircle } from 'lucide-react';
-import { logError } from '../logError';
+import { logError } from '../../utils/logError';
 
 const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, API_URL }) => {
   // All plan state is local to this modal

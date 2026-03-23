@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { logError } from '../logError';
+import { logError } from '../../utils/logError';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 

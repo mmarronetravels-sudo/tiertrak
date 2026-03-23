@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Archive, RotateCcw } from 'lucide-react';
-import { logError } from '../logError';
+import { logError } from '../../utils/logError';
 
 
 const archiveReasons = [
