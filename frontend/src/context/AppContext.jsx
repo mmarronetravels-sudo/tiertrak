@@ -89,20 +89,24 @@ export function AppProvider({ children }) {
   };
 
   const fetchInterventionTemplates = async (tenantId) => {
-    try {
-      const res = await fetch(`${API_URL}/interventions/templates/tenant/${tenantId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setInterventionTemplates(data);
-      }
-    } catch (error) {
-      logError('Error fetching templates:', error);
+  try {
+    const res = await fetch(`${API_URL}/interventions/templates/tenant/${tenantId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setInterventionTemplates(data);
     }
-  };
+  } catch (error) {
+    logError('Error fetching templates:', error);
+  }
+};
 
   const fetchStudentDetails = async (studentId) => {
     try {
-      const res = await fetch(`${API_URL}/students/${studentId}`);
+      const res = await fetch(`${API_URL}/students/${studentId}`, {
+       headers: { 'Authorization': `Bearer ${token}` }
+});
       if (res.ok) {
         const data = await res.json();
         setSelectedStudent(data);
@@ -120,7 +124,9 @@ export function AppProvider({ children }) {
 
   const fetchInterventionLogs = async (studentId) => {
     try {
-      const res = await fetch(`${API_URL}/intervention-logs/student/${studentId}`);
+     const res = await fetch(`${API_URL}/intervention-logs/student/${studentId}`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
       if (res.ok) {
         const data = await res.json();
         setInterventionLogs(data);
@@ -160,8 +166,10 @@ export function AppProvider({ children }) {
 
   const fetchMTSSMeetings = async (studentId) => {
     try {
-      const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}`);
-      if (response.ok) {
+    const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}`, {
+     headers: { 'Authorization': `Bearer ${token}` }
+});     
+ if (response.ok) {
         const data = await response.json();
         setMTSSMeetings(data);
       }
@@ -263,7 +271,9 @@ export function AppProvider({ children }) {
 
   const fetchParentsList = async (tenantId) => {
     try {
-      const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
+      const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`, {
+       headers: { 'Authorization': `Bearer ${token}` }
+});
       if (response.ok) {
         const data = await response.json();
         setParentsList(data);
