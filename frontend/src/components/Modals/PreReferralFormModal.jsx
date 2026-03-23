@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
+import { logError } from '../logError';
 
 var formatWeekOf = function(dateStr) {
   if (!dateStr) return 'No date';
@@ -40,7 +41,7 @@ var PreReferralFormModal = function(props) {
         return await res.json();
       }
     } catch (error) {
-      console.error('Error fetching pre-referral options:', error);
+      logError('Error fetching pre-referral options:', error);
     }
     return null;
   };
@@ -54,7 +55,7 @@ var PreReferralFormModal = function(props) {
         return activeForm || null;
       }
     } catch (error) {
-      console.error('Error fetching pre-referral form:', error);
+      logError('Error fetching pre-referral form:', error);
     }
     return null;
   };
@@ -75,7 +76,7 @@ var PreReferralFormModal = function(props) {
         return await res.json();
       }
     } catch (error) {
-      console.error('Error creating pre-referral form:', error);
+      logError('Error creating pre-referral form:', error);
     }
     return null;
   };
@@ -93,7 +94,7 @@ var PreReferralFormModal = function(props) {
         return data;
       }
     } catch (error) {
-      console.error('Error saving pre-referral form:', error);
+      logError('Error saving pre-referral form:', error);
     }
     return null;
   };
@@ -111,7 +112,7 @@ var PreReferralFormModal = function(props) {
         return data;
       }
     } catch (error) {
-      console.error('Error submitting pre-referral form:', error);
+      logError('Error submitting pre-referral form:', error);
     }
     return null;
   };

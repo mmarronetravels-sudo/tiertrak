@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { logError } from '../logError';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -28,7 +29,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
             });
           }
         })
-        .catch(err => console.error('Error fetching template details:', err));
+        .catch(err => logError('Error fetching template details:', err));
     } else {
       setTemplateEditorForm({
         name: template.name,
@@ -60,7 +61,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         alert(`Error: ${error.error}`);
       }
     } catch (error) {
-      console.error('Error saving template:', error);
+      logError('Error saving template:', error);
       alert('Failed to save template');
     }
   };
@@ -84,7 +85,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         alert(`Error: ${error.error}`);
       }
     } catch (error) {
-      console.error('Error removing template:', error);
+      logError('Error removing template:', error);
       alert('Failed to remove template');
     }
   };
@@ -117,7 +118,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         alert(`Error: ${error.error}`);
       }
     } catch (error) {
-      console.error('Error duplicating template:', error);
+      logError('Error duplicating template:', error);
       alert('Failed to duplicate template');
     }
   };

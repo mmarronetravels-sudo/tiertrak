@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Printer } from 'lucide-react';
+import { logError } from '../logError';
 
 const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
   const [reportDateRange, setReportDateRange] = useState({
@@ -45,7 +46,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
           return { interventionId: intervention.id, progress: data };
         }
       } catch (err) {
-        console.error('Error fetching progress:', err);
+        logError('Error fetching progress:', err);
       }
       return { interventionId: intervention.id, progress: [] };
     });

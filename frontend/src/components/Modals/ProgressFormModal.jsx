@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { logError } from '../logError';
 
 // Rating helpers (import from utils/constants.js if already extracted)
 const getRatingLabel = (rating) => {
@@ -72,7 +73,7 @@ const ProgressFormModal = ({ intervention, editingLog, onClose, user, fetchWeekl
         alert(errorData.error || 'Failed to save progress log. Please try again.');
       }
     } catch (err) {
-      console.error('Error submitting weekly progress:', err);
+      logError('Error submitting weekly progress:', err);
       alert('Error saving progress log. Please try again.');
     }
   };

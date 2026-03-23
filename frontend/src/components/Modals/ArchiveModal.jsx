@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Archive, RotateCcw } from 'lucide-react';
+import { logError } from '../logError';
 
 
 const archiveReasons = [
@@ -35,7 +36,7 @@ export const ArchiveStudentModal = ({ onClose, user, selectedStudent, API_URL, f
         onClose();
       }
     } catch (error) {
-      console.error('Error archiving student:', error);
+      logError('Error archiving student:', error);
     }
   };
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Edit, CheckCircle } from 'lucide-react';
+import { logError } from '../logError';
 
 const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, API_URL }) => {
   // All plan state is local to this modal
@@ -28,7 +29,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
         setPlanStatus(data.plan_status || 'not_applicable');
       }
     } catch (error) {
-      console.error('Error fetching intervention plan:', error);
+      logError('Error fetching intervention plan:', error);
     } finally {
       setPlanLoading(false);
     }
@@ -50,7 +51,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
       });
       setPlanStatus('draft');
     } catch (error) {
-      console.error('Error saving plan:', error);
+      logError('Error saving plan:', error);
     } finally {
       setPlanSaving(false);
     }
@@ -90,7 +91,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
         alert('Plan marked as complete!');
       }
     } catch (error) {
-      console.error('Error completing plan:', error);
+      logError('Error completing plan:', error);
       alert('Error completing plan');
     } finally {
       setPlanSaving(false);
@@ -113,7 +114,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
         setPlanStatus('draft');
       }
     } catch (error) {
-      console.error('Error reopening plan:', error);
+      logError('Error reopening plan:', error);
     }
   };
 

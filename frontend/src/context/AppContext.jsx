@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { logError } from './logError';
 
 const AppContext = createContext();
 
@@ -63,7 +64,7 @@ export function AppProvider({ children }) {
         setToken(null);
       }
     } catch (error) {
-      console.error('Error fetching user:', error);
+      logError('Error fetching user:', error);
     }
     setLoading(false);
   };
@@ -83,7 +84,7 @@ export function AppProvider({ children }) {
         setStudents(data);
       }
     } catch (error) {
-      console.error('Error fetching students:', error);
+      logError('Error fetching students:', error);
     }
   };
 
@@ -95,7 +96,7 @@ export function AppProvider({ children }) {
         setInterventionTemplates(data);
       }
     } catch (error) {
-      console.error('Error fetching templates:', error);
+      logError('Error fetching templates:', error);
     }
   };
 
@@ -113,7 +114,7 @@ export function AppProvider({ children }) {
         }
       }
     } catch (error) {
-      console.error('Error fetching student details:', error);
+      logError('Error fetching student details:', error);
     }
   };
 
@@ -125,7 +126,7 @@ export function AppProvider({ children }) {
         setInterventionLogs(data);
       }
     } catch (error) {
-      console.error('Error fetching intervention logs:', error);
+      logError('Error fetching intervention logs:', error);
     }
   };
 
@@ -139,7 +140,7 @@ export function AppProvider({ children }) {
         setWeeklyProgressLogs(data);
       }
     } catch (err) {
-      console.error('Error fetching weekly progress:', err);
+      logError('Error fetching weekly progress:', err);
     }
   };
 
@@ -153,7 +154,7 @@ export function AppProvider({ children }) {
         setStudentDocuments(data);
       }
     } catch (error) {
-      console.error('Error fetching student documents:', error);
+      logError('Error fetching student documents:', error);
     }
   };
 
@@ -165,7 +166,7 @@ export function AppProvider({ children }) {
         setMTSSMeetings(data);
       }
     } catch (error) {
-      console.error('Error fetching MTSS meetings:', error);
+      logError('Error fetching MTSS meetings:', error);
     }
   };
 
@@ -177,7 +178,7 @@ export function AppProvider({ children }) {
         setLogOptions(data);
       }
     } catch (error) {
-      console.error('Error fetching log options:', error);
+      logError('Error fetching log options:', error);
     }
   };
 
@@ -192,7 +193,7 @@ export function AppProvider({ children }) {
         setExpiringDocuments(data);
       }
     } catch (error) {
-      console.error('Error fetching expiring documents:', error);
+      logError('Error fetching expiring documents:', error);
     }
   };
 
@@ -211,7 +212,7 @@ export function AppProvider({ children }) {
         });
       }
     } catch (error) {
-      console.error('Error fetching missing logs:', error);
+      logError('Error fetching missing logs:', error);
     }
   };
 
@@ -226,7 +227,7 @@ export function AppProvider({ children }) {
         setReferralCandidates(data);
       }
     } catch (error) {
-      console.error('Error fetching referral candidates:', error);
+      logError('Error fetching referral candidates:', error);
     }
   };
 
@@ -241,7 +242,7 @@ export function AppProvider({ children }) {
         setMonitoredStudents(data);
       }
     } catch (error) {
-      console.error('Error fetching monitored students:', error);
+      logError('Error fetching monitored students:', error);
     }
   };
 
@@ -256,7 +257,7 @@ export function AppProvider({ children }) {
         setStaffList(data);
       }
     } catch (error) {
-      console.error('Error fetching staff:', error);
+      logError('Error fetching staff:', error);
     }
   };
 
@@ -268,7 +269,7 @@ export function AppProvider({ children }) {
         setParentsList(data);
       }
     } catch (error) {
-      console.error('Error fetching parents:', error);
+      logError('Error fetching parents:', error);
     }
   };
 
@@ -295,7 +296,7 @@ export function AppProvider({ children }) {
         }
       }
     } catch (error) {
-      console.error('Error updating tier:', error);
+      logError('Error updating tier:', error);
     }
   };
 
@@ -316,7 +317,7 @@ export function AppProvider({ children }) {
       fetchReferralCandidates();
       fetchMonitoredStudents();
     } catch (error) {
-      console.error('Error updating monitoring:', error);
+      logError('Error updating monitoring:', error);
     }
   };
 
