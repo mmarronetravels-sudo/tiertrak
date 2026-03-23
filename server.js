@@ -1,4 +1,5 @@
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const { Pool } = require('pg');
 require('dotenv').config();
@@ -10,12 +11,14 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON
 app.use(express.json());
+app.use(cookieParser());
 app.use(cors({
   origin: [
     /\.vercel\.app$/,
     'https://tiertrak.scholarpathsystems.org',
     'https://www.scholarpathsystems.org',
-    'https://scholarpathsystems.org'
+    'https://scholarpathsystems.org',
+    'http://localhost:5173'
   ],
   credentials: true
 }));

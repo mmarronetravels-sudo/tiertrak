@@ -8,7 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 export function AppProvider({ children }) {
   // === AUTH ===
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // === NAVIGATION ===
@@ -50,24 +50,23 @@ export function AppProvider({ children }) {
   // ============================================
 
   const fetchUserInfo = async () => {
-    try {
-      const res = await fetch(`${API_URL}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const userData = await res.json();
-        setUser(userData);
-        fetchStudents(userData.tenant_id);
-        fetchInterventionTemplates(userData.tenant_id);
-      } else {
-        localStorage.removeItem('token');
-        setToken(null);
-      }
-    } catch (error) {
-      logError('Error fetching user:', error);
+  try {
+    const res = await fetch(`${API_URL}/auth/me`, {
+      credentials: 'include'
+    });
+    if (res.ok) {
+      const userData = await res.json();
+      setUser(userData);
+      fetchStudents(userData.tenant_id);
+      fetchInterventionTemplates(userData.tenant_id);
+    } else {
+      setToken(null);
     }
-    setLoading(false);
-  };
+  } catch (error) {
+    logError('Error fetching user:', error);
+  }
+  setLoading(false);
+};
 
   const fetchStudents = async (tenantId, includeArchived = false) => {
     if (!user) return;
@@ -91,7 +90,7 @@ export function AppProvider({ children }) {
   const fetchInterventionTemplates = async (tenantId) => {
   try {
     const res = await fetch(`${API_URL}/interventions/templates/tenant/${tenantId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+     credentials: 'include'
     });
     if (res.ok) {
       const data = await res.json();
@@ -105,7 +104,8 @@ export function AppProvider({ children }) {
   const fetchStudentDetails = async (studentId) => {
     try {
       const res = await fetch(`${API_URL}/students/${studentId}`, {
-       headers: { 'Authorization': `Bearer ${token}` }
+       
+credentials: 'include'
 });
       if (res.ok) {
         const data = await res.json();
@@ -125,7 +125,8 @@ export function AppProvider({ children }) {
   const fetchInterventionLogs = async (studentId) => {
     try {
      const res = await fetch(`${API_URL}/intervention-logs/student/${studentId}`, {
-  headers: { 'Authorization': `Bearer ${token}` }
+  
+credentials: 'include'
 });
       if (res.ok) {
         const data = await res.json();
@@ -139,7 +140,8 @@ export function AppProvider({ children }) {
   const fetchWeeklyProgress = async (studentId) => {
     try {
       const response = await fetch(`${API_URL}/weekly-progress/student/${studentId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -153,7 +155,8 @@ export function AppProvider({ children }) {
   const fetchStudentDocuments = async (studentId) => {
     try {
       const response = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -167,7 +170,8 @@ export function AppProvider({ children }) {
   const fetchMTSSMeetings = async (studentId) => {
     try {
     const response = await fetch(`${API_URL}/mtss-meetings/student/${studentId}`, {
-     headers: { 'Authorization': `Bearer ${token}` }
+     
+credentials: 'include'
 });     
  if (response.ok) {
         const data = await response.json();
@@ -194,7 +198,8 @@ export function AppProvider({ children }) {
     if (!user?.tenant_id) return;
     try {
       const res = await fetch(`${API_URL}/student-documents/expiring/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (res.ok) {
         const data = await res.json();
@@ -209,7 +214,8 @@ export function AppProvider({ children }) {
     if (!user?.tenant_id) return;
     try {
       const response = await fetch(`${API_URL}/weekly-progress/missing/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -228,7 +234,8 @@ export function AppProvider({ children }) {
     if (!user?.tenant_id) return;
     try {
       const response = await fetch(`${API_URL}/students/referral-candidates/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -243,7 +250,8 @@ export function AppProvider({ children }) {
     if (!user?.tenant_id) return;
     try {
       const response = await fetch(`${API_URL}/students/referral-monitoring/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -258,7 +266,8 @@ export function AppProvider({ children }) {
     if (!user?.tenant_id) return;
     try {
       const response = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        
+credentials: 'include'
       });
       if (response.ok) {
         const data = await response.json();
@@ -272,7 +281,8 @@ export function AppProvider({ children }) {
   const fetchParentsList = async (tenantId) => {
     try {
       const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`, {
-       headers: { 'Authorization': `Bearer ${token}` }
+       
+credentials: 'include'
 });
       if (response.ok) {
         const data = await response.json();
@@ -321,7 +331,8 @@ export function AppProvider({ children }) {
       } else if (action === 'remove') {
         await fetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
+          
+credentials: 'include'
         });
       }
       fetchReferralCandidates();
@@ -331,28 +342,31 @@ export function AppProvider({ children }) {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
-    setStudents([]);
-    setSelectedStudent(null);
-    setInterventionLogs([]);
-  };
+  const handleLogout = async () => {
+  try {
+    await fetch(`${API_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+  } catch (error) {
+    logError('logout', error);
+  }
+  setToken(null);
+  setUser(null);
+  setStudents([]);
+  setSelectedStudent(null);
+  setInterventionLogs([]);
+};
 
   // ============================================
   // EFFECTS
   // ============================================
 
   // Check if logged in on load
-  useEffect(() => {
-    if (token) {
-      fetchUserInfo();
-      fetchLogOptions();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+useEffect(() => {
+  fetchUserInfo();
+  fetchLogOptions();
+}, []);
 
   // Fetch dashboard data when dashboard loads
   useEffect(() => {

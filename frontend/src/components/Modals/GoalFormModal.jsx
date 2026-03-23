@@ -28,16 +28,16 @@ const GoalFormModal = ({ intervention, onClose, token, selectedStudent, API_URL,
   // ============================================
 
   const updateInterventionGoal = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await fetch(`${API_URL}/interventions/${intervention.id}/goal`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(goalFormData)
-      });
+  e.preventDefault();
+  try {
+    const response = await fetch(`${API_URL}/interventions/${intervention.id}/goal`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(goalFormData)
+    });
 
       if (response.ok) {
         // Refresh student data to reflect the updated goal

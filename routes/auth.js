@@ -113,34 +113,38 @@ router.post('/login', async (req, res) => {
       { expiresIn: '8h' }
     );
     
-    res.json({
-      message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        full_name: user.full_name,
-        role: user.role,
-        tenant_id: user.tenant_id,
-        tenant_name: user.tenant_name,
-        school_wide_access: user.school_wide_access
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.cookie('auth_token', token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 8 * 60 * 60 * 1000
+});
+
+res.json({
+  message: 'Login successful',
+  user: {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role,
+    tenant_id: user.tenant_id,
+    tenant_name: user.tenant_name,
+    school_wide_access: user.school_wide_access
   }
 });
+} catch (error) {
+  console.error('[login]', error.message);
+  res.status(500).json({ error: 'Login failed. Please try again.' });
+}
 
 // Get current user info (requires token)
 router.get('/me', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = req.cookies?.auth_token;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
-    
-    const token = authHeader.split(' ')[1];
     
     const decoded = jwt.verify(token, JWT_SECRET);
     
@@ -164,7 +168,7 @@ router.get('/me', async (req, res) => {
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to get user info.' });
   }
 });
 
@@ -238,24 +242,29 @@ router.post('/google', async (req, res) => {
       { expiresIn: '8h' }
     );
     
-    res.json({
-      message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        full_name: user.full_name,
-        role: user.role,
-        tenant_id: user.tenant_id,
-        tenant_name: user.tenant_name,
-        school_wide_access: user.school_wide_access
-      }
-    });
-  } catch (error) {
-    console.error('Google auth error:', error);
-    res.status(401).json({ error: 'Google authentication failed' });
+    res.cookie('auth_token', token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 8 * 60 * 60 * 1000
+});
+
+res.json({
+  message: 'Login successful',
+  user: {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    role: user.role,
+    tenant_id: user.tenant_id,
+    tenant_name: user.tenant_name,
+    school_wide_access: user.school_wide_access
   }
 });
+} catch (error) {
+  console.error('[google-auth]', error.message);
+  res.status(401).json({ error: 'Google authentication failed' });
+}
 
 // ============================================
 // NEW: ADMIN CREATES PARENT ACCOUNT
@@ -535,6 +544,16 @@ router.get('/verify-token/:token', async (req, res) => {
     console.error('Verify token error:', error);
     res.status(500).json({ valid: false, error: 'An error occurred' });
   }
+});
+
+// Logout
+router.post('/logout', (req, res) => {
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
+  res.json({ message: 'Logged out successfully' });
 });
 
 module.exports = router;
