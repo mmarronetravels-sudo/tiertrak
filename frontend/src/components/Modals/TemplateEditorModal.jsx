@@ -58,7 +58,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         onClose();
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error}`);
+        alert(`Error: ${alert('Something went wrong. Please try again.');}`);
       }
     } catch (error) {
       logError('Error saving template:', error);
@@ -82,7 +82,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         onClose();
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error}`);
+        alert(`Error: ${alert('Something went wrong. Please try again.');}`);
       }
     } catch (error) {
       logError('Error removing template:', error);
@@ -115,7 +115,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
         setDuplicateSourceId('');
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error}`);
+        alert(`Error: ${alert('Something went wrong. Please try again.');}`);
       }
     } catch (error) {
       logError('Error duplicating template:', error);

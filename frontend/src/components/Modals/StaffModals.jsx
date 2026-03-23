@@ -117,7 +117,7 @@ export const EditStaffModal = ({ staffMember, onClose, user, token, API_URL, loa
         onClose();
       } else {
         const err = await response.json();
-        alert(err.error || 'Failed to update');
+        alert('Failed to update. Please try again.');
       }
     } catch (error) {
       alert('Connection error');

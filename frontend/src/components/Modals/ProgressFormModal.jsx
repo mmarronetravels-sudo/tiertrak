@@ -70,7 +70,7 @@ const ProgressFormModal = ({ intervention, editingLog, onClose, user, fetchWeekl
         onClose();
       } else {
         const errorData = await response.json().catch(() => ({}));
-        alert(errorData.error || 'Failed to save progress log. Please try again.');
+        alert('Failed to save progress log. Please try again.');
       }
     } catch (err) {
       logError('Error submitting weekly progress:', err);
