@@ -49,9 +49,9 @@ const ProgressFormModal = ({ intervention, editingLog, onClose, user, fetchWeekl
       const response = await fetch(url, {
         method: editingLog ? 'PUT' : 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+  'Content-Type': 'application/json',
+},
+credentials: 'include',
         body: JSON.stringify({
           student_intervention_id: intervention.id,
           student_id: intervention.student_id || selectedStudent?.id,

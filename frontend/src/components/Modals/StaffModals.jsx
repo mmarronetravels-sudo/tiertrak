@@ -21,13 +21,14 @@ export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList }) 
     try {
       const response = await fetch(`${API_URL}/staff`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+       headers: { 'Content-Type': 'application/json' },
+credentials: 'include',
         body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
       });
       if (response.ok) {
         // Refresh staff list
         const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include'
         });
         if (listRes.ok) {
           const listData = await listRes.json();
@@ -102,13 +103,14 @@ export const EditStaffModal = ({ staffMember, onClose, user, token, API_URL, loa
     try {
       const response = await fetch(`${API_URL}/staff/${staffMember.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
+credentials: 'include',
         body: JSON.stringify({ full_name: editData.full_name, role: editData.role })
       });
       if (response.ok) {
         // Refresh staff list
         const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          credentials: 'include'
         });
         if (listRes.ok) {
           const listData = await listRes.json();

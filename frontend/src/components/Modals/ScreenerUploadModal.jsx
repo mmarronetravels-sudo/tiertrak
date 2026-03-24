@@ -91,9 +91,9 @@ export default function ScreenerUploadModal({ onClose, user, token, API_URL, ten
       var res = await fetch(API_URL + '/screener-results/upload', {
   method: 'POST',
   headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer ' + token
-  },
+  'Content-Type': 'application/json',
+},
+credentials: 'include',
         body: JSON.stringify({
           tenantId: tenantId,
           screeningPeriod: screeningPeriod,

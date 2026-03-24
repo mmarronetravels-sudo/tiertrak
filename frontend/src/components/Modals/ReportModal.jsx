@@ -39,7 +39,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
     var progressPromises = interventions.map(async function(intervention) {
       try {
         var res = await fetch(API_URL + '/weekly-progress/intervention/' + intervention.id, {
-          headers: { 'Authorization': 'Bearer ' + token }
+          credentials: 'include'
         });
         if (res.ok) {
           var data = await res.json();
