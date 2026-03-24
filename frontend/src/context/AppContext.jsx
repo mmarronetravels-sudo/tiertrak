@@ -325,7 +325,8 @@ credentials: 'include'
       if (action === 'monitor') {
         await fetch(`${API_URL}/students/referral-monitoring`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
         });
       } else if (action === 'remove') {

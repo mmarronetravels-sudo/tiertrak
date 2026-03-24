@@ -133,11 +133,12 @@ res.json({
   }
 });
 } catch (error) {
-  console.error('[login]', error.message);
-  res.status(500).json({ error: 'Login failed. Please try again.' });
-}
+    console.error('[login]', error.message);
+    res.status(500).json({ error: 'Login failed. Please try again.' });
+  }
+});
 
-// Get current user info (requires token)
+// Get current user info
 router.get('/me', async (req, res) => {
   try {
     const token = req.cookies?.auth_token;
@@ -262,9 +263,10 @@ res.json({
   }
 });
 } catch (error) {
-  console.error('[google-auth]', error.message);
-  res.status(401).json({ error: 'Google authentication failed' });
-}
+    console.error('[google-auth]', error.message);
+    res.status(401).json({ error: 'Google authentication failed. Please try again.' });
+  }
+});
 
 // ============================================
 // NEW: ADMIN CREATES PARENT ACCOUNT

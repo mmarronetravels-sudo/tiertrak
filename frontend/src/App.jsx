@@ -1040,7 +1040,7 @@ useEffect(() => {
   // Logout
   const handleLogout = async () => {
 try {
-await fetch(${API_URL}/auth/logout, { method: 'POST', credentials: 'include' });
+await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
 } catch (_) {}
 setToken(null);
 setUser(null);
