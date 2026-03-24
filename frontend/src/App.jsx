@@ -56,7 +56,7 @@ const FERPABadge = ({ compact = false }) => (
 export default function App() {
   const appContext = useApp();
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(null);
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -72,8 +72,8 @@ const [screenerLoading, setScreenerLoading] = useState(false);
     if (!tid) return;
     try {
       const res = await fetch(`${API_URL}/staff/${tid}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+    credentials: 'include'
+  });
       if (res.ok) {
         const data = await res.json();
         setStaffList(data);
@@ -258,22 +258,15 @@ const isParent = user && user.role === 'parent';
 
 // Check if logged in on load
   useEffect(() => {
-    if (token) {
-      fetchUserInfo();
-      fetchLogOptions();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+fetchUserInfo();
+fetchLogOptions();
+}, []);
 
   // Sync App.jsx state into AppContext for extracted modals
   useEffect(() => {
     if (user) appContext.setUser(user);
   }, [user]);
-  useEffect(() => {
-    if (token) appContext.setToken(token);
-  }, [token]);
-  useEffect(() => {
+    useEffect(() => {
     appContext.setSelectedStudent(selectedStudent);
   }, [selectedStudent]);
   useEffect(() => {
@@ -298,8 +291,8 @@ const fetchReferralCandidates = async () => {
   if (!user?.tenant_id) return;
   try {
     const response = await fetch(`${API_URL}/students/referral-candidates/${user.tenant_id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (response.ok) {
       const data = await response.json();
       setReferralCandidates(data);
@@ -314,8 +307,8 @@ const fetchMonitoredStudents = async () => {
   if (!user?.tenant_id) return;
   try {
     const response = await fetch(`${API_URL}/students/referral-monitoring/${user.tenant_id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (response.ok) {
       const data = await response.json();
       setMonitoredStudents(data);
@@ -331,16 +324,17 @@ const handleReferralMonitoring = async (studentId, action) => {
     if (action === 'monitor') {
       await fetch(`${API_URL}/students/referral-monitoring`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
+        headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
       });
     } else if (action === 'remove') {
       await fetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-    }
-    fetchReferralCandidates();
+        credentials: 'include'
+  });
+}
+fetchReferralCandidates();
     fetchMonitoredStudents();
   } catch (error) {
     console.error('Error updating monitoring:', error);
@@ -359,15 +353,14 @@ const handleReferralMonitoring = async (studentId, action) => {
   const fetchUserInfo = async () => {
     try {
       const res = await fetch(`${API_URL}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+    credentials: 'include'
+  });
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
         fetchStudents(userData.tenant_id);
         fetchInterventionTemplates(userData.tenant_id);
       } else {
-        localStorage.removeItem('token');
         setToken(null);
       }
     } catch (error) {
@@ -502,9 +495,9 @@ const handleDeleteStaff = async (staffId, staffName) => {
   if (!confirm(`Remove ${staffName}? This will revoke their access to TierTrak.`)) return;
   try {
     const response = await fetch(`${API_URL}/staff/${staffId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  method: 'DELETE',
+  credentials: 'include'
+});
     if (response.ok) {
       loadStaffList();
     }
@@ -529,8 +522,8 @@ const fetchExpiringDocuments = async () => {
   if (!user?.tenant_id) return;
   try {
     const res = await fetch(`${API_URL}/student-documents/expiring/${user.tenant_id}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (res.ok) {
       const data = await res.json();
       setExpiringDocuments(data);
@@ -548,8 +541,8 @@ const fetchExpiringDocuments = async () => {
   const fetchWeeklyProgress = async (studentId) => {
     try {
       const response = await fetch(`${API_URL}/weekly-progress/student/${studentId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+    credentials: 'include'
+  });
       if (response.ok) {
         const data = await response.json();
         setWeeklyProgressLogs(data);
@@ -565,8 +558,8 @@ const fetchExpiringDocuments = async () => {
     if (!user?.tenant_id) return;
     try {
       const response = await fetch(`${API_URL}/weekly-progress/missing/${user.tenant_id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+    credentials: 'include'
+  });
       if (response.ok) {
         const data = await response.json();
         setMissingLogs({
@@ -659,10 +652,8 @@ const openMTSSMeetingForm = (meeting = null) => {
     if (!confirm('Are you sure you want to delete this progress log?')) return;
     try {
       const response = await fetch(`${API_URL}/weekly-progress/${logId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+    method: 'DELETE',
+    credentials: 'include'
       });
       if (response.ok) {
         fetchWeeklyProgress(selectedStudent.id);
@@ -696,8 +687,8 @@ const openMTSSMeetingForm = (meeting = null) => {
   const fetchBankInterventions = async (tenantId) => {
     try {
       const res = await fetch(API_URL + '/intervention-bank/all?tenant_id=' + tenantId, {
-        headers: { 'Authorization': 'Bearer ' + token }
-      });
+    credentials: 'include'
+  });
       if (res.ok) {
         const data = await res.json();
         setBankInterventions(data);
@@ -715,9 +706,9 @@ const openMTSSMeetingForm = (meeting = null) => {
     if (filters.period)     params.append('period', filters.period);
     if (filters.subject)    params.append('subject', filters.subject);
     const res = await fetch(
-      API_URL + '/screener-results/' + user.tenant_id + '?' + params.toString(),
-      { headers: { Authorization: 'Bearer ' + token } }
-    );
+  API_URL + '/screener-results/' + user.tenant_id + '?' + params.toString(),
+  { credentials: 'include' }
+);
     const data = await res.json();
     setScreenerResults(Array.isArray(data) ? data : []);
   } catch (err) {
@@ -761,10 +752,10 @@ const handleDocumentUpload = async (e) => {
   
   try {
     const response = await fetch(`${API_URL}/student-documents/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
+  method: 'POST',
+  credentials: 'include',
+  body: formData
+});
     
     if (response.ok) {
       await fetchStudentDocuments(selectedStudent.id);
@@ -786,8 +777,8 @@ const handleDocumentUpload = async (e) => {
 const handleDocumentDownload = async (documentId) => {
   try {
     const response = await fetch(`${API_URL}/student-documents/download/${documentId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     
     if (response.ok) {
       const data = await response.json();
@@ -809,9 +800,9 @@ const handleDocumentDelete = async (documentId) => {
   
   try {
     const response = await fetch(`${API_URL}/student-documents/${documentId}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  method: 'DELETE',
+  credentials: 'include'
+});
     
     if (response.ok) {
       await fetchStudentDocuments(selectedStudent.id);
@@ -828,8 +819,8 @@ const handleDocumentDelete = async (documentId) => {
 const fetchStudentDocuments = async (studentId) => {
   try {
     const response = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (response.ok) {
       const data = await response.json();
       setStudentDocuments(data);
@@ -896,11 +887,14 @@ const handleGoogleSignIn = async (response) => {
     });
     const data = await res.json();
     if (res.ok) {
-      localStorage.setItem('token', data.token);
-      setToken(data.token);
-      setUser(data.user);
-    } else {
-      setLoginError(data.error || 'Google sign-in failed');
+  setUser(data.user);
+  fetchStudents(data.user.tenant_id);
+  fetchInterventionTemplates(data.user.tenant_id);
+  fetchLogOptions();
+  loadStaffList(data.user.tenant_id);
+  fetchParentsList(data.user.tenant_id);
+} else {
+  setLoginError(data.error || 'Google sign-in failed');
     }
   } catch (err) {
     setLoginError('Connection error. Please try again.');
@@ -1029,14 +1023,12 @@ useEffect(() => {
       });
       const data = await res.json();
       if (res.ok) {
-        localStorage.setItem('token', data.token);
-        setToken(data.token);
-        setUser(data.user);
-        fetchStudents(data.user.tenant_id);
-        fetchInterventionTemplates(data.user.tenant_id);
-        fetchLogOptions();
-        loadStaffList(data.user.tenant_id);
-        fetchParentsList(data.user.tenant_id);
+    setUser(data.user);
+    fetchStudents(data.user.tenant_id);
+    fetchInterventionTemplates(data.user.tenant_id);
+    fetchLogOptions();
+    loadStaffList(data.user.tenant_id);
+    fetchParentsList(data.user.tenant_id);
       } else {
         setLoginError(data.error || 'Login failed');
       }
@@ -1046,14 +1038,16 @@ useEffect(() => {
   };
 
   // Logout
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setToken(null);
-    setUser(null);
-    setStudents([]);
-    setSelectedStudent(null);
-    setInterventionLogs([]);
-  };
+  const handleLogout = async () => {
+try {
+await fetch(${API_URL}/auth/logout, { method: 'POST', credentials: 'include' });
+} catch (_) {}
+setToken(null);
+setUser(null);
+setStudents([]);
+setSelectedStudent(null);
+setInterventionLogs([]);
+};
 
   // Add intervention
   const handleAddIntervention = async () => {
@@ -3815,13 +3809,10 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     setMessage({ type: '', text: '' });
     
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/auth/create-parent`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+  const res = await fetch(`${API_URL}/auth/create-parent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
         body: JSON.stringify({
           email: formData.email,
           full_name: formData.full_name,
@@ -4136,8 +4127,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
           </div>
         </button>
         <button
-  onClick={() => { setAdminTab('staff'); fetch(`${API_URL}/staff/${user.tenant_id}`, { headers: { 'Authorization': `Bearer ${token}` }}).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}
-  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+  onClick={() => { setAdminTab('staff'); fetch(`${API_URL}/staff/${user.tenant_id}`, { credentials: 'include' }).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
     adminTab === 'staff' 
       ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
       : 'text-slate-600 hover:bg-slate-100'
@@ -4678,11 +4668,11 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                               if (!confirm('Remove ' + member.full_name + '? They will no longer be able to log in.')) return;
                               try {
                                 const res = await fetch(API_URL + '/staff/' + member.id, {
-                                  method: 'DELETE',
-                                  headers: { 'Authorization': 'Bearer ' + token }
-                                });
-                                if (res.ok) {
-                                  const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { headers: { 'Authorization': 'Bearer ' + token }});
+                              method: 'DELETE',
+                              credentials: 'include'
+                            });
+                            if (res.ok) {
+                              const listRes = await fetch(API_URL + '/staff/' + user.tenant_id, { credentials: 'include' });
                                   const listData = await listRes.json();
                                   setStaffList(listData);
                                 }
@@ -4801,8 +4791,9 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                                 if (!confirm('Remove "' + item.name + '" from your active interventions?')) return;
                                 try {
                                   const res = await fetch(API_URL + '/intervention-bank/deactivate', {
-                                    method: 'DELETE',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
                                     body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id })
                                   });
                                   if (res.ok) {
@@ -4822,8 +4813,9 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                               onClick={async () => {
                                 try {
                                   const res = await fetch(API_URL + '/intervention-bank/activate', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
                                     body: JSON.stringify({ tenant_id: user.tenant_id, template_id: item.id, user_id: user.id })
                                   });
                                   if (res.ok) fetchBankInterventions(user.tenant_id);
@@ -5486,8 +5478,8 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
 const fetchChildDocuments = async (studentId) => {
   try {
     const res = await fetch(`${API_URL}/student-documents/student/${studentId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (res.ok) {
       const data = await res.json();
       // Parents can only see these categories
@@ -5512,10 +5504,10 @@ const handleParentDocumentUpload = async (e) => {
   
   try {
     const res = await fetch(`${API_URL}/student-documents/upload`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
+  method: 'POST',
+  credentials: 'include',
+  body: formData
+});
     
     if (res.ok) {
       alert('Document uploaded successfully!');
@@ -5537,8 +5529,8 @@ const handleParentDocumentUpload = async (e) => {
 const handleDocumentDownload = async (docId, fileName) => {
   try {
     const res = await fetch(`${API_URL}/student-documents/download/${docId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+  credentials: 'include'
+});
     if (res.ok) {
       const data = await res.json();
       window.open(data.downloadUrl, '_blank');
@@ -5571,11 +5563,8 @@ const handleDocumentDownload = async (docId, fileName) => {
               <p className="text-emerald-100 text-sm">TierTrak Parent Portal</p>
             </div>
             <button
-              onClick={() => {
-                localStorage.removeItem('token');
-                setToken(null);
-                setUser(null);
-              }}
+              onClick={handleLogout}
+
               className="p-2 hover:bg-emerald-700 rounded-lg transition-colors"
             >
               <LogOut className="w-5 h-5" />
