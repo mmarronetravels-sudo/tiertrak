@@ -6273,8 +6273,7 @@ if (isParent) {
   <ScreenerUploadModal
     onClose={() => setShowScreenerUpload(false)}
     user={user}
-    token={token}
-    API_URL={API_URL}
+        API_URL={API_URL}
     tenantId={user.tenant_id}
     onUploadComplete={(period, schoolYear, subject) => {
   setShowScreenerUpload(false);

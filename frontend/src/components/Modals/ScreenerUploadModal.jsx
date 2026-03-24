@@ -27,7 +27,7 @@ function parseDateToISO(dateStr) {
   return dateStr;
 }
 
-export default function ScreenerUploadModal({ onClose, user, token, API_URL, tenantId, onUploadComplete }) {
+export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, onUploadComplete }) {
 
   const [step, setStep] = useState('configure');
   const [screeningPeriod, setScreeningPeriod] = useState('Fall');
