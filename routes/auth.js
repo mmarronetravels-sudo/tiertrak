@@ -339,7 +339,7 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_s
     const setupUrl = `${process.env.FRONTEND_URL}/set-password?token=${setupToken}`;
     
     try {
-      await resend.emails.send({
+      const { data: emailData, error: emailError } = await resend.emails.send({
         from: 'TierTrak <noreply@scholarpathsystems.org>',
         to: email,
         subject: 'Welcome to TierTrak - Set Up Your Account',
@@ -366,9 +366,12 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_s
           </div>
         `
       });
+
+      if (emailError) {
+        console.error('Resend API error:', emailError);
+      }
     } catch (emailError) {
       console.error('Failed to send welcome email:', emailError);
-      // Don't fail the request, but log the error
     }
     
     res.status(201).json({
