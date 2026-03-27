@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/:path*", "destination": "https://tiertrak-api.onrender.com/api/:path*" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
