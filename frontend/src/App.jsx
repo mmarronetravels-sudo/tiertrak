@@ -999,6 +999,7 @@ const handleGoogleSignIn = async (response) => {
     const res = await fetch(`${API_URL}/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ credential: response.credential })
     });
     const data = await res.json();
@@ -1135,6 +1136,7 @@ useEffect(() => {
       const res = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(loginForm)
       });
       const data = await res.json();
