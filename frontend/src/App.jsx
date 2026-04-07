@@ -1162,6 +1162,7 @@ useEffect(() => {
 try {
 await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
 } catch (_) {}
+localStorage.clear(); 
 setToken(null);
 setUser(null);
 setStudents([]);
