@@ -60,6 +60,7 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
     grade: '',
     tier: '1',
     area: '',
+    secondary_area: '',
     risk_level: 'low'
   });
 
@@ -124,13 +125,26 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Area of Concern</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Primary Area of Concern</label>
           <select
             value={form.area}
             onChange={(e) => setForm({ ...form, area: e.target.value })}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">None selected</option>
+            <option value="Academic">Academic</option>
+            <option value="Behavior">Behavior</option>
+            <option value="Social-Emotional">Social-Emotional</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Secondary Area <span className="text-slate-400 font-normal">(optional)</span></label>
+          <select
+            value={form.secondary_area}
+            onChange={(e) => setForm({ ...form, secondary_area: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">None</option>
             <option value="Academic">Academic</option>
             <option value="Behavior">Behavior</option>
             <option value="Social-Emotional">Social-Emotional</option>
@@ -291,6 +305,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     grade: '',
     tier: '1',
     area: '',
+    secondary_area: '',
     risk_level: 'low'
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
@@ -1495,6 +1510,7 @@ const handleUnlinkParent = async (linkId) => {
           grade: studentForm.grade,
           tier: parseInt(studentForm.tier),
           area: studentForm.area || null,
+          secondary_area: studentForm.secondary_area || null,
           risk_level: studentForm.risk_level
         })
       });
@@ -1524,8 +1540,7 @@ const handleUnlinkParent = async (linkId) => {
   };
 
   // Start editing student
-  const startEditStudent = (student) => {
-    console.log('startEditStudent called', student.id);
+ const startEditStudent = (student) => {
     setEditingStudent(student);
     setStudentForm({
       first_name: student.first_name,
@@ -1533,6 +1548,7 @@ const handleUnlinkParent = async (linkId) => {
       grade: student.grade,
       tier: student.tier.toString(),
       area: student.area || '',
+      secondary_area: student.secondary_area || '',
       risk_level: student.risk_level || 'low'
     });
     setShowAddStudent(false);
@@ -4529,13 +4545,26 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
         </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-slate-600 mb-1">Area</label>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Primary Area</label>
         <select
           value={studentForm.area}
           onChange={(e) => setStudentForm({ ...studentForm, area: e.target.value })}
           className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
           <option value="">Select area</option>
+          <option value="Academic">Academic</option>
+          <option value="Behavior">Behavior</option>
+          <option value="Social-Emotional">Social-Emotional</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Secondary Area <span className="text-slate-400 font-normal">(optional)</span></label>
+        <select
+          value={studentForm.secondary_area}
+          onChange={(e) => setStudentForm({ ...studentForm, secondary_area: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">None</option>
           <option value="Academic">Academic</option>
           <option value="Behavior">Behavior</option>
           <option value="Social-Emotional">Social-Emotional</option>
