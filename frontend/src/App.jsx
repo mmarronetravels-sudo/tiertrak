@@ -1525,6 +1525,7 @@ const handleUnlinkParent = async (linkId) => {
 
   // Start editing student
   const startEditStudent = (student) => {
+    console.log('startEditStudent called', student.id);
     setEditingStudent(student);
     setStudentForm({
       first_name: student.first_name,
