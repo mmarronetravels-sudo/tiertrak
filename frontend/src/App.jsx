@@ -4483,6 +4483,93 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             />
           )}
 
+          {editingStudent && (
+  <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+    <h3 className="text-sm font-semibold text-slate-700 mb-4">Edit Student</h3>
+    <div className="grid grid-cols-2 gap-4">
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">First Name</label>
+        <input
+          type="text"
+          value={studentForm.first_name}
+          onChange={(e) => setStudentForm({ ...studentForm, first_name: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Last Name</label>
+        <input
+          type="text"
+          value={studentForm.last_name}
+          onChange={(e) => setStudentForm({ ...studentForm, last_name: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Grade</label>
+        <select
+          value={studentForm.grade}
+          onChange={(e) => setStudentForm({ ...studentForm, grade: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {gradeOptions.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Tier</label>
+        <select
+          value={studentForm.tier}
+          onChange={(e) => setStudentForm({ ...studentForm, tier: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="1">Tier 1</option>
+          <option value="2">Tier 2</option>
+          <option value="3">Tier 3</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Area</label>
+        <select
+          value={studentForm.area}
+          onChange={(e) => setStudentForm({ ...studentForm, area: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select area</option>
+          <option value="Academic">Academic</option>
+          <option value="Behavior">Behavior</option>
+          <option value="Social-Emotional">Social-Emotional</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Risk Level</label>
+        <select
+          value={studentForm.risk_level}
+          onChange={(e) => setStudentForm({ ...studentForm, risk_level: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="low">Low</option>
+          <option value="moderate">Moderate</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+    </div>
+    <div className="flex gap-3 mt-4">
+      <button
+        onClick={handleUpdateStudent}
+        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+      >
+        Save Changes
+      </button>
+      <button
+        onClick={() => { setEditingStudent(null); resetStudentForm(); }}
+        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200 transition-colors"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
+
           <div className="relative mb-4">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
