@@ -535,6 +535,7 @@ const fetchAllParentLinks = async () => {
   // Fetch students
   const fetchStudents = async (tenantId, includeArchived = false, userOverride = null) => {
   const effectiveUser = userOverride || user;
+    console.log('fetchStudents called', { tenantId, effectiveUser, user });
   if (!effectiveUser) return;
   try {
     const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
