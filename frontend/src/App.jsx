@@ -1007,7 +1007,7 @@ const handleGoogleSignIn = async (response) => {
     const data = await res.json();
     if (res.ok) {
   setUser(data.user);
-  fetchStudents(data.user.tenant_id);
+  fetchStudents(data.user.tenant_id, false, data.user);
   fetchInterventionTemplates(data.user.tenant_id);
   fetchLogOptions();
   loadStaffList(data.user.tenant_id);
@@ -1144,7 +1144,7 @@ useEffect(() => {
       const data = await res.json();
       if (res.ok) {
     setUser(data.user);
-    fetchStudents(data.user.tenant_id);
+    fetchStudents(data.user.tenant_id, false, data.user);
     fetchInterventionTemplates(data.user.tenant_id);
     fetchLogOptions();
     loadStaffList(data.user.tenant_id);
