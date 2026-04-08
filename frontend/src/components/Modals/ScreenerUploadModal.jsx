@@ -257,20 +257,20 @@ credentials: 'include',
                   ✓ Import complete — {uploadResult.savedCount} records saved
                 </p>
                 <p className="text-sm mt-1" style={{color:'#166534'}}>
-                  {uploadResult.matched} students matched to TierTrak profiles
+                  {uploadResult.matched} students matched to ScholarPath profiles
                 </p>
               </div>
               {uploadResult.unmatched && uploadResult.unmatched.length > 0 && (
                 <div className="rounded p-4 mb-4" style={{background:'#FEF9C3', border:'1px solid #FDE047'}}>
                   <p className="font-semibold text-sm text-yellow-800">
-                    {uploadResult.unmatched.length} students not matched to TierTrak profiles:
+                    {uploadResult.unmatched.length} students not matched to ScholarPath profiles:
                   </p>
                   <p className="text-sm text-yellow-700 mt-1">
                     {uploadResult.unmatched.slice(0,10).join(', ')}
                     {uploadResult.unmatched.length > 10 ? ' ...' : ''}
                   </p>
                   <p className="text-xs text-yellow-600 mt-1">
-                    Data was saved. Add these students to TierTrak to link their screener records.
+                    Data was saved. Add these students to ScholarPath Intervention Management to link their screener records.
                   </p>
                 </div>
               )}

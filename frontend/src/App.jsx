@@ -608,7 +608,7 @@ const removeInterventionAssignment = async (assignmentId) => {
  
 // Delete staff member
 const handleDeleteStaff = async (staffId, staffName) => {
-  if (!confirm(`Remove ${staffName}? This will revoke their access to TierTrak.`)) return;
+  if (!confirm(`Remove ${staffName}? This will revoke their access to ScholarPath Intervention Management.`)) return;
   try {
     const response = await fetch(`${API_URL}/staff/${staffId}`, {
   method: 'DELETE',
@@ -1684,9 +1684,9 @@ if (passwordResetMode) {
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <BarChart3 size={28} className="text-white" />
           </div>
-          <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+          <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
         </div>
-        
+
         <h2 className="text-xl font-semibold text-center mb-2">
           {passwordResetMode === 'set' ? 'set Up Your Password' : 'Reset Your Password'}
         </h2>
@@ -1830,9 +1830,9 @@ if (passwordResetMode) {
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <BarChart3 size={28} className="text-white" />
             </div>
-            <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+            <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
           </div>
-          
+
           {tokenValid === null && (
             <div className="text-center text-slate-600">Verifying link...</div>
           )}
@@ -1917,9 +1917,9 @@ if (!user) {
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <BarChart3 size={28} className="text-white" />
           </div>
-          <span className="text-2xl font-semibold text-slate-800">TierTrak</span>
+          <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
         </div>
-        
+
         {showForgotPassword ? (
           // Forgot Password Form
           <form onSubmit={handleForgotPassword} className="space-y-4">
@@ -3773,7 +3773,7 @@ if (!user) {
           <p>Generated on {new Date().toLocaleDateString('en-US', { 
             weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
           })}</p>
-          <p className="mt-1">TierTrak MTSS Management System</p>
+          <p className="mt-1">ScholarPath Intervention Management</p>
         </div>
 
       </div>
@@ -5678,7 +5678,7 @@ const handleDocumentDownload = async (docId, fileName) => {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-xl font-bold">Welcome, {user?.full_name?.split(' ')[0] || 'Parent'}!</h1>
-              <p className="text-emerald-100 text-sm">TierTrak Parent Portal</p>
+              <p className="text-emerald-100 text-sm">ScholarPath Intervention Management — Parent Portal</p>
             </div>
             <button
               onClick={handleLogout}
@@ -6160,7 +6160,7 @@ if (isParent) {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                   <BarChart3 size={22} className="text-white" />
                 </div>
-                <span className="text-xl font-semibold text-slate-800">TierTrak</span>
+                <span className="text-xl font-semibold text-slate-800">ScholarPath</span>
               </div>
               <div className="flex items-center gap-1">
                 <button
@@ -6332,7 +6332,7 @@ if (isParent) {
               rel="noopener noreferrer"
               className="hidden sm:inline text-sm text-slate-500 hover:text-indigo-600"
             >
-             TierTrak             
+             ScholarPath Intervention Management
              </a>
           </div>
           <FERPABadge compact />

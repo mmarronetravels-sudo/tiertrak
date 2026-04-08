@@ -436,7 +436,7 @@ app.use('/api/intervention-bank', interventionBankRoutes);
 
 // Test route
 app.get('/', (req, res) => {
-  res.json({ message: 'Welcome to TierTrak API!' });
+  res.json({ message: 'Welcome to ScholarPath Intervention Management API!' });
 });
 
 // Test database connection
@@ -625,5 +625,5 @@ var cleanPct   = (row.percentileRank && row.percentileRank.trim() !== '-' && row
   }
 });
 app.listen(PORT, () => {
-  console.log(`TierTrak server running at http://localhost:${PORT}`);
+  console.log(`ScholarPath Intervention Management server running at http://localhost:${PORT}`);
 });

@@ -346,7 +346,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
             <p>Generated on {new Date().toLocaleDateString('en-US', {
               weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
             })}</p>
-            <p className="mt-1">TierTrak MTSS Management System</p>
+            <p className="mt-1">ScholarPath Intervention Management</p>
           </div>
 
         </div>

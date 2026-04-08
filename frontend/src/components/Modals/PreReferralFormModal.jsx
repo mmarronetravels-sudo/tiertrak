@@ -490,7 +490,7 @@ var PreReferralFormModal = function(props) {
 
               {preReferralForm.prior_interventions && preReferralForm.prior_interventions.length > 0 ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-slate-600">The following interventions were found in TierTrak:</p>
+                  <p className="text-sm text-slate-600">The following interventions were found in ScholarPath Intervention Management:</p>
                   {preReferralForm.prior_interventions.map(function(intervention, index) {
                     return (
                       <div key={index} className="p-3 bg-slate-50 rounded-lg">
@@ -525,7 +525,7 @@ var PreReferralFormModal = function(props) {
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500 italic">No interventions found in TierTrak for this student.</p>
+                <p className="text-sm text-slate-500 italic">No interventions found in ScholarPath Intervention Management for this student.</p>
               )}
 
               <div>
