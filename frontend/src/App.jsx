@@ -1704,7 +1704,7 @@ if (passwordResetMode) {
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <BarChart3 size={28} className="text-white" />
           </div>
-          <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
+          <span className="text-2xl font-semibold text-slate-800">ScholarPath Intervention Management</span>
         </div>
 
         <h2 className="text-xl font-semibold text-center mb-2">
@@ -1850,7 +1850,7 @@ if (passwordResetMode) {
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <BarChart3 size={28} className="text-white" />
             </div>
-            <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
+            <span className="text-2xl font-semibold text-slate-800">ScholarPath Intervention Management</span>
           </div>
 
           {tokenValid === null && (
@@ -1937,7 +1937,7 @@ if (!user) {
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <BarChart3 size={28} className="text-white" />
           </div>
-          <span className="text-2xl font-semibold text-slate-800">ScholarPath</span>
+          <span className="text-2xl font-semibold text-slate-800">ScholarPath Intervention Management</span>
         </div>
 
         {showForgotPassword ? (
@@ -6280,7 +6280,7 @@ if (isParent) {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                   <BarChart3 size={22} className="text-white" />
                 </div>
-                <span className="text-xl font-semibold text-slate-800">ScholarPath</span>
+                <span className="text-xl font-semibold text-slate-800">ScholarPath Intervention Management</span>
               </div>
               <div className="flex items-center gap-1">
                 <button
