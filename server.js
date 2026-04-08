@@ -15,6 +15,7 @@ app.use(cookieParser());
 app.use(cors({
   origin: [
     /\.vercel\.app$/,
+    'https://intervention-management.scholarpathsystems.org',
     'https://tiertrak.scholarpathsystems.org',
     'https://www.scholarpathsystems.org',
     'https://scholarpathsystems.org',
