@@ -60,6 +60,7 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
     grade: '',
     tier: '1',
     area: '',
+    secondary_area: '',
     risk_level: 'low'
   });
 
@@ -124,13 +125,26 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Area of Concern</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Primary Area of Concern</label>
           <select
             value={form.area}
             onChange={(e) => setForm({ ...form, area: e.target.value })}
             className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">None selected</option>
+            <option value="Academic">Academic</option>
+            <option value="Behavior">Behavior</option>
+            <option value="Social-Emotional">Social-Emotional</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Secondary Area <span className="text-slate-400 font-normal">(optional)</span></label>
+          <select
+            value={form.secondary_area}
+            onChange={(e) => setForm({ ...form, secondary_area: e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">None</option>
             <option value="Academic">Academic</option>
             <option value="Behavior">Behavior</option>
             <option value="Social-Emotional">Social-Emotional</option>
@@ -291,6 +305,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     grade: '',
     tier: '1',
     area: '',
+    secondary_area: '',
     risk_level: 'low'
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
@@ -474,7 +489,7 @@ fetchReferralCandidates();
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
-        fetchStudents(userData.tenant_id);
+        fetchStudents(userData.tenant_id, false, userData);
         fetchInterventionTemplates(userData.tenant_id);
       } else {
         setToken(null);
@@ -533,24 +548,26 @@ const fetchAllParentLinks = async () => {
 };
 
   // Fetch students
-  const fetchStudents = async (tenantId, includeArchived = false) => {
-  if (!user) return;
+  const fetchStudents = async (tenantId, includeArchived = false, userOverride = null) => {
+  const effectiveUser = userOverride || user;
+    console.log('fetchStudents called', { tenantId, effectiveUser, user });
+  if (!effectiveUser) return;
   try {
-      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
-        headers: {
-          'x-user-id': user.id.toString(),
-          'x-user-role': user.role,
-          'x-school-wide-access': (user.school_wide_access || false).toString()
-        }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setStudents(data);
+    const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
+      headers: {
+        'x-user-id': effectiveUser.id.toString(),
+        'x-user-role': effectiveUser.role,
+        'x-school-wide-access': (effectiveUser.school_wide_access || false).toString()
       }
-    } catch (error) {
-      console.error('Error fetching students:', error);
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setStudents(data);
     }
-  };
+  } catch (error) {
+    console.error('Error fetching students:', error);
+  }
+};
 
 const fetchParentsList = async (tenantId) => {
   try {
@@ -1005,7 +1022,7 @@ const handleGoogleSignIn = async (response) => {
     const data = await res.json();
     if (res.ok) {
   setUser(data.user);
-  fetchStudents(data.user.tenant_id);
+  fetchStudents(data.user.tenant_id, false, data.user);
   fetchInterventionTemplates(data.user.tenant_id);
   fetchLogOptions();
   loadStaffList(data.user.tenant_id);
@@ -1142,7 +1159,7 @@ useEffect(() => {
       const data = await res.json();
       if (res.ok) {
     setUser(data.user);
-    fetchStudents(data.user.tenant_id);
+    fetchStudents(data.user.tenant_id, false, data.user);
     fetchInterventionTemplates(data.user.tenant_id);
     fetchLogOptions();
     loadStaffList(data.user.tenant_id);
@@ -1160,6 +1177,7 @@ useEffect(() => {
 try {
 await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
 } catch (_) {}
+localStorage.clear(); 
 setToken(null);
 setUser(null);
 setStudents([]);
@@ -1492,6 +1510,7 @@ const handleUnlinkParent = async (linkId) => {
           grade: studentForm.grade,
           tier: parseInt(studentForm.tier),
           area: studentForm.area || null,
+          secondary_area: studentForm.secondary_area || null,
           risk_level: studentForm.risk_level
         })
       });
@@ -1521,7 +1540,7 @@ const handleUnlinkParent = async (linkId) => {
   };
 
   // Start editing student
-  const startEditStudent = (student) => {
+ const startEditStudent = (student) => {
     setEditingStudent(student);
     setStudentForm({
       first_name: student.first_name,
@@ -1529,6 +1548,7 @@ const handleUnlinkParent = async (linkId) => {
       grade: student.grade,
       tier: student.tier.toString(),
       area: student.area || '',
+      secondary_area: student.secondary_area || '',
       risk_level: student.risk_level || 'low'
     });
     setShowAddStudent(false);
@@ -4479,6 +4499,106 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
               onCancel={() => setShowAddStudent(false)}
             />
           )}
+
+          {editingStudent && (
+  <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+    <h3 className="text-sm font-semibold text-slate-700 mb-4">Edit Student</h3>
+    <div className="grid grid-cols-2 gap-4">
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">First Name</label>
+        <input
+          type="text"
+          value={studentForm.first_name}
+          onChange={(e) => setStudentForm({ ...studentForm, first_name: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Last Name</label>
+        <input
+          type="text"
+          value={studentForm.last_name}
+          onChange={(e) => setStudentForm({ ...studentForm, last_name: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Grade</label>
+        <select
+          value={studentForm.grade}
+          onChange={(e) => setStudentForm({ ...studentForm, grade: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          {gradeOptions.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Tier</label>
+        <select
+          value={studentForm.tier}
+          onChange={(e) => setStudentForm({ ...studentForm, tier: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="1">Tier 1</option>
+          <option value="2">Tier 2</option>
+          <option value="3">Tier 3</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Primary Area</label>
+        <select
+          value={studentForm.area}
+          onChange={(e) => setStudentForm({ ...studentForm, area: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">Select area</option>
+          <option value="Academic">Academic</option>
+          <option value="Behavior">Behavior</option>
+          <option value="Social-Emotional">Social-Emotional</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Secondary Area <span className="text-slate-400 font-normal">(optional)</span></label>
+        <select
+          value={studentForm.secondary_area}
+          onChange={(e) => setStudentForm({ ...studentForm, secondary_area: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="">None</option>
+          <option value="Academic">Academic</option>
+          <option value="Behavior">Behavior</option>
+          <option value="Social-Emotional">Social-Emotional</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">Risk Level</label>
+        <select
+          value={studentForm.risk_level}
+          onChange={(e) => setStudentForm({ ...studentForm, risk_level: e.target.value })}
+          className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="low">Low</option>
+          <option value="moderate">Moderate</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+    </div>
+    <div className="flex gap-3 mt-4">
+      <button
+        onClick={handleUpdateStudent}
+        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+      >
+        Save Changes
+      </button>
+      <button
+        onClick={() => { setEditingStudent(null); resetStudentForm(); }}
+        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200 transition-colors"
+      >
+        Cancel
+      </button>
+    </div>
+  </div>
+)}
 
           <div className="relative mb-4">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

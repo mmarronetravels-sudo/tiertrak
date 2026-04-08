@@ -362,12 +362,12 @@ router.get('/:id', async (req, res) => {
 // Create a new student
 router.post('/', async (req, res) => {
   try {
-    const { tenant_id, first_name, last_name, grade, teacher_id, tier, area, risk_level } = req.body;
+    const { tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
-      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, risk_level, archived) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE) 
+      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE) 
        RETURNING *`,
-      [tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, risk_level || 'low']
+      [tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -379,14 +379,14 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { first_name, last_name, grade, teacher_id, tier, area, risk_level } = req.body;
+    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
       `UPDATE students 
        SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4, 
-           tier = $5, area = $6, risk_level = $7, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8 
+           tier = $5, area = $6, risk_level = $7, secondary_area = $8, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $9 
        RETURNING *`,
-      [first_name, last_name, grade, teacher_id, tier, area, risk_level, id]
+      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });

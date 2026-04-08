@@ -58,7 +58,7 @@ export function AppProvider({ children }) {
       const userData = await res.json();
       setUser(userData);
       fetchStudents(userData.tenant_id);
-      fetchInterventionTemplates(userData.tenant_id);
+      fetchStudents(userData.tenant_id, false, userData);
     } else {
       setToken(null);
     }
@@ -68,16 +68,17 @@ export function AppProvider({ children }) {
   setLoading(false);
 };
 
-  const fetchStudents = async (tenantId, includeArchived = false) => {
-    if (!user) return;
-    try {
-      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
-        headers: {
-          'x-user-id': user.id.toString(),
-          'x-user-role': user.role,
-          'x-school-wide-access': (user.school_wide_access || false).toString()
-        }
-      });
+ const fetchStudents = async (tenantId, includeArchived = false, userOverride = null) => {
+  const effectiveUser = userOverride || user;
+  if (!effectiveUser) return;
+  try {
+    const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
+      headers: {
+        'x-user-id': effectiveUser.id.toString(),
+        'x-user-role': effectiveUser.role,
+        'x-school-wide-access': (effectiveUser.school_wide_access || false).toString()
+      }
+    });
       if (res.ok) {
         const data = await res.json();
         setStudents(data);
