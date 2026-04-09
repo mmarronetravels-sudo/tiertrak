@@ -3,7 +3,7 @@ import {
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
   FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
-  Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, 
+  Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, UserPlus, 
 MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
