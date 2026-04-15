@@ -550,6 +550,66 @@ router.get('/verify-token/:token', async (req, res) => {
   }
 });
 
+// Change password (authenticated user)
+router.post('/change-password', async (req, res) => {
+  try {
+    const token = req.cookies?.auth_token;
+    if (!token) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const result = await pool.query(
+      'SELECT id, password_hash FROM users WHERE id = $1',
+      [decoded.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const user = result.rows[0];
+
+    if (!user.password_hash) {
+      return res.status(400).json({ error: 'Current password is incorrect' });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const saltRounds = 10;
+    const newHash = await bcrypt.hash(newPassword, saltRounds);
+
+    await pool.query(
+      `UPDATE users
+       SET password_hash = $1, password_reset_token = NULL, password_reset_expires = NULL
+       WHERE id = $2`,
+      [newHash, user.id]
+    );
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    console.error('[change-password]', error.message);
+    res.status(500).json({ error: 'Failed to change password. Please try again.' });
+  }
+});
+
 // Logout
 router.post('/logout', (req, res) => {
   res.clearCookie('auth_token', {

@@ -3,8 +3,8 @@ import {
   X, Plus, Search, ChevronLeft, ChevronRight, ChevronDown, Eye, Trash2, Edit, Upload, Download, 
   FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
-  Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, UserPlus, 
-MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu
+  Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, UserPlus,
+MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Key
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
@@ -18,6 +18,7 @@ import ProgressFormModal from './components/Modals/ProgressFormModal';
 import GoalFormModal from './components/Modals/GoalFormModal';
 import ProgressChartModal from './components/Modals/ProgressChartModal';
 import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/ArchiveModal';
+import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
@@ -190,6 +191,7 @@ export default function App() {
   const [view, setView] = useState('dashboard');
   const [students, setStudents] = useState([]);
   const [staffList, setStaffList] = useState([]);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [showEditStaffModal, setShowEditStaffModal] = useState(false);
   const [selectedStaffMember, setSelectedStaffMember] = useState(null);
@@ -6318,6 +6320,13 @@ if (isParent) {
                 <p className="text-xs text-slate-500">{user.role.replace(/_/g, ' ')} • {user.tenant_name}</p>
               </div>
               <button
+                onClick={() => setShowChangePassword(true)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                title="Change password"
+              >
+                <Key size={20} />
+              </button>
+              <button
                 onClick={handleLogout}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                 title="Sign out"
@@ -6506,6 +6515,13 @@ if (isParent) {
             API_URL={API_URL}
           />
         )}
+
+  {showChangePassword && (
+    <ChangePasswordModal
+      onClose={() => setShowChangePassword(false)}
+      API_URL={API_URL}
+    />
+  )}
 
   {showScreenerUpload && (
   <ScreenerUploadModal
