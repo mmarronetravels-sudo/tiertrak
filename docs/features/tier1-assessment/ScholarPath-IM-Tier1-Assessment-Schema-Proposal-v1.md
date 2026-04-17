@@ -27,7 +27,7 @@ From earlier conversations:
 - **Item bank stored in code** (JavaScript module), not in the database
 - **Completed assessments are immutable**, archivable by admin (mirroring the `students` archive pattern)
 - **Single user captured** as `completed_by_user_id`; no team participant tracking in v1
-- **0/1/2 scoring**, 26 items, 8 domains, 52 points max
+- **0/1/2 scoring**, 30 items, 8 domains, 60 points max
 - **Optional Evidence URL + optional Notes field** per item response
 - **Permissions:** role-based, six roles can complete (see Decision D1 below for final list)
 - **Forward-compatible** for district scope and future data-aware validation
@@ -40,7 +40,7 @@ From earlier conversations:
 | Table | Purpose | Rows per tenant (typical) |
 |---|---|---|
 | `tier1_assessments` | One row per assessment attempt. The top-level record. | 2–10 per year |
-| `tier1_assessment_responses` | One row per item per assessment. Holds the score, Evidence URL, and Notes. | 26 × (assessments per year) |
+| `tier1_assessment_responses` | One row per item per assessment. Holds the score, Evidence URL, and Notes. | 30 × (assessments per year) |
 | `tier1_assessment_recommendations` | Snapshot of which items scored below 2 and the recommendation text shown. Optional. | varies |
 | `tier1_assessment_events` | Audit log of key events (created, completed, archived). Optional for v1 but recommended. | 3–5 per assessment |
 
@@ -135,7 +135,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tier1_assessments_one_in_progress_per_tena
 
 ## Table 2 — `tier1_assessment_responses` (required, holds the answers)
 
-One row per item per assessment. 26 rows created when an assessment begins (all with score = NULL), filled in as the team answers.
+One row per item per assessment. 30 rows created when an assessment begins (all with score = NULL), filled in as the team answers.
 
 ### Proposed DDL
 
@@ -174,16 +174,16 @@ CREATE INDEX IF NOT EXISTS idx_tier1_responses_tenant
 - **`assessment_id` + `tenant_id`** — both are present even though `tenant_id` could be derived by joining. Having it directly on the responses table means tenant-scoped queries don't need joins, which matches how your other tables work (e.g., `screener_results.tenant_id` exists even though it could be derived via `student_id`).
 - **`item_id VARCHAR(10)`** — matches the string format I'll use in the code-stored item bank (e.g., `"1.1"`, `"3.3"`, `"7.3"`). Using the human-readable format rather than an integer makes debugging and SQL inspection much easier.
 - **`domain_number`** — could be derived from `item_id` (the part before the dot), but storing it denormalized makes "score by domain" queries trivial. Matches your denormalization pattern on `screener_results.student_first_name`.
-- **`score` nullable** — while the assessment is in progress, not all items have been answered yet. NULL means "not yet answered." At completion, we can enforce all scores are non-null in application code (and optionally reject the Complete action until all 26 are filled).
+- **`score` nullable** — while the assessment is in progress, not all items have been answered yet. NULL means "not yet answered." At completion, we can enforce all scores are non-null in application code (and optionally reject the Complete action until all 30 are filled).
 - **`evidence_url TEXT`** — URL lengths can be long (especially Google Drive links with query parameters). TEXT is the right type; a fixed VARCHAR would risk truncation.
 - **`notes VARCHAR(300)`** — the 300-char limit we agreed on. Enforced at the DB level too, not just the UI.
 - **UNIQUE `(assessment_id, item_id)`** — can't have two responses for the same item on the same assessment. Guards against bugs.
 
-### Why I'm not creating all 26 rows up front
+### Why I'm not creating all 30 rows up front
 
-My first instinct was "insert 26 rows when an assessment is created, fill them in as the team answers." That's clean but has downsides:
+My first instinct was "insert 30 rows when an assessment is created, fill them in as the team answers." That's clean but has downsides:
 
-- If you edit the item bank (adding item 9.1 in a future release), existing in-progress assessments would have 26 empty rows and no way to capture a 27th.
+- If you edit the item bank (adding item 9.1 in a future release), existing in-progress assessments would have 30 empty rows and no way to capture a 31st.
 - Inserts happen one time; updates happen on every autosave. Preferring INSERT-on-first-answer is actually *fewer* total queries.
 
 So the design is: the assessment starts with **zero responses**. On first autosave of each item, we UPSERT a row. `ON CONFLICT (assessment_id, item_id) DO UPDATE` handles subsequent edits to that same item. This matches the `screener_results` upload pattern (which uses `ON CONFLICT DO UPDATE`).
@@ -302,7 +302,7 @@ The one thing it deliberately doesn't log is **content edits** (changes to score
 
 ## Item bank — code-stored module
 
-Per earlier decision, the 26 items live in a JavaScript module, not a database table. This is the structure I'm proposing. No DB work needed for this — it's here so you can see how it connects to `item_id` in the responses table.
+Per earlier decision, the 30 items live in a JavaScript module, not a database table. This is the structure I'm proposing. No DB work needed for this — it's here so you can see how it connects to `item_id` in the responses table.
 
 ```js
 // data/tier1-assessment-items.js

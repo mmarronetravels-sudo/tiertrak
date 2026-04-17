@@ -39,8 +39,8 @@ Scoring anchors are provided for every item so two different team members evalua
 
 ### Overall score and interpretation
 
-- 26 items × 2 points each = **52 points maximum**
-- Overall score is displayed as a percentage: (points earned / 52) × 100
+- 30 items × 2 points each = **60 points maximum**
+- Overall score is displayed as a percentage: (points earned / 60) × 100
 
 | Band | % Range | Label | Meaning |
 |---|---|---|---|
@@ -60,7 +60,7 @@ Scoring anchors are provided for every item so two different team members evalua
 | 6 | Data-Based Decision Making | 4 | 8 |
 | 7 | Family Engagement | 3 | 6 |
 | 8 | Professional Development & Coaching | 3 | 6 |
-| | **Total** | **26** | **52** |
+| | **Total** | **30** | **60** |
 
 **Domain-level display.** The results dashboard displays each domain's score as a **percentage of its own maximum** so the 3-item and 4-item domains are visually comparable. A school scoring 4/6 in Family Engagement and 5/8 in Screening is displayed as 67% vs. 63% — which is what the team needs to see when prioritizing.
 
