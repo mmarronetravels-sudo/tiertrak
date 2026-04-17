@@ -22,6 +22,7 @@ import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
+import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -296,6 +297,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
   const [selectedAdminTemplate, setSelectedAdminTemplate] = useState(null);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   const [fieldTypes, setFieldTypes] = useState([]);
+  const [planPreview, setPlanPreview] = useState(null); // { templateId, name } | null
   
 
     // Student management state
@@ -5018,7 +5020,16 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                             <div className="flex items-center gap-2">
                               <span className="font-medium text-slate-800 text-sm">{item.name}</span>
                               {item.tier && <span className={'px-1.5 py-0.5 rounded text-xs font-medium ' + (item.tier === 1 ? 'bg-green-100 text-green-700' : item.tier === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700')}>T{item.tier}</span>}
-                              {item.has_plan_template && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">📋 Plan</span>}
+                              {item.has_plan_template && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPlanPreview({ templateId: item.id, name: item.name })}
+                                  className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-200 px-1.5 py-0.5 rounded cursor-pointer"
+                                  title="Preview plan"
+                                >
+                                  📋 Plan
+                                </button>
+                              )}
                               {item.is_starter && !item.is_activated && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Recommended</span>}
                             </div>
                             {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
@@ -6504,6 +6515,15 @@ if (isParent) {
     user={user}
     onClose={() => setShowTemplateEditor(false)}
     onRefresh={fetchAdminTemplates}
+  />
+)}
+
+{planPreview && (
+  <PlanTemplatePreviewModal
+    templateId={planPreview.templateId}
+    interventionName={planPreview.name}
+    user={user}
+    onClose={() => setPlanPreview(null)}
   />
 )}
 
