@@ -49,6 +49,7 @@ const interventionPlansRoutes = require('./routes/interventionPlans');
 const studentDocumentsRoutes = require('./routes/studentDocuments');
 const staffManagementRoutes = require('./routes/staffManagement');
 const interventionBankRoutes = require('./routes/interventionBank');
+const tier1AssessmentsRoutes = require('./routes/tier1-assessments');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -60,6 +61,7 @@ interventionPlansRoutes.initializePool(pool);
 studentDocumentsRoutes.initializePool(pool);
 staffManagementRoutes.initializePool(pool);
 interventionBankRoutes.initializePool(pool);
+tier1AssessmentsRoutes.initializePool(pool);
 
 // Auto-create tables if they don't exist
 const createTables = async () => {
@@ -551,6 +553,7 @@ app.use('/api/intervention-plans', interventionPlansRoutes);
 app.use('/api/student-documents', studentDocumentsRoutes);
 app.use('/api/staff', staffManagementRoutes);
 app.use('/api/intervention-bank', interventionBankRoutes);
+app.use('/api/tier1-assessments', tier1AssessmentsRoutes);
 
 // Test route
 app.get('/', (req, res) => {
