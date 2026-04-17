@@ -61,7 +61,7 @@ const ITEMS = [
       1: 'Some roles are informally understood but not documented, or roles rotate without a rotation plan.',
       2: 'Roles are documented in a team charter or handbook and are filled at every meeting (by role, not by person — a substitute can step in).'
     },
-    recommendation: 'Draft a one-page team roles document listing facilitator, data lead, note-taker, and time-keeper responsibilities. Assign primary and backup people for each role so meetings can still function when someone is absent. Review role assignments at the start of each school year. (See the ScholarPath Resources section for an MTSS Team Roles template.)'
+    recommendation: 'Draft a one-page team roles document listing facilitator, data lead, note-taker, and time-keeper responsibilities. Assign primary and backup people for each role so meetings can still function when someone is absent. Review role assignments at the start of each school year. *(See the ScholarPath Resources section for an MTSS Team Roles template.)*'
   },
   {
     id: '1.3',
@@ -73,7 +73,7 @@ const ITEMS = [
       1: 'A plan exists but is outdated (>2 years old), incomplete, or not easily accessible to staff.',
       2: 'A current written plan is available to all staff (shared drive, handbook, wiki), reviewed annually, and referenced in staff meetings.'
     },
-    recommendation: 'Start small — a 5–10 page document covering school-wide expectations, the discipline flowchart, screening schedule, and data-meeting cadence is more valuable than an exhaustive binder no one reads. Store it where staff already look for other reference documents. Set a yearly review date on the team\'s calendar. (See the ScholarPath Resources section for an MTSS Handbook template.)'
+    recommendation: 'Start small — a 5–10 page document covering school-wide expectations, the discipline flowchart, screening schedule, and data-meeting cadence is more valuable than an exhaustive binder no one reads. Store it where staff already look for other reference documents. Set a yearly review date on the team\'s calendar. *(See the ScholarPath Resources section for an MTSS Handbook template.)*'
   },
   {
     id: '1.4',
@@ -85,7 +85,7 @@ const ITEMS = [
       1: 'Some events are on the calendar but not all, or the calendar is not shared with staff.',
       2: 'A complete annual calendar is published before the school year starts, includes screening windows and data review dates, and is visible to all staff.'
     },
-    recommendation: 'At the end of each school year, block out the next year\'s calendar: fall/winter/spring screening windows, monthly team meetings, data review days after each screening window, and at least one Tier 1–focused PD session. Share with staff during summer onboarding or the first week of school. (See the ScholarPath Resources section for an Annual MTSS Calendar template.)'
+    recommendation: 'At the end of each school year, block out the next year\'s calendar: fall/winter/spring screening windows, monthly team meetings, data review days after each screening window, and at least one Tier 1–focused PD session. Share with staff during summer onboarding or the first week of school. *(See the ScholarPath Resources section for an Annual MTSS Calendar template.)*'
   },
 
   // ============================================================
@@ -125,7 +125,7 @@ const ITEMS = [
       1: 'Some teachers differentiate consistently; others rarely do. No school-wide approach.',
       2: 'Differentiation within Tier 1 is an expected practice, supported by PD and coaching, and visible in walkthroughs across classrooms.'
     },
-    recommendation: 'Identify 1–2 high-leverage differentiation practices (small-group instruction during core, tiered questioning, scaffolded graphic organizers) and make them the focus of PD for a semester. Pair PD with coaching cycles — one-shot workshops rarely change classroom practice. Use walkthroughs to check for implementation, not to evaluate teachers. (See the ScholarPath Resources section for a High-Leverage Tier 1 Practices reference guide.)'
+    recommendation: 'Identify 1–2 high-leverage differentiation practices (small-group instruction during core, tiered questioning, scaffolded graphic organizers) and make them the focus of PD for a semester. Pair PD with coaching cycles — one-shot workshops rarely change classroom practice. Use walkthroughs to check for implementation, not to evaluate teachers. *(See the ScholarPath Resources section for a High-Leverage Tier 1 Practices reference guide.)*'
   },
   {
     id: '2.4',
@@ -179,11 +179,9 @@ const ITEMS = [
     },
     recommendation: `A working acknowledgment system has three ingredients that matter more than what token you hand out:
 
-• Specificity. The acknowledgment names the expectation being reinforced — "Thanks for being respectful, you held the door for the kindergartners" — rather than generic praise like "good job." Specific acknowledgment teaches the expectation each time it's used; generic praise doesn't.
-
-• Equity of distribution. Pull a week's worth of acknowledgments and check whether they reach the full range of students, or cluster on a small group. The students who most need adult validation are often the ones least likely to earn tokens under a purely compliance-based system. Redesign to catch effort and improvement, not just compliance.
-
-• Universal staff use. Every adult — including cafeteria staff, bus drivers, paraprofessionals, and office staff — uses the system in every setting. An acknowledgment system that only "lives" in classrooms leaves the settings where conflict often starts unsupported.
+- **Specificity.** The acknowledgment names the expectation being reinforced — *"Thanks for being respectful, you held the door for the kindergartners"* — rather than generic praise like *"good job."* Specific acknowledgment teaches the expectation each time it's used; generic praise doesn't.
+- **Equity of distribution.** Pull a week's worth of acknowledgments and check whether they reach the full range of students, or cluster on a small group. The students who most need adult validation are often the ones least likely to earn tokens under a purely compliance-based system. Redesign to catch effort and improvement, not just compliance.
+- **Universal staff use.** Every adult — including cafeteria staff, bus drivers, paraprofessionals, and office staff — uses the system in every setting. An acknowledgment system that only "lives" in classrooms leaves the settings where conflict often starts unsupported.
 
 Most acknowledgment systems fail on the second point. The specific mechanism matters much less than getting these three ingredients right.`
   },
@@ -199,16 +197,16 @@ Most acknowledgment systems fail on the second point. The specific mechanism mat
     },
     recommendation: `Draft a one-page flowchart with both categories and response steps defined. The structure might look like this:
 
-Classroom-managed behaviors (minor disruption, off-task, mild disrespect, dress-code issue):
-1. Non-verbal redirect
-2. Private re-teach of the expectation
-3. Brief conference with the student plus family contact
-4. If a pattern emerges across days, request Student Support Team consultation
+> **Classroom-managed behaviors** (minor disruption, off-task, mild disrespect, dress-code issue):
+> 1. Non-verbal redirect
+> 2. Private re-teach of the expectation
+> 3. Brief conference with the student plus family contact
+> 4. If a pattern emerges across days, request Student Support Team consultation
+>
+> **Office-managed behaviors** (fighting, weapons, drugs, harassment targeting a protected class, sustained defiance after classroom steps, significant property damage):
+> Office referral → administrator investigation → consequences per the student code of conduct → family contact → consideration for tier change if a pattern emerges.
 
-Office-managed behaviors (fighting, weapons, drugs, harassment targeting a protected class, sustained defiance after classroom steps, significant property damage):
-Office referral → administrator investigation → consequences per the student code of conduct → family contact → consideration for tier change if a pattern emerges.
-
-Train all staff, including paraprofessionals and supervisors of common areas, on the flowchart. Review office discipline referral data quarterly to check whether it's being applied consistently — if ODRs spike after the flowchart is introduced, it often means staff are finally referring behaviors that had previously been tolerated inconsistently, which is progress, not a problem. (See the ScholarPath Resources section for a sample Discipline Flowchart.)`
+Train all staff, including paraprofessionals and supervisors of common areas, on the flowchart. Review office discipline referral data quarterly to check whether it's being applied consistently — if ODRs spike after the flowchart is introduced, it often means staff are finally referring behaviors that had previously been tolerated inconsistently, which is progress, not a problem. *(See the ScholarPath Resources section for a sample Discipline Flowchart.)*`
   },
 
   // ============================================================
@@ -260,7 +258,7 @@ Train all staff, including paraprofessionals and supervisors of common areas, on
       1: 'Some training has happened but it hasn\'t translated into consistent classroom practice.',
       2: 'Staff have had recurring training (not a one-off) and team members can name specific trauma-informed or culturally responsive practices in use, supported by coaching.'
     },
-    recommendation: 'One-off PD rarely changes practice in these areas. Look for training providers or internal coaches who offer recurring engagement over a semester or year. Focus first on what staff can do differently — greeting students at the door, offering regulation options, examining the cultural relevance of classroom materials — rather than on frameworks alone.'
+    recommendation: 'One-off PD rarely changes practice in these areas. Look for training providers or internal coaches who offer recurring engagement over a semester or year. Focus first on what staff can *do differently* — greeting students at the door, offering regulation options, examining the cultural relevance of classroom materials — rather than on frameworks alone.'
   },
 
   // ============================================================
@@ -276,7 +274,7 @@ Train all staff, including paraprofessionals and supervisors of common areas, on
       1: 'Academic interim assessment is conducted but not for all students, or only once per year.',
       2: 'All students participate in interim assessments in reading (and math where appropriate) at least twice per year; coverage is verified.'
     },
-    recommendation: 'Select a validated interim assessment appropriate for your grade levels — for example DIBELS, STAR, aimsweb, mCLASS, or NWEA MAP Growth. Schedule fall and spring windows at minimum; add a winter window if feasible. Verify coverage — new students, students absent during the window, and students pulled for other services often get missed. (Intervention Monitoring\'s Universal Screener Upload can help surface coverage gaps.)'
+    recommendation: 'Select a validated interim assessment appropriate for your grade levels — for example DIBELS, STAR, aimsweb, mCLASS, or NWEA MAP Growth. Schedule fall and spring windows at minimum; add a winter window if feasible. Verify coverage — new students, students absent during the window, and students pulled for other services often get missed. *(Intervention Monitoring\'s Universal Screener Upload can help surface coverage gaps.)*'
   },
   {
     id: '5.2',
@@ -340,7 +338,7 @@ Train all staff, including paraprofessionals and supervisors of common areas, on
       1: 'A general approach exists but isn\'t documented; decisions are inconsistent across students or grade levels.',
       2: 'A documented protocol defines the data required, the review steps, and the decision criteria for moving a student to Tier 2.'
     },
-    recommendation: 'Write down the protocol. It might be as simple as: "A student is considered for Tier 2 when assessment data is below the 25th percentile AND one of: grades below C, >10% attendance gaps, >3 ODRs. The team reviews these students at the monthly data meeting using [protocol name]." Documentation makes decisions reviewable; reviewability makes them better over time. (Intervention Monitoring\'s 11-step Pre-Referral Form is designed to support a documented Tier 1 → Tier 2 protocol.)'
+    recommendation: 'Write down the protocol. It might be as simple as: "A student is considered for Tier 2 when assessment data is below the 25th percentile AND one of: grades below C, >10% attendance gaps, >3 ODRs. The team reviews these students at the monthly data meeting using [protocol name]." Documentation makes decisions reviewable; reviewability makes them better over time. *(Intervention Monitoring\'s 11-step Pre-Referral Form is designed to support a documented Tier 1 → Tier 2 protocol.)*'
   },
   {
     id: '6.3',
@@ -404,7 +402,7 @@ Train all staff, including paraprofessionals and supervisors of common areas, on
       1: 'Results are shared with families but in a format that\'s hard to interpret (raw scores, percentiles without explanation), or only for flagged students.',
       2: 'All families receive their student\'s results after each administration in a plain-language format that explains what the results mean, how they compare to benchmark, and what the school is doing in response (at Tier 1 or higher as appropriate).'
     },
-    recommendation: 'Design a one-page parent-facing summary template that goes home after each assessment window. Include: what the assessment measures, the student\'s score, what "at benchmark" looks like for that grade, and what the school does for all students at Tier 1. If the student\'s score triggers a Tier 2 conversation, say so clearly. Translate into the languages your families speak. Sharing universal results with every family — not just flagged students — is the single biggest lever for family understanding of MTSS, and it signals that Tier 1 data matters for every kid, not just the ones in intervention. (See the ScholarPath Resources section for a Parent Assessment Results Summary template. Intervention Monitoring\'s Parent Portal also supports ongoing family visibility into linked students, interventions, and progress logs.)'
+    recommendation: 'Design a one-page parent-facing summary template that goes home after each assessment window. Include: what the assessment measures, the student\'s score, what "at benchmark" looks like for that grade, and what the school does for all students at Tier 1. If the student\'s score triggers a Tier 2 conversation, say so clearly. Translate into the languages your families speak. Sharing universal results with every family — not just flagged students — is the single biggest lever for family understanding of MTSS, and it signals that Tier 1 data matters for every kid, not just the ones in intervention. *(See the ScholarPath Resources section for a Parent Assessment Results Summary template. Intervention Monitoring\'s Parent Portal also supports ongoing family visibility into linked students, interventions, and progress logs.)*'
   },
 
   // ============================================================
