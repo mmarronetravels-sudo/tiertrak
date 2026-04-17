@@ -23,6 +23,16 @@ const ROLES_WHO_CAN_EDIT = [
   'mtss_support'
 ];
 
+// Allowed values for archived_reason. Keep in sync with any UI that
+// surfaces reasons as a picker. Unknown reasons are rejected at the
+// route layer; the DB has a length CHECK but no value CHECK.
+const ARCHIVE_REASONS = [
+  'Completed in error',
+  'Test / training use',
+  'Superseded by a newer assessment',
+  'Other'
+];
+
 // Extract the current user from the httpOnly auth_token cookie and attach
 // { id, role, tenant_id } to req.user. Replaces the legacy x-user-* header
 // pattern used by older route files; all new routes use this.
@@ -112,6 +122,64 @@ router.post('/', requireAuth, async (req, res) => {
     }
   } catch (err) {
     console.error('[tier1 POST /]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================
+// GET /api/tier1-assessments
+// List the caller's tenant's assessments as summary rows. Any
+// authenticated tenant member may call this (no role check). Supports
+// two optional query params:
+//   status=in_progress|completed       filter by lifecycle state
+//   include_archived=true|false        default false
+// Rows are sorted completed_at DESC NULLS FIRST (so in_progress bubbles
+// up), with created_at DESC as a tiebreaker.
+// ============================================
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const where = ['a.tenant_id = $1'];
+    const params = [req.user.tenant_id];
+
+    // Validate status filter if present.
+    if (Object.prototype.hasOwnProperty.call(req.query, 'status')) {
+      const s = req.query.status;
+      if (s !== 'in_progress' && s !== 'completed') {
+        return res.status(400).json({ error: 'Invalid status filter' });
+      }
+      params.push(s);
+      where.push(`a.status = $${params.length}`);
+    }
+
+    // include_archived: strict 'true' | 'false' | absent.
+    let includeArchived = false;
+    if (Object.prototype.hasOwnProperty.call(req.query, 'include_archived')) {
+      const v = req.query.include_archived;
+      if (v === 'true') includeArchived = true;
+      else if (v === 'false') includeArchived = false;
+      else return res.status(400).json({ error: 'Invalid include_archived' });
+    }
+    if (!includeArchived) where.push('a.archived = FALSE');
+
+    const result = await pool.query(
+      `SELECT
+         a.id, a.status, a.archived, a.archived_at, a.archived_reason,
+         a.total_score, a.max_score, a.overall_percentage, a.score_band,
+         a.item_bank_version, a.scope,
+         a.created_at, a.completed_at,
+         COALESCE(creator.full_name, 'Unknown user') AS created_by_name,
+         completer.full_name AS completed_by_name
+       FROM tier1_assessments a
+       LEFT JOIN users creator   ON creator.id   = a.created_by
+       LEFT JOIN users completer ON completer.id = a.completed_by
+       WHERE ${where.join(' AND ')}
+       ORDER BY a.completed_at DESC NULLS FIRST, a.created_at DESC`,
+      params
+    );
+
+    res.json({ assessments: result.rows });
+  } catch (err) {
+    console.error('[tier1 GET /]', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -403,6 +471,167 @@ router.post('/:id/complete', requireAuth, async (req, res) => {
     }
   } catch (err) {
     console.error('[tier1 POST /:id/complete]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================
+// PATCH /api/tier1-assessments/:id/archive
+// Soft-delete a completed assessment. Only completed, non-archived
+// assessments are archivable. Body requires archived_reason, which
+// must be one of the ARCHIVE_REASONS whitelist values.
+// ============================================
+router.patch('/:id/archive', requireAuth, async (req, res) => {
+  try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const idInt = parseInt(req.params.id, 10);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const body = req.body || {};
+    const reason = body.archived_reason;
+    if (typeof reason !== 'string' || !ARCHIVE_REASONS.includes(reason)) {
+      return res.status(400).json({ error: 'Invalid archived_reason' });
+    }
+
+    const assessResult = await pool.query(
+      `SELECT id, status, archived FROM tier1_assessments
+       WHERE id = $1 AND tenant_id = $2`,
+      [idInt, req.user.tenant_id]
+    );
+    if (assessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const current = assessResult.rows[0];
+    if (current.status !== 'completed' || current.archived) {
+      return res.status(409).json({ error: 'Assessment cannot be archived' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const updateResult = await client.query(
+        `UPDATE tier1_assessments SET
+           archived = TRUE,
+           archived_at = CURRENT_TIMESTAMP,
+           archived_by = $1,
+           archived_reason = $2,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3 AND tenant_id = $4
+           AND status = 'completed' AND archived = FALSE
+         RETURNING id, tenant_id, created_by, completed_by, status,
+                   total_score, max_score, overall_percentage, score_band,
+                   item_bank_version, scope, subject_tenant_id,
+                   archived, archived_at, archived_by, archived_reason,
+                   created_at, updated_at, completed_at`,
+        [req.user.id, reason, idInt, req.user.tenant_id]
+      );
+
+      // Race guard: if another request archived this between our SELECT
+      // and UPDATE, the UPDATE matches zero rows.
+      if (updateResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Assessment cannot be archived' });
+      }
+
+      await client.query(
+        `INSERT INTO tier1_assessment_events
+           (assessment_id, tenant_id, event_type, user_id, event_note)
+         VALUES ($1, $2, 'archived', $3, $4)`,
+        [idInt, req.user.tenant_id, req.user.id, reason]
+      );
+
+      await client.query('COMMIT');
+      res.json({ assessment: updateResult.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[tier1 PATCH /:id/archive]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================
+// PATCH /api/tier1-assessments/:id/unarchive
+// Restore a previously archived assessment. Clears archived_*
+// columns; status is left untouched (already 'completed'). No body.
+// ============================================
+router.patch('/:id/unarchive', requireAuth, async (req, res) => {
+  try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const idInt = parseInt(req.params.id, 10);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const assessResult = await pool.query(
+      `SELECT id, archived FROM tier1_assessments
+       WHERE id = $1 AND tenant_id = $2`,
+      [idInt, req.user.tenant_id]
+    );
+    if (assessResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (!assessResult.rows[0].archived) {
+      return res.status(409).json({ error: 'Assessment is not archived' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const updateResult = await client.query(
+        `UPDATE tier1_assessments SET
+           archived = FALSE,
+           archived_at = NULL,
+           archived_by = NULL,
+           archived_reason = NULL,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1 AND tenant_id = $2 AND archived = TRUE
+         RETURNING id, tenant_id, created_by, completed_by, status,
+                   total_score, max_score, overall_percentage, score_band,
+                   item_bank_version, scope, subject_tenant_id,
+                   archived, archived_at, archived_by, archived_reason,
+                   created_at, updated_at, completed_at`,
+        [idInt, req.user.tenant_id]
+      );
+
+      // Race guard: if another request unarchived between our SELECT
+      // and UPDATE, the UPDATE matches zero rows.
+      if (updateResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Assessment is not archived' });
+      }
+
+      await client.query(
+        `INSERT INTO tier1_assessment_events
+           (assessment_id, tenant_id, event_type, user_id)
+         VALUES ($1, $2, 'unarchived', $3)`,
+        [idInt, req.user.tenant_id, req.user.id]
+      );
+
+      await client.query('COMMIT');
+      res.json({ assessment: updateResult.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('[tier1 PATCH /:id/unarchive]', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
