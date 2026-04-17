@@ -247,6 +247,8 @@ const [screenerLoading, setScreenerLoading] = useState(false);
 const [showReport, setShowReport] = useState(false);
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
+// state: 'none' | 'in_progress' | 'completed'; assessment: most-relevant row or null
+const [tier1Dashboard, setTier1Dashboard] = useState({ loaded: false, state: null, assessment: null });
 const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
 const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
@@ -418,10 +420,42 @@ fetchLogOptions();
     fetchMissingLogs();
     fetchReferralCandidates();
     fetchMonitoredStudents();
+    fetchTier1Dashboard();
   }
 }, [view, user?.tenant_id]);
 
-    // Fetch MTSS referral candidates for dashboard
+    // Fetch Tier 1 Self-Assessment dashboard summary. Uses the list
+    // endpoint with default filters (non-archived only, sorted by
+    // completed_at DESC NULLS FIRST), then reduces to one of three
+    // states: 'none' (empty), 'in_progress' (has an in_progress row),
+    // 'completed' (most recent completed assessment).
+const fetchTier1Dashboard = async () => {
+  if (!user?.tenant_id) return;
+  try {
+    const response = await fetch(`${API_URL}/tier1-assessments`, {
+      credentials: 'include'
+    });
+    if (!response.ok) {
+      setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+      return;
+    }
+    const data = await response.json();
+    const list = data.assessments || [];
+    const inProgress = list.find(a => a.status === 'in_progress');
+    if (inProgress) {
+      setTier1Dashboard({ loaded: true, state: 'in_progress', assessment: inProgress });
+    } else if (list.length === 0) {
+      setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+    } else {
+      setTier1Dashboard({ loaded: true, state: 'completed', assessment: list[0] });
+    }
+  } catch (error) {
+    console.error('Error fetching tier1 dashboard:', error);
+    setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+  }
+};
+
+// Fetch MTSS referral candidates for dashboard
 const fetchReferralCandidates = async () => {
   if (!user?.tenant_id) return;
   try {
@@ -2286,6 +2320,141 @@ if (!user) {
           </div>
         </div>
       )}
+
+      {/* Tier 1 Self-Assessment card */}
+      {tier1Dashboard.loaded && user?.role !== 'parent' && (() => {
+        const ROLES_WHO_CAN_EDIT_TIER1 = [
+          'district_admin', 'school_admin', 'counselor',
+          'student_support_specialist', 'behavior_specialist', 'mtss_support'
+        ];
+        const canEdit = ROLES_WHO_CAN_EDIT_TIER1.includes(user?.role);
+        const { state, assessment } = tier1Dashboard;
+
+        // Whole calendar months between `iso` and now (for "N months ago" and
+        // the >6-month cadence nudge).
+        const monthsSince = (iso) => {
+          if (!iso) return null;
+          const then = new Date(iso);
+          const now = new Date();
+          return (now.getFullYear() - then.getFullYear()) * 12
+               + (now.getMonth() - then.getMonth());
+        };
+
+        const bandMeta = {
+          implementing: { label: 'Implementing with Fidelity', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-l-emerald-500' },
+          partial:      { label: 'Partial Implementation',     bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-l-amber-500' },
+          installing:   { label: 'Installing / Exploration',   bg: 'bg-rose-100',    text: 'text-rose-800',    border: 'border-l-rose-500' }
+        };
+
+        const wizardAlert = () => alert('Coming soon — this will open the assessment wizard');
+        const resultsAlert = () => alert('Coming soon — this will show your detailed results');
+
+        const leftBorder = (state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band])
+          ? `border-l-4 ${bandMeta[assessment.score_band].border}`
+          : '';
+
+        return (
+          <div className={`bg-white rounded-xl border border-slate-200 p-4 ${leftBorder}`}>
+            <div className="flex items-start gap-3">
+              <ClipboardList className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-semibold text-slate-800">Tier 1 Self-Assessment</h3>
+                  {state === 'in_progress' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">In progress</span>
+                  )}
+                  {state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band] && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${bandMeta[assessment.score_band].bg} ${bandMeta[assessment.score_band].text}`}>
+                      {bandMeta[assessment.score_band].label}
+                    </span>
+                  )}
+                </div>
+
+                {state === 'none' && (
+                  <p className="text-sm text-slate-600 mt-1">
+                    Start your first Tier 1 Self-Assessment to baseline your universal supports.
+                  </p>
+                )}
+
+                {state === 'in_progress' && (
+                  <>
+                    <p className="text-sm text-slate-600 mt-1">
+                      You have an assessment in progress. Resume →
+                    </p>
+                    {assessment?.created_at && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Started {new Date(assessment.created_at).toLocaleDateString()}
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {state === 'completed' && assessment && (
+                  <>
+                    <p className="text-sm text-slate-700 mt-1">
+                      <span className="font-semibold">
+                        {parseFloat(assessment.overall_percentage).toFixed(1)}%
+                      </span>
+                      {assessment.total_score != null && assessment.max_score != null && (
+                        <span className="text-slate-500">
+                          {' '}({assessment.total_score} / {assessment.max_score})
+                        </span>
+                      )}
+                    </p>
+                    {assessment.completed_at && (() => {
+                      const m = monthsSince(assessment.completed_at);
+                      const rel = m == null ? '' : m === 0 ? 'this month' : m === 1 ? '1 month ago' : `${m} months ago`;
+                      return (
+                        <p className="text-xs text-slate-500 mt-1">Last completed {rel}</p>
+                      );
+                    })()}
+                    {(() => {
+                      const m = monthsSince(assessment.completed_at);
+                      if (m != null && m > 6) {
+                        return (
+                          <p className="text-sm text-amber-700 mt-2">
+                            Your last Tier 1 Self-Assessment was {m} months ago. A fall/spring cadence is recommended.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </>
+                )}
+
+                {canEdit && (
+                  <div className="flex items-center gap-2 mt-3">
+                    {state === 'none' && (
+                      <button onClick={wizardAlert}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                        Start Assessment
+                      </button>
+                    )}
+                    {state === 'in_progress' && (
+                      <button onClick={wizardAlert}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                        Resume →
+                      </button>
+                    )}
+                    {state === 'completed' && (
+                      <>
+                        <button onClick={resultsAlert}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+                          View Results
+                        </button>
+                        <button onClick={wizardAlert}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                          Start New Assessment
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Monitoring Section */}
       {monitoredStudents.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
