@@ -42,35 +42,46 @@ router.get('/templates', async (req, res) => {
       return res.status(400).json({ error: 'tenant_id is required' });
     }
 
+    // When a tenant has a custom template with the same (area, name) as a
+    // bank row, collapse them to a single list entry. Priority:
+    //   1. Row that has a plan (effective after override) wins.
+    //   2. Then tenant-owned wins over bank.
     const result = await pool.query(`
-      SELECT
-        it.id,
-        it.name,
-        it.area AS category,
-        it.tier,
-        COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template,
-        CASE
-          WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
-            THEN COALESCE(o.plan_template, it.plan_template)->>'name'
-          ELSE NULL
-        END AS plan_name,
-        CASE
-          WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
-            THEN COALESCE(o.plan_template, it.plan_template)->>'version'
-          ELSE NULL
-        END AS plan_version,
-        CASE
-          WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
-            THEN jsonb_array_length(COALESCE(o.plan_template, it.plan_template)->'sections')
-          ELSE 0
-        END AS section_count,
-        (it.tenant_id IS NULL) AS is_bank_template,
-        (o.tenant_id IS NOT NULL) AS has_tenant_override
-      FROM intervention_templates it
-      LEFT JOIN tenant_plan_template_overrides o
-        ON o.template_id = it.id AND o.tenant_id = $1
-      WHERE (it.tenant_id = $1 OR it.tenant_id IS NULL)
-      ORDER BY it.area, it.name
+      SELECT * FROM (
+        SELECT DISTINCT ON (it.area, it.name)
+          it.id,
+          it.name,
+          it.area AS category,
+          it.tier,
+          COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template,
+          CASE
+            WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
+              THEN COALESCE(o.plan_template, it.plan_template)->>'name'
+            ELSE NULL
+          END AS plan_name,
+          CASE
+            WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
+              THEN COALESCE(o.plan_template, it.plan_template)->>'version'
+            ELSE NULL
+          END AS plan_version,
+          CASE
+            WHEN COALESCE(o.plan_template, it.plan_template) IS NOT NULL
+              THEN jsonb_array_length(COALESCE(o.plan_template, it.plan_template)->'sections')
+            ELSE 0
+          END AS section_count,
+          (it.tenant_id IS NULL) AS is_bank_template,
+          (o.tenant_id IS NOT NULL) AS has_tenant_override
+        FROM intervention_templates it
+        LEFT JOIN tenant_plan_template_overrides o
+          ON o.template_id = it.id AND o.tenant_id = $1
+        WHERE (it.tenant_id = $1 OR it.tenant_id IS NULL)
+        ORDER BY
+          it.area,
+          it.name,
+          COALESCE(o.has_plan_template, it.has_plan_template) DESC NULLS LAST,
+          (it.tenant_id = $1) DESC
+      ) sub
+      ORDER BY sub.category, sub.name
     `, [tenant_id]);
     res.json(result.rows);
   } catch (error) {
