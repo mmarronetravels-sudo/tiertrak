@@ -6501,6 +6501,7 @@ if (isParent) {
 <TemplateEditorModal
     template={selectedAdminTemplate}
     adminTemplates={adminTemplates}
+    user={user}
     onClose={() => setShowTemplateEditor(false)}
     onRefresh={fetchAdminTemplates}
   />

@@ -403,10 +403,27 @@ const createTables = async () => {
  // Migration 017: Add mtss_support role
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-      ALTER TABLE users ADD CONSTRAINT users_role_check 
+      ALTER TABLE users ADD CONSTRAINT users_role_check
         CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
     `);
     console.log('Migration 017: mtss_support role added');
+
+    // Migration 018: Per-tenant plan template overrides
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenant_plan_template_overrides (
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+        template_id INTEGER NOT NULL REFERENCES intervention_templates(id) ON DELETE CASCADE,
+        plan_template JSONB,
+        has_plan_template BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_by INTEGER REFERENCES users(id),
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, template_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tenant_plan_template_overrides_tenant_id
+        ON tenant_plan_template_overrides(tenant_id);
+    `);
+    console.log('Migration 018: tenant_plan_template_overrides table ready');
 
   } catch (error) {
     console.error('Error creating tables:', error);

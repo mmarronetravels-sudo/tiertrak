@@ -11,14 +11,25 @@ const initializePool = (dbPool) => {
 // PLAN TEMPLATES
 // ============================================
 
-// Get all intervention templates that have plan templates
+// Get all intervention templates that (for this tenant) have a plan template
 router.get('/templates', async (req, res) => {
   try {
+    const { tenant_id } = req.query;
+
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
     const result = await pool.query(
-      `SELECT id, name, area, has_plan_template 
-       FROM intervention_templates 
-       WHERE has_plan_template = true
-       ORDER BY name`
+      `SELECT it.id, it.name, it.area,
+              COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template
+       FROM intervention_templates it
+       LEFT JOIN tenant_plan_template_overrides o
+         ON o.template_id = it.id AND o.tenant_id = $1
+       WHERE (it.tenant_id = $1 OR it.tenant_id IS NULL)
+         AND COALESCE(o.has_plan_template, it.has_plan_template) = TRUE
+       ORDER BY it.name`,
+      [tenant_id]
     );
     res.json(result.rows);
   } catch (error) {
@@ -27,26 +38,38 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// Get plan template for a specific intervention by name
+// Get plan template for a specific intervention by name (tenant-scoped)
 router.get('/templates/by-name/:interventionName', async (req, res) => {
   try {
     const { interventionName } = req.params;
-    
+    const { tenant_id } = req.query;
+
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
+    // Prefer a tenant-owned template over a bank row so a tenant's customized
+    // duplicate (same name) wins when both exist.
     const result = await pool.query(
-      `SELECT plan_template, has_plan_template 
-       FROM intervention_templates 
-       WHERE name = $1 AND has_plan_template = true
+      `SELECT COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template,
+              COALESCE(o.plan_template, it.plan_template) AS plan_template
+       FROM intervention_templates it
+       LEFT JOIN tenant_plan_template_overrides o
+         ON o.template_id = it.id AND o.tenant_id = $1
+       WHERE it.name = $2
+         AND (it.tenant_id = $1 OR it.tenant_id IS NULL)
+       ORDER BY (it.tenant_id = $1) DESC
        LIMIT 1`,
-      [interventionName]
+      [tenant_id, interventionName]
     );
-    
-    if (result.rows.length === 0) {
+
+    if (result.rows.length === 0 || !result.rows[0].has_plan_template) {
       return res.json({ hasPlan: false, template: null });
     }
-    
-    res.json({ 
-      hasPlan: true, 
-      template: result.rows[0].plan_template 
+
+    res.json({
+      hasPlan: true,
+      template: result.rows[0].plan_template
     });
   } catch (error) {
     console.error('Error fetching plan template:', error);
@@ -54,25 +77,35 @@ router.get('/templates/by-name/:interventionName', async (req, res) => {
   }
 });
 
-// Get plan template by intervention template ID
+// Get plan template by intervention template ID (tenant-scoped)
 router.get('/templates/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
-    
+    const { tenant_id } = req.query;
+
+    if (!tenant_id) {
+      return res.status(400).json({ error: 'tenant_id is required' });
+    }
+
     const result = await pool.query(
-      `SELECT id, name, plan_template, has_plan_template 
-       FROM intervention_templates 
-       WHERE id = $1`,
-      [templateId]
+      `SELECT it.id, it.name,
+              COALESCE(o.plan_template, it.plan_template) AS plan_template,
+              COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template
+       FROM intervention_templates it
+       LEFT JOIN tenant_plan_template_overrides o
+         ON o.template_id = it.id AND o.tenant_id = $1
+       WHERE it.id = $2
+         AND (it.tenant_id = $1 OR it.tenant_id IS NULL)`,
+      [tenant_id, templateId]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
     }
-    
+
     const template = result.rows[0];
-    res.json({ 
-      hasPlan: template.has_plan_template, 
+    res.json({
+      hasPlan: template.has_plan_template,
       template: template.plan_template,
       name: template.name
     });
@@ -92,27 +125,37 @@ router.get('/student-interventions/:id/plan', async (req, res) => {
     const { id } = req.params;
     
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         si.id,
         si.intervention_name,
-        si.plan_data, 
-        si.plan_status, 
+        si.plan_data,
+        si.plan_status,
         si.plan_completed_at,
         si.plan_completed_by,
-        u.full_name as completed_by_name,
-        it.plan_template,
-        it.has_plan_template
+        u.full_name AS completed_by_name,
+        COALESCE(o.plan_template, it.plan_template) AS plan_template,
+        COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template
        FROM student_interventions si
+       JOIN students s ON si.student_id = s.id
        LEFT JOIN users u ON si.plan_completed_by = u.id
-       LEFT JOIN intervention_templates it ON si.intervention_name = it.name
+       LEFT JOIN LATERAL (
+         SELECT it_inner.id, it_inner.plan_template, it_inner.has_plan_template
+         FROM intervention_templates it_inner
+         WHERE it_inner.name = si.intervention_name
+           AND (it_inner.tenant_id = s.tenant_id OR it_inner.tenant_id IS NULL)
+         ORDER BY (it_inner.tenant_id = s.tenant_id) DESC
+         LIMIT 1
+       ) it ON TRUE
+       LEFT JOIN tenant_plan_template_overrides o
+         ON o.template_id = it.id AND o.tenant_id = s.tenant_id
        WHERE si.id = $1`,
       [id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
     }
-    
+
     const row = result.rows[0];
     res.json({
       id: row.id,
@@ -247,21 +290,32 @@ router.get('/students/:studentId/plans', async (req, res) => {
     const { studentId } = req.params;
     
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         si.id,
         si.intervention_name,
         si.plan_data,
         si.plan_status,
         si.plan_completed_at,
         si.start_date,
-        si.status as intervention_status,
-        u.full_name as completed_by_name,
-        it.has_plan_template,
-        it.plan_template
+        si.status AS intervention_status,
+        u.full_name AS completed_by_name,
+        COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template,
+        COALESCE(o.plan_template, it.plan_template) AS plan_template
        FROM student_interventions si
+       JOIN students s ON si.student_id = s.id
        LEFT JOIN users u ON si.plan_completed_by = u.id
-       LEFT JOIN intervention_templates it ON si.intervention_name = it.name
-       WHERE si.student_id = $1 AND it.has_plan_template = true
+       LEFT JOIN LATERAL (
+         SELECT it_inner.id, it_inner.plan_template, it_inner.has_plan_template
+         FROM intervention_templates it_inner
+         WHERE it_inner.name = si.intervention_name
+           AND (it_inner.tenant_id = s.tenant_id OR it_inner.tenant_id IS NULL)
+         ORDER BY (it_inner.tenant_id = s.tenant_id) DESC
+         LIMIT 1
+       ) it ON TRUE
+       LEFT JOIN tenant_plan_template_overrides o
+         ON o.template_id = it.id AND o.tenant_id = s.tenant_id
+       WHERE si.student_id = $1
+         AND COALESCE(o.has_plan_template, it.has_plan_template) = TRUE
        ORDER BY si.start_date DESC`,
       [studentId]
     );

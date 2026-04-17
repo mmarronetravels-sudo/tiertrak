@@ -4,7 +4,7 @@ import { logError } from '../../utils/logError';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) => {
+const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefresh }) => {
   // Local state
   const [editorPreviewMode, setEditorPreviewMode] = useState(false);
   const [duplicateSourceId, setDuplicateSourceId] = useState('');
@@ -18,7 +18,7 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
   // Load template data on first render
   if (!loaded) {
     if (template.has_plan_template) {
-      fetch(`${API_URL}/admin/templates/${template.id}`)
+      fetch(`${API_URL}/admin/templates/${template.id}?tenant_id=${user.tenant_id}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data) {
@@ -49,7 +49,11 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
       const response = await fetch(`${API_URL}/admin/templates/${template.id}/plan`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_template: templateEditorForm })
+        body: JSON.stringify({
+          tenant_id: user.tenant_id,
+          user_id: user.id,
+          plan_template: templateEditorForm
+        })
       });
 
       if (response.ok) {
@@ -73,7 +77,9 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
 
     try {
       const response = await fetch(`${API_URL}/admin/templates/${template.id}/plan`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenant_id: user.tenant_id })
       });
 
       if (response.ok) {
@@ -97,13 +103,17 @@ const TemplateEditorModal = ({ template, adminTemplates, onClose, onRefresh }) =
       const response = await fetch(`${API_URL}/admin/templates/${template.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sourceId: duplicateSourceId })
+        body: JSON.stringify({
+          tenant_id: user.tenant_id,
+          user_id: user.id,
+          sourceId: duplicateSourceId
+        })
       });
 
       if (response.ok) {
         alert('Template duplicated successfully!');
         // Reload this template's data
-        const res = await fetch(`${API_URL}/admin/templates/${template.id}`);
+        const res = await fetch(`${API_URL}/admin/templates/${template.id}?tenant_id=${user.tenant_id}`);
         if (res.ok) {
           const data = await res.json();
           setTemplateEditorForm({

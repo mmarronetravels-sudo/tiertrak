@@ -13,19 +13,21 @@ router.get('/all', async (req, res) => {
     if (!tenant_id) return res.status(400).json({ error: 'tenant_id is required' });
 
     const result = await pool.query(`
-      SELECT 
+      SELECT
         it.id,
         it.name,
         it.description,
         it.area,
         it.tier,
-        it.has_plan_template,
+        COALESCE(o.has_plan_template, it.has_plan_template) AS has_plan_template,
         it.is_starter,
-        CASE WHEN tib.id IS NOT NULL THEN TRUE ELSE FALSE END as is_activated,
+        CASE WHEN tib.id IS NOT NULL THEN TRUE ELSE FALSE END AS is_activated,
         tib.activated_at
       FROM intervention_templates it
-      LEFT JOIN tenant_intervention_bank tib 
+      LEFT JOIN tenant_intervention_bank tib
         ON tib.template_id = it.id AND tib.tenant_id = $1
+      LEFT JOIN tenant_plan_template_overrides o
+        ON o.template_id = it.id AND o.tenant_id = $1
       WHERE it.tenant_id IS NULL AND (it.is_legacy IS NULL OR it.is_legacy = FALSE)
       ORDER BY it.area, it.name
     `, [tenant_id]);
