@@ -16,6 +16,27 @@ const pool = new Pool({
 const JWT_SECRET = process.env.JWT_SECRET;
 const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'];
 
+// Auth cookie options. Prod needs SameSite=None + Secure for the cross-
+// origin frontend↔backend pair; dev uses Lax (no Secure, cross-port
+// localhost is same-site). Chrome silently drops SameSite=None cookies
+// that aren't also Secure, which breaks local dev on plain HTTP.
+const AUTH_COOKIE_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+function getAuthCookieOptions() {
+  const isProd = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: AUTH_COOKIE_MAX_AGE_MS
+  };
+}
+// Clear-cookie options must match the set-cookie options (minus maxAge)
+// or browsers may silently refuse to clear.
+function getAuthClearCookieOptions() {
+  const { maxAge, ...rest } = getAuthCookieOptions();
+  return rest;
+}
+
 // Google OAuth client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -113,12 +134,7 @@ router.post('/login', async (req, res) => {
       { expiresIn: '8h' }
     );
     
-    res.cookie('auth_token', token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'none',
-  maxAge: 8 * 60 * 60 * 1000
-});
+    res.cookie('auth_token', token, getAuthCookieOptions());
 
 res.json({
   message: 'Login successful',
@@ -243,12 +259,7 @@ router.post('/google', async (req, res) => {
       { expiresIn: '8h' }
     );
     
-    res.cookie('auth_token', token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'none',
-  maxAge: 8 * 60 * 60 * 1000
-});
+    res.cookie('auth_token', token, getAuthCookieOptions());
 
 res.json({
   message: 'Login successful',
@@ -612,11 +623,7 @@ router.post('/change-password', async (req, res) => {
 
 // Logout
 router.post('/logout', (req, res) => {
-  res.clearCookie('auth_token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'none'
-  });
+  res.clearCookie('auth_token', getAuthClearCookieOptions());
   res.json({ message: 'Logged out successfully' });
 });
 
