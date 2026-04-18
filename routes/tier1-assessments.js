@@ -221,7 +221,11 @@ router.get('/item-bank', requireAuth, (req, res) => {
       domain: it.domain,
       title: it.title,
       question: it.question,
-      anchors: it.anchors
+      anchors: it.anchors,
+      // Added for Step 5 Results view (Part 2). Forecasted in 182f0e1's
+      // commit body: "Step 5 will add it back non-breakingly when it does."
+      // Additive — existing wizard callers ignore the extra field.
+      recommendation: it.recommendation
     }))
   });
 });
