@@ -116,6 +116,25 @@ router.post('/', requireAuth, async (req, res) => {
       res.status(201).json({ assessment, responses: [] });
     } catch (err) {
       await client.query('ROLLBACK');
+      // Race: another request for the same tenant committed its INSERT
+      // between our SELECT and our INSERT. The unique partial index
+      // (Migration 019) catches it with Postgres error code 23505.
+      // Make the endpoint idempotent under concurrent inserts by
+      // surfacing the existing row the same way the app-layer guard
+      // above would have.
+      if (err && err.code === '23505') {
+        const raceWinner = await pool.query(
+          `SELECT id FROM tier1_assessments
+           WHERE tenant_id = $1 AND status = 'in_progress' AND archived = FALSE`,
+          [req.user.tenant_id]
+        );
+        if (raceWinner.rows.length > 0) {
+          return res.status(409).json({
+            error: 'An assessment is already in progress for this tenant',
+            in_progress_id: raceWinner.rows[0].id
+          });
+        }
+      }
       throw err;
     } finally {
       client.release();
