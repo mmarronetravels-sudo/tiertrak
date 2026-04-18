@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, ArrowLeft, ArrowRight, CheckCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { detectPII } from '../../utils/piiDetection';
 
 // The three score-radio labels come verbatim from the Tier 1 v5 spec.
 const RADIO_LABELS = { 0: 'Not in place', 1: 'Partially in place', 2: 'Fully in place' };
@@ -245,10 +246,37 @@ const Tier1AssessmentModal = ({ user, API_URL, mode, assessmentId: initialAssess
 
   const handleUrlBlur = (itemId) => { saveFieldFromDraft(itemId, 'evidence_url'); };
 
-  // NOTE: PII detection on notes is Step 4b — the draft is currently sent
-  // through to the backend as-is. The client-side name-check + confirmation
-  // dialog will wrap saveFieldFromDraft in 4b without changing its internals.
-  const handleNotesBlur = (itemId) => { saveFieldFromDraft(itemId, 'notes'); };
+  // Client-side PII gate on Notes. Fires before any optimistic state
+  // update or PATCH. Rationale, copy, and honest limitations are in the
+  // Tier 1 v5 spec §"PII detection on the Notes field" and in
+  // utils/piiDetection.js. The gate intentionally lives in this handler
+  // (not in saveFieldFromDraft) so the retry path — which calls
+  // saveFieldFromDraft directly — does not re-prompt the user.
+  //
+  // Privacy (CLAUDE.md §4B): we never log the note text or the detection
+  // result, and the dialog never surfaces the matched substring or the
+  // reason category.
+  const handleNotesBlur = (itemId) => {
+    const draftVal = (drafts[itemId] || {}).notes;
+    const trimmed = typeof draftVal === 'string' ? draftVal.trim() : '';
+    // Skip the prompt on empty/whitespace-only drafts — those either
+    // clear the field or no-op, and there's nothing to inspect.
+    if (trimmed.length > 0) {
+      const { detected } = detectPII(draftVal);
+      if (detected) {
+        const proceed = window.confirm(
+          'This text looks like it might contain a name or ID. Notes should describe patterns and observations, not identify individuals. Save anyway?'
+        );
+        if (!proceed) {
+          // Cancel means "I'm not done editing," not "this failed to save."
+          // Leave the draft in place so the textarea keeps what the user
+          // typed. No PATCH, no optimistic mirror, no saveError mutation.
+          return;
+        }
+      }
+    }
+    saveFieldFromDraft(itemId, 'notes');
+  };
 
   // Retry sends what the user currently sees. If they typed more text
   // after the failure (draft present), retry treats that like a fresh
