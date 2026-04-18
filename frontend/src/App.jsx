@@ -24,6 +24,7 @@ import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
 import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
+import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -252,6 +253,8 @@ const [referralCandidates, setReferralCandidates] = useState({ count: 0, candida
 const [tier1Dashboard, setTier1Dashboard] = useState({ loaded: false, state: null, assessment: null });
 // Wizard modal: { mode: 'start' | 'resume', assessmentId?: number } | null
 const [tier1Modal, setTier1Modal] = useState(null);
+// Results modal: { assessmentId: number } | null
+const [tier1Results, setTier1Results] = useState(null);
 const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
 const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
@@ -2358,7 +2361,14 @@ if (!user) {
             setTier1Modal({ mode: 'start' });
           }
         };
-        const resultsAlert = () => alert('Coming soon — this will show your detailed results');
+        // View Results opens the Results view modal for the card's
+        // completed assessment. Only reachable when state === 'completed',
+        // so assessment?.id is always set.
+        const openResults = () => {
+          if (assessment?.id) {
+            setTier1Results({ assessmentId: assessment.id });
+          }
+        };
 
         const leftBorder = (state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band])
           ? `border-l-4 ${bandMeta[assessment.score_band].border}`
@@ -2449,7 +2459,7 @@ if (!user) {
                     )}
                     {state === 'completed' && (
                       <>
-                        <button onClick={resultsAlert}
+                        <button onClick={openResults}
                           className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
                           View Results
                         </button>
@@ -6717,6 +6727,15 @@ if (isParent) {
       setTier1Modal(null);
       fetchTier1Dashboard();
     }}
+  />
+)}
+
+{tier1Results && (
+  <Tier1ResultsModal
+    user={user}
+    API_URL={API_URL}
+    assessmentId={tier1Results.assessmentId}
+    onClose={() => setTier1Results(null)}
   />
 )}
 
