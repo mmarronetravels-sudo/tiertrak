@@ -25,6 +25,7 @@ import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
 import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
+import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -2346,11 +2347,8 @@ if (!user) {
                + (now.getMonth() - then.getMonth());
         };
 
-        const bandMeta = {
-          implementing: { label: 'Implementing with Fidelity', bg: 'bg-emerald-100', text: 'text-emerald-800', border: 'border-l-emerald-500' },
-          partial:      { label: 'Partial Implementation',     bg: 'bg-amber-100',   text: 'text-amber-800',   border: 'border-l-amber-500' },
-          installing:   { label: 'Installing / Exploration',   bg: 'bg-rose-100',    text: 'text-rose-800',    border: 'border-l-rose-500' }
-        };
+        // Band label + style now sourced from utils/tier1Bands.js (single
+        // source of truth shared with the Results view).
 
         // 'start' for none/completed; 'resume' for in_progress (the backend
         // enforces one-per-tenant, so the resume id is already on the card).
@@ -2370,9 +2368,9 @@ if (!user) {
           }
         };
 
-        const leftBorder = (state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band])
-          ? `border-l-4 ${bandMeta[assessment.score_band].border}`
-          : '';
+        const bandStyle = assessment?.score_band ? getBandStyle(assessment.score_band) : null;
+        const hasKnownBand = !!(state === 'completed' && assessment?.score_band && BAND_LABELS[assessment.score_band]);
+        const leftBorder = hasKnownBand ? `border-l-4 ${bandStyle.border}` : '';
 
         return (
           <div className={`bg-white rounded-xl border border-slate-200 p-4 ${leftBorder}`}>
@@ -2384,9 +2382,9 @@ if (!user) {
                   {state === 'in_progress' && (
                     <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">In progress</span>
                   )}
-                  {state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band] && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${bandMeta[assessment.score_band].bg} ${bandMeta[assessment.score_band].text}`}>
-                      {bandMeta[assessment.score_band].label}
+                  {hasKnownBand && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${bandStyle.bg} ${bandStyle.text}`}>
+                      {BAND_LABELS[assessment.score_band]}
                     </span>
                   )}
                 </div>
