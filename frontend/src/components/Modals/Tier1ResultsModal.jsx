@@ -1,5 +1,5 @@
 import { useState, useEffect, Component } from 'react';
-import { X, AlertCircle } from 'lucide-react';
+import { X, AlertCircle, Printer } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import {
   BarChart,
@@ -322,14 +322,16 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
   // --- Render ---------------------------------------------------------
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 print:bg-white print:block print:relative print:p-0"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col print:max-w-none print:max-h-none print:shadow-none print:rounded-none print:overflow-visible"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header — title + completion date are preserved in print as the
+            printed header. Action buttons (Print, Close) are hidden in
+            print via the wrapper below. */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-800">
@@ -339,17 +341,26 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
               Completed {formatDate(assessment.completed_at)}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-500 hover:text-slate-700"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2 print:hidden">
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            >
+              <Printer size={18} />
+              Print
+            </button>
+            <button
+              onClick={onClose}
+              className="text-slate-500 hover:text-slate-700"
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8">
+        <div className="flex-1 overflow-y-auto p-6 space-y-8 print:overflow-visible print:p-0">
           {/* Overall score + band */}
           <section>
             <div className="flex items-end gap-4 flex-wrap">
@@ -367,8 +378,12 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
                 )}
               </div>
               {hasKnownBand && (
+                // print:border gives the pill a visible outline even when
+                // browsers drop background tints (most "simplified" print
+                // settings). The colored text from bandStyle.text still
+                // renders, so the band stays legible.
                 <span
-                  className={`px-3 py-1 rounded-full text-sm font-medium ${bandStyle.bg} ${bandStyle.text}`}
+                  className={`px-3 py-1 rounded-full text-sm font-medium ${bandStyle.bg} ${bandStyle.text} print:border print:border-slate-300`}
                 >
                   {bandLabel}
                 </span>
@@ -377,7 +392,7 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
           </section>
 
           {/* Domain bar chart */}
-          <section>
+          <section className="print:break-inside-avoid">
             <h4 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">
               Score by domain
             </h4>
@@ -434,7 +449,7 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
                 {strengths.map((it) => (
                   <li
                     key={it.id}
-                    className="p-3 rounded-lg border border-slate-200 bg-emerald-50/30"
+                    className="p-3 rounded-lg border border-slate-200 bg-emerald-50/30 print:break-inside-avoid"
                   >
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-xs font-mono text-slate-400">{it.id}</span>
@@ -462,7 +477,7 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
                 {growth.map((it) => (
                   <li
                     key={it.id}
-                    className="p-3 rounded-lg border border-slate-200 bg-rose-50/30"
+                    className="p-3 rounded-lg border border-slate-200 bg-rose-50/30 print:break-inside-avoid"
                   >
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-xs font-mono text-slate-400">{it.id}</span>
@@ -489,7 +504,7 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
             ) : (
               <div className="space-y-5">
                 {growth.map((it) => (
-                  <div key={it.id} className="border border-slate-200 rounded-lg p-4">
+                  <div key={it.id} className="border border-slate-200 rounded-lg p-4 print:break-inside-avoid">
                     <div className="flex items-baseline gap-2 flex-wrap mb-2">
                       <span className="text-xs font-mono text-slate-400">{it.id}</span>
                       <span className="text-sm font-semibold text-slate-800">
@@ -515,7 +530,7 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
           </section>
 
           {/* Trend across prior completed assessments */}
-          <section>
+          <section className="print:break-inside-avoid">
             {trendLoading && (
               <p className="text-xs text-slate-500">Loading trend…</p>
             )}
