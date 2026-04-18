@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const {
   ITEM_BANK_VERSION,
+  DOMAINS,
   ITEMS,
   ITEMS_BY_ID,
   MAX_SCORE,
@@ -201,6 +202,28 @@ router.get('/', requireAuth, async (req, res) => {
     console.error('[tier1 GET /]', err.message);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// ============================================
+// GET /api/tier1-assessments/item-bank
+// Return the item bank (items + domains) as JSON for the frontend
+// wizard. Must be registered BEFORE GET /:id so Express does not match
+// 'item-bank' as an :id param.
+// Not tenant-scoped — item bank is static content shared across tenants.
+// Auth-gated for consistency with the other Tier 1 routes.
+// ============================================
+router.get('/item-bank', requireAuth, (req, res) => {
+  res.json({
+    item_bank_version: ITEM_BANK_VERSION,
+    domains: DOMAINS,
+    items: ITEMS.map(it => ({
+      id: it.id,
+      domain: it.domain,
+      title: it.title,
+      question: it.question,
+      anchors: it.anchors
+    }))
+  });
 });
 
 // ============================================

@@ -23,6 +23,7 @@ import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
+import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -249,6 +250,8 @@ const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
 // state: 'none' | 'in_progress' | 'completed'; assessment: most-relevant row or null
 const [tier1Dashboard, setTier1Dashboard] = useState({ loaded: false, state: null, assessment: null });
+// Wizard modal: { mode: 'start' | 'resume', assessmentId?: number } | null
+const [tier1Modal, setTier1Modal] = useState(null);
 const [monitoredStudents, setMonitoredStudents] = useState({ count: 0, monitored: [] });
 const [newLog, setNewLog] = useState({ 
     student_intervention_id: '', 
@@ -2346,7 +2349,15 @@ if (!user) {
           installing:   { label: 'Installing / Exploration',   bg: 'bg-rose-100',    text: 'text-rose-800',    border: 'border-l-rose-500' }
         };
 
-        const wizardAlert = () => alert('Coming soon — this will open the assessment wizard');
+        // 'start' for none/completed; 'resume' for in_progress (the backend
+        // enforces one-per-tenant, so the resume id is already on the card).
+        const openWizard = () => {
+          if (state === 'in_progress' && assessment?.id) {
+            setTier1Modal({ mode: 'resume', assessmentId: assessment.id });
+          } else {
+            setTier1Modal({ mode: 'start' });
+          }
+        };
         const resultsAlert = () => alert('Coming soon — this will show your detailed results');
 
         const leftBorder = (state === 'completed' && assessment?.score_band && bandMeta[assessment.score_band])
@@ -2425,13 +2436,13 @@ if (!user) {
                 {canEdit && (
                   <div className="flex items-center gap-2 mt-3">
                     {state === 'none' && (
-                      <button onClick={wizardAlert}
+                      <button onClick={openWizard}
                         className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
                         Start Assessment
                       </button>
                     )}
                     {state === 'in_progress' && (
-                      <button onClick={wizardAlert}
+                      <button onClick={openWizard}
                         className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
                         Resume →
                       </button>
@@ -2442,7 +2453,7 @@ if (!user) {
                           className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
                           View Results
                         </button>
-                        <button onClick={wizardAlert}
+                        <button onClick={openWizard}
                           className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
                           Start New Assessment
                         </button>
@@ -6693,6 +6704,19 @@ if (isParent) {
     interventionName={planPreview.name}
     user={user}
     onClose={() => setPlanPreview(null)}
+  />
+)}
+
+{tier1Modal && (
+  <Tier1AssessmentModal
+    user={user}
+    API_URL={API_URL}
+    mode={tier1Modal.mode}
+    assessmentId={tier1Modal.assessmentId}
+    onClose={() => {
+      setTier1Modal(null);
+      fetchTier1Dashboard();
+    }}
   />
 )}
 
