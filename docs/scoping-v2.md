@@ -150,6 +150,18 @@ frontend/src/components/Modals/
 frontend/src/utils/resourceLinkMap.js           # new — item_id → resource_id lookup
 ```
 
+**Filename convention:** files on disk mirror the source names in
+`docs/tier1-resources/` (no `item-` prefix). The `item-X-Y`
+manifest ids (e.g., `item-1-2`) are a separate concept — they're
+the stable in-memory keys the manifest and forward-reference
+mapping use, decoupled from the on-disk filenames. This decoupling
+is deliberate: filenames use the natural `X.Y` section numbering
+from the assessment item bank (with dots), while ids use hyphens
+between digits because dots in ids are awkward in JS object keys
+and would have been awkward as URL fragments if v2 had gone that
+route. Keep the two concepts separate in any code that touches
+both.
+
 **Notes:**
 
 - Matches the repo's existing `frontend/src/views/` convention (views are
