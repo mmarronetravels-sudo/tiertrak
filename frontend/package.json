@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
+    "jspdf": "^2.5.2",
     "lucide-react": "^0.562.0",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
