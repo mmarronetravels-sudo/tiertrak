@@ -49,6 +49,7 @@ const interventionPlansRoutes = require('./routes/interventionPlans');
 const studentDocumentsRoutes = require('./routes/studentDocuments');
 const staffManagementRoutes = require('./routes/staffManagement');
 const interventionBankRoutes = require('./routes/interventionBank');
+const tier1AssessmentsRoutes = require('./routes/tier1-assessments');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -60,6 +61,7 @@ interventionPlansRoutes.initializePool(pool);
 studentDocumentsRoutes.initializePool(pool);
 staffManagementRoutes.initializePool(pool);
 interventionBankRoutes.initializePool(pool);
+tier1AssessmentsRoutes.initializePool(pool);
 
 // Auto-create tables if they don't exist
 const createTables = async () => {
@@ -425,6 +427,106 @@ const createTables = async () => {
     `);
     console.log('Migration 018: tenant_plan_template_overrides table ready');
 
+    // Migration 019: Tier 1 Self-Assessment
+    // Three tenant-scoped tables supporting the building-level MTSS
+    // self-assessment. See docs/features/tier1-assessment/ for full design.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tier1_assessments (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        completed_by INTEGER REFERENCES users(id),
+
+        status VARCHAR(20) NOT NULL DEFAULT 'in_progress'
+          CHECK (status IN ('in_progress', 'completed', 'archived')),
+
+        total_score INTEGER,
+        max_score INTEGER,
+        overall_percentage NUMERIC(5,2),
+        score_band VARCHAR(20)
+          CHECK (score_band IS NULL OR score_band IN ('implementing', 'partial', 'installing')),
+
+        item_bank_version VARCHAR(20) NOT NULL DEFAULT 'v1.0',
+
+        scope VARCHAR(20) NOT NULL DEFAULT 'building'
+          CHECK (scope IN ('building', 'district')),
+        subject_tenant_id INTEGER REFERENCES tenants(id),
+
+        archived BOOLEAN NOT NULL DEFAULT FALSE,
+        archived_at TIMESTAMP,
+        archived_by INTEGER REFERENCES users(id),
+        archived_reason VARCHAR(100),
+
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_assessments_tenant
+        ON tier1_assessments(tenant_id, archived);
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_assessments_tenant_status
+        ON tier1_assessments(tenant_id, status)
+        WHERE archived = FALSE;
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_assessments_completed_at
+        ON tier1_assessments(tenant_id, completed_at DESC)
+        WHERE status = 'completed' AND archived = FALSE;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tier1_assessments_one_in_progress_per_tenant
+        ON tier1_assessments(tenant_id)
+        WHERE status = 'in_progress' AND archived = FALSE;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tier1_assessment_responses (
+        id SERIAL PRIMARY KEY,
+        assessment_id INTEGER NOT NULL REFERENCES tier1_assessments(id) ON DELETE CASCADE,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+
+        item_id VARCHAR(10) NOT NULL,
+        domain_number INTEGER NOT NULL CHECK (domain_number BETWEEN 1 AND 8),
+
+        score INTEGER CHECK (score IS NULL OR score IN (0, 1, 2)),
+        evidence_url TEXT,
+        notes VARCHAR(300),
+
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        UNIQUE (assessment_id, item_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_responses_assessment
+        ON tier1_assessment_responses(assessment_id);
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_responses_tenant
+        ON tier1_assessment_responses(tenant_id);
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tier1_assessment_events (
+        id SERIAL PRIMARY KEY,
+        assessment_id INTEGER NOT NULL REFERENCES tier1_assessments(id) ON DELETE CASCADE,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+
+        event_type VARCHAR(30) NOT NULL
+          CHECK (event_type IN ('created', 'completed', 'archived', 'unarchived')),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        event_note VARCHAR(200),
+
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_events_assessment
+        ON tier1_assessment_events(assessment_id, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_tier1_events_tenant
+        ON tier1_assessment_events(tenant_id, created_at);
+    `);
+    console.log('Migration 019: Tier 1 Self-Assessment tables ready');
+
   } catch (error) {
     console.error('Error creating tables:', error);
   }
@@ -451,6 +553,7 @@ app.use('/api/intervention-plans', interventionPlansRoutes);
 app.use('/api/student-documents', studentDocumentsRoutes);
 app.use('/api/staff', staffManagementRoutes);
 app.use('/api/intervention-bank', interventionBankRoutes);
+app.use('/api/tier1-assessments', tier1AssessmentsRoutes);
 
 // Test route
 app.get('/', (req, res) => {
