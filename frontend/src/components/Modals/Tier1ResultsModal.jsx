@@ -1,5 +1,5 @@
 import { useState, useEffect, Component } from 'react';
-import { X, AlertCircle, Printer } from 'lucide-react';
+import { X, AlertCircle, Printer, Download } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import {
   BarChart,
@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { logError } from '../../utils/logError';
 import { BAND_LABELS, getBandLabel, getBandStyle } from '../../utils/tier1Bands';
+import { generateTier1AssessmentPdf } from '../../utils/tier1Pdf';
 
 /**
  * Tier 1 Self-Assessment — Results view modal (Step 5).
@@ -342,6 +343,20 @@ const Tier1ResultsModal = ({ assessmentId, user, API_URL, onClose }) => {
             </p>
           </div>
           <div className="flex items-center gap-2 print:hidden">
+            <button
+              onClick={() =>
+                generateTier1AssessmentPdf({
+                  assessment,
+                  responses,
+                  itemBank,
+                  schoolName: (user && user.tenant_name) || null,
+                })
+              }
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            >
+              <Download size={18} />
+              Download PDF
+            </button>
             <button
               onClick={() => window.print()}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
