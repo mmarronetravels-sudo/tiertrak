@@ -6,6 +6,7 @@ Before making any code change:
 2. Read the existing files in the area you plan to modify.
 3. Confirm back the relevant constraints for the task.
 4. If any instruction conflicts with the repository's current implementation, follow the repository and call out the conflict explicitly.
+5. Confirm the current git branch is **not** `main` or `master`. If it is, follow Section 2A before editing anything.
 
 ---
 
@@ -19,6 +20,7 @@ Success means:
 - Student and staff PII is never logged, exposed in errors, or included in API responses beyond what the requesting tenant requires.
 - All changes are evaluated against FERPA, COPPA, and applicable state student privacy laws.
 - No speculative rewrites or framework substitutions are introduced.
+- **Every change lands on a feature branch with a reviewable PR** — see Section 2A.
 
 ---
 
@@ -54,6 +56,74 @@ Do **not** substitute in new architectural choices such as:
 - A frontend build system change
 
 If a task would genuinely benefit from a new dependency or architectural change, **propose it first and wait for approval**.
+
+---
+
+## 2A) BRANCHING & PR DISCIPLINE (non-negotiable)
+
+All design, implementation, and refactor work **MUST happen on a dedicated feature branch**. Work is never committed directly to `main` or `master`. Every change lands through a reviewable pull request.
+
+### Branch lifecycle (required for every task)
+
+1. **Verify the starting branch.** Before touching any file, run `git status` and `git branch --show-current`. If you are on `main` or `master`, stop and create a new branch first.
+2. **Create the branch with a conventional name**:
+   - `feat/<short-slug>` — new user-visible features
+   - `fix/<short-slug>` — bug fixes
+   - `chore/<short-slug>` — refactors, dependency bumps, config, docs, tooling
+   - `sec/<short-slug>` — anything touching auth, PII fields, tenant isolation, RBAC, file upload validation, or CSV sanitization
+   - `migration/<short-slug>` — any SQL schema change
+   The slug is lowercase kebab-case, 2–5 words, describing the task (e.g., `feat/parent-link-expiry`, `sec/csv-import-sanitize`).
+3. **Commit incrementally** with descriptive messages that complete the sentence "If applied, this commit will…". Do not squash the entire feature into one commit. Commits are the reviewer's audit trail.
+4. **Push the branch** to `origin` with `git push -u origin <branch>` as soon as there is a reviewable unit of work. Never force-push to a shared branch.
+5. **Open a Pull Request** via `gh pr create` using the template in the next subsection. The PR must reference the task or issue it addresses.
+6. **Do not merge your own PR** on any change that touches Section 4B (PII) or Section 5 (multi-tenancy). Request human review.
+
+### PR description template (required)
+
+Every PR description MUST include the following sections, in this order. Claude Code must generate this pre-filled when proposing a PR:
+
+```
+## Summary
+- <1–3 bullets describing what changed and why>
+
+## Files touched
+- <relative/path/file.js> — <one-line reason>
+
+## Stack check
+- [ ] No new dependencies added, OR new dependencies listed and justified below
+- [ ] No framework/ORM/hosting substitutions
+- [ ] Follows existing raw-pg query pattern (backend) and existing Vite/React pattern (frontend)
+
+## Tenant isolation check  (required for any DB change)
+- [ ] Every new or modified SQL query is scoped by school/tenant identifier
+- [ ] No cross-tenant reads or writes introduced
+- [ ] New school-scoped tables include a tenant-identifier column AND an index on it
+
+## Privacy impact  (required for every PR)
+- [ ] None — no PII fields read, written, logged, or transmitted; OR
+- [ ] Describe exactly which PII fields are touched and cite the relevant rule(s) from Section 4B
+- [ ] Confirm: no PII in logs, no PII in error bodies, no PII in URLs or query strings
+
+## Verification
+- Commands run and passed:
+  - [ ] `npm test` (or targeted test command)
+  - [ ] `npm run lint`
+  - [ ] Local smoke test: <steps>
+  - [ ] Migration dry-run on a non-production DB (if schema change)
+
+## Ask-first items  (Section 8)
+- <List any Section 8 triggers the task crossed, and confirm approval was granted>
+
+## Screenshots / logs
+- <paste or link, if UI or observable behavior changed>
+```
+
+### What Claude Code must do at the start of every coding task
+
+- Run the Session Handshake (Section 0). This now includes the branch check.
+- If a feature branch does not yet exist for this task, **create it before the first edit**. Never edit from `main`/`master`.
+- Generate the pre-filled PR description in the task's final output, even before the PR is opened, so the human reviewer sees exactly what will be claimed.
+- Never run `git push origin main`, `git push origin master`, or `git push -f` against a shared branch. These are also deny-listed in `.claude/settings.json`.
 
 ---
 
@@ -95,7 +165,7 @@ If a task would genuinely benefit from a new dependency or architectural change,
 
 ## 4B) STUDENT & STAFF DATA PROTECTION (non-negotiable)
 
-This product is used by K-12 schools. Student and staff data is subject to FERPA, COPPA (for students under 13), and applicable state privacy laws.
+This product is used by K-12 schools. Student and staff data is subject to FERPA, COPPA (for students under 13), and applicable state privacy laws. For the full PII checklist, review protocol, and worked examples, see `@docs/ai-context/PRIVACY_REVIEW.md`.
 
 ### What counts as protected data
 Treat the following as sensitive PII at all times:
@@ -141,7 +211,8 @@ When implementing a change, provide output in this order unless asked for someth
 2. **Files to change** — exact paths relative to project root
 3. **Implementation** — code changes only in the files that need modification
 4. **Verification** — what to test and how to verify
-5. **Risks / assumptions** — only if relevant
+5. **PR description** — pre-filled using the template in Section 2A
+6. **Risks / assumptions** — only if relevant
 
 When writing code:
 - Preserve the current style of the surrounding code.
@@ -154,6 +225,12 @@ When writing code:
 ---
 
 ## 7) FAILURE CONDITIONS (output is unacceptable if any occur)
+
+### Branch / PR failures
+- Commits or edits made directly to `main` or `master`
+- Force-pushes to shared branches
+- A PR without the Tenant isolation check or Privacy impact section filled in
+- Merging a PII- or tenant-touching PR without human review
 
 ### Architecture / stack failures
 - Introduces a different framework or major library without approval
@@ -203,6 +280,7 @@ Stop and ask before proceeding if the task requires:
 - Any change to logging, error handling, or monitoring that could capture PII
 - Any new data field that stores personally identifiable information
 - Any change to authentication or authorization logic
+- Any merge into `main`/`master` on a PII- or tenant-touching PR
 
 ---
 
@@ -214,12 +292,22 @@ Stop and ask before proceeding if the task requires:
 - Respect the existing architecture even when it is not your preferred architecture.
 - When in doubt about whether something touches student/staff data, assume it does and flag it before proceeding.
 - Privacy-preserving approaches are always preferred over convenient ones.
+- At the end of a task, invoke the `/landing-the-plane` skill to verify tests, finalize the branch (merge/PR/keep/discard), and append a session entry to `activities.txt`.
 
 ---
 
 ## 10) COMPANION DOCS
-These files provide additional context for specific tasks:
-- `docs/ai-context/STACK_ARCHITECTURE.md` — detailed architecture reference
-- `docs/ai-context/CODING_PREFERENCES.md` — code style and conventions
-- `docs/ai-context/SECURITY_REVIEW.md` — security review protocol
-- `docs/ai-context/PRIVACY_REVIEW.md` — student/staff data handling checklist (FERPA fields, PII scope, cross-school risk, data minimization review)
+These files provide additional context for specific tasks. Claude Code loads them on demand via `@`-import, not every session.
+- `@docs/ai-context/STACK_ARCHITECTURE.md` — detailed architecture reference
+- `@docs/ai-context/CODING_PREFERENCES.md` — code style and conventions
+- `@docs/ai-context/SECURITY_REVIEW.md` — security review protocol
+- `@docs/ai-context/PRIVACY_REVIEW.md` — student/staff data handling checklist (FERPA fields, PII scope, cross-school risk, data minimization review)
+
+## 11) CLAUDE CODE CONFIGURATION
+- Permissions and deny-lists: `.claude/settings.json`
+- Custom project skill for session close: `.claude/skills/landing-the-plane/`
+- Project subagents for review:
+  - `.claude/agents/privacy-reviewer.md`
+  - `.claude/agents/security-reviewer.md`
+  - `.claude/agents/tenant-isolation-auditor.md`
+- Recommended plugin: Superpowers from the official Anthropic marketplace (`/plugin install superpowers@claude-plugins-official`) — supplies `brainstorming`, `writing-plans`, `executing-plans`, `test-driven-development`, `systematic-debugging`, `requesting-code-review`, `verification-before-completion`, `using-git-worktrees`, and `finishing-a-development-branch`. The project `/landing-the-plane` skill wraps `finishing-a-development-branch` and adds the `activities.txt` log.
