@@ -2129,6 +2129,153 @@ if (!user) {
           <p className="text-slate-500 mt-1">Multi-Tiered System of Supports Overview</p>
         </div>
       </div>
+      {/* Tier 1 Self-Assessment card */}
+      {tier1Dashboard.loaded && user?.role !== 'parent' && (() => {
+        const ROLES_WHO_CAN_EDIT_TIER1 = [
+          'district_admin', 'school_admin', 'counselor',
+          'student_support_specialist', 'behavior_specialist', 'mtss_support'
+        ];
+        const canEdit = ROLES_WHO_CAN_EDIT_TIER1.includes(user?.role);
+        const { state, assessment } = tier1Dashboard;
+
+        // Whole calendar months between `iso` and now (for "N months ago" and
+        // the >6-month cadence nudge).
+        const monthsSince = (iso) => {
+          if (!iso) return null;
+          const then = new Date(iso);
+          const now = new Date();
+          return (now.getFullYear() - then.getFullYear()) * 12
+               + (now.getMonth() - then.getMonth());
+        };
+
+        // Band label + style now sourced from utils/tier1Bands.js (single
+        // source of truth shared with the Results view).
+
+        // 'start' for none/completed; 'resume' for in_progress (the backend
+        // enforces one-per-tenant, so the resume id is already on the card).
+        const openWizard = () => {
+          if (state === 'in_progress' && assessment?.id) {
+            setTier1Modal({ mode: 'resume', assessmentId: assessment.id });
+          } else {
+            setTier1Modal({ mode: 'start' });
+          }
+        };
+        // View Results opens the Results view modal for the card's
+        // completed assessment. Only reachable when state === 'completed',
+        // so assessment?.id is always set.
+        const openResults = () => {
+          if (assessment?.id) {
+            setTier1Results({ assessmentId: assessment.id });
+          }
+        };
+
+        const bandStyle = assessment?.score_band ? getBandStyle(assessment.score_band) : null;
+        const hasKnownBand = !!(state === 'completed' && assessment?.score_band && BAND_LABELS[assessment.score_band]);
+        const leftBorder = hasKnownBand ? `border-l-4 ${bandStyle.border}` : '';
+
+        return (
+          <div className={`bg-white rounded-xl border border-slate-200 p-4 ${leftBorder}`}>
+            <div className="flex items-start gap-3">
+              <ClipboardList className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-semibold text-slate-800">Tier 1 Self-Assessment</h3>
+                  {state === 'in_progress' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">In progress</span>
+                  )}
+                  {hasKnownBand && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${bandStyle.bg} ${bandStyle.text}`}>
+                      {BAND_LABELS[assessment.score_band]}
+                    </span>
+                  )}
+                </div>
+
+                {state === 'none' && (
+                  <p className="text-sm text-slate-600 mt-1">
+                    Start your first Tier 1 Self-Assessment to baseline your universal supports.
+                  </p>
+                )}
+
+                {state === 'in_progress' && (
+                  <>
+                    <p className="text-sm text-slate-600 mt-1">
+                      You have an assessment in progress. Resume →
+                    </p>
+                    {assessment?.created_at && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Started {new Date(assessment.created_at).toLocaleDateString()}
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {state === 'completed' && assessment && (
+                  <>
+                    <p className="text-sm text-slate-700 mt-1">
+                      <span className="font-semibold">
+                        {parseFloat(assessment.overall_percentage).toFixed(1)}%
+                      </span>
+                      {assessment.total_score != null && assessment.max_score != null && (
+                        <span className="text-slate-500">
+                          {' '}({assessment.total_score} / {assessment.max_score})
+                        </span>
+                      )}
+                    </p>
+                    {assessment.completed_at && (() => {
+                      const m = monthsSince(assessment.completed_at);
+                      const rel = m == null ? '' : m === 0 ? 'this month' : m === 1 ? '1 month ago' : `${m} months ago`;
+                      return (
+                        <p className="text-xs text-slate-500 mt-1">Last completed {rel}</p>
+                      );
+                    })()}
+                    {(() => {
+                      const m = monthsSince(assessment.completed_at);
+                      if (m != null && m > 6) {
+                        return (
+                          <p className="text-sm text-amber-700 mt-2">
+                            Your last Tier 1 Self-Assessment was {m} months ago. A fall/spring cadence is recommended.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </>
+                )}
+
+                {canEdit && (
+                  <div className="flex items-center gap-2 mt-3">
+                    {state === 'none' && (
+                      <button onClick={openWizard}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                        Start Assessment
+                      </button>
+                    )}
+                    {state === 'in_progress' && (
+                      <button onClick={openWizard}
+                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                        Resume →
+                      </button>
+                    )}
+                    {state === 'completed' && (
+                      <>
+                        <button onClick={openResults}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
+                          View Results
+                        </button>
+                        <button onClick={openWizard}
+                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+                          Start New Assessment
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Missing Logs Alert */}
       {missingLogs.missing_count > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -2327,153 +2474,6 @@ if (!user) {
           </div>
         </div>
       )}
-
-      {/* Tier 1 Self-Assessment card */}
-      {tier1Dashboard.loaded && user?.role !== 'parent' && (() => {
-        const ROLES_WHO_CAN_EDIT_TIER1 = [
-          'district_admin', 'school_admin', 'counselor',
-          'student_support_specialist', 'behavior_specialist', 'mtss_support'
-        ];
-        const canEdit = ROLES_WHO_CAN_EDIT_TIER1.includes(user?.role);
-        const { state, assessment } = tier1Dashboard;
-
-        // Whole calendar months between `iso` and now (for "N months ago" and
-        // the >6-month cadence nudge).
-        const monthsSince = (iso) => {
-          if (!iso) return null;
-          const then = new Date(iso);
-          const now = new Date();
-          return (now.getFullYear() - then.getFullYear()) * 12
-               + (now.getMonth() - then.getMonth());
-        };
-
-        // Band label + style now sourced from utils/tier1Bands.js (single
-        // source of truth shared with the Results view).
-
-        // 'start' for none/completed; 'resume' for in_progress (the backend
-        // enforces one-per-tenant, so the resume id is already on the card).
-        const openWizard = () => {
-          if (state === 'in_progress' && assessment?.id) {
-            setTier1Modal({ mode: 'resume', assessmentId: assessment.id });
-          } else {
-            setTier1Modal({ mode: 'start' });
-          }
-        };
-        // View Results opens the Results view modal for the card's
-        // completed assessment. Only reachable when state === 'completed',
-        // so assessment?.id is always set.
-        const openResults = () => {
-          if (assessment?.id) {
-            setTier1Results({ assessmentId: assessment.id });
-          }
-        };
-
-        const bandStyle = assessment?.score_band ? getBandStyle(assessment.score_band) : null;
-        const hasKnownBand = !!(state === 'completed' && assessment?.score_band && BAND_LABELS[assessment.score_band]);
-        const leftBorder = hasKnownBand ? `border-l-4 ${bandStyle.border}` : '';
-
-        return (
-          <div className={`bg-white rounded-xl border border-slate-200 p-4 ${leftBorder}`}>
-            <div className="flex items-start gap-3">
-              <ClipboardList className="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="font-semibold text-slate-800">Tier 1 Self-Assessment</h3>
-                  {state === 'in_progress' && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">In progress</span>
-                  )}
-                  {hasKnownBand && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${bandStyle.bg} ${bandStyle.text}`}>
-                      {BAND_LABELS[assessment.score_band]}
-                    </span>
-                  )}
-                </div>
-
-                {state === 'none' && (
-                  <p className="text-sm text-slate-600 mt-1">
-                    Start your first Tier 1 Self-Assessment to baseline your universal supports.
-                  </p>
-                )}
-
-                {state === 'in_progress' && (
-                  <>
-                    <p className="text-sm text-slate-600 mt-1">
-                      You have an assessment in progress. Resume →
-                    </p>
-                    {assessment?.created_at && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        Started {new Date(assessment.created_at).toLocaleDateString()}
-                      </p>
-                    )}
-                  </>
-                )}
-
-                {state === 'completed' && assessment && (
-                  <>
-                    <p className="text-sm text-slate-700 mt-1">
-                      <span className="font-semibold">
-                        {parseFloat(assessment.overall_percentage).toFixed(1)}%
-                      </span>
-                      {assessment.total_score != null && assessment.max_score != null && (
-                        <span className="text-slate-500">
-                          {' '}({assessment.total_score} / {assessment.max_score})
-                        </span>
-                      )}
-                    </p>
-                    {assessment.completed_at && (() => {
-                      const m = monthsSince(assessment.completed_at);
-                      const rel = m == null ? '' : m === 0 ? 'this month' : m === 1 ? '1 month ago' : `${m} months ago`;
-                      return (
-                        <p className="text-xs text-slate-500 mt-1">Last completed {rel}</p>
-                      );
-                    })()}
-                    {(() => {
-                      const m = monthsSince(assessment.completed_at);
-                      if (m != null && m > 6) {
-                        return (
-                          <p className="text-sm text-amber-700 mt-2">
-                            Your last Tier 1 Self-Assessment was {m} months ago. A fall/spring cadence is recommended.
-                          </p>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </>
-                )}
-
-                {canEdit && (
-                  <div className="flex items-center gap-2 mt-3">
-                    {state === 'none' && (
-                      <button onClick={openWizard}
-                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-                        Start Assessment
-                      </button>
-                    )}
-                    {state === 'in_progress' && (
-                      <button onClick={openWizard}
-                        className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-                        Resume →
-                      </button>
-                    )}
-                    {state === 'completed' && (
-                      <>
-                        <button onClick={openResults}
-                          className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100">
-                          View Results
-                        </button>
-                        <button onClick={openWizard}
-                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
-                          Start New Assessment
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Monitoring Section */}
       {monitoredStudents.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
