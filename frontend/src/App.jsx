@@ -251,7 +251,10 @@ const [showReport, setShowReport] = useState(false);
 const [missingLogs, setMissingLogs] = useState({ missing_count: 0, interventions: [] });
 const [referralCandidates, setReferralCandidates] = useState({ count: 0, candidates: [] });
 // state: 'none' | 'in_progress' | 'completed'; assessment: most-relevant row or null
-const [tier1Dashboard, setTier1Dashboard] = useState({ loaded: false, state: null, assessment: null });
+// priors: up to 5 prior completed assessments (newest-first), for the "prior completions" disclosure
+const [tier1Dashboard, setTier1Dashboard] = useState({ loaded: false, state: null, assessment: null, priors: [] });
+// Controls the "View earlier assessments" disclosure on the completed-state card.
+const [tier1PriorsExpanded, setTier1PriorsExpanded] = useState(false);
 // Wizard modal: { mode: 'start' | 'resume', assessmentId?: number } | null
 const [tier1Modal, setTier1Modal] = useState(null);
 // Results modal: { assessmentId: number } | null
@@ -443,22 +446,29 @@ const fetchTier1Dashboard = async () => {
       credentials: 'include'
     });
     if (!response.ok) {
-      setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+      setTier1Dashboard({ loaded: true, state: 'none', assessment: null, priors: [] });
       return;
     }
     const data = await response.json();
     const list = data.assessments || [];
+    // Completed rows only, newest-first. Backend already excludes archived
+    // and orders by completed_at DESC; re-sort defensively.
+    const completed = list
+      .filter(a => a.status === 'completed')
+      .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+    // Priors are everything after the most-recent completion, capped at 5.
+    const priors = completed.slice(1, 6);
     const inProgress = list.find(a => a.status === 'in_progress');
     if (inProgress) {
-      setTier1Dashboard({ loaded: true, state: 'in_progress', assessment: inProgress });
+      setTier1Dashboard({ loaded: true, state: 'in_progress', assessment: inProgress, priors });
     } else if (list.length === 0) {
-      setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+      setTier1Dashboard({ loaded: true, state: 'none', assessment: null, priors: [] });
     } else {
-      setTier1Dashboard({ loaded: true, state: 'completed', assessment: list[0] });
+      setTier1Dashboard({ loaded: true, state: 'completed', assessment: completed[0] || list[0], priors });
     }
   } catch (error) {
     console.error('Error fetching tier1 dashboard:', error);
-    setTier1Dashboard({ loaded: true, state: 'none', assessment: null });
+    setTier1Dashboard({ loaded: true, state: 'none', assessment: null, priors: [] });
   }
 };
 
@@ -2136,7 +2146,7 @@ if (!user) {
           'student_support_specialist', 'behavior_specialist', 'mtss_support'
         ];
         const canEdit = ROLES_WHO_CAN_EDIT_TIER1.includes(user?.role);
-        const { state, assessment } = tier1Dashboard;
+        const { state, assessment, priors = [] } = tier1Dashboard;
 
         // Whole calendar months between `iso` and now (for "N months ago" and
         // the >6-month cadence nudge).
@@ -2146,6 +2156,16 @@ if (!user) {
           const now = new Date();
           return (now.getFullYear() - then.getFullYear()) * 12
                + (now.getMonth() - then.getMonth());
+        };
+
+        // Absolute date for the prior-completion lines ("Apr 19, 2026").
+        // toLocaleDateString is already used by the in_progress "Started"
+        // line — no new date library introduced.
+        const formatPriorDate = (iso) => {
+          if (!iso) return '';
+          return new Date(iso).toLocaleDateString(undefined, {
+            month: 'short', day: 'numeric', year: 'numeric'
+          });
         };
 
         // Band label + style now sourced from utils/tier1Bands.js (single
@@ -2167,6 +2187,10 @@ if (!user) {
           if (assessment?.id) {
             setTier1Results({ assessmentId: assessment.id });
           }
+        };
+        // Same Results modal, parameterized for prior-completion rows.
+        const openResultsFor = (id) => {
+          if (id) setTier1Results({ assessmentId: id });
         };
 
         const bandStyle = assessment?.score_band ? getBandStyle(assessment.score_band) : null;
@@ -2238,6 +2262,54 @@ if (!user) {
                         );
                       }
                       return null;
+                    })()}
+                    {priors.length >= 1 && (() => {
+                      const secondary = priors[0];
+                      const hidden = priors.slice(1, 5);
+                      const band = BAND_LABELS[secondary.score_band] || 'Unknown';
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openResultsFor(secondary.id)}
+                            className="block text-left text-xs text-slate-500 mt-2 hover:text-slate-700 hover:underline"
+                          >
+                            Last completed before this: {formatPriorDate(secondary.completed_at)} — {parseFloat(secondary.overall_percentage).toFixed(2)}% ({band})
+                          </button>
+                          {hidden.length > 0 && (
+                            <div className="mt-1">
+                              <button
+                                type="button"
+                                onClick={() => setTier1PriorsExpanded(v => !v)}
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {tier1PriorsExpanded
+                                  ? <><ChevronDown className="w-3 h-3" />Hide earlier assessments</>
+                                  : <><ChevronRight className="w-3 h-3" />View earlier assessments ({hidden.length})</>
+                                }
+                              </button>
+                              {tier1PriorsExpanded && (
+                                <ul className="mt-1 space-y-0.5">
+                                  {hidden.map(p => {
+                                    const pBand = BAND_LABELS[p.score_band] || 'Unknown';
+                                    return (
+                                      <li key={p.id}>
+                                        <button
+                                          type="button"
+                                          onClick={() => openResultsFor(p.id)}
+                                          className="block text-left text-xs text-slate-500 hover:text-slate-700 hover:underline"
+                                        >
+                                          {formatPriorDate(p.completed_at)} — {parseFloat(p.overall_percentage).toFixed(2)}% ({pBand})
+                                        </button>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
                     })()}
                   </>
                 )}
