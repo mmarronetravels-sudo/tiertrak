@@ -118,26 +118,26 @@ reproduced from v1 unchanged.
 
 ```
 docs/tier1-resources/                           # unchanged — source of truth
-├── item-1.2-mtss-team-roles.md
-├── item-1.3-mtss-handbook.md
-├── item-1.4-annual-mtss-calendar.md
-├── item-2.3-high-leverage-tier1-practices.md
-├── item-3.4-sample-discipline-flowchart.md
-└── item-7.3-parent-assessment-results-summary.md
+├── 1.2-mtss-team-roles.md
+├── 1.3-mtss-handbook.md
+├── 1.4-annual-mtss-calendar.md
+├── 2.3-high-leverage-tier1-practices.md
+├── 3.4-sample-discipline-flowchart.md
+└── 7.3-parent-assessment-results-summary.md
 
 frontend/public/resources/                      # new — static downloads
-├── item-1.2-mtss-team-roles.docx
-├── item-1.2-mtss-team-roles.md                 # copy for download-as-md
-├── item-1.3-mtss-handbook.docx
-├── item-1.3-mtss-handbook.md
-├── item-1.4-annual-mtss-calendar.docx
-├── item-1.4-annual-mtss-calendar.md
-├── item-2.3-high-leverage-tier1-practices.docx
-├── item-2.3-high-leverage-tier1-practices.md
-├── item-3.4-sample-discipline-flowchart.docx
-├── item-3.4-sample-discipline-flowchart.md
-├── item-7.3-parent-assessment-results-summary.docx
-└── item-7.3-parent-assessment-results-summary.md
+├── 1.2-mtss-team-roles.docx
+├── 1.2-mtss-team-roles.md                      # copy for download-as-md
+├── 1.3-mtss-handbook.docx
+├── 1.3-mtss-handbook.md
+├── 1.4-annual-mtss-calendar.docx
+├── 1.4-annual-mtss-calendar.md
+├── 2.3-high-leverage-tier1-practices.docx
+├── 2.3-high-leverage-tier1-practices.md
+├── 3.4-sample-discipline-flowchart.docx
+├── 3.4-sample-discipline-flowchart.md
+├── 7.3-parent-assessment-results-summary.docx
+└── 7.3-parent-assessment-results-summary.md
 
 frontend/src/resources/                         # new — frontend-imported content
 ├── index.js                                    # static manifest (id, title, roles, files)
@@ -160,14 +160,14 @@ frontend/src/utils/resourceLinkMap.js           # new — item_id → resource_i
   in `docs/tier1-resources/` documents the sync expectation. CI check is
   deferred unless drift actually happens.
 - Loading markdown as raw strings uses Vite's built-in `?raw` suffix
-  (`import mtssRoles from './markdown/item-1.2-mtss-team-roles.md?raw'`).
+  (`import mtssRoles from './markdown/1.2-mtss-team-roles.md?raw'`).
   No new dependency; native Vite feature.
 
 ### Manifest shape (static JS module) **[unchanged from v1]**
 
 ```js
 // frontend/src/resources/index.js
-import mtssRolesMd from './markdown/item-1.2-mtss-team-roles.md?raw';
+import mtssRolesMd from './markdown/1.2-mtss-team-roles.md?raw';
 // ...five more imports
 
 export const RESOURCES = [
@@ -178,8 +178,8 @@ export const RESOURCES = [
     description: 'Customizable template defining roles and responsibilities for your MTSS team.',
     roles: ['admin', 'staff'],
     files: {
-      docx: '/resources/item-1.2-mtss-team-roles.docx',
-      markdown: '/resources/item-1.2-mtss-team-roles.md',
+      docx: '/resources/1.2-mtss-team-roles.docx',
+      markdown: '/resources/1.2-mtss-team-roles.md',
     },
     markdownContent: mtssRolesMd,
   },
