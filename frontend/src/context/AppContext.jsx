@@ -370,16 +370,6 @@ useEffect(() => {
   fetchLogOptions();
 }, []);
 
-  // Fetch dashboard data when dashboard loads
-  useEffect(() => {
-    if (view === 'dashboard' && user?.tenant_id) {
-      fetchMissingLogs();
-      fetchReferralCandidates();
-      fetchMonitoredStudents();
-      fetchExpiringDocuments();
-    }
-  }, [view, user?.tenant_id]);
-
   // ============================================
   // CONTEXT VALUE
   // ============================================
