@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Component } from 'react';
-import { Download, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Download, ChevronDown, ChevronUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { RESOURCES } from '../resources';
 import { logError } from '../utils/logError';
@@ -110,14 +110,6 @@ const ResourcesView = ({ selectedResourceId = null }) => {
                   >
                     <Download size={16} />
                     Download Word
-                  </a>
-                  <a
-                    href={resource.files.markdown}
-                    download
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors"
-                  >
-                    <FileText size={16} />
-                    Download Markdown
                   </a>
                   <button
                     type="button"

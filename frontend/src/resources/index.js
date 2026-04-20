@@ -29,7 +29,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/1.2-mtss-team-roles.docx',
-      markdown: '/resources/1.2-mtss-team-roles.md',
     },
     markdownContent: mtssTeamRolesMd,
   },
@@ -42,7 +41,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/1.3-mtss-handbook.docx',
-      markdown: '/resources/1.3-mtss-handbook.md',
     },
     markdownContent: mtssHandbookMd,
   },
@@ -55,7 +53,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/1.4-annual-mtss-calendar.docx',
-      markdown: '/resources/1.4-annual-mtss-calendar.md',
     },
     markdownContent: annualCalendarMd,
   },
@@ -68,7 +65,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/2.3-high-leverage-tier1-practices.docx',
-      markdown: '/resources/2.3-high-leverage-tier1-practices.md',
     },
     markdownContent: highLeverageMd,
   },
@@ -81,7 +77,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/3.4-sample-discipline-flowchart.docx',
-      markdown: '/resources/3.4-sample-discipline-flowchart.md',
     },
     markdownContent: disciplineFlowMd,
   },
@@ -94,7 +89,6 @@ export const RESOURCES = [
     roles: ['admin', 'staff'],
     files: {
       docx: '/resources/7.3-parent-assessment-results-summary.docx',
-      markdown: '/resources/7.3-parent-assessment-results-summary.md',
     },
     markdownContent: parentResultsMd,
   },
