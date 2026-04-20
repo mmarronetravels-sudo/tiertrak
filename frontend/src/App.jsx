@@ -193,7 +193,7 @@ export default function App() {
   const appContext = useApp();
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [view, setView] = useState('dashboard');
+  const { view, setView } = appContext;
   const [students, setStudents] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [showChangePassword, setShowChangePassword] = useState(false);
