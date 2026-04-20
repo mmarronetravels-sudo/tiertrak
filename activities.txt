@@ -48,3 +48,153 @@ NEXT SESSION SHOULD
   Pick up from a clean main. Four stale branches are gone; only main exists
   locally. Follow CLAUDE.md §2A — create a feature branch before any edits.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-20T14:11:19-07:00
+BRANCH:  feat/tier1-resources-view (merged as PR #4 → e36f1f8)
+DISPOSITION: merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Session 24a — Phase B of Step 9 (Tier 1 Resources). Added a new Resources
+  destination to the TierTrak nav with six downloadable templates and inline
+  markdown preview, plus collapsed a long-standing view-state shadow between
+  App.jsx and AppContext so navigation has a single source of truth. Purely
+  frontend work, no PII, no tenant-scoped changes, no backend edits. Pause-
+  driven cadence across 5 commits with human click-test at each behavioral
+  change. Separate chore/activities-log commit (this entry) follows the
+  Session 24 pre-work convention.
+
+FILES TOUCHED
+  frontend/src/resources/index.js — new; static manifest with six entries,
+    bundles markdown via Vite ?raw for preview
+  frontend/src/views/ResourcesView.jsx — new; six-card layout, Download Word
+    + Show/Hide preview, per-card MarkdownBoundary, accepts selectedResourceId
+    prop for Phase C deep-link
+  frontend/src/App.jsx — edited; imports ResourcesView, adds Resources nav
+    button between Students and Admin (Dashboard-button shape), adds
+    {view === 'resources' && <ResourcesView />} conditional, replaces local
+    useState('dashboard') at line 195 with { view, setView } = appContext
+  frontend/src/context/AppContext.jsx — edited; removed dead dashboard-fetch
+    useEffect (lines 374-381 pre-collapse) that became duplicate after the
+    view-state collapse; App.jsx already fetched dashboard data via its own
+    useEffects at 428-435 and 559-563
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — frontend-only PR, no SQL, no new API calls
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: verified no PII in logs — the only new log site is the
+    per-card MarkdownBoundary calling logError('[resources markdown]') with
+    the React error object only, no resource content
+  Cross-tenant risk: none identified — six resources are blank templates
+    shipped with the app, not tenant-specific data
+
+VERIFICATION
+  Commit 1: 6358610 (was the first pushed) feat(tier1): add Resources
+    manifest and ResourcesView component
+  Commit 2: 6781741 feat(tier1): wire Resources view into App.jsx nav
+  Commit 3: cf3bd73 refactor(tier1): remove Download Markdown button and
+    manifest field (after real-UI test revealed inconsistent cross-machine
+    behavior of the .md download link)
+  Commit 4: 3a81d28 docs(tier1): update resources manifest docstring to
+    reflect current file usage (followup to commit 3 stale comment)
+  Commit 5: bee2fda refactor(app): collapse duplicate view state, remove
+    dead context useEffect (isolated as final commit so it can be reverted
+    cleanly without taking Resources down — per scoping-v2 §9 Risk #4)
+  Merge commit: e36f1f8 Merge pull request #4
+  npm run dev — Vite 7.3.1 compiles cleanly, 479ms, all affected modules
+    transform 200 OK, ?raw markdown imports resolve correctly
+  node-fetch probe — verified served App.jsx contains the post-collapse
+    { view, setView } = appContext destructure and does not contain
+    useState('dashboard')
+  Click-test pre-collapse (Pause 2): Resources nav renders between
+    Students and Admin, routes correctly, six cards appear in order
+    1.2→1.3→1.4→2.3→3.4→7.3, Download Word works, Show/Hide preview works,
+    markdown content renders via react-markdown
+  Click-test post-collapse (Pause 3): Dashboard/Students/Admin/Resources
+    all functional; student profile navigation (highest-risk path post-
+    collapse since it goes through App.jsx's local openStudentProfile
+    which now calls the context setView) works correctly
+  Lint net change verified: one react-hooks/set-state-in-effect violation
+    removed from AppContext.jsx line 376 (fetchMissingLogs() inside the
+    deleted dashboard useEffect) and one added at ResourcesView.jsx:57
+    (setExpandedId inside the selectedResourceId watch effect). Net
+    count: unchanged. Verified by stdin-linting commit 3a81d28's
+    AppContext.jsx
+  npm test — skipped, no test script configured in either root or frontend
+    package.json
+
+OPEN ITEMS / FOLLOW-UPS
+  Backend 500s on three admin routes (priority medium-high):
+    - fix/admin-backend-500s — /api/students/referral-monitoring/:tenantId,
+      /api/weekly-progress/missing/:tenantId, /api/staff/:tenantId all
+      returning 500 in dev against tenant_id=2. Server stack traces live
+      in the node server.js stdout (PID 90222, started 2026-04-18).
+      security-reviewer + tenant-isolation-auditor relevant on fix.
+
+  Security — error leakage (priority medium):
+    - sec/hide-db-errors — routes/students.js:222 and
+      routes/staffManagement.js:44 return error.message directly to the
+      client, violating the documented pattern (master index appendix B).
+      Small fix, security-reviewer relevant.
+
+  Frontend defense (priority low, bundle with admin-backend-500s):
+    - fix/staff-list-response-guard — App.jsx:4533 and likely similar
+      spots don't check response.ok before passing .json() to state
+      setters. A 500 body {error:'…'} becomes staffList, then .map()
+      crashes. Root cause of the "blank screen" observed at Pause 3b.
+
+  Pre-existing UI typo (priority low):
+    - fix/nav-icon-typos — App.jsx:6591 renders <settings size={16} />
+      (lowercase) which is a native HTML element, not the lucide Settings
+      icon. Admin nav shows no icon as a result. Pre-existing before
+      Session 24a.
+
+  DX note (not scheduled):
+    - Admin → Staff has been silently 500-ing for 2+ days before this
+      session surfaced it. Consider a startup smoke-test script that
+      hits representative endpoints so rarely-used paths don't rot
+      undetected. Not on the schedule.
+
+  Mid-session scope corrections worth logging:
+    1. Download Markdown button removed at Pause 2b after first real UI
+       contact showed its behavior is inconsistent across machines (opens
+       editor on some, raw text on others). Commit cf3bd73 removed the
+       button and manifest field; commit 3a81d28 tightened the now-stale
+       docstring. Net diff: -6 lines from manifest, -8 lines from view.
+    2. ResourcesView.jsx:57 react-hooks/set-state-in-effect violation
+       accepted in-branch rather than refactored, consistent with repo's
+       existing lint posture (72 other errors in baseline). Deferred
+       refactor filed as chore/resources-derive-state-from-prop.
+
+  Orphaned files on disk (decision deferred):
+    - frontend/public/resources/*.md — six files are now unreferenced by
+      both the UI and the manifest (Download Markdown removed). Kept on
+      disk intentionally; pruning is a Phase C (or later) decision.
+
+  Process validation note:
+    - CC's audit-first pattern at Pause 0 caught the view-state collapse
+      safety audit and the Resources shape decisions cleanly. Pause 2b's
+      Download Markdown correction surfaced because of the real-UI click-
+      test gate between commits 2 and 3. Pause 3's clean separation of
+      commit 5 enabled accurate attribution of the Admin → Staff blank-
+      screen crash as a pre-existing backend issue, not a regression
+      from the view-state collapse. Pause discipline and commit
+      granularity worked as designed for this session's risk profile.
+
+NEXT SESSION SHOULD
+  Open Session 24 by synthesizing pre-work + Session 24a into a single
+  master-index update (external planning doc; master index is not in
+  the repo). Priority 3 human-eye review of the six .docx files in
+  Word/Pages is still pending and should happen before Phase C starts.
+  Phase C (Session 24b, new branch feat/tier1-resources-preview) will
+  wire a forward-reference handler from Tier1ResultsModal.jsx to a new
+  stacked ResourcePreviewModal, via an itemId → resourceId lookup table
+  that depends on the stable item-X-Y manifest ids shipped in this PR.
+  Modal-regression risk is higher than Phase B; plan for its own
+  session and its own review gate.
+================================================================================
