@@ -25,6 +25,7 @@ import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
 import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
+import ResourcesView from './views/ResourcesView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -6572,6 +6573,14 @@ if (isParent) {
                 >
                   Students
                 </button>
+                <button
+                  onClick={() => setView('resources')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    view === 'resources' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  Resources
+                </button>
                 {isAdmin && (
                   <button
                     onClick={() => setView('admin')}
@@ -6615,6 +6624,7 @@ if (isParent) {
         {view === 'students' && <StudentsListView />}
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
+        {view === 'resources' && <ResourcesView />}
      </main>
      {/* Add Custom Intervention Modal */}
       {showAddTemplate && (
