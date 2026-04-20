@@ -1,11 +1,10 @@
 // Static manifest of Tier 1 Resources shipped with the app.
 //
 // Markdown source files live in `frontend/src/resources/markdown/` and are
-// bundled inline via Vite's `?raw` suffix so they render without a network
-// request. The same markdown is also served from `frontend/public/resources/`
-// for direct download, alongside the Word (.docx) version. That duplication
-// is intentional — the bundled copy powers the in-app preview, the public
-// copies power the download links.
+// bundled via Vite's `?raw` suffix so they render the in-app preview
+// without a network request. The Word (.docx) version is served from
+// `frontend/public/resources/` for direct download via the Download Word
+// button.
 //
 // Manifest ids use hyphens with an `item-` prefix (e.g., `item-1-2`). This
 // string is the lookup key Phase C will use to map Tier 1 assessment item
