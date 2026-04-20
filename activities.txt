@@ -1,0 +1,50 @@
+================================================================================
+SESSION: 2026-04-20T06:43:43-07:00
+BRANCH:  main (no feature branch — read-only audit + local git hygiene only)
+DISPOSITION: kept (this log entry lands on chore/activities-log via its own PR)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two-job docs/hygiene session. Job 1: clean up stale merged local branches
+  left behind after origin-side deletion. Job 2: verify and fix CLAUDE.md §2
+  stack drift described in master-index Followup 41. No feature code changed.
+
+FILES TOUCHED
+  activities.txt — new file; first session log entry (this commit)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: n/a — no runtime code changed
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  git fetch --prune origin — removed 4 already-deleted remote refs
+  git merge-base --is-ancestor <branch> main — confirmed all 4 local branches
+    fully merged into main (ahead=0)
+  git branch -d feat/tier1-self-assessment — deleted (was 0496fe1)
+  git branch -d fix/httponly-auth-cookies — deleted (was 7f6f017)
+  git branch -d refactor/component-split — deleted (was 334b938)
+  git branch -d chore/claude-code-upgrade — deleted (was 6d2b334)
+  git branch — final local state: main only
+  CLAUDE.md §2 inspection — line 30 already reads "Frontend: React (Vite) —
+    hosted on Vercel"; no CDN+Babel description present
+  frontend/ inspection — vite.config.js present, frontend/package.json lists
+    vite ^7.2.4 + @vitejs/plugin-react + react ^19.2.0, frontend/index.html is
+    a standard Vite entry, frontend/src/ contains main.jsx/App.jsx/components
+  npm test / npm run lint — skipped by user (no code changes)
+
+OPEN ITEMS / FOLLOW-UPS
+  - Master index Followup 41 should be closed as "already resolved by PR #2
+    (6d2b334, chore/claude-code-upgrade — docs(claude): add stack, coding,
+    security, privacy companion docs)"; premise of the followup evaporated
+    when CLAUDE.md was rewritten in that PR.
+
+NEXT SESSION SHOULD
+  Pick up from a clean main. Four stale branches are gone; only main exists
+  locally. Follow CLAUDE.md §2A — create a feature branch before any edits.
+================================================================================
