@@ -198,3 +198,94 @@ NEXT SESSION SHOULD
   Modal-regression risk is higher than Phase B; plan for its own
   session and its own review gate.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-21T13:00:00-07:00
+BRANCH:  fix/resource-1-4-calendar-underscores (pr-opened: https://github.com/mmarronetravels-sudo/tiertrak/pull/6)
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/6
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Cosmetic fix session. Addressed a visual rendering bug in 3 Tier 1 resource
+  .docx artifacts where underscore fill-in-the-blank markers inside table
+  cells wrapped onto a second line in Word, producing stubby dangling
+  underscore fragments under each table row. Audit-first flow: identified
+  the pattern in 1.4 (user-reported), audited the other 5 sources, fixed
+  1.4 + 1.3 + 1.2 with pause points between each file so the user could
+  eyeball each regenerated .docx before moving on. No code touched — only
+  markdown sources and their regenerated .docx + copy artifacts.
+
+FILES TOUCHED
+  docs/tier1-resources/1.4-annual-mtss-calendar.md — shorten 12→6 underscores
+    in §2 MTSS team meetings table, §4 Staff PD sessions table, §6 Year-at-
+    a-glance summary table; abbreviate §6 month names (August→Aug, etc.,
+    May unchanged) to prevent first-column wrap
+  docs/tier1-resources/1.3-mtss-handbook.md — shorten 12→6 underscores in
+    §5 Universal Screening Schedule 4-column table
+  docs/tier1-resources/1.2-mtss-team-roles.md — shorten 25→12 underscores
+    in Standing Members 3-column table (wider cells justified longer blank
+    than 1.4/1.3's 6-underscore length); prose runs on lines 15/26/37/48
+    kept at 25 intentionally (outside tables, not buggy)
+  frontend/public/resources/{1.2,1.3,1.4}-*.docx — 3 regenerated via
+    pandoc per docs/tier1-resources/README.md
+  frontend/public/resources/{1.2,1.3,1.4}-*.md — 3 synced copies for the
+    markdown-source download link
+  frontend/src/resources/markdown/{1.2,1.3,1.4}-*.md — 3 synced copies for
+    Vite ?raw preview-modal import
+  Total: 12 files across 4 commits on the feature branch.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes. Template artifacts only; no queries, no data-path code.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. The resources are blank templates; edits changed
+    only formatting (underscore-run length + month-name abbreviations) in
+    unfilled blanks.
+  Logging audit: n/a — no runtime code changed.
+  Cross-tenant risk: none identified.
+
+VERIFICATION
+  Read-only audit at Pause 0 identified underscore-run pattern in 3 of 6
+    source files (1.2, 1.3, 1.4); confirmed 2.3, 3.4, 7.3 had no in-table
+    underscore runs.
+  Per-file grep post-edit confirmed in-prose underscore runs preserved
+    (only in-table runs shortened). 1.2 caught an important scope risk:
+    25-underscore pattern also appears in prose on 4 lines — edit was
+    anchored on the 3-col separator to scope safely.
+  Pandoc regeneration succeeded for all 3 .docx files.
+  .md source sizes match across the 3 copies per file (source == public
+    copy == src/markdown copy).
+  User visually eyeballed each regenerated .docx at each pause point and
+    confirmed wrapping was resolved before next file edit.
+  1.2 fit math verified by unzipping .docx and inspecting word/document.xml:
+    tblLayout=fixed, 3 × 2640-twip gridCols at 100% width, 12pt Calibri,
+    25 underscores ≈ 155–168 pt vs ~145 pt usable cell → confirmed likely
+    wrap before edit; 12 underscores ≈ 75–80 pt leaves comfortable margin.
+  git diff --name-only main..HEAD — 12 files, all .md or .docx; zero code
+    files touched; zero .js/.jsx modified.
+  npm test — no test script defined in root package.json (stub only) or
+    frontend/package.json. Pre-existing repo state.
+  frontend/ npm run lint — 73 errors, 16 warnings. All pre-existing on main;
+    verified zero diff in every erroring file between main and this branch.
+    Not introduced by this branch.
+  Subagent review (security, privacy, tenant-isolation) not required — no
+    auth, SQL, route, PII, or upload code touched.
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #6 is pending user confirmation before merge (user directive: do not
+    self-merge this one, even though it is cosmetic-only).
+  - Pre-existing lint baseline on main (73 errors, 16 warnings, mostly in
+    App.jsx / AppContext.jsx / ResourcesView.jsx / tier1Pdf.js) remains
+    unaddressed. Previously noted in Session 24a as accepted-in-branch
+    lint posture; still the baseline.
+
+NEXT SESSION SHOULD
+  Pick up after PR #6 is merged to main. If the user wants to tackle the
+  pre-existing frontend lint baseline, that is a candidate for its own
+  chore/frontend-lint-cleanup branch — it is unrelated to any feature
+  roadmap item. Otherwise continue with the Phase C work noted in the
+  Session 24a NEXT SESSION entry (Tier1ResultsModal → ResourcePreviewModal
+  forward-reference via itemId → resourceId lookup).
+================================================================================
