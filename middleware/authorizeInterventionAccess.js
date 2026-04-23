@@ -103,8 +103,46 @@ async function requireWriteAccessByLogId(req, res, next) {
   }
 }
 
+async function requireStudentReadAccess(req, res, next) {
+  try {
+    const { studentId } = req.params;
+    if (!studentId) {
+      return res.status(400).json({ error: 'Missing required parameter: studentId' });
+    }
+
+    const studentResult = await pool.query(
+      'SELECT id, tenant_id FROM students WHERE id = $1',
+      [studentId]
+    );
+    if (studentResult.rows.length === 0) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+    const studentTenantId = studentResult.rows[0].tenant_id;
+
+    if (req.user.role === 'parent') {
+      const linkResult = await pool.query(
+        `SELECT 1 FROM parent_student_links
+         WHERE parent_user_id = $1 AND student_id = $2
+         LIMIT 1`,
+        [req.user.id, studentId]
+      );
+      if (linkResult.rows.length === 0) {
+        return res.status(403).json(FORBIDDEN_BODY);
+      }
+    } else if (req.user.tenant_id !== studentTenantId) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    return next();
+  } catch (err) {
+    console.error('[requireStudentReadAccess]', err.message);
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+}
+
 module.exports = {
   requireAuth,
   requireWriteAccessByBody,
-  requireWriteAccessByLogId
+  requireWriteAccessByLogId,
+  requireStudentReadAccess
 };

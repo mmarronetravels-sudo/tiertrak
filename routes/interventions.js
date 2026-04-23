@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const {
+  requireAuth,
+  requireStudentReadAccess
+} = require('../middleware/authorizeInterventionAccess');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -148,16 +152,26 @@ router.patch('/:id/status', async (req, res) => {
 });
 
 // Get all interventions for a student
-router.get('/student/:studentId', async (req, res) => {
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
     const result = await pool.query(
-      `SELECT si.*, u.full_name as assigned_by_name
+      `SELECT si.*,
+              u.full_name as assigned_by_name,
+              CASE
+                WHEN $2 = 'parent' THEN (ia.id IS NOT NULL)
+                ELSE TRUE
+              END AS current_user_can_log
        FROM student_interventions si
        LEFT JOIN users u ON si.assigned_by = u.id
+       LEFT JOIN intervention_assignments ia
+         ON ia.student_intervention_id = si.id
+        AND ia.user_id = $3
+        AND ia.assignment_type = 'parent'
+        AND ia.can_log_progress = TRUE
        WHERE si.student_id = $1
        ORDER BY si.start_date DESC`,
-      [studentId]
+      [studentId, req.user.role, req.user.id]
     );
     res.json(result.rows);
   } catch (error) {
