@@ -4,7 +4,7 @@ import {
   FileText, Printer, BarChart3, LogIn, LogOut, Pencil, Settings, Users, User, BookOpen, 
   AlertCircle, Check, Calendar, Clock, MapPin, Archive, RotateCcw, TrendingUp, 
   Target, ClipboardList, ArrowLeft, ArrowRight, Save, RefreshCw, Filter, UserPlus,
-MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Key
+MoreVertical, Info, CheckCircle, XCircle, AlertTriangle, Home, Menu, Key, Lock
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
@@ -5904,7 +5904,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           // Fetch interventions for each student
           const studentsWithInterventions = await Promise.all(
   students.map(async (student) => {
-    const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`);
+    const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`, { credentials: 'include' });
     if (intRes.ok) {
       const interventions = await intRes.json();
       // Add student_id to each intervention so it's available when logging progress
@@ -5922,7 +5922,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           if (studentsWithInterventions.length === 1) {
             setSelectedChild(studentsWithInterventions[0]);
             // Fetch progress logs for auto-selected child
-            const progressRes = await fetch(`${API_URL}/weekly-progress/student/${studentsWithInterventions[0].id}`);
+            const progressRes = await fetch(`${API_URL}/weekly-progress/student/${studentsWithInterventions[0].id}`, { credentials: 'include' });
             if (progressRes.ok) {
               const progressData = await progressRes.json();
               setChildProgressLogs(progressData);
@@ -5949,6 +5949,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
       const res = await fetch(`${API_URL}/weekly-progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
        body: JSON.stringify({
           student_intervention_id: selectedInterventionForParentProgress.id,
           student_id: selectedInterventionForParentProgress.student_id || selectedChild?.id,
@@ -5967,7 +5968,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           notes: ''
         });
         // Refresh the child's interventions
-        const intRes = await fetch(`${API_URL}/interventions/student/${selectedChild.id}`);
+        const intRes = await fetch(`${API_URL}/interventions/student/${selectedChild.id}`, { credentials: 'include' });
         if (intRes.ok) {
           const interventions = await intRes.json();
           setSelectedChild({ ...selectedChild, interventions });
@@ -6106,7 +6107,7 @@ const handleDocumentDownload = async (docId, fileName) => {
                 key={child.id}
                 onClick={async () => {
                   setSelectedChild(child);
-                  const progressRes = await fetch(`${API_URL}/weekly-progress/student/${child.id}`);
+                  const progressRes = await fetch(`${API_URL}/weekly-progress/student/${child.id}`, { credentials: 'include' });
                   if (progressRes.ok) {
                     const progressData = await progressRes.json();
                     setChildProgressLogs(progressData);
@@ -6227,17 +6228,24 @@ const handleDocumentDownload = async (docId, fileName) => {
                         </div>
                       )}
 
-                      {/* Log Progress Button */}
-                      <button
-                        onClick={() => {
-                          setSelectedInterventionForParentProgress({...intervention, student_id: selectedChild?.id});
-                          setShowParentProgressForm(true);
-                        }}
-                        className="mt-4 w-full py-3 px-4 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 active:bg-emerald-800 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <Plus className="w-5 h-5" />
-                        Log Progress
-                      </button>
+                      {/* Log Progress Button — gated on backend-provided current_user_can_log */}
+                      {intervention.current_user_can_log === true ? (
+                        <button
+                          onClick={() => {
+                            setSelectedInterventionForParentProgress({...intervention, student_id: selectedChild?.id});
+                            setShowParentProgressForm(true);
+                          }}
+                          className="mt-4 w-full py-3 px-4 bg-emerald-600 text-white rounded-xl font-medium hover:bg-emerald-700 active:bg-emerald-800 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Plus className="w-5 h-5" />
+                          Log Progress
+                        </button>
+                      ) : (
+                        <div className="mt-4 w-full py-3 px-4 bg-slate-100 text-slate-600 rounded-xl font-medium flex items-center justify-center gap-2">
+                          <Lock className="w-4 h-4" />
+                          Read-only
+                        </div>
+                      )}
 
                       {/* Progress History */}
                       {childProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 0 && (

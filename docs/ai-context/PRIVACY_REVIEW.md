@@ -188,6 +188,28 @@ When CSV import adds new fields:
 - Silently ignore (not store) any extra columns the district's CSV happens to include.
 - Document the whitelist in code (a constant) and mention it in the PR.
 
+## Approved data-minimization exceptions
+
+Default posture is data minimization per CLAUDE.md Section 4B. Entries below are intentional exposures approved during a specific PR, recorded here so future reviewers see the decision on record.
+
+### Parent portal — full `student_interventions` row exposure
+
+**Exposure:** `GET /api/interventions/student/:studentId` returns `si.*` (including `notes`, `goal_description`, and other narrative fields) to callers with `role = 'parent'` who have a matching row in `parent_student_links`.
+
+**Rationale:** Matches existing meeting-report behavior — parents already see the same narrative in scheduled meeting summaries. Divergent portal vs. report detail would split the source of truth and confuse parents. Read-only access; write restrictions documented below.
+
+**Safeguards:** Read-only. Write access gated separately by `intervention_assignments.assignment_type = 'parent' AND can_log_progress = TRUE` in `routes/weeklyProgress.js`. Cross-tenant reads blocked by the tenant match in `requireStudentReadAccess`.
+
+**Provenance:** `fix/parent-portal-intervention-write-access` (PR #8), commit `29daf3b`.
+
+### `current_user_can_log` response field
+
+**Exposure:** `GET /api/interventions/student/:studentId` returns a boolean `current_user_can_log` per intervention.
+
+**Rationale:** Not PII. Derived server-side: for `role = 'parent'`, TRUE iff a row exists in `intervention_assignments` with `user_id = req.user.id`, matching `student_intervention_id`, `assignment_type = 'parent'`, and `can_log_progress = TRUE`. For all other roles, TRUE unconditionally. Frontend uses strict `=== true` to gate the "Log Progress" button in ParentPortalView.
+
+**Provenance:** `fix/parent-portal-intervention-write-access` (PR #8), commit `29daf3b`.
+
 ## The "new data collection" trigger
 
 Any PR that adds a new field storing PII is a Section 8 ask-first trigger. The PR description must include:
