@@ -198,3 +198,139 @@ NEXT SESSION SHOULD
   Modal-regression risk is higher than Phase B; plan for its own
   session and its own review gate.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-23T12:59:00-07:00
+BRANCH:  fix/parent-portal-intervention-write-access
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/8
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Parent-portal intervention-write-access bug fix. Before this branch,
+  parents viewing the portal could POST/PUT/DELETE on /api/weekly-progress
+  for any intervention (including staff-assigned ones), and
+  GET /api/interventions/student/:studentId was unauthenticated. Branch
+  adds a new shared middleware with role-branched authorization on both
+  the write endpoints and the intervention read endpoint, and hides UI
+  affordances parents should not use. 7 commits, PR #8 opened, all three
+  reviewers returned APPROVED WITH NOTES, both pre-merge WARNs addressed.
+
+FILES TOUCHED
+  middleware/authorizeInterventionAccess.js           new — requireAuth + 3 role-branched gates
+  routes/weeklyProgress.js                            gated POST/PUT/DELETE; forced logged_by+student_id server-side
+  routes/interventions.js                             gated GET /student/:studentId; added current_user_can_log flag; 500 generic
+  frontend/src/App.jsx                                ParentPortalView gate on "Log Progress"; credentials:'include' on 5 fetches; Lock icon import
+  docs/ai-context/PRIVACY_REVIEW.md                   new "Approved data-minimization exceptions" section
+
+MIGRATIONS RUN
+  migration-013-password-reset.sql (local only)       pre-existing drift from main; applied to local DB to unblock test-account creation. Not introduced by this branch.
+
+TENANT ISOLATION REVIEW
+  Every new/modified SQL query verified by tenant-isolation-auditor.
+  Authoritative tenant lookup pattern: for writes, derived from
+  student_interventions -> students.tenant_id via server-side join; for
+  reads, students.tenant_id fetched directly. Parent branch gated by
+  parent_student_links (reads) and intervention_assignments (writes).
+  Non-parent branch gated by tenant match. No cross-tenant read or write
+  path introduced. Verdict: APPROVED WITH NOTES, 0 CRITICAL.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none newly persisted. Existing student_interventions
+    "notes" field is now intentionally readable by role=parent callers
+    (documented exception, see PRIVACY_REVIEW.md section added in Commit 7).
+  Logging audit: 6 new console.error sites log only err.message prefixed
+    with a static tag. No student/staff/tenant identifiers interpolated.
+  Error responses: all 403/401 paths use generic bodies
+    ({"error":"Not authorized"} / {"error":"Not authenticated"}).
+    Raw pg error leak on GET /interventions/student/:studentId fixed in
+    Commit 6.
+  Cross-tenant risk: none identified. Privacy-reviewer verdict:
+    APPROVED WITH NOTES, 0 CRITICAL. Both pre-merge WARNs addressed in
+    Commits 6 and 7.
+
+DB FIXTURES CREATED DURING MANUAL TESTING (local DB only, no PII inlined)
+  users                       +1 row (role=parent, Lincoln Elementary tenant, bcrypt pw set)
+  parent_student_links        +1 row (linking the test parent to one Lincoln student)
+  intervention_assignments    +1 row (assignment_type='parent', can_log_progress=TRUE) for one of that student's interventions
+  weekly_progress             +1 row via the test write path (logged_by correctly attributed to the test parent)
+
+VERIFICATION
+  git status                                clean, working tree matches origin at df1c05f
+  node -c (3 touched backend files)         all parse OK
+  npm run build (frontend/)                 built in 2.86s, no errors
+  npm run lint (frontend/)                  89 pre-existing issues across the repo; 0 on lines this branch touched (grep-verified)
+  Manual Tests 1-5 (parent portal flow)     all PASSED on local dev (Ethan Jackson / Individual Counseling / Log Progress gating / edge case can_log_progress=FALSE toggle + revert)
+  Security, tenant-isolation, privacy       all 3 reviewers returned APPROVED WITH NOTES, 0 CRITICAL
+  Pre-merge WARN asks                       security WARN 2 -> Commit 5 (86bb4d0); privacy WARN 1 -> Commit 6 (dc3b5e1); privacy WARN 2 -> Commit 7 (df1c05f)
+
+BRANCH CLEANUP DURING CLOSE
+  fix/resource-1-4-calendar-underscores   not present locally (already cleaned up)
+  chore/activities-log                    not present locally (already cleaned up)
+  Only the PR branch and main remain locally; no deletes performed.
+
+OPEN ITEMS / FOLLOW-UPS
+  1. sec/require-auth-on-unprotected-routes
+       Systematic auth middleware + algorithms:['HS256'] on jwt.verify
+       across all route files currently missing JWT enforcement. Elevated
+       priority: the 4 GET routes in routes/weeklyProgress.js
+       (/student/:studentId, /intervention/:interventionId,
+       /summary/:studentId, /missing/:tenantId) surface PII and are now
+       easier to exploit from a compromised parent cookie after this
+       PR's credentials:'include' change. Flagged by both
+       tenant-isolation-auditor and security-reviewer. First milestone
+       suggested: sec/weekly-progress-read-scoping. Middleware already
+       exists; one-line-per-route application.
+  2. Schema drift on parent creation flow (combined cleanup)
+       Three related pre-existing bugs surfaced during test-fixture
+       setup: (a) missing password_reset_token / password_reset_expires
+       columns (fixed locally via migration-013-password-reset.sql; still
+       pending on any environment that never ran the migration);
+       (b) password_hash NOT NULL constraint violated by the
+       parent-creation UI code path; (c) parent_student_links.tenant_id
+       referenced by INSERT at routes/auth.js:341-344 but the column is
+       missing from schema. All three block parent-creation via the UI.
+  3. Dead code
+       Duplicate router.put('/:id') handler at
+       routes/weeklyProgress.js:294. Unreachable today (first handler
+       wins) but a footgun for future refactors. Security-reviewer INFO.
+  4. Intervention-assignment model inconsistency
+       intervention_assignments is effectively parent-only in practice
+       today. Staff authorization flows through tenant scope + admin
+       gatekeeping at intervention creation, not explicit assignment
+       rows. Whether to consolidate staff onto explicit assignment rows
+       is a product decision, not a bug.
+  5. Missing success toast on staff weekly progress save
+       Writes land in DB with logged_by correctly attributed to the staff
+       user, but no UI confirmation appears after successful submit.
+       Pre-existing; not introduced here. Candidate for a small chore/.
+  6. apiFetch helper refactor (chore/api-fetch-helper)
+       Five fetch sites in ParentPortalView all missed
+       credentials:'include'; three were active bugs fixed in Commit 4.
+       "Five call sites all missed the same thing" is the canonical sign
+       the abstraction is missing. Wrap fetch() and default
+       credentials:'include', removing the footgun.
+  7. Eight additional { error: error.message } leaks in
+       routes/interventions.js on pre-existing unauthenticated handlers
+       (lines 57, 79, 102, 123, 150, 233, 261, 288). Not reachable to
+       authenticated attackers today; become reachable the moment
+       sec/require-auth-on-unprotected-routes gates them. Fix alongside
+       the auth-gating work.
+  8. No rate limiting anywhere in the repo
+       Security-reviewer INFO. No express-rate-limit import found.
+       Candidate for a separate sec/* followup; lower priority than 1-7.
+  9. No 401 interceptor on the frontend
+       Privacy-reviewer flagged during Commit 5 grep-verification: users
+       see errors on session expiry instead of being redirected to
+       login. Pre-existing. Candidate for the sec/ session.
+  10. "Rachel Adams" display name discrepancy
+       Admin UI shows "Rachel Adams" as the school admin for Lincoln
+       Elementary, but no user matches that name by
+       users.full_name ILIKE. Lincoln's two admin users are id 6 and
+       id 7 by email. Display name sourced from somewhere other than
+       users.full_name. Minor investigation; not blocking.
+
+NEXT SESSION SHOULD
+  Wait for PR #8 human review + merge before starting sec/ work.
+  If the next session is sec/, begin with followup 1 above; that
+  session is also the natural home for followups 7, 8, 9 and the
+  algorithms:['HS256'] jwt.verify pinning deferred from security WARN 1.
+================================================================================
