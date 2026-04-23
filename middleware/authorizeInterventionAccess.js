@@ -11,23 +11,34 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // Role string is lowercase 'parent' per the users.role CHECK constraint
 // (server.js bootstrap) and every comparison in the codebase. No normalization.
 
-function requireAuth(req, res, next) {
+// Re-queries the users row on every request so role/tenant changes take
+// effect immediately (e.g., demotion, role flip). Mirrors the pattern in
+// routes/tier1-assessments.js:40-64.
+const requireAuth = async (req, res, next) => {
   try {
-    const token = req.cookies?.auth_token;
-    if (!token) return res.status(401).json({ error: 'Authentication required' });
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role,
-      tenant_id: decoded.tenant_id
-    };
-    return next();
+    const token = req.cookies && req.cookies.auth_token;
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (_) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    const { rows } = await pool.query(
+      'SELECT id, role, tenant_id FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });
+
+    req.user = rows[0];
+    next();
   } catch (err) {
     console.error('[requireAuth]', err.message);
-    return res.status(401).json({ error: 'Invalid or expired session' });
+    res.status(500).json({ error: 'Server error' });
   }
-}
+};
 
 async function authorizeByInterventionId(req, res, studentInterventionId) {
   const interventionResult = await pool.query(
