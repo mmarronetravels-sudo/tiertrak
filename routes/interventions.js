@@ -175,7 +175,8 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[GET /interventions/student/:studentId]', error.message);
+    res.status(500).json({ error: 'Failed to fetch interventions' });
   }
 });
 
