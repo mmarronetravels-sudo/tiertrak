@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
+const {
+  requireAuth,
+  requireWriteAccessByBody,
+  requireWriteAccessByLogId
+} = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -203,32 +208,32 @@ router.get('/summary/:studentId', async (req, res) => {
 });
 
 // Create a weekly progress log
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireWriteAccessByBody, async (req, res) => {
   try {
-    const { 
-      student_intervention_id, 
-      student_id,
-      week_of, 
-      status, 
-      rating, 
-      response, 
-      notes, 
-      logged_by 
+    const {
+      student_intervention_id,
+      week_of,
+      status,
+      rating,
+      response,
+      notes
     } = req.body;
 
-    if (!student_intervention_id || !student_id || !week_of || !status) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: student_intervention_id, student_id, week_of, status' 
+    if (!week_of || !status) {
+      return res.status(400).json({
+        error: 'Missing required fields: week_of, status'
       });
     }
 
     const normalizedWeek = week_of;
+    const loggedBy = req.user.id;
+    const studentId = req.intervention.student_id;
 
     const result = await pool.query(`
-      INSERT INTO weekly_progress 
+      INSERT INTO weekly_progress
         (student_intervention_id, student_id, week_of, status, rating, response, notes, logged_by)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (student_intervention_id, week_of) 
+      ON CONFLICT (student_intervention_id, week_of)
       DO UPDATE SET
         status = EXCLUDED.status,
         rating = EXCLUDED.rating,
@@ -237,7 +242,7 @@ router.post('/', async (req, res) => {
         logged_by = EXCLUDED.logged_by,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [student_intervention_id, student_id, normalizedWeek, status, rating, response, notes, logged_by]);
+    `, [student_intervention_id, studentId, normalizedWeek, status, rating, response, notes, loggedBy]);
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -247,13 +252,13 @@ router.post('/', async (req, res) => {
 });
 
 // Update a weekly progress log
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, requireWriteAccessByLogId, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, rating, response, notes } = req.body;
 
     const result = await pool.query(`
-      UPDATE weekly_progress 
+      UPDATE weekly_progress
       SET status = $1, rating = $2, response = $3, notes = $4, updated_at = CURRENT_TIMESTAMP
       WHERE id = $5
       RETURNING *
@@ -271,7 +276,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete a weekly progress log
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, requireWriteAccessByLogId, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
