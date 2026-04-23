@@ -5904,7 +5904,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           // Fetch interventions for each student
           const studentsWithInterventions = await Promise.all(
   students.map(async (student) => {
-    const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`);
+    const intRes = await fetch(`${API_URL}/interventions/student/${student.id}`, { credentials: 'include' });
     if (intRes.ok) {
       const interventions = await intRes.json();
       // Add student_id to each intervention so it's available when logging progress
@@ -5922,7 +5922,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           if (studentsWithInterventions.length === 1) {
             setSelectedChild(studentsWithInterventions[0]);
             // Fetch progress logs for auto-selected child
-            const progressRes = await fetch(`${API_URL}/weekly-progress/student/${studentsWithInterventions[0].id}`);
+            const progressRes = await fetch(`${API_URL}/weekly-progress/student/${studentsWithInterventions[0].id}`, { credentials: 'include' });
             if (progressRes.ok) {
               const progressData = await progressRes.json();
               setChildProgressLogs(progressData);
@@ -5949,6 +5949,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
       const res = await fetch(`${API_URL}/weekly-progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
        body: JSON.stringify({
           student_intervention_id: selectedInterventionForParentProgress.id,
           student_id: selectedInterventionForParentProgress.student_id || selectedChild?.id,
@@ -5967,7 +5968,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           notes: ''
         });
         // Refresh the child's interventions
-        const intRes = await fetch(`${API_URL}/interventions/student/${selectedChild.id}`);
+        const intRes = await fetch(`${API_URL}/interventions/student/${selectedChild.id}`, { credentials: 'include' });
         if (intRes.ok) {
           const interventions = await intRes.json();
           setSelectedChild({ ...selectedChild, interventions });
@@ -6106,7 +6107,7 @@ const handleDocumentDownload = async (docId, fileName) => {
                 key={child.id}
                 onClick={async () => {
                   setSelectedChild(child);
-                  const progressRes = await fetch(`${API_URL}/weekly-progress/student/${child.id}`);
+                  const progressRes = await fetch(`${API_URL}/weekly-progress/student/${child.id}`, { credentials: 'include' });
                   if (progressRes.ok) {
                     const progressData = await progressRes.json();
                     setChildProgressLogs(progressData);
