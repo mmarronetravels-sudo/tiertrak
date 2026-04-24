@@ -105,8 +105,8 @@ router.get('/student/:studentId', requireAuth, requireStudentDocumentListAccess,
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching student documents:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching student documents:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -176,8 +176,8 @@ router.post('/upload', requireAuth, upload.single('file'), requireDocumentUpload
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error uploading document:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error uploading document:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -197,8 +197,8 @@ router.get('/download/:id', requireAuth, requireDocumentReadAccess, async (req, 
 
     res.json({ url: signedUrl, fileName: document.file_name });
   } catch (error) {
-    console.error('Error generating download URL:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error generating download URL:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -223,8 +223,8 @@ router.delete('/:id', requireAuth, requireDocumentWriteAccess, async (req, res) 
 
     res.json({ message: 'Document deleted successfully' });
   } catch (error) {
-    console.error('Error deleting document:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error deleting document:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -253,8 +253,8 @@ router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async 
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching expiring documents:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching expiring documents:', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
