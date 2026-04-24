@@ -9,6 +9,7 @@ const {
   requireStudentDocumentListAccess,
   requireDocumentReadAccess,
   requireDocumentWriteAccess,
+  requireDocumentUploadAccess,
   requireExpiringListAccess,
   PARENT_VISIBLE_CATEGORIES
 } = require('../middleware/authorizeDocumentAccess');
@@ -110,31 +111,40 @@ router.get('/student/:studentId', requireAuth, requireStudentDocumentListAccess,
 });
 
 // POST /api/student-documents/upload - Upload a document
-router.post('/upload', upload.single('file'), async (req, res) => {
+// Middleware order matters:
+//   1. requireAuth — rejects unauthenticated callers before multer buffers any bytes.
+//   2. upload.single('file') — multer populates req.body (multipart fields) and req.file.
+//   3. requireDocumentUploadAccess — gates on req.user + req.body.student_id, sets req.targetStudent.
+// Only non-identifying fields are taken from the client body (document_category,
+// description, expiration_date). tenant_id, student_id, and uploaded_by are
+// server-derived from req.targetStudent and req.user.
+router.post('/upload', requireAuth, upload.single('file'), requireDocumentUploadAccess, async (req, res) => {
   try {
-    const { student_id, tenant_id, document_category, description, expiration_date, uploaded_by } = req.body;
+    const { document_category, description, expiration_date } = req.body;
     const file = req.file;
-    
+
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
-    // Generate unique S3 key
+
+    const tenantId = req.targetStudent.tenant_id;
+    const studentId = req.targetStudent.id;
+    const uploadedBy = req.user.id;
+
+    // S3 key is rebuilt from server-derived tenant + student so a forged
+    // body.tenant_id cannot cause writes into another tenant's folder.
     const timestamp = Date.now();
     const sanitizedFileName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const s3Key = `tenant-${tenant_id}/student-${student_id}/${timestamp}-${sanitizedFileName}`;
-    
-    // Upload to S3
-    const uploadParams = {
+    const s3Key = `tenant-${tenantId}/student-${studentId}/${timestamp}-${sanitizedFileName}`;
+
+    await s3Client.send(new PutObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET,
       Key: s3Key,
       Body: file.buffer,
       ContentType: file.mimetype,
       ServerSideEncryption: 'AES256',
-    };
-    
-    await s3Client.send(new PutObjectCommand(uploadParams));
-    
+    }));
+
     // Calculate expiration date if not provided and category has default
     let finalExpirationDate = expiration_date || null;
     if (!finalExpirationDate && document_category && DOCUMENT_CATEGORIES[document_category]?.defaultExpirationMonths) {
@@ -143,8 +153,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       expDate.setMonth(expDate.getMonth() + months);
       finalExpirationDate = expDate.toISOString().split('T')[0];
     }
-    
-    // Save to database
+
     const result = await pool.query(`
       INSERT INTO student_documents (
         tenant_id, student_id, file_name, file_url, file_type, file_size, s3_key,
@@ -152,8 +161,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `, [
-      tenant_id,
-      student_id,
+      tenantId,
+      studentId,
       file.originalname,
       `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`,
       path.extname(file.originalname).toLowerCase().replace('.', ''),
@@ -162,9 +171,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       document_category,
       description || null,
       finalExpirationDate,
-      uploaded_by
+      uploadedBy
     ]);
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error uploading document:', error);
