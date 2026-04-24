@@ -334,3 +334,88 @@ NEXT SESSION SHOULD
   session is also the natural home for followups 7, 8, 9 and the
   algorithms:['HS256'] jwt.verify pinning deferred from security WARN 1.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-23T18:46:20-07:00
+BRANCH:  fix/mtss-report-rendering (merged as PR #10 → 5ac69f8 + bba7234, merge commit 0a6cfea)
+DISPOSITION: merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  MTSS Progress Report rendering fix. Two bugs in the report modal:
+  (1) every date field in the report body rendered as "Invalid Date"
+  while the header rendered correctly; (2) a 6-Week Review meeting
+  inside the selected date range did not appear in the report's
+  meeting-notes section. Pure frontend fix plus a docs update to the
+  PII inventory. 2 commits, PR #10 merged with --no-ff preserving
+  both SHAs on main. Live deploy verified on production sandbox.
+
+FILES TOUCHED
+  frontend/src/components/Modals/ReportModal.jsx    formatDateLocal helper; 4 date call sites routed through it; progress_notes→progressNotes camelCase fix; new authenticated fetch to /mtss-meetings/student/:id; dual-source meeting-notes render (modern mtss_meetings + legacy progressNotes)
+  docs/ai-context/PRIVACY_REVIEW.md                 recorded mtss_meetings render surface in the FERPA section (meeting_type, progress_summary, next_steps, created_by_name) per privacy-reviewer WARN
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No new SQL queries, no new backend handlers, no new tables. Skipped
+  tenant-isolation-auditor by design: the endpoint this PR newly calls
+  from the frontend (GET /mtss-meetings/student/:studentId) has a
+  pre-existing tenant-scoping + auth-middleware gap that is already
+  captured as master-index Followup 57 and is out of scope for a
+  frontend rendering fix. The new client-side call correctly sends
+  credentials:'include', which is a prerequisite for the eventual
+  server-side fix and does not worsen the existing gap.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: four mtss_meetings fields are now rendered in
+    the MTSS Progress Report UI — meeting_type, progress_summary,
+    next_steps, created_by_name. All were already stored server-side
+    pre-PR; this is a new render site, not a new data surface. Added
+    to the FERPA inventory in PRIVACY_REVIEW.md (commit bba7234).
+  Logging audit: one new logError call on a failed meetings fetch
+    logs a static tag plus the raw err object only — no PII fields
+    interpolated. logError resolves to console.error.
+  Error responses: frontend-only change, no res.json / res.send
+    surfaces modified. Non-OK fetch responses fail silently to an
+    empty meetings array (no error body surfaced to the user).
+  Cross-tenant risk: none introduced by this PR. Privacy-reviewer
+    verdict APPROVED WITH NOTES, 0 CRITICAL, 1 WARN (doc ask
+    addressed in commit bba7234), 2 INFO. Security-reviewer verdict
+    APPROVED WITH NOTES, 0 CRITICAL, 0 WARN, 3 INFO.
+
+VERIFICATION
+  git status (on main, post-merge)          clean, working tree matches origin at 0a6cfea
+  git log --oneline main -4                 0a6cfea merge / bba7234 docs / 5ac69f8 fix / 7b0c02b (prior main)
+  Original SHAs preserved on main           5ac69f8 and bba7234 both present on main with their original hashes (no squash)
+  Manual smoke test on local dev            dates render as valid localized dates in all four affected fields; modern mtss_meetings and legacy progressNotes both render with date-range filtering honored (test student: Ethan Jackson, per prior activities.txt convention)
+  Live deploy verification (production sandbox) Bug 1 and Bug 2 both confirmed fixed end-to-end; no visible regressions
+  Privacy-reviewer                          APPROVED WITH NOTES, 0 CRITICAL; 1 WARN addressed in bba7234
+  Security-reviewer                         APPROVED WITH NOTES, 0 CRITICAL, 0 WARN
+  Tenant-isolation-auditor                  skipped by design (Followup 57 captures the pre-existing endpoint gap)
+
+BRANCH CLEANUP DURING CLOSE
+  fix/mtss-report-rendering                 left intact locally and on origin; cleanup deferred to the next session's handshake (Session 25 convention: prior session's branch is deleted at the top of the next session)
+
+OPEN ITEMS / FOLLOW-UPS
+  - [pre-existing, out of scope] routes/mtssMeetings.js:97
+    GET /mtss-meetings/student/:studentId has no auth middleware and
+    no tenant_id filter in the WHERE clause — an unauthenticated
+    caller can enumerate studentId values and read any tenant's
+    meetings. Same class as the parent-portal intervention-read gap
+    fixed in Session 25 (PR #8). → master-index Followup 57
+    (sec/require-auth-on-unprotected-routes).
+
+  - [pre-existing, out of scope] frontend/src/App.jsx:767
+    fetchMTSSMeetings calls fetch() without credentials: 'include',
+    so the httpOnly auth cookie is not sent. Same pattern as the
+    ParentPortalView fetches fixed in Session 25 (commit 4d24d54).
+    → master-index Followup 63 (apiFetch helper refactor).
+
+NEXT SESSION SHOULD
+  Open the next session by cleaning up the fix/mtss-report-rendering
+  branch (local + origin) during the handshake, matching the Session
+  26 opening pattern used today. If the next session is the sec/
+  branch for master-index Followup 57, the two followups above are
+  its natural first targets alongside the Session 25 followups 1
+  and 6.
+================================================================================
