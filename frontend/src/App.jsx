@@ -934,9 +934,9 @@ const handleDocumentUpload = async (e) => {
   const formData = new FormData(form);
   
   formData.append('student_id', selectedStudent.id);
-  formData.append('tenant_id', user.tenant_id);
-  formData.append('uploaded_by', user.id);
-  
+  // tenant_id and uploaded_by are derived server-side from the authenticated
+  // user, so the client no longer sends them.
+
   setDocumentUploadLoading(true);
   
   try {
@@ -6012,9 +6012,9 @@ const handleParentDocumentUpload = async (e) => {
   
   const formData = new FormData(e.target);
   formData.append('student_id', selectedChild.id);
-  formData.append('tenant_id', user.tenant_id);
-  formData.append('uploaded_by', user.id);
-  
+  // tenant_id and uploaded_by are derived server-side from the authenticated
+  // user, so the client no longer sends them.
+
   try {
     const res = await fetch(`${API_URL}/student-documents/upload`, {
   method: 'POST',
@@ -6046,11 +6046,34 @@ const handleDocumentDownload = async (docId, fileName) => {
 });
     if (res.ok) {
       const data = await res.json();
-      window.open(data.downloadUrl, '_blank');
+      window.open(data.url, '_blank');
+    } else {
+      alert('Download failed. Please try again.');
     }
   } catch (error) {
     console.error('Error downloading document:', error);
     alert('Download failed. Please try again.');
+  }
+};
+
+// Handle parent delete of their own uploaded document
+const handleChildDocumentDelete = async (docId) => {
+  if (!confirm('Are you sure you want to delete this document? This cannot be undone.')) {
+    return;
+  }
+  try {
+    const res = await fetch(`${API_URL}/student-documents/${docId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+    if (res.ok) {
+      await fetchChildDocuments(selectedChild.id);
+    } else {
+      alert('Delete failed. Please try again.');
+    }
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    alert('Delete failed. Please try again.');
   }
 };
 
@@ -6389,12 +6412,22 @@ const handleDocumentDownload = async (docId, fileName) => {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDocumentDownload(doc.id, doc.file_name)}
-                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                  >
-                    <Download size={18} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleDocumentDownload(doc.id, doc.file_name)}
+                      className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                    >
+                      <Download size={18} />
+                    </button>
+                    {Number(doc.uploaded_by) === Number(user.id) && (
+                      <button
+                        onClick={() => handleChildDocumentDelete(doc.id)}
+                        className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
