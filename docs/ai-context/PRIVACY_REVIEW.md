@@ -36,7 +36,7 @@ Treat any of these as PII and apply Section 4B rules:
 ### Education-record-specific (FERPA)
 - Tier assignment history
 - Intervention records (what was tried, when, outcomes)
-- Meeting notes (MTSS, pre-referral, parent conferences)
+- Meeting notes (MTSS, pre-referral, parent conferences) — `mtss_meetings` fields: `meeting_type`, `progress_summary`, `next_steps`, `created_by_name`
 - Referral data
 - Assessment results
 - Attendance linked to a person

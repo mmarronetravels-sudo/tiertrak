@@ -57,9 +57,22 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
       progressMap[item.interventionId] = item.progress;
     });
 
+    var meetings = [];
+    try {
+      var meetingsRes = await fetch(API_URL + '/mtss-meetings/student/' + selectedStudent.id, {
+        credentials: 'include'
+      });
+      if (meetingsRes.ok) {
+        meetings = await meetingsRes.json();
+      }
+    } catch (err) {
+      logError('Error fetching MTSS meetings:', err);
+    }
+
     setReportData({
       student: selectedStudent,
       progressMap: progressMap,
+      meetings: meetings,
       generatedAt: new Date().toISOString()
     });
 
@@ -68,6 +81,15 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
 
   const printReport = function() {
     window.print();
+  };
+
+  // Parse DATE-column values (may arrive as 'YYYY-MM-DD' or full ISO
+  // strings from pg Date serialization) into a local-midnight Date so
+  // toLocaleDateString doesn't shift across timezones.
+  const formatDateLocal = function(val) {
+    if (!val) return null;
+    var datePart = String(val).split('T')[0];
+    return new Date(datePart + 'T00:00:00');
   };
 
   const filterByDateRange = function(items, dateField) {
@@ -188,7 +210,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
                       <div>
                         <h3 className="font-semibold text-gray-900">{intervention.intervention_name}</h3>
                         <p className="text-sm text-gray-500">
-                          Started: {intervention.start_date ? new Date(intervention.start_date + 'T00:00:00').toLocaleDateString() : 'N/A'}
+                          Started: {intervention.start_date ? formatDateLocal(intervention.start_date).toLocaleDateString() : 'N/A'}
                           {intervention.status !== 'active' && (
                             <span className="ml-2 text-amber-600">({intervention.status})</span>
                           )}
@@ -210,7 +232,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
                         <p className="text-sm text-gray-900">{intervention.goal_description}</p>
                         {intervention.goal_target_date && (
                           <p className="text-xs text-gray-500 mt-1">
-                            Target: {new Date(intervention.goal_target_date + 'T00:00:00').toLocaleDateString()}
+                            Target: {formatDateLocal(intervention.goal_target_date).toLocaleDateString()}
                             {intervention.goal_target_rating && (' \u2022 Target Rating: ' + intervention.goal_target_rating + '/5')}
                           </p>
                         )}
@@ -239,7 +261,7 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
                             {filteredLogs.sort(function(a, b) { return new Date(b.week_of) - new Date(a.week_of); }).map(function(log) {
                               return (
                                 <tr key={log.id} className="border-b">
-                                  <td className="py-2 px-3">{new Date(log.week_of + 'T00:00:00').toLocaleDateString()}</td>
+                                  <td className="py-2 px-3">{log.week_of ? formatDateLocal(log.week_of).toLocaleDateString() : 'N/A'}</td>
                                   <td className="py-2 px-3">
                                     <span className={'px-2 py-0.5 rounded text-xs ' + (
                                       log.status === 'Implemented as Planned' ? 'bg-emerald-100 text-emerald-700' :
@@ -282,17 +304,45 @@ const ReportModal = ({ onClose, selectedStudent, API_URL, token }) => {
             <h2 className="text-lg font-bold text-gray-900 mb-4 pb-2 border-b">MTSS Meeting Notes</h2>
 
             {(function() {
-              var filteredNotes = filterByDateRange(selectedStudent.progress_notes || [], 'meeting_date');
-              return filteredNotes.length === 0 ? (
-                <p className="text-gray-500 italic">No meeting notes during this period.</p>
-              ) : (
+              var modernMeetings = reportData && reportData.meetings ? reportData.meetings : [];
+              var filteredMeetings = filterByDateRange(modernMeetings, 'meeting_date');
+              var filteredLegacy = filterByDateRange(selectedStudent.progressNotes || [], 'meeting_date');
+
+              if (filteredMeetings.length === 0 && filteredLegacy.length === 0) {
+                return <p className="text-gray-500 italic">No meeting notes during this period.</p>;
+              }
+
+              return (
                 <div className="space-y-4">
-                  {filteredNotes.sort(function(a, b) { return new Date(b.meeting_date) - new Date(a.meeting_date); }).map(function(note) {
+                  {filteredMeetings.sort(function(a, b) { return new Date(b.meeting_date) - new Date(a.meeting_date); }).map(function(meeting) {
                     return (
-                      <div key={note.id} className="p-4 border rounded-lg print:break-inside-avoid">
+                      <div key={'meeting-' + meeting.id} className="p-4 border rounded-lg print:break-inside-avoid">
                         <div className="flex items-center justify-between mb-2">
                           <p className="font-medium text-gray-900">
-                            {note.meeting_date ? new Date(note.meeting_date + 'T00:00:00').toLocaleDateString('en-US', {
+                            {meeting.meeting_date ? formatDateLocal(meeting.meeting_date).toLocaleDateString('en-US', {
+                              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+                            }) : 'No date'}
+                            {meeting.meeting_type && (
+                              <span className="ml-2 text-xs text-indigo-600 font-normal">({meeting.meeting_type})</span>
+                            )}
+                          </p>
+                          <p className="text-sm text-gray-500">{meeting.created_by_name || 'Unknown'}</p>
+                        </div>
+                        {meeting.progress_summary && (
+                          <p className="text-gray-700 whitespace-pre-wrap">{meeting.progress_summary}</p>
+                        )}
+                        {meeting.next_steps && (
+                          <p className="text-sm text-gray-600 mt-2"><span className="font-medium">Next steps:</span> {meeting.next_steps}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {filteredLegacy.sort(function(a, b) { return new Date(b.meeting_date) - new Date(a.meeting_date); }).map(function(note) {
+                    return (
+                      <div key={'legacy-' + note.id} className="p-4 border rounded-lg print:break-inside-avoid">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="font-medium text-gray-900">
+                            {note.meeting_date ? formatDateLocal(note.meeting_date).toLocaleDateString('en-US', {
                               weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
                             }) : 'No date'}
                           </p>
