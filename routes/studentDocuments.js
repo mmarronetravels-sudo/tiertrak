@@ -4,6 +4,14 @@ const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = re
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const multer = require('multer');
 const path = require('path');
+const {
+  requireAuth,
+  requireStudentDocumentListAccess,
+  requireDocumentReadAccess,
+  requireDocumentWriteAccess,
+  requireExpiringListAccess,
+  PARENT_VISIBLE_CATEGORIES
+} = require('../middleware/authorizeDocumentAccess');
 
 let pool;
 
@@ -49,26 +57,51 @@ const DOCUMENT_CATEGORIES = {
 };
 
 // GET /api/student-documents/student/:studentId - Get all documents for a student
-router.get('/student/:studentId', async (req, res) => {
+router.get('/student/:studentId', requireAuth, requireStudentDocumentListAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
-    
-    const result = await pool.query(`
-      SELECT 
-        sd.*,
-        u.full_name as uploaded_by_name,
-        u.role as uploaded_by_role,
-        CASE 
-          WHEN sd.expiration_date IS NOT NULL AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days' 
-          THEN true 
-          ELSE false 
-        END as expiring_soon
-      FROM student_documents sd
-      LEFT JOIN users u ON sd.uploaded_by = u.id
-      WHERE sd.student_id = $1
-      ORDER BY sd.uploaded_at DESC
-    `, [studentId]);
-    
+    const tenantId = req.targetStudent.tenant_id;
+
+    // Parents see only their own uploads or docs in PARENT_VISIBLE_CATEGORIES.
+    // Staff within the student's tenant see every document for the student.
+    let result;
+    if (req.user.role === 'parent') {
+      result = await pool.query(`
+        SELECT
+          sd.*,
+          u.full_name as uploaded_by_name,
+          u.role as uploaded_by_role,
+          CASE
+            WHEN sd.expiration_date IS NOT NULL AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
+            THEN true
+            ELSE false
+          END as expiring_soon
+        FROM student_documents sd
+        LEFT JOIN users u ON sd.uploaded_by = u.id
+        WHERE sd.student_id = $1
+          AND sd.tenant_id = $2
+          AND (sd.uploaded_by = $3 OR sd.document_category = ANY($4::text[]))
+        ORDER BY sd.uploaded_at DESC
+      `, [studentId, tenantId, req.user.id, PARENT_VISIBLE_CATEGORIES]);
+    } else {
+      result = await pool.query(`
+        SELECT
+          sd.*,
+          u.full_name as uploaded_by_name,
+          u.role as uploaded_by_role,
+          CASE
+            WHEN sd.expiration_date IS NOT NULL AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
+            THEN true
+            ELSE false
+          END as expiring_soon
+        FROM student_documents sd
+        LEFT JOIN users u ON sd.uploaded_by = u.id
+        WHERE sd.student_id = $1
+          AND sd.tenant_id = $2
+        ORDER BY sd.uploaded_at DESC
+      `, [studentId, tenantId]);
+    }
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching student documents:', error);
@@ -140,26 +173,19 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 // GET /api/student-documents/download/:id - Get signed download URL
-router.get('/download/:id', async (req, res) => {
+// Lookup + authorization happen in requireDocumentReadAccess, which sets req.document.
+router.get('/download/:id', requireAuth, requireDocumentReadAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const result = await pool.query('SELECT * FROM student_documents WHERE id = $1', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-    
-    const document = result.rows[0];
-    
+    const document = req.document;
+
     // Generate signed URL (valid for 15 minutes)
     const command = new GetObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET,
       Key: document.s3_key,
     });
-    
+
     const signedUrl = await getSignedUrl(s3Client, command, { expiresIn: 900 });
-    
+
     res.json({ url: signedUrl, fileName: document.file_name });
   } catch (error) {
     console.error('Error generating download URL:', error);
@@ -168,37 +194,24 @@ router.get('/download/:id', async (req, res) => {
 });
 
 // DELETE /api/student-documents/:id - Delete a document
-router.delete('/:id', async (req, res) => {
+// Lookup + authorization happen in requireDocumentWriteAccess, which sets
+// req.document. Parent branch: uploaded_by must match req.user.id. Staff
+// branch: role in STAFF_DELETE_ROLES AND tenant match. The tenant_id is
+// repeated in the SQL WHERE as defense in depth.
+router.delete('/:id', requireAuth, requireDocumentWriteAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    // Get document info first
-    const docResult = await pool.query('SELECT * FROM student_documents WHERE id = $1', [id]);
-    
-    if (docResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-    
-    const document = docResult.rows[0];
-    
-    // Only admins, counselors, and behavior specialists can delete documents
-    const userRole = req.headers['x-user-role'];
-    const allowedDeleteRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'];
-    if (!allowedDeleteRoles.includes(userRole)) {
-      return res.status(403).json({ error: 'You do not have permission to delete documents' });
-    }
-    
-    // Delete from S3
-    const deleteParams = {
+    const document = req.document;
+
+    await s3Client.send(new DeleteObjectCommand({
       Bucket: process.env.AWS_S3_BUCKET,
       Key: document.s3_key,
-    };
-    
-    await s3Client.send(new DeleteObjectCommand(deleteParams));
-    
-    // Delete from database
-    await pool.query('DELETE FROM student_documents WHERE id = $1', [id]);
-    
+    }));
+
+    await pool.query(
+      'DELETE FROM student_documents WHERE id = $1 AND tenant_id = $2',
+      [document.id, document.tenant_id]
+    );
+
     res.json({ message: 'Document deleted successfully' });
   } catch (error) {
     console.error('Error deleting document:', error);
@@ -207,26 +220,28 @@ router.delete('/:id', async (req, res) => {
 });
 
 // GET /api/student-documents/expiring/:tenantId - Get documents expiring within 30 days
-router.get('/expiring/:tenantId', async (req, res) => {
+// requireExpiringListAccess has already refused parent role and verified that
+// the path :tenantId matches req.user.tenant_id. The SQL sources the tenant
+// from req.user (server-authoritative) and re-joins s.tenant_id = sd.tenant_id
+// so a crafted student_id cannot pull rows across tenants.
+router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
-      SELECT 
+      SELECT
         sd.*,
         s.first_name || ' ' || s.last_name as student_name,
         s.grade,
         u.full_name as uploaded_by_name
       FROM student_documents sd
-      JOIN students s ON sd.student_id = s.id
+      JOIN students s ON sd.student_id = s.id AND s.tenant_id = sd.tenant_id
       LEFT JOIN users u ON sd.uploaded_by = u.id
       WHERE sd.tenant_id = $1
         AND sd.expiration_date IS NOT NULL
         AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
         AND sd.expiration_date >= CURRENT_DATE
       ORDER BY sd.expiration_date ASC
-    `, [tenantId]);
-    
+    `, [req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching expiring documents:', error);
@@ -235,7 +250,7 @@ router.get('/expiring/:tenantId', async (req, res) => {
 });
 
 // GET /api/student-documents/categories - Get available categories
-router.get('/categories', (req, res) => {
+router.get('/categories', requireAuth, (req, res) => {
   res.json(Object.keys(DOCUMENT_CATEGORIES));
 });
 
