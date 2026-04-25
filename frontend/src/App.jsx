@@ -5974,7 +5974,9 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
           setSelectedChild({ ...selectedChild, interventions });
         }
         // Refresh progress logs
-        const progressRes = await fetch(`${API_URL}/weekly-progress/student/${selectedChild.id}`);
+        const progressRes = await fetch(`${API_URL}/weekly-progress/student/${selectedChild.id}`, {
+          credentials: 'include'
+        });
         if (progressRes.ok) {
           const progressData = await progressRes.json();
           setChildProgressLogs(progressData);
