@@ -4,7 +4,10 @@ const { Pool } = require('pg');
 const {
   requireAuth,
   requireWriteAccessByBody,
-  requireWriteAccessByLogId
+  requireWriteAccessByLogId,
+  requireStudentReadAccess,
+  requireInterventionReadAccess,
+  requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
@@ -57,13 +60,16 @@ router.get('/options', (req, res) => {
 });
 
 // Get all weekly progress logs for a student
-router.get('/student/:studentId', async (req, res) => {
+// Defense-in-depth: tenant_id is sourced from req.student (resolved server-side
+// in requireStudentReadAccess) and bound into the JOIN to students so wp rows
+// with mismatched student/tenant cannot leak even if data drifts.
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
     const { interventionId, startDate, endDate } = req.query;
-    
+
     let query = `
-      SELECT 
+      SELECT
         wp.*,
         si.intervention_name,
         si.goal_description,
@@ -72,12 +78,13 @@ router.get('/student/:studentId', async (req, res) => {
         u.full_name as logged_by_name,
         u.role as logged_by_role
       FROM weekly_progress wp
+      JOIN students s ON wp.student_id = s.id AND s.tenant_id = $2
       JOIN student_interventions si ON wp.student_intervention_id = si.id
       LEFT JOIN users u ON wp.logged_by = u.id
       WHERE wp.student_id = $1
     `;
-    const params = [studentId];
-    let paramIndex = 2;
+    const params = [studentId, req.student.tenant_id];
+    let paramIndex = 3;
 
     if (interventionId) {
       query += ` AND wp.student_intervention_id = $${paramIndex}`;
@@ -108,19 +115,23 @@ router.get('/student/:studentId', async (req, res) => {
 });
 
 // Get weekly progress for a specific intervention
-router.get('/intervention/:interventionId', async (req, res) => {
+// Defense-in-depth: tenant_id is sourced from req.intervention (resolved
+// server-side in requireInterventionReadAccess) and bound into the JOIN chain.
+router.get('/intervention/:interventionId', requireAuth, requireInterventionReadAccess, async (req, res) => {
   try {
     const { interventionId } = req.params;
     const result = await pool.query(`
-      SELECT 
+      SELECT
         wp.*,
         u.full_name as logged_by_name,
         u.role as logged_by_role
       FROM weekly_progress wp
+      JOIN student_interventions si ON wp.student_intervention_id = si.id
+      JOIN students s ON si.student_id = s.id AND s.tenant_id = $2
       LEFT JOIN users u ON wp.logged_by = u.id
       WHERE wp.student_intervention_id = $1
       ORDER BY wp.week_of DESC
-    `, [interventionId]);
+    `, [interventionId, req.intervention.tenant_id]);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching intervention progress:', err);
@@ -129,12 +140,15 @@ router.get('/intervention/:interventionId', async (req, res) => {
 });
 
 /// Get interventions missing this week's log for a tenant
-router.get('/missing/:tenantId', async (req, res) => {
+// requireTenantStaffAccess refuses parent role and verifies that the path
+// :tenantId matches req.user.tenant_id. The SQL sources its tenant from
+// req.user.tenant_id (server-authoritative); the path param is no longer
+// passed to the query.
+router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
     const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
     const result = await pool.query(`
-      SELECT 
+      SELECT
         si.id,
         si.intervention_name,
         si.student_id,
@@ -148,12 +162,12 @@ router.get('/missing/:tenantId', async (req, res) => {
         AND si.status = 'active'
         AND s.archived = false
         AND NOT EXISTS (
-          SELECT 1 FROM weekly_progress wp 
-          WHERE wp.student_intervention_id = si.id 
+          SELECT 1 FROM weekly_progress wp
+          WHERE wp.student_intervention_id = si.id
           AND wp.week_of = $2
         )
       ORDER BY s.last_name, s.first_name
-    `, [tenantId, currentWeek]);
+    `, [req.user.tenant_id, currentWeek]);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching missing logs:', err);
@@ -161,13 +175,15 @@ router.get('/missing/:tenantId', async (req, res) => {
   }
 });
 // Get progress summary for a student (for reports)
-router.get('/summary/:studentId', async (req, res) => {
+// Defense-in-depth: tenant_id is sourced from req.student (resolved server-side
+// in requireStudentReadAccess) and bound into the JOIN to students.
+router.get('/summary/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
     const { startDate, endDate } = req.query;
 
     let query = `
-      SELECT 
+      SELECT
         si.intervention_name,
         si.goal_description,
         si.goal_target_date,
@@ -179,11 +195,12 @@ router.get('/summary/:studentId', async (req, res) => {
         MIN(wp.week_of) as first_log,
         MAX(wp.week_of) as last_log
       FROM student_interventions si
+      JOIN students s ON si.student_id = s.id AND s.tenant_id = $2
       LEFT JOIN weekly_progress wp ON si.id = wp.student_intervention_id
       WHERE si.student_id = $1
     `;
-    const params = [studentId];
-    let paramIndex = 2;
+    const params = [studentId, req.student.tenant_id];
+    let paramIndex = 3;
 
     if (startDate) {
       query += ` AND wp.week_of >= $${paramIndex}`;

@@ -223,6 +223,7 @@ async function requireStudentReadAccess(req, res, next) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
+    req.student = { id: Number(studentId), tenant_id: studentTenantId };
     return next();
   } catch (err) {
     console.error('[requireStudentReadAccess]', err.message);
