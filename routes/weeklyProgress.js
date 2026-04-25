@@ -109,7 +109,7 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching weekly progress:', err);
+    console.error('Error fetching weekly progress:', err.message);
     res.status(500).json({ error: 'Failed to fetch weekly progress' });
   }
 });
@@ -134,7 +134,7 @@ router.get('/intervention/:interventionId', requireAuth, requireInterventionRead
     `, [interventionId, req.intervention.tenant_id]);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching intervention progress:', err);
+    console.error('Error fetching intervention progress:', err.message);
     res.status(500).json({ error: 'Failed to fetch intervention progress' });
   }
 });
@@ -170,7 +170,7 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
     `, [req.user.tenant_id, currentWeek]);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching missing logs:', err);
+    console.error('Error fetching missing logs:', err.message);
     res.status(500).json({ error: 'Failed to fetch missing logs' });
   }
 });
@@ -219,7 +219,7 @@ router.get('/summary/:studentId', requireAuth, requireStudentReadAccess, async (
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error fetching progress summary:', err);
+    console.error('Error fetching progress summary:', err.message);
     res.status(500).json({ error: 'Failed to fetch progress summary' });
   }
 });
