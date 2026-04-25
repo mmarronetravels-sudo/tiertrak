@@ -576,3 +576,178 @@ NEXT SESSION SHOULD
   and 5 (jwt.verify algorithms allowlist) are its natural first
   commits alongside the Session 25 auth-hardening scope.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-25T11:55:31-07:00
+BRANCH:  sec/weekly-progress-read-scoping (merged as PR #14 → 370a1e1 + 1539939 + 964953a + 9aa6279 + 37a730b, merge commit 618936a)
+DISPOSITION: merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Auth + tenant scoping on the four GET endpoints in
+  routes/weeklyProgress.js, closing the gap explicitly named in
+  master-index Followup 57 (the four PII-surfacing weekly_progress
+  reads). Read-only audit first, five surgical commits, all three
+  reviewer subagents APPROVED. Same model as PR #12 (student
+  documents): extend the Session 25 PR #8 middleware module
+  rather than create a parallel one — avoids compounding the
+  requireAuth DRY debt. Production verification post-merge
+  confirmed the route the local dev environment cannot exercise.
+
+FILES TOUCHED
+  middleware/authorizeInterventionAccess.js   extended — new private
+    authorizeReadByInterventionId helper (parent gate via
+    parent_student_links, not the stricter intervention_assignments);
+    new public requireInterventionReadAccess + requireTenantStaffAccess;
+    one-line addition to existing requireStudentReadAccess setting
+    req.student = { id, tenant_id } so route handlers can pin SQL
+    to a server-derived tenant
+  routes/weeklyProgress.js                    gated 4 GET routes with
+    requireAuth + a tenant-aware authorizer; defense-in-depth tenant_id
+    JOINs to students on every modified SELECT; err.message-only logs
+    on those 4 routes; deleted dead duplicate router.put('/:id') at
+    the bottom of the file (closed master-index Followup 60, also
+    happened to remove the only error.message response leak in the
+    file)
+  frontend/src/App.jsx                        single fetch-site fix at
+    line 5977 — added credentials:'include' to the parent log-progress
+    success refresh, the only weekly-progress caller in the codebase
+    that was missing it (verified by grep across frontend/src);
+    required non-regression after commit 1539939's auth gate landed
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  Every modified SELECT scoped by tenant_id using a server-derived
+  value (req.user.tenant_id for staff, req.student.tenant_id /
+  req.intervention.tenant_id resolved by middleware for parents).
+  /missing/:tenantId now sources tenant from req.user.tenant_id;
+  the URL path param is consumed only by requireTenantStaffAccess
+  for the equality check and never reaches the SQL. Tenant-isolation
+  auditor verdict: APPROVED, 0 CRITICAL, 0 WARN, 3 INFO. Specifically
+  verified airtight: the parent IDOR scenario (linked to one student,
+  passes :interventionId belonging to another) — middleware resolves
+  the intervention's actual student first, then checks
+  parent_student_links against THAT student id, never against caller-
+  supplied data. Returns 403, no bypass path. Also: dynamic param
+  indexing shift from $2 to $3 on the optional ?interventionId,
+  ?startDate, ?endDate filters verified clean (no off-by-one).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: every column on weekly_progress and
+    student_interventions, plus students.first_name/last_name/tier
+    and users.full_name/role for the logged_by attribution. All
+    education-record PII under FERPA. NO new columns, NO new JSON
+    response fields, NO new form inputs. This PR only changed who
+    can read existing data.
+  Logging audit: 4 console.error sites changed from err to err.message
+    on the 4 GET handlers; new middleware uses [tag] err.message
+    pattern matching the Session 25 PR #8 + Session 27 PR #12
+    convention. No PII (column values, names, ids) interpolated
+    anywhere. Privacy-reviewer cross-checked logError → console.error
+    helper at the source. Side observation from the security
+    reviewer: the 3 write-side handlers (POST/PUT/DELETE) in the
+    same file still log raw err — pre-existing, scoped out of this
+    PR by branch contract, captured as held followup 3.
+  Error responses: all 4 GET 500 bodies return generic 'Failed to
+    fetch …' strings (pre-existing). Auth failures use the
+    middleware's constant FORBIDDEN_BODY = { error: 'Not authorized' }
+    or { error: 'Not authenticated' }. The one error.message response
+    leak in the file (the dead duplicate PUT at line 299) was removed
+    in commit 9aa6279 — the privacy reviewer flagged that dead
+    handler as actually being an unauthenticated UPDATE on
+    weekly_progress by id, so removing it closed an auth-bypass
+    hole as a side effect, not just a dead-code cleanup.
+  Cross-tenant risk: closed. Privacy-reviewer verdict: APPROVED
+    (clean — 0 CRITICAL, 0 WARN, 3 INFO; first full clean approve
+    of any sec/ PR in this multi-session arc). Security-reviewer
+    verdict: APPROVED WITH NOTES, 0 CRITICAL, 2 WARN (both
+    pre-existing, captured below as held followups 3 and 4),
+    4 INFO. Tenant-isolation-auditor verdict: APPROVED, 0 CRITICAL,
+    0 WARN, 3 INFO.
+
+VERIFICATION
+  Read-only audit                                                surfaced 4 unauthenticated GETs + missing tenant scoping + paramIndex shift trap on dynamic filters
+  node -c (middleware + routes/weeklyProgress.js)               both parse OK across all 5 commits
+  npm run build (frontend/)                                     built in 2.99s, no errors (commit 5)
+  Sanity check: curl /api/weekly-progress/student/1 no cookie   401 {"error":"Not authenticated"} — confirms gate live on running backend
+  Manual smoke /student/:studentId (local dev, staff)           page loads with 200, intervention data renders correctly. Filter-permutation testing not exercised live; deferred to reviewer static review.
+  Manual smoke /intervention/:interventionId (local dev)        MTSS Progress Report modal click-through; all weekly-progress/intervention/* requests return 200; report body renders correctly
+  Manual smoke /summary/:studentId                              skipped live; zero frontend callers (verified via grep), structurally identical to /student/:studentId, static review by reviewer subagents was the verification path
+  Manual smoke /missing/:tenantId (local dev)                   500 due to pre-existing schema drift (si.log_frequency exists in production, not in any source-controlled migration); diagnosed mid-session, not a regression from this PR (SELECT list byte-identical to main); verification path on local dev was static review only
+  Manual smoke /missing/:tenantId (PRODUCTION post-merge)       PASSED — MTSS Dashboard "Weekly Reminder: Log Progress" section populates correctly; route returns 200 with data on production where log_frequency exists
+  Manual smoke parent log-progress end-to-end (local dev)       POST returns 201; post-success refresh fetch (the App.jsx:5977 site fixed in commit 37a730b) returns 200 not 401; new log appears in child's progress list
+  Privacy-reviewer                                              APPROVED, 0 CRITICAL, 0 WARN, 3 INFO
+  Security-reviewer                                             APPROVED WITH NOTES, 0 CRITICAL, 2 WARN (pre-existing), 4 INFO
+  Tenant-isolation-auditor                                      APPROVED, 0 CRITICAL, 0 WARN, 3 INFO
+  Production deploy auto-trigger (Render from main)             confirmed by user via the production verification above
+
+BRANCH CLEANUP DURING CLOSE
+  sec/weekly-progress-read-scoping            deleted locally with -d (clean, fully merged) and on origin via git push origin --delete; final local branch list before this chore branch was main only
+  Stragglers left intact on origin per prior-session policy:
+    origin/sec/student-documents-auth         from PR #12 (Session 27); auto-delete is off for this repo
+    origin/chore/activities-log               pre-Session-25 straggler
+    origin/fix/resource-1-4-calendar-underscores  pre-Session-25 straggler
+
+OPEN ITEMS / FOLLOW-UPS
+  - [held from PR #14 manual verification] Schema drift between
+    local dev DB and production DB. Columns referenced in source
+    code (and INSERTs) but no source-controlled migration adds
+    them; production was patched manually via the Render GUI per
+    the project's "DB work via GUI" convention. Confirmed drift
+    items so far:
+      - student_interventions.log_frequency
+          Referenced: routes/weeklyProgress.js:155 (SELECT in
+          /missing/:tenantId), routes/interventions.js:91-98
+          (INSERT on intervention create), and 12+ frontend
+          sites in App.jsx. Local 500 trace caught during PR
+          #14 verification.
+      - referral_monitoring.notes
+          Referenced: routes/students.js:230 (rm.notes in
+          SELECT). Local 500 trace also visible in same log
+          session.
+    Target: dedicated migration/schema-drift-from-prod branch.
+    Requirements: ALTER TABLE statements that match production's
+    exact column definitions (types, defaults, constraints) AND
+    use ADD COLUMN IF NOT EXISTS so they're safe to run in either
+    direction. Larger blast radius than typical migrations because
+    the columns already exist in production — getting the
+    type/default wrong will cause production silent breakage.
+    Out of scope for PR #14. Exhaustive audit (more drift items
+    beyond the two confirmed) is also part of that future PR.
+
+  - [held from PR #14 manual verification] GET /weekly-progress/
+    summary/:studentId has zero frontend callers. Confirmed via
+    grep across frontend/src/. Either dead code (candidate for
+    removal) or a planned future feature. Action: a chore/ branch
+    that runs git blame to determine intent, then either removes
+    the route or documents its planned use. Out of scope for
+    PR #14.
+
+  - [new; security-reviewer WARN 1] routes/weeklyProgress.js POST
+    (line 266), PUT (line 290), DELETE (line 310) handlers log
+    raw err instead of err.message. Pre-existing, scoped out of
+    PR #14 by branch contract. Risk: server-log capture of
+    pg-driver-attached query params (student_id, intervention_name,
+    notes). Target: small chore/weekly-progress-write-logs PR —
+    ~6 lines, mirrors the GET pattern from PR #14 commit 964953a.
+    Land within days, don't let it queue.
+
+  - [new; security-reviewer WARN 2] No express-rate-limit
+    middleware on /weekly-progress/* — verified project-wide gap
+    (no express-rate-limit anywhere in the repo). Target: own
+    sec/ branch, or fold into master-index Followup 57's broader
+    hardening scope.
+
+NEXT SESSION SHOULD
+  Open the next session by cleaning up origin/sec/student-documents-auth
+  (the lingering Session 27 / PR #12 straggler) during the
+  handshake, matching the established opening pattern. Of the
+  four held followups above, the small chore/weekly-progress-
+  write-logs (followup 3) is the cheapest next move — six lines,
+  same file the team just touched, closes a security-reviewer
+  WARN. Schema drift (followup 1) is the highest-blast-radius
+  item and should be its own dedicated session before it accretes
+  more drift items. The unused /summary route (followup 2) is
+  the lowest priority of the four.
+================================================================================
