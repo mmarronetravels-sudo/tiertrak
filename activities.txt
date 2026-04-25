@@ -419,3 +419,160 @@ NEXT SESSION SHOULD
   its natural first targets alongside the Session 25 followups 1
   and 6.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-24T08:17:58-07:00
+BRANCH:  sec/student-documents-auth (merged as PR #12 → 44abc99 + 8ad78ee + 6f1ff09 + a5845f9 + 69a4ccd, merge commit e0ade82)
+DISPOSITION: merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Student-documents auth hardening + two reported parent-portal bugs.
+  User reported "I cannot delete uploaded documents" (Bug A) and
+  "download → blank screen on my own uploads" (Bug B), both logged in
+  as a test parent. Read-only audit surfaced that routes/studentDocuments.js
+  had a forgeable x-user-role HTTP-header RBAC check on DELETE, no auth
+  middleware anywhere in the file, no tenant_id scoping on any query,
+  and client-supplied tenant_id/uploaded_by on POST /upload. User
+  approved Model B ("parents can delete/download their own uploads")
+  and a full sec/ rework rather than a narrow fix. 5 commits, PR #12
+  merged --no-ff preserving all SHAs on main. Live deploy verified on
+  production sandbox.
+
+FILES TOUCHED
+  middleware/authorizeDocumentAccess.js   new — requireAuth + 5 resource-scoped authorizers mirroring PR #8's authorizeInterventionAccess.js
+  routes/studentDocuments.js              gated all 5 endpoints with real auth; removed forgeable x-user-role header; server-derived tenant_id/student_id/uploaded_by on upload; S3 key rebuilt from server-derived values; generic 500 bodies; err.message-only logs
+  frontend/src/App.jsx                    fixed parent data.downloadUrl→data.url typo (Bug B); added handleChildDocumentDelete + conditional Delete button on parent portal (Bug A, Model B); staff + parent upload handlers stop sending tenant_id and uploaded_by
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  Every SQL query in routes/studentDocuments.js now scoped by
+  tenant_id using a server-derived value (req.user.tenant_id or
+  req.targetStudent.tenant_id resolved in middleware from the
+  students row). DELETE /:id repeats AND tenant_id = $2 in SQL as
+  defense in depth. GET /expiring/:tenantId sources tenant from
+  req.user.tenant_id and joins s.tenant_id = sd.tenant_id as defense
+  in depth. POST /upload rebuilds S3 key from server-derived
+  tenant+student. Parent branch gated by parent_student_links for
+  reads + writes + uploads. Every prior cross-tenant hole in the PR
+  description closed. Tenant-isolation-auditor verdict: APPROVED
+  WITH NOTES, 0 CRITICAL, 2 WARN (both defense-in-depth/schema
+  hardening suggestions for future work, captured below).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: all columns on student_documents
+    (file_name, file_url, s3_key, document_category, description,
+    expiration_date, uploaded_by). Education records under FERPA.
+    No new columns, no new JSON response fields, no new form inputs.
+    This PR only changes who can read/write existing fields.
+  Logging audit: 11 console.error sites across middleware + routes
+    reviewed. All use err.message / error.message only. No PII
+    (no student name, student_id, file_name, tenant_id, uploaded_by
+    values) interpolated anywhere. Middleware uses [tag] err.message
+    pattern matching authorizeInterventionAccess.js.
+  Error responses: all five 500 bodies now return
+    { error: 'Server error' }. Auth failures return
+    { error: 'Not authenticated' } or { error: 'Not authorized' }.
+    Legitimate 400 'No file uploaded' preserved. Raw pg error leak
+    fully removed on this surface.
+  Cross-tenant risk: none introduced; multiple pre-existing
+    cross-tenant paths closed. Privacy-reviewer verdict: APPROVED
+    WITH NOTES, 0 CRITICAL, 1 WARN (FERPA inventory in
+    PRIVACY_REVIEW.md — deferred to a docs commit per project
+    convention, held below), 3 INFO. Security-reviewer verdict:
+    APPROVED WITH NOTES, 0 CRITICAL, 2 WARN (both pre-existing
+    posture items, held below), 4 INFO.
+  Parent delete of own upload: permanently removes S3 object + DB
+    row. Privacy-reviewer flagged as INFO (product-level decision
+    rather than privacy-rule violation) since scope is limited to
+    docs the parent contributed themselves, not staff-created
+    education records.
+
+VERIFICATION
+  Read-only audit of routes/studentDocuments.js + parent portal     surfaced forgeable x-user-role RBAC + no auth middleware + no tenant scoping + client-supplied tenant_id/uploaded_by on upload
+  node -c (middleware + routes/studentDocuments.js)                 both parse OK across all 5 commits
+  npm run build (frontend/)                                         built in 2.84s, no errors
+  Privacy-reviewer                                                  APPROVED WITH NOTES, 0 CRITICAL, 1 WARN (docs deferral, non-blocking), 3 INFO
+  Security-reviewer                                                 APPROVED WITH NOTES, 0 CRITICAL, 2 WARN (both pre-existing posture, non-blocking), 4 INFO
+  Tenant-isolation-auditor                                          APPROVED WITH NOTES, 0 CRITICAL, 2 WARN (defense-in-depth + future schema, non-blocking), 3 INFO
+  Live deploy verification (production sandbox)                     Bug A (parent delete) and Bug B (parent download blank screen) both confirmed fixed end-to-end; no visible regressions
+  Option B selected to hold all four non-blocking WARNs             no in-branch commit 6; all four WARNs tracked in OPEN ITEMS below
+
+BRANCH CLEANUP DURING CLOSE
+  sec/student-documents-auth                left intact locally and on origin; cleanup deferred to the next session's handshake (Session 25/26 convention)
+
+OPEN ITEMS / FOLLOW-UPS
+  - [held from PR body] requireAuth is duplicated verbatim between
+    middleware/authorizeInterventionAccess.js (Session 25) and
+    middleware/authorizeDocumentAccess.js (this PR). Intentional
+    DRY debt to keep each resource-scoped authorizer independently
+    reviewable. Target: chore/ branch extracting requireAuth into a
+    shared middleware/requireAuth.js module and updating both
+    resource files to import from it. No behavior change.
+
+  - [held from PR body; security WARN 1] routes/studentDocuments.js
+    POST /upload middleware order is requireAuth → multer →
+    requireDocumentUploadAccess. Authenticated-but-unauthorized
+    callers buffer up to 25 MB in memory before the authorizer
+    rejects them. Low-privileged accounts can spam the route to
+    force repeated 25 MB allocations and get 403. No rate limiter
+    is bound to this route (project-wide gap). Target: sec/ branch
+    adding a busboy-level student_id peek before multer, or
+    express-rate-limit on the upload route, or both.
+
+  - [held from PR body + privacy WARN 1] docs/ai-context/PRIVACY_REVIEW.md
+    FERPA inventory does not yet declare student_documents as a PII
+    surface. Deferred to a follow-on docs commit per the precedent
+    already set in that file. When the doc surface is declared,
+    also record the Parent-delete-of-own-upload retention posture
+    (per privacy-reviewer INFO 2).
+
+  - [new; tenant-auditor WARN 1] routes/studentDocuments.js
+    GET /student/:studentId SELECT is not join-bound to
+    students.tenant_id. Functionally safe today (middleware resolves
+    the student's tenant + the SELECT has AND sd.tenant_id = $2)
+    but asymmetric with the defense-in-depth JOIN the same PR
+    added to GET /expiring. Target: small chore/ branch adding
+    JOIN students s ON sd.student_id = s.id AND s.tenant_id = sd.tenant_id
+    to both parent and staff branches of the SELECT.
+
+  - [new; security WARN 2] jwt.verify(token, process.env.JWT_SECRET)
+    is called without an algorithms allowlist at 6 call sites:
+    routes/auth.js:166, 294, 572; routes/tier1-assessments.js:47;
+    middleware/authorizeInterventionAccess.js:24;
+    middleware/authorizeDocumentAccess.js:41. Residual
+    algorithm-confusion exposure. Target: single sec/ sweep pinning
+    every jwt.verify to { algorithms: ['HS256'] } plus a paired
+    signing-side audit. Related master-index Followup 57
+    (sec/require-auth-on-unprotected-routes) — this is a natural
+    second commit on that branch.
+
+  - [new; tenant-auditor WARN 2] student_documents has independent
+    FKs on tenant_id and student_id, not a composite FK. Nothing at
+    the schema layer forces student_documents.tenant_id to equal
+    the referenced student's tenant_id; every row-level constraint
+    is enforced in application code. Target: future migration/
+    branch making students have UNIQUE (id, tenant_id) and changing
+    the student_documents FK to (student_id, tenant_id) REFERENCES
+    students(id, tenant_id). Makes cross-tenant drift impossible at
+    the DB layer. Larger blast radius than the other followups.
+
+  - [new; privacy INFO 3 — minor] routes/studentDocuments.js
+    SELECT sd.* on GET /student/:studentId and GET /expiring
+    returns student_documents.file_url, which is the raw S3 HTTPS
+    URL written at upload time. Since download is presigned-only,
+    this column is unused by the client. Candidate for a chore/
+    branch that either stops selecting it from list responses or
+    deprecates the column entirely. Minor data-minimization
+    cleanup, lowest priority of the six.
+
+NEXT SESSION SHOULD
+  Open the next session by cleaning up sec/student-documents-auth
+  (local + origin) during the handshake, matching the Session 25
+  and 26 opening pattern. If the next session targets master-index
+  Followup 57 (sec/require-auth-on-unprotected-routes), followups
+  2 (multer-before-authorizer), 4 (symmetric JOIN defense in depth),
+  and 5 (jwt.verify algorithms allowlist) are its natural first
+  commits alongside the Session 25 auth-hardening scope.
+================================================================================
