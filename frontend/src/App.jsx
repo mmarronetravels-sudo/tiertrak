@@ -343,6 +343,36 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
   const [editingMTSSMeeting, setEditingMTSSMeeting] = useState(null);
   const [selectedMeetingForReport, setSelectedMeetingForReport] = useState(null);
+  // Set of student_intervention_id values whose snapshot log-detail is
+  // currently expanded inside the view-past-meeting block. Per-card
+  // toggle, defaults collapsed. Independent of MTSSMeetingFormModal's
+  // internal expansion state — different render surface.
+  const [expandedMeetingViewCards, setExpandedMeetingViewCards] = useState(new Set());
+  const toggleMeetingViewCard = (interventionId) => {
+    setExpandedMeetingViewCards(prev => {
+      const next = new Set(prev);
+      if (next.has(interventionId)) next.delete(interventionId);
+      else next.add(interventionId);
+      return next;
+    });
+  };
+  // Force every snapshot disclosure list open while the browser is in a
+  // print context, regardless of per-card expansion state. The snapshot's
+  // entire purpose is a durable, printable audit record (parent
+  // conference, OCR response, IEP transition) — a printed meeting record
+  // that omitted the captured logs would defeat the contract. Toggle and
+  // sparkline stay print:hidden; only the disclosure list is forced open.
+  const [isPrinting, setIsPrinting] = useState(false);
+  useEffect(() => {
+    const handleBefore = () => setIsPrinting(true);
+    const handleAfter = () => setIsPrinting(false);
+    window.addEventListener('beforeprint', handleBefore);
+    window.addEventListener('afterprint', handleAfter);
+    return () => {
+      window.removeEventListener('beforeprint', handleBefore);
+      window.removeEventListener('afterprint', handleAfter);
+    };
+  }, []);
    const [preReferralLoading, setPreReferralLoading] = useState(false);
 
   // CSV Import state
@@ -3890,16 +3920,81 @@ if (!user) {
             <p className="text-gray-500 italic">No interventions reviewed in this meeting.</p>
           ) : (
             <div className="space-y-4">
-              {selectedMeetingForReport.intervention_reviews.map((review, idx) => (
+              {selectedMeetingForReport.intervention_reviews.map((review, idx) => {
+                // Q4 three-state discriminator. Snapshot data on saved meetings
+                // freezes the weekly_progress logs at meeting save time
+                // (commit a6fed2d migration; commits 33ad5b5 / 2985e1f
+                // persist; commit 506e115 reads). Pre-PR meetings backfill
+                // to snapshot=[] via the column default; if total_logs > 0
+                // there were logs at create time but no snapshot was
+                // captured — render as legacy rather than masquerade as
+                // zero-data ("don't lie about what was reviewed").
+                const snapshot = Array.isArray(review.weekly_progress_snapshot) ? review.weekly_progress_snapshot : [];
+                const totalLogs = review.total_logs || 0;
+                const isLegacy = snapshot.length === 0 && totalLogs > 0;
+                const isZeroData = snapshot.length === 0 && totalLogs === 0;
+                const hasFullSnapshot = snapshot.length > 0;
+                // Sort-order asymmetry vs commit 6 (form modal): snapshot is
+                // ASC (commit 33ad5b5 ORDER BY wp.week_of ASC), opposite to
+                // the live endpoint's DESC. Sparkline consumes ASC as-is
+                // (left=oldest, right=newest); disclosure list reverses for
+                // newest-first display. Inverse of the form modal's pattern.
+                const ratedSnapshot = snapshot.filter(s => s.rating != null);
+                const sparkData = ratedSnapshot.map((s, i) => ({ i, rating: s.rating }));
+                const disclosureRows = [...snapshot].reverse();
+                const isExpanded = expandedMeetingViewCards.has(review.student_intervention_id);
+                return (
                 <div key={idx} className="p-4 border rounded-lg print:break-inside-avoid">
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
-                    <div className="text-sm text-gray-500">
-                      Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} | 
-                      Total Logs: {review.total_logs || 0}
+                  <div className="flex justify-between items-center mb-3 gap-3">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
+                      <div className="text-sm text-gray-500">
+                        Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} |{' '}
+                        Total Logs: {totalLogs}
+                        {hasFullSnapshot && ratedSnapshot.length < totalLogs ? ' (' + ratedSnapshot.length + ' rated)' : ''}
+                      </div>
+                      {isLegacy && (
+                        <p className="text-xs text-gray-400 italic mt-1 print:text-gray-500">
+                          Legacy meeting — log details not captured.
+                        </p>
+                      )}
+                      {hasFullSnapshot && (
+                        <button
+                          type="button"
+                          onClick={() => toggleMeetingViewCard(review.student_intervention_id)}
+                          aria-expanded={isExpanded}
+                          className="mt-1 inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 print:hidden"
+                        >
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {isExpanded ? 'Hide' : 'Show'} logs ({snapshot.length})
+                        </button>
+                      )}
                     </div>
+                    {hasFullSnapshot && ratedSnapshot.length > 0 && (
+                      <div className="shrink-0 flex flex-col items-end print:hidden">
+                        <p className="text-xs text-gray-500 mb-1">Rating trend</p>
+                        <div className="w-32 h-12" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={sparkData}>
+                              <YAxis hide domain={[1, 5]} />
+                              <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  
+
+                  {isZeroData && (
+                    <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2 text-amber-800 print:bg-white print:border-amber-300">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                      <p className="text-xs">
+                        <span className="font-medium">No weekly progress logs were recorded for this intervention.</span>
+                        {' '}Review proceeded without underlying data to support evaluation.
+                      </p>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
                       <p className="text-xs text-gray-500 uppercase mb-1">Implementation Fidelity</p>
@@ -3959,8 +4054,42 @@ if (!user) {
                       <p className="text-sm text-gray-700">{review.notes}</p>
                     </div>
                   )}
+
+                  {hasFullSnapshot && (isExpanded || isPrinting) && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <p className="text-xs font-medium text-gray-700 mb-2">Weekly progress logs at meeting time</p>
+                      <ul className="space-y-1.5">
+                        {disclosureRows.map((log, logIdx) => {
+                          const weekLabel = log.week_of
+                            ? new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : 'No date';
+                          const ratingColor = log.rating == null
+                            ? 'text-gray-400'
+                            : (log.rating >= 4 ? 'text-emerald-600' : (log.rating === 3 ? 'text-amber-600' : 'text-rose-600'));
+                          const notesText = log.notes || '';
+                          const notesExcerpt = notesText.length > 100 ? notesText.slice(0, 100) + '…' : notesText;
+                          const loggerLabel = log.logged_by_name
+                            ? log.logged_by_name + (log.logged_by_role ? ' (' + log.logged_by_role + ')' : '')
+                            : 'Unknown';
+                          return (
+                            <li key={logIdx} className="text-xs text-gray-600 flex flex-wrap items-baseline gap-x-2">
+                              <span className="font-medium text-gray-700 shrink-0">{weekLabel}</span>
+                              <span className={'font-semibold shrink-0 ' + ratingColor}>
+                                {log.rating != null ? log.rating + '/5' : '—'}
+                              </span>
+                              {notesExcerpt && (
+                                <span className="text-gray-500 italic">"{notesExcerpt}"</span>
+                              )}
+                              <span className="text-gray-400 ml-auto shrink-0">{loggerLabel}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

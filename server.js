@@ -527,6 +527,18 @@ const createTables = async () => {
     `);
     console.log('Migration 019: Tier 1 Self-Assessment tables ready');
 
+    // Migration 020: MTSS meeting weekly_progress snapshot
+    // Adds an immutable JSONB snapshot of weekly_progress logs to each
+    // mtss_meeting_interventions row. Captured at meeting save time;
+    // never mutated by later weekly_progress edits/deletions. Existing
+    // rows backfill to '[]'::jsonb (legacy meetings — surfaced as such
+    // in the view-past-meeting UI). Idempotent.
+    await pool.query(`
+      ALTER TABLE mtss_meeting_interventions
+        ADD COLUMN IF NOT EXISTS weekly_progress_snapshot JSONB DEFAULT '[]'::jsonb;
+    `);
+    console.log('Migration 020: MTSS meeting snapshot column ready');
+
   } catch (error) {
     console.error('Error creating tables:', error);
   }

@@ -71,7 +71,7 @@ router.get('/student/:studentId', async (req, res) => {
     const { studentId } = req.params;
     
     const result = await pool.query(`
-      SELECT 
+      SELECT
         m.*,
         u.full_name as created_by_name,
         (
@@ -85,7 +85,8 @@ router.get('/student/:studentId', async (req, res) => {
               'recommendation', mi.recommendation,
               'notes', mi.notes,
               'avg_rating', mi.avg_rating,
-              'total_logs', mi.total_logs
+              'total_logs', mi.total_logs,
+              'weekly_progress_snapshot', mi.weekly_progress_snapshot
             )
           )
           FROM mtss_meeting_interventions mi
@@ -125,8 +126,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found' });
     }
     
+    // mi.* covers weekly_progress_snapshot — explicit projection not
+    // needed here; flagged so future readers know the snapshot inclusion
+    // is intentional, not an oversight.
     const interventionsResult = await pool.query(`
-      SELECT 
+      SELECT
         mi.*,
         si.intervention_name,
         si.goal_description,
@@ -182,13 +186,36 @@ router.get('/student/:studentId/interventions-summary', async (req, res) => {
   }
 });
 
+// Compute the immutable weekly_progress snapshot for a single intervention
+// at meeting save time. Joined to students with a tenant_id bind for
+// defense-in-depth — this catches sloppy forgery of student_intervention_id
+// where the interventions's actual tenant differs from the body's tenant_id.
+// It does NOT close the broader IDOR on this route (POST/PUT lack
+// requireAuth — that's master-index Followup 67's territory). A targeted
+// attacker who matches the tenant_id correctly can still bypass this JOIN.
+async function computeWeeklyProgressSnapshot(client, studentInterventionId, tenantId) {
+  const result = await client.query(`
+    SELECT wp.week_of, wp.status, wp.rating, wp.response, wp.notes,
+           wp.created_at,
+           u.full_name AS logged_by_name,
+           u.role AS logged_by_role
+    FROM weekly_progress wp
+    JOIN student_interventions si ON wp.student_intervention_id = si.id
+    JOIN students s ON si.student_id = s.id AND s.tenant_id = $2
+    LEFT JOIN users u ON wp.logged_by = u.id
+    WHERE wp.student_intervention_id = $1
+    ORDER BY wp.week_of ASC
+  `, [studentInterventionId, tenantId]);
+  return result.rows;
+}
+
 // Create new meeting
 router.post('/', async (req, res) => {
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     const {
       student_id,
       tenant_id,
@@ -207,7 +234,7 @@ router.post('/', async (req, res) => {
 // Convert empty strings to null for date fields
     const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
     const cleanTierDecision = tier_decision === '' ? null : tier_decision;
-    
+
     // Insert meeting
     const meetingResult = await client.query(`
   INSERT INTO mtss_meetings (
@@ -221,23 +248,31 @@ router.post('/', async (req, res) => {
   JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
   next_steps, cleanNextMeetingDate, created_by
 ]);
-    
+
     const meeting = meetingResult.rows[0];
-    
-    // Insert intervention reviews
+
+    // Insert intervention reviews — each row carries an immutable JSONB
+    // snapshot of the underlying weekly_progress logs at this moment,
+    // computed inside the same transaction.
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
         // Convert empty strings to null for fields with constraints
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
-        
+
+        const snapshot = await computeWeeklyProgressSnapshot(
+          client,
+          review.student_intervention_id,
+          tenant_id
+        );
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            avg_rating, total_logs, weekly_progress_snapshot
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `, [
           meeting.id,
           review.student_intervention_id,
@@ -246,13 +281,14 @@ router.post('/', async (req, res) => {
           cleanRecommendation,
           review.notes,
           review.avg_rating,
-          review.total_logs
+          review.total_logs,
+          JSON.stringify(snapshot)
         ]);
       }
     }
-    
+
     await client.query('COMMIT');
-    
+
     res.status(201).json(meeting);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -264,12 +300,20 @@ router.post('/', async (req, res) => {
 });
 
 // Update meeting
+// Preserve-on-edit snapshot semantics (per Q1 (b)): interventions already
+// present in the saved meeting keep their existing weekly_progress_snapshot
+// as-is — even an empty-array legacy snapshot stays empty rather than
+// being silently refreshed from current live data. Newly-added interventions
+// get a fresh snapshot computed via computeWeeklyProgressSnapshot. This is
+// the "frozen at first save" contract: editing a meeting (typo fix, late
+// recommendation, attendee correction) does NOT silently rewrite the audit
+// trail of what data the team reviewed.
 router.put('/:id', async (req, res) => {
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     const { id } = req.params;
     const {
       meeting_date,
@@ -281,12 +325,13 @@ router.put('/:id', async (req, res) => {
       tier_decision,
       next_steps,
       next_meeting_date,
+      tenant_id,
       intervention_reviews
     } = req.body;
     // Convert empty strings to null for fields with constraints
 const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
 const cleanTierDecision = tier_decision === '' ? null : tier_decision;
-    
+
     // Update meeting
     const meetingResult = await client.query(`
       UPDATE mtss_meetings SET
@@ -307,16 +352,31 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
       JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
       next_steps, cleanNextMeetingDate, id
     ]);
-    
+
     if (meetingResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Meeting not found' });
     }
-    
+
+    // Capture existing snapshots BEFORE the DELETE so we can preserve
+    // them on re-INSERT for interventions that were already in the
+    // meeting. Coalesce null → [] defensively (Migration 020's column
+    // default should prevent null, but if anything slips through, treat
+    // it as a legacy empty snapshot rather than computing fresh — that
+    // would conjure data that wasn't captured at original save time).
+    const priorRows = await client.query(
+      'SELECT student_intervention_id, weekly_progress_snapshot FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1',
+      [id]
+    );
+    const priorSnapshots = new Map();
+    for (const row of priorRows.rows) {
+      priorSnapshots.set(row.student_intervention_id, row.weekly_progress_snapshot ?? []);
+    }
+
     // Delete existing intervention reviews and re-insert
     await client.query('DELETE FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1', [id]);
-    
-   
+
+
           // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
@@ -324,13 +384,19 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
-        
+
+        // Q1 (b): preserve prior snapshot if this intervention was already
+        // in the meeting; compute fresh only for newly-added interventions.
+        const snapshot = priorSnapshots.has(review.student_intervention_id)
+          ? priorSnapshots.get(review.student_intervention_id)
+          : await computeWeeklyProgressSnapshot(client, review.student_intervention_id, tenant_id);
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            avg_rating, total_logs, weekly_progress_snapshot
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `, [
           id,
           review.student_intervention_id,
@@ -339,13 +405,14 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
           cleanRecommendation,
           review.notes,
           review.avg_rating,
-          review.total_logs
+          review.total_logs,
+          JSON.stringify(snapshot)
         ]);
       }
     }
-    
+
     await client.query('COMMIT');
-    
+
     res.json(meetingResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
