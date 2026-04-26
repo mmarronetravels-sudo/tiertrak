@@ -3945,7 +3945,7 @@ if (!user) {
                 const isExpanded = expandedMeetingViewCards.has(review.student_intervention_id);
                 return (
                 <div key={idx} className="p-4 border rounded-lg print:break-inside-avoid">
-                  <div className="flex justify-between items-start mb-3 gap-3">
+                  <div className="flex justify-between items-center mb-3 gap-3">
                     <div>
                       <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
                       <div className="text-sm text-gray-500">
@@ -3971,13 +3971,16 @@ if (!user) {
                       )}
                     </div>
                     {hasFullSnapshot && ratedSnapshot.length > 0 && (
-                      <div className="w-32 h-12 shrink-0 print:hidden" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={sparkData}>
-                            <YAxis hide domain={[1, 5]} />
-                            <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
-                          </LineChart>
-                        </ResponsiveContainer>
+                      <div className="shrink-0 flex flex-col items-end print:hidden">
+                        <p className="text-xs text-gray-500 mb-1">Rating trend</p>
+                        <div className="w-32 h-12" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={sparkData}>
+                              <YAxis hide domain={[1, 5]} />
+                              <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     )}
                   </div>

@@ -334,7 +334,7 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                   const ratedCount = rawLogs.filter(function(l) { return l.rating != null; }).length;
                   return (
                     <div key={idx} className="bg-white rounded-lg p-4 border">
-                      <div className="flex justify-between items-start mb-3 gap-3">
+                      <div className="flex justify-between items-center mb-3 gap-3">
                         <div>
                           <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
                           <p className="text-sm text-gray-500">
@@ -376,13 +376,16 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                           // reads correctly. The disclosure list (below) keeps source order.
                           const sparkData = ratedLogs.slice().reverse().map(function(l, i) { return { i: i, rating: l.rating }; });
                           return (
-                            <div className="w-32 h-12 shrink-0" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
-                              <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={sparkData}>
-                                  <YAxis hide domain={[1, 5]} />
-                                  <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
-                                </LineChart>
-                              </ResponsiveContainer>
+                            <div className="shrink-0 flex flex-col items-end">
+                              <p className="text-xs text-gray-500 mb-1">Rating trend</p>
+                              <div className="w-32 h-12" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <LineChart data={sparkData}>
+                                    <YAxis hide domain={[1, 5]} />
+                                    <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
                             </div>
                           );
                         })()}
