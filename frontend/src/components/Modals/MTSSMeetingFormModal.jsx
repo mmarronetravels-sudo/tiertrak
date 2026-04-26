@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, ClipboardList, CheckCircle, Save } from 'lucide-react';
+import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 
 const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL, fetchMTSSMeetings }) => {
   const [mtssMeetingForm, setMTSSMeetingForm] = useState({
@@ -15,6 +16,12 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
     intervention_reviews: []
   });
   const [loading, setLoading] = useState(true);
+  // Live weekly_progress logs per active intervention, keyed by
+  // student_intervention_id. Fed by /weekly-progress/intervention/:id (the
+  // PR #14 auth-gated endpoint, NOT the unauthenticated interventions-summary
+  // route). Used by the per-card sparkline and (in later commits) the
+  // expandable card disclosure.
+  const [interventionLogs, setInterventionLogs] = useState({});
 
   useEffect(() => {
     initializeForm();
@@ -57,10 +64,34 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
     return 0;
   };
 
+  // Per Q2 (b): fetch live weekly_progress logs for every active intervention
+  // via /weekly-progress/intervention/:id (Session 28 PR #14 gated this with
+  // requireAuth + requireInterventionReadAccess). Promise.all fan-out keeps
+  // the modal-open latency proportional to the slowest single fetch, not
+  // their sum. Failures fall back to [] — the sparkline (and later
+  // expandable detail) will simply render empty for that intervention.
+  const fetchInterventionLogs = async (interventions) => {
+    const logsByIntervention = {};
+    await Promise.all(interventions.map(async function(inv) {
+      try {
+        const res = await fetch(API_URL + '/weekly-progress/intervention/' + inv.id, {
+          credentials: 'include'
+        });
+        logsByIntervention[inv.id] = res.ok ? await res.json() : [];
+      } catch (err) {
+        console.error('Error fetching weekly progress logs for intervention ' + inv.id + ':', err.message);
+        logsByIntervention[inv.id] = [];
+      }
+    }));
+    return logsByIntervention;
+  };
+
   const initializeForm = async () => {
     setLoading(true);
     await fetchMTSSMeetingOptions();
     const interventions = await fetchInterventionsSummary(selectedStudent.id);
+    const logs = await fetchInterventionLogs(interventions);
+    setInterventionLogs(logs);
 
     if (meeting) {
       // Editing existing meeting
@@ -282,6 +313,27 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                             Logs: {review.total_logs || 0}
                           </p>
                         </div>
+                        {(function() {
+                          // Sparkline: ratings-over-time trend for this intervention.
+                          // Hidden YAxis with domain={[1, 5]} constrains scale so tiny
+                          // variations don't get exaggerated. Failures and zero-log
+                          // interventions render nothing — commit 7 adds the warning
+                          // banner for the zero-data case.
+                          const rawLogs = interventionLogs[review.student_intervention_id] || [];
+                          const ratedLogs = rawLogs.filter(function(l) { return l.rating != null; });
+                          if (ratedLogs.length === 0) return null;
+                          const sparkData = ratedLogs.map(function(l, i) { return { i: i, rating: l.rating }; });
+                          return (
+                            <div className="w-32 h-12 shrink-0" aria-label={'Rating trend sparkline for ' + review.intervention_name}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={sparkData}>
+                                  <YAxis hide domain={[1, 5]} />
+                                  <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot={ratedLogs.length === 1} isAnimationActive={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
