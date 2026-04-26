@@ -356,6 +356,16 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
       return next;
     });
   };
+  // Parse a DATE-column value (which pg may return as a full ISO string with
+  // timezone) into a local-midnight Date suitable for toLocaleDateString.
+  // Same fix shape as ReportModal.jsx's formatDateLocal (Session 26 PR #10):
+  // splitting on 'T' first strips any embedded time/TZ that pg's Date
+  // serialization may have added before we re-anchor at local midnight.
+  const formatMeetingDate = (val) => {
+    if (!val) return null;
+    const datePart = String(val).split('T')[0];
+    return new Date(datePart + 'T00:00:00');
+  };
    const [preReferralLoading, setPreReferralLoading] = useState(false);
 
   // CSV Import state
@@ -3874,9 +3884,9 @@ if (!user) {
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide">Meeting Date</p>
               <p className="font-semibold text-gray-900">
-                {selectedMeetingForReport.meeting_date 
-                  ? new Date(selectedMeetingForReport.meeting_date + 'T00:00:00').toLocaleDateString('en-US', { 
-                      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
+                {selectedMeetingForReport.meeting_date
+                  ? formatMeetingDate(selectedMeetingForReport.meeting_date).toLocaleDateString('en-US', {
+                      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
                     })
                   : 'Not set'}
               </p>
@@ -4133,8 +4143,8 @@ if (!user) {
               <div className="p-4 bg-gray-50 rounded-lg print:bg-white print:border">
                 <p className="text-xs text-gray-500 uppercase font-medium mb-1">Next Meeting Scheduled</p>
                 <p className="font-semibold text-gray-900">
-                  {new Date(selectedMeetingForReport.next_meeting_date + 'T00:00:00').toLocaleDateString('en-US', { 
-                    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' 
+                  {formatMeetingDate(selectedMeetingForReport.next_meeting_date).toLocaleDateString('en-US', {
+                    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
                   })}
                 </p>
               </div>
