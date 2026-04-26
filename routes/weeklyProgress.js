@@ -263,7 +263,7 @@ router.post('/', requireAuth, requireWriteAccessByBody, async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error('Error creating weekly progress:', err);
+    console.error('Error creating weekly progress:', err.message);
     res.status(500).json({ error: 'Failed to create weekly progress log' });
   }
 });
@@ -287,7 +287,7 @@ router.put('/:id', requireAuth, requireWriteAccessByLogId, async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('Error updating weekly progress:', err);
+    console.error('Error updating weekly progress:', err.message);
     res.status(500).json({ error: 'Failed to update weekly progress log' });
   }
 });
@@ -307,7 +307,7 @@ router.delete('/:id', requireAuth, requireWriteAccessByLogId, async (req, res) =
 
     res.json({ message: 'Progress log deleted successfully' });
   } catch (err) {
-    console.error('Error deleting weekly progress:', err);
+    console.error('Error deleting weekly progress:', err.message);
     res.status(500).json({ error: 'Failed to delete weekly progress log' });
   }
 });
