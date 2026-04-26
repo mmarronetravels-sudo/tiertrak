@@ -71,7 +71,7 @@ router.get('/student/:studentId', async (req, res) => {
     const { studentId } = req.params;
     
     const result = await pool.query(`
-      SELECT 
+      SELECT
         m.*,
         u.full_name as created_by_name,
         (
@@ -85,7 +85,8 @@ router.get('/student/:studentId', async (req, res) => {
               'recommendation', mi.recommendation,
               'notes', mi.notes,
               'avg_rating', mi.avg_rating,
-              'total_logs', mi.total_logs
+              'total_logs', mi.total_logs,
+              'weekly_progress_snapshot', mi.weekly_progress_snapshot
             )
           )
           FROM mtss_meeting_interventions mi
@@ -125,8 +126,11 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Meeting not found' });
     }
     
+    // mi.* covers weekly_progress_snapshot — explicit projection not
+    // needed here; flagged so future readers know the snapshot inclusion
+    // is intentional, not an oversight.
     const interventionsResult = await pool.query(`
-      SELECT 
+      SELECT
         mi.*,
         si.intervention_name,
         si.goal_description,
