@@ -2,8 +2,9 @@
 
 Source-of-truth reference documents for jurisdiction-specific compliance
 content — Section 504 handbooks, IDEA / IEP procedural safeguards, state-
-published evaluation forms, and similar artifacts. These documents drive
-frontend form-set definitions in `frontend/src/data/<feature>-form-sets/`.
+published evaluation forms, **individual sample-form templates**, and
+similar artifacts. These documents drive frontend form-set definitions in
+`frontend/src/data/<feature>-form-sets/`.
 
 ## Filename convention
 
