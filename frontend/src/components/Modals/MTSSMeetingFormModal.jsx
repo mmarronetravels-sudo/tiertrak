@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Calendar, ClipboardList, CheckCircle, Save, ChevronRight, ChevronDown } from 'lucide-react';
+import { X, Calendar, ClipboardList, CheckCircle, Save, ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 
 const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL, fetchMTSSMeetings }) => {
@@ -377,6 +377,30 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                           );
                         })()}
                       </div>
+
+                      {(function() {
+                        // Zero-data warning: non-blocking banner shown when no
+                        // weekly_progress logs exist for this intervention. Dropdowns
+                        // below remain ACTIVE per product decision — the team may
+                        // still record an evaluation, but the warning makes it
+                        // explicit that no underlying log data was available to
+                        // support that judgment. A soft fetch failure in
+                        // fetchInterventionLogs (network/auth/server error) also
+                        // surfaces []; the warning is then mildly misleading but
+                        // not harmful — refresh the modal if a fetch failure is
+                        // suspected.
+                        const rawLogs = interventionLogs[review.student_intervention_id] || [];
+                        if (rawLogs.length > 0) return null;
+                        return (
+                          <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2 text-amber-800">
+                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                            <p className="text-xs">
+                              <span className="font-medium">No weekly progress logs recorded for this intervention.</span>
+                              {' '}Review may proceed, but no data is available to support evaluation.
+                            </p>
+                          </div>
+                        );
+                      })()}
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
