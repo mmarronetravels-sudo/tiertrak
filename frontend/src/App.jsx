@@ -356,23 +356,6 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
       return next;
     });
   };
-  // Force every snapshot disclosure list open while the browser is in a
-  // print context, regardless of per-card expansion state. The snapshot's
-  // entire purpose is a durable, printable audit record (parent
-  // conference, OCR response, IEP transition) — a printed meeting record
-  // that omitted the captured logs would defeat the contract. Toggle and
-  // sparkline stay print:hidden; only the disclosure list is forced open.
-  const [isPrinting, setIsPrinting] = useState(false);
-  useEffect(() => {
-    const handleBefore = () => setIsPrinting(true);
-    const handleAfter = () => setIsPrinting(false);
-    window.addEventListener('beforeprint', handleBefore);
-    window.addEventListener('afterprint', handleAfter);
-    return () => {
-      window.removeEventListener('beforeprint', handleBefore);
-      window.removeEventListener('afterprint', handleAfter);
-    };
-  }, []);
    const [preReferralLoading, setPreReferralLoading] = useState(false);
 
   // CSV Import state
@@ -4055,8 +4038,19 @@ if (!user) {
                     </div>
                   )}
 
-                  {hasFullSnapshot && (isExpanded || isPrinting) && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
+                  {/*
+                    Disclosure visibility is gated by CSS rather than React state
+                    because window.print() runs synchronously and beforeprint event
+                    handlers cannot reliably trigger a React re-render before the
+                    print preview captures the DOM. The hidden print:block pattern
+                    keeps the disclosure always in the DOM; CSS controls visibility
+                    per medium and per user-expansion state. The snapshot's entire
+                    purpose is a durable, printable audit record (parent conference,
+                    OCR response, IEP transition) — a printed meeting record that
+                    omitted the captured logs would defeat the contract.
+                  */}
+                  {hasFullSnapshot && (
+                    <div className={'mt-3 pt-3 border-t border-gray-200' + (isExpanded ? '' : ' hidden print:block')}>
                       <p className="text-xs font-medium text-gray-700 mb-2">Weekly progress logs at meeting time</p>
                       <ul className="space-y-1.5">
                         {disclosureRows.map((log, logIdx) => {
