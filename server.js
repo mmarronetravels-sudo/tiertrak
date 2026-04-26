@@ -539,6 +539,143 @@ const createTables = async () => {
     `);
     console.log('Migration 020: MTSS meeting snapshot column ready');
 
+    // Migration 021: 504 v1 foundation
+    // Creates 7 tables for the 504 plan workflow: student_504_cycles
+    // (parent), evaluation_consents (Form C), eligibility_determinations
+    // (Form I), plans (Form J), accommodations (child of plans),
+    // team_members, and tenant_form_sets. All tenant-scoped with composite
+    // (id, tenant_id) FK references so cross-tenant child references are
+    // rejected at the schema layer (Followup 81 lesson). Touches existing
+    // students table to add UNIQUE (id, tenant_id) — prerequisite for the
+    // composite FK from student_504_cycles. Idempotent. See
+    // migration-021-504-foundation.sql for full schema.
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+          WHERE conname = 'students_id_tenant_unique'
+            AND conrelid = 'students'::regclass
+        ) THEN
+          ALTER TABLE students
+            ADD CONSTRAINT students_id_tenant_unique UNIQUE (id, tenant_id);
+        END IF;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS student_504_cycles (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        student_id INTEGER NOT NULL,
+        form_set_id VARCHAR(100) NOT NULL,
+        form_set_version VARCHAR(50) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN (
+          'active', 'completed', 'expired', 'discontinued'
+        )),
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id, tenant_id) REFERENCES students(id, tenant_id) ON DELETE CASCADE,
+        UNIQUE (id, tenant_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_student_504_cycles_student ON student_504_cycles(student_id);
+      CREATE INDEX IF NOT EXISTS idx_student_504_cycles_tenant ON student_504_cycles(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS student_504_evaluation_consents (
+        id SERIAL PRIMARY KEY,
+        cycle_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        consent_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (consent_status IN (
+          'pending', 'granted', 'denied', 'revoked'
+        )),
+        parent_signature_text TEXT,
+        parent_signature_at TIMESTAMP,
+        staff_signature_text TEXT,
+        staff_signature_at TIMESTAMP,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cycle_id, tenant_id) REFERENCES student_504_cycles(id, tenant_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_504_evaluation_consents_cycle ON student_504_evaluation_consents(cycle_id);
+      CREATE INDEX IF NOT EXISTS idx_504_evaluation_consents_tenant ON student_504_evaluation_consents(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS student_504_eligibility_determinations (
+        id SERIAL PRIMARY KEY,
+        cycle_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        eligibility_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (eligibility_status IN (
+          'pending', 'eligible', 'not_eligible'
+        )),
+        determination_notes TEXT,
+        determined_at TIMESTAMP,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cycle_id, tenant_id) REFERENCES student_504_cycles(id, tenant_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_504_eligibility_determinations_cycle ON student_504_eligibility_determinations(cycle_id);
+      CREATE INDEX IF NOT EXISTS idx_504_eligibility_determinations_tenant ON student_504_eligibility_determinations(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS student_504_plans (
+        id SERIAL PRIMARY KEY,
+        cycle_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        plan_status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (plan_status IN (
+          'draft', 'active', 'expired', 'discontinued'
+        )),
+        effective_date DATE,
+        review_date DATE,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cycle_id, tenant_id) REFERENCES student_504_cycles(id, tenant_id) ON DELETE CASCADE,
+        UNIQUE (id, tenant_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_504_plans_cycle ON student_504_plans(cycle_id);
+      CREATE INDEX IF NOT EXISTS idx_504_plans_tenant ON student_504_plans(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS student_504_accommodations (
+        id SERIAL PRIMARY KEY,
+        plan_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        accommodation_text TEXT NOT NULL,
+        category VARCHAR(50) CHECK (category IN (
+          'academic', 'behavioral', 'environmental', 'assessment', 'other'
+        )),
+        order_position INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (plan_id, tenant_id) REFERENCES student_504_plans(id, tenant_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_504_accommodations_plan ON student_504_accommodations(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_504_accommodations_tenant ON student_504_accommodations(tenant_id);
+
+      CREATE TABLE IF NOT EXISTS student_504_team_members (
+        id SERIAL PRIMARY KEY,
+        cycle_id INTEGER NOT NULL,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        user_id INTEGER REFERENCES users(id),
+        member_name VARCHAR(255) NOT NULL,
+        member_role VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cycle_id, tenant_id) REFERENCES student_504_cycles(id, tenant_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_504_team_members_cycle ON student_504_team_members(cycle_id);
+      CREATE INDEX IF NOT EXISTS idx_504_team_members_tenant ON student_504_team_members(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_504_team_members_user ON student_504_team_members(user_id);
+
+      CREATE TABLE IF NOT EXISTS tenant_form_sets (
+        id SERIAL PRIMARY KEY,
+        tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+        form_set_id VARCHAR(100) NOT NULL,
+        form_set_version VARCHAR(50) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (tenant_id, form_set_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_tenant_form_sets_tenant ON tenant_form_sets(tenant_id);
+    `);
+    console.log('Migration 021: 504 v1 foundation tables ready');
+
   } catch (error) {
     console.error('Error creating tables:', error);
   }
