@@ -296,12 +296,20 @@ router.post('/', async (req, res) => {
 });
 
 // Update meeting
+// Preserve-on-edit snapshot semantics (per Q1 (b)): interventions already
+// present in the saved meeting keep their existing weekly_progress_snapshot
+// as-is — even an empty-array legacy snapshot stays empty rather than
+// being silently refreshed from current live data. Newly-added interventions
+// get a fresh snapshot computed via computeWeeklyProgressSnapshot. This is
+// the "frozen at first save" contract: editing a meeting (typo fix, late
+// recommendation, attendee correction) does NOT silently rewrite the audit
+// trail of what data the team reviewed.
 router.put('/:id', async (req, res) => {
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     const { id } = req.params;
     const {
       meeting_date,
@@ -313,12 +321,13 @@ router.put('/:id', async (req, res) => {
       tier_decision,
       next_steps,
       next_meeting_date,
+      tenant_id,
       intervention_reviews
     } = req.body;
     // Convert empty strings to null for fields with constraints
 const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
 const cleanTierDecision = tier_decision === '' ? null : tier_decision;
-    
+
     // Update meeting
     const meetingResult = await client.query(`
       UPDATE mtss_meetings SET
@@ -339,16 +348,31 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
       JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
       next_steps, cleanNextMeetingDate, id
     ]);
-    
+
     if (meetingResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Meeting not found' });
     }
-    
+
+    // Capture existing snapshots BEFORE the DELETE so we can preserve
+    // them on re-INSERT for interventions that were already in the
+    // meeting. Coalesce null → [] defensively (Migration 020's column
+    // default should prevent null, but if anything slips through, treat
+    // it as a legacy empty snapshot rather than computing fresh — that
+    // would conjure data that wasn't captured at original save time).
+    const priorRows = await client.query(
+      'SELECT student_intervention_id, weekly_progress_snapshot FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1',
+      [id]
+    );
+    const priorSnapshots = new Map();
+    for (const row of priorRows.rows) {
+      priorSnapshots.set(row.student_intervention_id, row.weekly_progress_snapshot ?? []);
+    }
+
     // Delete existing intervention reviews and re-insert
     await client.query('DELETE FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1', [id]);
-    
-   
+
+
           // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
@@ -356,13 +380,19 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
-        
+
+        // Q1 (b): preserve prior snapshot if this intervention was already
+        // in the meeting; compute fresh only for newly-added interventions.
+        const snapshot = priorSnapshots.has(review.student_intervention_id)
+          ? priorSnapshots.get(review.student_intervention_id)
+          : await computeWeeklyProgressSnapshot(client, review.student_intervention_id, tenant_id);
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            avg_rating, total_logs, weekly_progress_snapshot
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `, [
           id,
           review.student_intervention_id,
@@ -371,13 +401,14 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
           cleanRecommendation,
           review.notes,
           review.avg_rating,
-          review.total_logs
+          review.total_logs,
+          JSON.stringify(snapshot)
         ]);
       }
     }
-    
+
     await client.query('COMMIT');
-    
+
     res.json(meetingResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
