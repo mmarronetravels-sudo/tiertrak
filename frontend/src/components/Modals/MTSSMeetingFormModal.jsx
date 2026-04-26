@@ -323,6 +323,15 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
             ) : (
               <div className="space-y-4">
                 {mtssMeetingForm.intervention_reviews.map(function(review, idx) {
+                  // Hoist log counts so the stats line, sparkline IIFE, toggle
+                  // IIFE, and warning IIFE all read consistent values. totalCount
+                  // is sourced from interventionLogs (live) per Phase 4 commit 9
+                  // owner direction — keeps the displayed stats consistent with
+                  // the sparkline points and disclosure list rather than relying
+                  // on review.total_logs from the summary endpoint.
+                  const rawLogs = interventionLogs[review.student_intervention_id] || [];
+                  const totalCount = rawLogs.length;
+                  const ratedCount = rawLogs.filter(function(l) { return l.rating != null; }).length;
                   return (
                     <div key={idx} className="bg-white rounded-lg p-4 border">
                       <div className="flex justify-between items-start mb-3 gap-3">
@@ -330,7 +339,8 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                           <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
                           <p className="text-sm text-gray-500">
                             Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} |{' '}
-                            Logs: {review.total_logs || 0}
+                            Logs: {totalCount}
+                            {ratedCount < totalCount ? ' (' + ratedCount + ' rated)' : ''}
                           </p>
                           {(function() {
                             // Disclosure toggle: compact "Show / Hide logs (N)" button.
@@ -370,7 +380,7 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                               <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={sparkData}>
                                   <YAxis hide domain={[1, 5]} />
-                                  <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot={ratedLogs.length === 1} isAnimationActive={false} />
+                                  <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
                                 </LineChart>
                               </ResponsiveContainer>
                             </div>

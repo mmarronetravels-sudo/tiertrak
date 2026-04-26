@@ -3951,6 +3951,7 @@ if (!user) {
                       <div className="text-sm text-gray-500">
                         Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} |{' '}
                         Total Logs: {totalLogs}
+                        {hasFullSnapshot && ratedSnapshot.length < totalLogs ? ' (' + ratedSnapshot.length + ' rated)' : ''}
                       </div>
                       {isLegacy && (
                         <p className="text-xs text-gray-400 italic mt-1 print:text-gray-500">
@@ -3974,7 +3975,7 @@ if (!user) {
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={sparkData}>
                             <YAxis hide domain={[1, 5]} />
-                            <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot={ratedSnapshot.length === 1} isAnimationActive={false} />
+                            <Line type="monotone" dataKey="rating" stroke="#6366f1" strokeWidth={2} dot isAnimationActive={false} />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
