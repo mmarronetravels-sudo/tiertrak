@@ -50,6 +50,8 @@ const studentDocumentsRoutes = require('./routes/studentDocuments');
 const staffManagementRoutes = require('./routes/staffManagement');
 const interventionBankRoutes = require('./routes/interventionBank');
 const tier1AssessmentsRoutes = require('./routes/tier1-assessments');
+const student504Routes = require('./routes/student504');
+const parent504Routes = require('./routes/parent504');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -703,6 +705,8 @@ app.use('/api/student-documents', studentDocumentsRoutes);
 app.use('/api/staff', staffManagementRoutes);
 app.use('/api/intervention-bank', interventionBankRoutes);
 app.use('/api/tier1-assessments', tier1AssessmentsRoutes);
+app.use('/api/student-504', student504Routes);
+app.use('/api/parent-504', parent504Routes);
 
 // Test route
 app.get('/', (req, res) => {
