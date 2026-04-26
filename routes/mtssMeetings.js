@@ -182,13 +182,36 @@ router.get('/student/:studentId/interventions-summary', async (req, res) => {
   }
 });
 
+// Compute the immutable weekly_progress snapshot for a single intervention
+// at meeting save time. Joined to students with a tenant_id bind for
+// defense-in-depth — this catches sloppy forgery of student_intervention_id
+// where the interventions's actual tenant differs from the body's tenant_id.
+// It does NOT close the broader IDOR on this route (POST/PUT lack
+// requireAuth — that's master-index Followup 67's territory). A targeted
+// attacker who matches the tenant_id correctly can still bypass this JOIN.
+async function computeWeeklyProgressSnapshot(client, studentInterventionId, tenantId) {
+  const result = await client.query(`
+    SELECT wp.week_of, wp.status, wp.rating, wp.response, wp.notes,
+           wp.created_at,
+           u.full_name AS logged_by_name,
+           u.role AS logged_by_role
+    FROM weekly_progress wp
+    JOIN student_interventions si ON wp.student_intervention_id = si.id
+    JOIN students s ON si.student_id = s.id AND s.tenant_id = $2
+    LEFT JOIN users u ON wp.logged_by = u.id
+    WHERE wp.student_intervention_id = $1
+    ORDER BY wp.week_of ASC
+  `, [studentInterventionId, tenantId]);
+  return result.rows;
+}
+
 // Create new meeting
 router.post('/', async (req, res) => {
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     const {
       student_id,
       tenant_id,
@@ -207,7 +230,7 @@ router.post('/', async (req, res) => {
 // Convert empty strings to null for date fields
     const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
     const cleanTierDecision = tier_decision === '' ? null : tier_decision;
-    
+
     // Insert meeting
     const meetingResult = await client.query(`
   INSERT INTO mtss_meetings (
@@ -221,23 +244,31 @@ router.post('/', async (req, res) => {
   JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
   next_steps, cleanNextMeetingDate, created_by
 ]);
-    
+
     const meeting = meetingResult.rows[0];
-    
-    // Insert intervention reviews
+
+    // Insert intervention reviews — each row carries an immutable JSONB
+    // snapshot of the underlying weekly_progress logs at this moment,
+    // computed inside the same transaction.
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
         // Convert empty strings to null for fields with constraints
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
-        
+
+        const snapshot = await computeWeeklyProgressSnapshot(
+          client,
+          review.student_intervention_id,
+          tenant_id
+        );
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            avg_rating, total_logs, weekly_progress_snapshot
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `, [
           meeting.id,
           review.student_intervention_id,
@@ -246,13 +277,14 @@ router.post('/', async (req, res) => {
           cleanRecommendation,
           review.notes,
           review.avg_rating,
-          review.total_logs
+          review.total_logs,
+          JSON.stringify(snapshot)
         ]);
       }
     }
-    
+
     await client.query('COMMIT');
-    
+
     res.status(201).json(meeting);
   } catch (error) {
     await client.query('ROLLBACK');
