@@ -48,6 +48,38 @@ Treat any of these as PII and apply Section 4B rules:
 - Behavior records linked to a person
 - Progress notes
 
+### Section 504 records (FERPA + ADA)
+
+The 6 tables introduced by Migration 021 (and reshaped by Migration 022) hold the Section 504 evaluation, eligibility-determination, and accommodation-plan workflow. All tenant-scoped via composite `(id, tenant_id)` FK references — defense in depth at the schema layer per master-index Followup 81 (cross-tenant child references rejected by Postgres regardless of route-handler bugs). Form letters map to tables: Form C → `student_504_evaluation_consents`, Form I → `student_504_eligibility_determinations`, Form J → `student_504_plans` (and its `accommodations` JSONB column). Permission tiers split three ways: parent-visible (accommodations, team-member names + roles, own consent), staff-only (eligibility-determination notes, evaluation-consent audit trail), and admin config (`tenant_form_sets`). Enforced at the route boundary in `routes/student504.js` (staff: `requireAuth` + `refuseParentRole`) and `routes/parent504.js` (parent: `requireStudentReadAccess` + role check).
+
+**`student_504_cycles`** — Mixed permission tier. Cycle existence is visible to all parties on the student's 504 team (parents, staff). The `status` enum (`active` / `completed` / `expired` / `discontinued`) is low-sensitivity workflow state. `form_set_id` and `form_set_version` identify which jurisdiction's form set is in use (currently only `oregon-ode-2025`) and are tenant-scoped configuration, not PII.
+
+**`student_504_evaluation_consents`** — Form C (Prior Notice and Consent to Evaluate). Parent-visible: parent's own consent status, signature text, and signature timestamp. Staff-only: the audit trail of consent transitions (`created_by`, `consent_status` changes over time) and staff signature fields tracking which staff member issued the notice.
+
+**`student_504_eligibility_determinations`** — Form I (Section 504 Eligibility Determination). STAFF-ONLY by default per the three-layer permission model. `determination_notes` is especially sensitive because it can capture clinical observations, evaluator interpretations, and diagnostic reasoning that the parent receives separately through the formal eligibility-determination notice (Form I as a whole) rather than as raw notes. The `eligibility_status` enum and `determined_at` are part of the parent-facing notice flow; `determination_notes` specifically does not appear in the parent portal.
+
+**`student_504_plans`** — Form J (Section 504 Student Accommodation Plan). Mixed permission tier. Plan dates, `plan_status`, and `accommodations` are part of the legally binding plan parents receive; `created_by` and audit timestamps are staff-only. The `accommodations` JSONB column added in Migration 022 is parent-visible and follows the PR #16 `weekly_progress_snapshot` precedent (JSONB on a parent table) with one key difference: accommodations are MUTABLE across the plan's life rather than frozen at first save. `medicalServices` is declared in the form set rendering schema (`oregon-ode-2025.js` `formJ.medicalServices`) but persistence is deferred to a future migration when the workflow needs to store it.
+
+- **Column shape:** `student_504_plans.accommodations` JSONB, default `'{}'::jsonb`. Domain-keyed dict where keys are defined by the form set module's `formJ.accommodations.domains[].key`. For `oregon-ode-2025`: `{ educational, extracurricular, assessments }`, each carrying a free-text string of accommodations for that domain.
+- **Mutability:** writable through Phase 2+ POST/PUT handlers — accommodations evolve across the plan's life as the team adjusts supports. NOT immutable like `weekly_progress_snapshot`.
+- **Render surfaces:** Form J PDF print output (full plan rendered for parent signature and district records), parent portal accommodation view (read-only display of current accommodations by domain), staff edit UI (textarea per domain, scoped to active plan).
+- **Print-mode caveat:** Form J prints the full accommodations text verbatim. Free-text content entered by staff appears on parent-facing paper artifacts; staff should treat the accommodations field as parent-visible at write time, not just at render time.
+- **Cross-references:** Migration 022 (`migration-022-504-accommodations-reshape.sql`), `frontend/src/data/504-form-sets/oregon-ode-2025.js` `formJ.accommodations.domains`, the FERPA inventory section above.
+
+**`student_504_team_members`** — Parent-visible. Names, roles, and "knowledgeable of" categorization (the student / the evaluation data / the placement) are part of the notice the parent receives identifying who participated in the eligibility determination and plan. `user_id` links to the staff record, but the rendered surface for parents is `member_name` + `member_role` only.
+
+**`tenant_form_sets`** — Admin config / staff-only. Not PII. Records which form set (e.g., `oregon-ode-2025`) is active for the tenant. No student or staff individual data; pure tenant-level configuration.
+
+Cross-cutting notes:
+
+- Composite tenant-scoped FKs (`FOREIGN KEY (cycle_id, tenant_id) REFERENCES student_504_cycles(id, tenant_id)`) are present on every 504 child table per Migration 021. This is defense in depth — application-layer scoping in `routes/student504.js` + `routes/parent504.js` is the primary control, but the schema rejects cross-tenant child inserts even if a route handler has a tenant-scoping bug (master-index Followup 81 lesson).
+- The 504 routes apply master-index Followup 67's auth lesson prophylactically: `requireAuth` is on every route from day one, and `tenant_id` is sourced exclusively from `req.user.tenant_id` (JWT-derived), not from request bodies.
+- Phase 2+ deferred surfaces (NOT in PR 1, will need privacy review when added):
+  - `student_504_plans` medical-services persistence column (form set declares `formJ.medicalServices`; no DB column yet)
+  - `proceduralSafeguardsText` content in `oregon-ode-2025.js` (currently `null` TODO placeholder pending source document)
+  - Gated-tier health document handling (Forms D, E in the ODE handbook — schema not yet defined)
+- No data-minimization exceptions are added by PR 1. Every persisted column in the 504 schema is feature-required; no fields are stored beyond what the workflow uses.
+
 ### Uploaded content
 - Any document uploaded by a staff member that concerns an identified student
 - Any CSV row containing any of the above
