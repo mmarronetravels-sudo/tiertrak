@@ -751,3 +751,256 @@ NEXT SESSION SHOULD
   more drift items. The unused /summary route (followup 2) is
   the lowest priority of the four.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-26T08:00:00-07:00
+BRANCHES:
+  feat/mtss-review-meeting-data-and-snapshot  (merged as PR #16 → a6fed2d + 33ad5b5 + 2985e1f + 506e115 + b19033d + 49e51b2 + fcb2b44 + 1485fc5 + d443f08 + 9f5eb40 + 241691b, merge commit ce2eb1c)
+  fix/mtss-print-snapshot-disclosure          (merged as PR #17 → df1a6525, merge commit 50034c0)
+  fix/meeting-date-display-fallback           (merged as PR #18 → 27321943, merge commit daf5b11)
+  chore/weekly-progress-write-logs            (merged as PR #19 → 44833683, merge commit d50c64c)
+DISPOSITION: all merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Four-PR session anchored on PR #16 (in-modal weekly_progress
+  visibility + immutable snapshot persistence on MTSS review
+  meetings) plus three small follow-on fixes that surfaced during
+  PR #16 production smoke and adjacent tidy-up. PR #16 added a
+  weekly_progress_snapshot JSONB column to mtss_meeting_interventions
+  via Migration 020, persisted snapshots on POST/PUT, exposed them
+  on both GET endpoints, rendered sparkline + expandable disclosure
+  + zero-data warning on intervention cards in the meeting form
+  modal, and rendered the same data via a three-state discriminator
+  on the view-past-meeting block. Pre-PR, saved meetings stored
+  only per-intervention aggregates; subsequent edits to or deletions
+  of underlying weekly_progress rows silently rewrote what the
+  meeting appeared to have reviewed. Post-PR, the meeting record is
+  a durable artifact suitable for parent conferences, OCR responses,
+  and IEP transitions, and the snapshot pattern is foundational for
+  upcoming 504 review meetings (Phase 2+ of the 504 v1 work scoped
+  at this session's close).
+  PR #17 fixed a print-mode disclosure rendering bug introduced by
+  PR #16 commit 1485fc5: the original implementation gated
+  visibility on a React isPrinting state flipped by beforeprint /
+  afterprint listeners, but window.print() runs synchronously and
+  React state batching is async — the print preview captured the
+  DOM before the re-render completed, so disclosures never appeared
+  on paper. Replaced React-state gating with CSS @media print
+  visibility, removing the race entirely.
+  PR #18 fixed an "Invalid Date" rendering bug on the MTSS Meeting
+  Summary header. Same bug class as Session 26 PR #10 (concatenating
+  'T00:00:00' onto a value pg had already serialized as a full ISO
+  string with embedded T). Component-scoped formatMeetingDate helper
+  matching the established formatDateLocal pattern; two render
+  sites updated; truthy guard preserved for the null path.
+  PR #19 closed master-index Followup 78: three single-line edits
+  in routes/weeklyProgress.js POST/PUT/DELETE catch handlers
+  switching err → err.message, mirroring the GET-side pattern that
+  Session 28 PR #14 commit 964953a established on the same file.
+  End-to-end err.message hygiene on routes/weeklyProgress.js
+  complete after this commit.
+
+FILES TOUCHED
+  PR #16 (11 commits)
+    migrations/migration-020-meeting-snapshot.sql  new — idempotent ALTER TABLE adding weekly_progress_snapshot JSONB DEFAULT '[]'::jsonb to mtss_meeting_interventions
+    server.js                                      Migration 020 bootstrap block in createTables right after Migration 019, idempotent ADD COLUMN IF NOT EXISTS at boot
+    routes/mtssMeetings.js                         new computeWeeklyProgressSnapshot helper + atomic transaction wiring on POST; preserve-on-edit semantics on PUT (Map.has() discriminator + body.tenant_id new dependency for defense-in-depth JOIN); both GET endpoints expose snapshot inline
+    frontend/src/components/MTSSMeetingFormModal.jsx  recharts subset import (no new dep) for sparkline; Set-based per-card expansion state + disclosure list; amber zero-data warning banner; always-on dots + (M rated) stats clarifier; "Rating trend" label + cluster repositioning to align with stats line
+    frontend/src/App.jsx                           snapshot-driven view-past-meeting block (~270 lines) with three-state discriminator (legacy / zero-data / full snapshot); ASC vs DESC sort-order asymmetry vs form modal documented inline; print-mode disclosure expansion (later replaced by PR #17's CSS gating)
+    docs/ai-context/PRIVACY_REVIEW.md              five sub-bullets under existing FERPA-section "Meeting notes" line: column shape, lifecycle/immutability, render surfaces, print-mode free-text caveat, pending sec/ branch caveat naming Followup 67
+  PR #17 (1 commit)
+    frontend/src/App.jsx                           removed isPrinting useState + beforeprint/afterprint useEffect; disclosure conditional simplified to {hasFullSnapshot && (...)}; container className gains 'hidden print:block' when !isExpanded
+  PR #18 (1 commit)
+    frontend/src/App.jsx                           component-scoped formatMeetingDate helper (splits on 'T', re-anchors at local midnight); two render sites updated (meeting_date header, next_meeting_date optional field)
+  PR #19 (1 commit)
+    routes/weeklyProgress.js                       three single-line edits: POST/PUT/DELETE catch handlers err → err.message (lines 266, 290, 310)
+
+MIGRATIONS RUN
+  Migration 020 — additive ALTER TABLE on mtss_meeting_interventions adding
+    weekly_progress_snapshot JSONB DEFAULT '[]'::jsonb. Idempotent via ADD
+    COLUMN IF NOT EXISTS. Existing rows backfill to '[]'::jsonb via the
+    column default. Verified end-to-end on local dev DB and in production
+    via Render auto-deploy after PR #16 merge.
+
+TENANT ISOLATION REVIEW
+  PR #16 introduces no new auth gating on routes/mtssMeetings.js (pre-
+  existing master-index Followup 67 — no requireAuth on any handler in
+  this file). The new computeWeeklyProgressSnapshot SELECT joins
+  weekly_progress → student_interventions → students with
+  s.tenant_id = $bodyTenantId as DEFENSE IN DEPTH ONLY. Sloppy forgery
+  (correct intervention id + wrong tenant) fails closed and returns an
+  empty snapshot; targeted forgery (correct intervention id + correct
+  tenant) still bypasses because the route lacks requireAuth.
+  Tenant-isolation-auditor verdict on PR #16: APPROVED WITH NOTES,
+  0 CRITICAL, 3 WARN (all carryover from Followup 67 / 74 / 76; concurs
+  with privacy on body.tenant_id JOIN-bind framing), 3 INFO. The auditor
+  explicitly verified the new PUT body.tenant_id dependency does not
+  create additional isolation surface beyond POST's existing reliance on
+  the same field. Snapshot widens what an unauthenticated caller can read
+  on /mtss-meetings/* GETs from per-intervention aggregates to individual
+  log entries (per-week rating, free-text notes, denormalized logged_by
+  name + role) — a meaningful posture-shift that meaningfully raises the
+  urgency of closing Followup 67 in the next sec/ branch.
+  PRs #17, #18, #19 do not modify SQL; tenant isolation posture
+  unchanged.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched (PR #16): every column on weekly_progress and
+    students.first_name/last_name plus users.full_name/role for the
+    logged_by_name/role denormalization persisted into the snapshot.
+    All education-record PII under FERPA. New JSONB column on
+    mtss_meeting_interventions; no new form inputs; no new external
+    data collection.
+  Logging audit (PR #16): all new console.error sites use err.message
+    only (matching PR #12 / PR #14 convention). No PII interpolated.
+  Error responses (PR #16): unchanged from pre-PR (generic strings).
+  Cross-tenant risk (PR #16): no NEW cross-tenant risk introduced;
+    pre-existing Followup 67 IDOR on /mtss-meetings/* is meaningfully
+    widened by the snapshot column.
+  Privacy-reviewer verdict on PR #16: APPROVED WITH NOTES, 0 CRITICAL,
+    3 WARN (1 addressed in commit 241691b — snapshot inventory in
+    PRIVACY_REVIEW.md; WARN 3 — print-mode free-text caveat — also
+    addressed in 241691b; 1 carryover for Followup 67 urgency), 4 INFO.
+  Security-reviewer verdict on PR #16: APPROVED WITH NOTES, 0 CRITICAL,
+    2 WARN (concurrence with prior reviewers; no new findings), 4 INFO.
+  Print-mode free-text caveat (privacy-reviewer WARN 3, addressed
+    inline in PR #16 commit 241691b and made permanent by PR #17's
+    CSS-based gating): commit 8 of PR #16 forced disclosure lists open
+    during print so the audit-trail-on-paper contract holds; commit 8's
+    React-state mechanism turned out to be racy and was replaced by
+    PR #17's CSS @media print pattern, but the privacy contract — that
+    weekly_progress.notes free-text appears on paper artifacts truncated
+    to 100 chars — survives both implementations. Operational note
+    captured in PRIVACY_REVIEW.md: loggers should not enter additional
+    identifying detail in notes; printed records will carry whatever was
+    written.
+  Reviewer scope on PRs #17, #18, #19: skipped — pure visibility-
+    timing fix (PR #17), pure UI display fix (PR #18), pure logging
+    hygiene with no auth/tenant/data changes (PR #19). PR #16's
+    privacy/tenant/security review covers the underlying data
+    exposure for #17 and #18; PR #19 mirrors PR #14's reviewed
+    pattern. Same posture as the prior small-fix PRs in this arc.
+
+VERIFICATION
+  Read-only audit + audit plan (PR #16)                            8-commit Phase 3 plan + 2-commit Phase 4 UX deviations + 1-commit Phase 5 docs
+  node -c (server.js + routes/mtssMeetings.js + routes/weeklyProgress.js across all PRs)  parse OK
+  npm run build (frontend/) on each PR                             built without errors
+  Live local-dev smoke (PR #16): scenarios A, B, D, G              sparkline + label cluster aligned with stats line; zero-data banner above enabled dropdowns; snapshot immutability holds across underlying log edits; print preview later verified after PR #17 merged
+  Production smoke (PR #16) post-Render-auto-deploy                scenarios A, B, D pass; scenario G FAILS — every printed meeting record missing per-week log entries due to React-state print race
+  Production smoke (PR #17) post-Render-auto-deploy                scenario G now passes; disclosures visible on paper regardless of on-screen expansion state
+  Production smoke (PR #18) post-Render-auto-deploy                meeting_date and next_meeting_date both render formatted instead of "Invalid Date"
+  Static check (PR #19): grep -c "console.error.*err);" routes/weeklyProgress.js  returns 0 (whole-file consistency)
+  Privacy-reviewer (PR #16)                                        APPROVED WITH NOTES, 0 CRITICAL, 3 WARN, 4 INFO
+  Tenant-isolation-auditor (PR #16)                                APPROVED WITH NOTES, 0 CRITICAL, 3 WARN, 3 INFO
+  Security-reviewer (PR #16)                                       APPROVED WITH NOTES, 0 CRITICAL, 2 WARN, 4 INFO
+  Reviewers on PRs #17, #18, #19                                   skipped per branch contract — narrow visibility/display/logging fixes; covered by the PR they fix or by an established reviewed pattern
+
+BRANCH CLEANUP DURING CLOSE
+  feat/mtss-review-meeting-data-and-snapshot  deleted locally + on origin after PR #16 merge
+  fix/mtss-print-snapshot-disclosure          deleted locally + on origin after PR #17 merge
+  fix/meeting-date-display-fallback           deleted locally + on origin after PR #18 merge
+  chore/weekly-progress-write-logs            deleted locally + on origin after PR #19 merge
+  Stragglers left intact on origin per prior-session policy:
+    origin/chore/activities-log               pre-Session-25 straggler
+    origin/fix/resource-1-4-calendar-underscores  pre-Session-25 straggler
+
+OPEN ITEMS / FOLLOW-UPS
+  - [closed by PR #19] Master-index Followup 78. Write-side err →
+    err.message hygiene on routes/weeklyProgress.js POST/PUT/DELETE.
+    End-to-end err.message hygiene on this file is now complete.
+
+  - [NEW + closed in same session by PR #18 commit 2732194]
+    Followup 83. Print template "Invalid Date" rendering bug
+    surfaced during PR #17 production smoke. Same bug class as
+    Session 26 PR #10 (concatenating 'T00:00:00' onto a value pg
+    had already serialized as a full ISO string with embedded T).
+    Closed by PR #18's component-scoped formatMeetingDate helper
+    landing on the MTSS Meeting Summary header at meeting_date
+    and next_meeting_date render sites.
+
+  - [new; PR #16 privacy-reviewer INFO 4 + security-reviewer WARN 2]
+    Followup 80. routes/mtssMeetings.js catch blocks (lines 63, 104,
+    151, 184, 295, 419, 442, 460) all log full error objects instead
+    of error.message. Same class as Followup 78 (just closed by
+    PR #19). Bundle in a future chore branch — ~8 single-line edits;
+    parameter name is `error` in this file rather than `err`.
+
+  - [new; PR #16 tenant-isolation-auditor WARN 2 + WARN 3]
+    Followup 81. mtss_meeting_interventions lacks a direct tenant_id
+    column / composite FK to its parent meeting AND lacks a
+    supporting btree index on mtss_meeting_id. Bundle with master-
+    index Followups 74 + 76 in a future migration branch. Use
+    CREATE INDEX CONCURRENTLY in production to avoid brief write
+    lock. (Lesson applied prophylactically to the 504 v1 schema in
+    Session 30 PR #20 Migration 021.)
+
+  - [new; PR #16 security-reviewer INFO 4]
+    Followup 82. No server-side cap on weekly_progress.notes length
+    or on overall snapshot row size. JSONB column is uncapped at the
+    schema level; a school with chatty staff could push individual
+    snapshots well past the ~7.5 KB worst-case estimate. Bundle with
+    Followup 81 or stand alone depending on future migration scope.
+
+  - [held; raised in urgency by PR #16 posture-shift]
+    Master-index Followup 67. routes/mtssMeetings.js has no
+    requireAuth middleware on any handler. PR #16's snapshot column
+    widens the unauthenticated read surface from per-intervention
+    aggregates to individual log entries with staff attribution and
+    free-text notes. Both privacy-reviewer and tenant-isolation-
+    auditor explicitly recorded the urgency raise. Fix shape (per
+    auditor concurrence): requireAuth + JWT-derived tenantId from
+    req.user. DO NOT replace body.tenant_id with a students.tenant_id
+    lookup keyed by body.student_id — that's just trading one body-
+    input tenant bind for another. Must land before any external-
+    facing release of the snapshot/print feature.
+
+  - [504 v1 SCOPING RESOLUTION — captured at session close,
+    executes in Session 30] Forms covered in v1: J + I + C only
+    (Form C = Prior Notice and Consent to Evaluate; Form I =
+    Section 504 Eligibility Determination; Form J = Section 504
+    Student Accommodation Plan). Forms A, B, D, E, F, G, H, K,
+    L deferred to Phase 2+. Three architectural decisions locked
+    at session close:
+      * New student-profile section/tab. Dedicated "504 Plan"
+        tab on the student profile, parallel to the existing
+        MTSS plan tab. Each student's 504 history lives in this
+        section; MTSS plan tab unchanged.
+      * Three-layer permission tiers. Parent-visible (e.g.,
+        accommodations, team member names + roles, own consent),
+        gated (e.g., evaluation consent audit trail, eligibility
+        determination notes), and staff-only (admin config such
+        as tenant_form_sets). Each table's tier documented at
+        schema-design time in PRIVACY_REVIEW.md.
+      * Forms J + I + C as v1 deliverable. Phase 2+ adds the
+        remaining forms.
+    Three additional architectural sketch decisions deferred to
+    Session 30 open for owner confirmation: cycle grouping vs
+    direct FKs between forms; parent-portal routing as a
+    separate file vs filtered shared routes; whether v1 includes
+    a minimum parent rights surface. These three were confirmed
+    at Session 30 open and executed in PR #20; see Session 30's
+    activities.txt entry for details.
+
+  - [504 v1 future request, captured for visibility] Sample upload
+    templates. Future feature: allow districts to upload their own
+    state-specific 504 form-set templates to seed a tenant_form_sets
+    row, paralleling the oregon-ode-2025 form set landed in Session
+    30 PR #20. Out of scope for v1 — admins receive ODE-bundled
+    form set as the only option. Distinct from sample student-data
+    CSV import templates; this is about jurisdiction-specific
+    compliance forms, not roster data.
+
+NEXT SESSION SHOULD
+  Execute the 504 v1 foundation PR using the architectural decisions
+  above. Land the schema migration (Followup 81 lesson applied
+  throughout: composite FKs + supporting indexes), backend route
+  scaffolds (requireAuth + JWT-derived tenantId from day one;
+  refuseParentRole middleware composition rather than in-handler
+  function-call pattern), Oregon ODE handbook + Forms C/I/J source
+  PDFs, the oregon-ode-2025 form set definition file structured from
+  the actual handbook + form contents (no inferred wording), and a
+  PRIVACY_REVIEW.md update inventorying all v1 504 tables and any
+  JSONB columns. Stub handlers only — real business logic lands in
+  PR 2+ against this foundation. PR cannot self-merge per §2A
+  (touches PII + multi-tenancy); human review required.
+================================================================================
