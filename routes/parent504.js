@@ -69,7 +69,7 @@ const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)'
 //   JOIN student_504_cycles c
 //     ON p.cycle_id = c.id AND p.tenant_id = c.tenant_id
 //   WHERE c.student_id = $1
-//     AND p.tenant_id  = $2     -- req.targetStudent.tenant_id from middleware
+//     AND p.tenant_id  = $2     -- req.student.tenant_id from middleware
 //     AND p.plan_status = 'active'
 //
 // Migration 022 reshaped accommodations from a child table
@@ -81,7 +81,7 @@ const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)'
 // student_504_plans cannot widen the parent-visible response.
 // determination_notes (staff-only) lives on
 // student_504_eligibility_determinations and is not reached by this
-// JOIN. tenant_id is sourced from req.targetStudent.tenant_id (set by
+// JOIN. tenant_id is sourced from req.student.tenant_id (set by
 // requireStudentReadAccess, server-derived from the student row) —
 // never from request body.
 router.get('/accommodations/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
