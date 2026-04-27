@@ -141,19 +141,41 @@ router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, asy
 // ============================================================
 
 // POST /plans — create the 504 Accommodation Plan record.
-// Accommodations attach as child rows in PR 2 via a separate
-// POST /plans/:id/accommodations endpoint (not scaffolded in PR 1).
+// Accommodations are stored as a JSONB value on the plan row itself
+// (Migration 022 reshape — domain-keyed dict matching
+// frontend/src/data/504-form-sets/oregon-ode-2025.js
+// formJ.accommodations.domains), not as separate child rows.
 // Phase 2 implementation:
 //   INSERT INTO student_504_plans (cycle_id, tenant_id, plan_status,
-//     effective_date, review_date, created_by) VALUES (...)
+//     effective_date, review_date, accommodations, created_by)
+//     VALUES (...)
+// tenant_id is sourced from req.user.tenant_id (JWT-derived) — never
+// from request body.
 router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
   res.status(501).json(NOT_IMPLEMENTED);
 });
 
-// GET /plans/:id — plan + accommodations + team members.
-// Phase 2 implementation:
-//   Plan row + json_agg of accommodations + json_agg of team_members
-//   WHERE plan.id = $1 AND plan.tenant_id = $2
+// GET /plans/:id — plan + team members.
+// Phase 2 implementation (explicit-projection only — never SELECT *):
+//   SELECT p.id,
+//          p.cycle_id,
+//          p.accommodations,
+//          p.plan_status,
+//          p.effective_date,
+//          p.review_date,
+//          p.created_by,
+//          p.created_at,
+//          p.updated_at
+//   FROM student_504_plans p
+//   WHERE p.id = $1 AND p.tenant_id = $2     -- req.user.tenant_id (JWT)
+//
+// Then a separate SELECT against student_504_team_members for the
+// matching cycle_id (also tenant-scoped). Migration 022 reshaped
+// accommodations from a child table (student_504_accommodations,
+// dropped) to a JSONB column on student_504_plans; the projection
+// above includes p.accommodations directly, no separate aggregation
+// needed. tenant_id is sourced from req.user.tenant_id (JWT-derived)
+// — never from request body.
 router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
   res.status(501).json(NOT_IMPLEMENTED);
 });

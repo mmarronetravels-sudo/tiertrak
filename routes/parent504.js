@@ -60,22 +60,30 @@ const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)'
 //     either way.
 //
 // Phase 2 implementation (explicit-projection only — never SELECT *):
-//   SELECT a.id,
-//          a.accommodation_text,
-//          a.category,
-//          a.order_position
-//   FROM student_504_accommodations a
-//   JOIN student_504_plans p ON a.plan_id = p.id AND p.tenant_id = a.tenant_id
-//   JOIN student_504_cycles c ON p.cycle_id = c.id AND c.tenant_id = p.tenant_id
+//   SELECT p.id,
+//          p.accommodations,
+//          p.plan_status,
+//          p.effective_date,
+//          p.review_date
+//   FROM student_504_plans p
+//   JOIN student_504_cycles c
+//     ON p.cycle_id = c.id AND p.tenant_id = c.tenant_id
 //   WHERE c.student_id = $1
-//     AND c.tenant_id  = $2     -- req.targetStudent.tenant_id from middleware
+//     AND p.tenant_id  = $2     -- req.targetStudent.tenant_id from middleware
 //     AND p.plan_status = 'active'
-//   ORDER BY a.order_position ASC
 //
-// determination_notes (staff-only) lives on a different table
-// (student_504_eligibility_determinations) and is not reached by this
-// JOIN; the projection list explicitly enumerates 4 accommodation
-// columns so a future schema addition cannot widen the response.
+// Migration 022 reshaped accommodations from a child table
+// (student_504_accommodations, dropped) to a JSONB column on
+// student_504_plans keyed by domain (educational / extracurricular /
+// assessments — see frontend/src/data/504-form-sets/oregon-ode-2025.js
+// formJ.accommodations.domains). The projection above explicitly
+// enumerates 5 plan columns so a future ALTER TABLE on
+// student_504_plans cannot widen the parent-visible response.
+// determination_notes (staff-only) lives on
+// student_504_eligibility_determinations and is not reached by this
+// JOIN. tenant_id is sourced from req.targetStudent.tenant_id (set by
+// requireStudentReadAccess, server-derived from the student row) —
+// never from request body.
 router.get('/accommodations/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   res.status(501).json(NOT_IMPLEMENTED);
 });
