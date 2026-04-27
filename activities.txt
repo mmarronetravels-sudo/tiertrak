@@ -1004,3 +1004,315 @@ NEXT SESSION SHOULD
   PR 2+ against this foundation. PR cannot self-merge per §2A
   (touches PII + multi-tenancy); human review required.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-26T20:00:00-07:00
+BRANCH:  feat/504-v1-foundation (PR #20, 10 commits → 84aeb74 + 7673de8 + 536ca74 + 7dd7a7d + 13b1b1a + 9ebbb53 + 8f14b34 + f9b3b10 + 80cfcf1 + 5b44035; head 5b44035)
+DISPOSITION: open (PR #20 awaiting human merge per §2A — touches PII + multi-tenancy)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  504 v1 foundation. Schema, route scaffolds, form set definition,
+  source documents, and privacy review entries — stub handlers only,
+  no real business logic. PR 2+ fills in handlers and frontend
+  rendering against this foundation. v1 scope (Forms C + I + J) and
+  architectural decisions were locked at Session 29 close; this
+  session executed against that lock with two same-PR shape
+  iterations along the way (one driven by reviewer judgment about
+  middleware composition pattern; one driven by reading the actual
+  ODE Form J after first-pass schema landed). Two MEDIUM reviewer
+  findings + two privacy WARNs surfaced and were closed in-branch
+  as commits 8, 9, and 10 before requesting human merge. Three
+  reviewer subagents required and all three cleared after the fix
+  commits; zero CRITICAL across all three.
+
+FILES TOUCHED
+  Schema (commits 1, 6)
+    migrations/migration-021-504-foundation.sql        new — 7 tables + composite (id, tenant_id) FKs + supporting btree indexes on every child FK column + UNIQUE (id, tenant_id) added to existing students table as the prerequisite for composite FK references; tables: student_504_cycles, student_504_evaluation_consents (Form C), student_504_eligibility_determinations (Form I), student_504_plans (Form J), student_504_accommodations, student_504_team_members, tenant_form_sets
+    migrations/migration-022-accommodations-jsonb.sql  new — drops student_504_accommodations table created in Migration 021; adds accommodations JSONB DEFAULT '{}'::jsonb to student_504_plans; same-PR shape iteration after reading actual ODE Form J
+    server.js                                          Migration 021 + Migration 022 bootstrap blocks in createTables, idempotent ADD/DROP IF [NOT] EXISTS at boot
+  Backend route scaffolds (commit 2)
+    routes/student504.js                               new — 9 stub endpoints (501); cycles POST + GET-by-student + GET-by-id; consents POST + GET-by-id; eligibility-determinations POST + GET-by-id; plans POST + GET-by-id; semantic paths (not letter-based); middleware composition Pattern A on every route: [requireAuth, refuseParentRole, async handler]
+    routes/parent504.js                                new — 2 stub endpoints (501); GET /accommodations/student/:studentId gated by [requireAuth, requireStudentReadAccess, handler]; GET /procedural-safeguards gated by [requireAuth, handler] (per-tenant, identical for every student); architectural constraint documented: handlers MUST NOT be capable of returning staff-only fields regardless of any future bug
+    server.js                                          two require() lines + two app.use() mounts: /api/student-504, /api/parent-504
+  Source documents (commits 3, 4)
+    docs/references/oregon-ode-2025-section-504-handbook.pdf       new — Oregon ODE Section 504 Handbook (revised 2025); public-domain government publication
+    docs/references/oregon-ode-2025-form-c-prior-notice-consent.pdf            new — Form C source PDF
+    docs/references/oregon-ode-2025-form-i-eligibility-determination.pdf       new — Form I source PDF
+    docs/references/oregon-ode-2025-form-j-accommodation-plan.pdf              new — Form J source PDF
+    docs/references/README.md                          new — directory purpose + filename convention (<state>-<authority>-<year>-<doc-shortname>.<ext>) + workflow (handbook + form templates land first, JS form-set module then references them as source citation; section content drawn from source documents, never inferred)
+  Form set definition (commit 5)
+    frontend/src/data/504-form-sets/oregon-ode-2025.js  new — single named export oregonOde2025; formC + formI + formJ sections with field types, signature line wording, and 23 major life activities verbatim from Form I page 3; 3 accommodation domain keys verbatim from Form J pages 1-2; module-private STUDENT_INFORMATION_FIELDS and TEAM_TABLE_COLUMNS shared between formI and formJ; proceduralSafeguardsText is null TODO placeholder pending the procedural-safeguards source document
+  Privacy inventory (commit 7)
+    docs/ai-context/PRIVACY_REVIEW.md                  new "Section 504 records (FERPA + ADA)" subsection covering 6 tables (cycles, evaluation_consents, eligibility_determinations, plans, team_members, tenant_form_sets); per-table prose covering permission tier, route-boundary enforcement, sensitivity callouts; accommodations JSONB column gets a 5-sub-bullet block matching PR #16 commit 241691b's template (column shape, mutability, render surfaces, print-mode caveat, cross-references); cross-cutting notes capture composite-FK defense in depth (Followup 81), prophylactic auth pattern (Followup 67), Phase 2+ deferred surfaces, no-exceptions data-minimization
+  Reviewer-finding fix commits (commits 8, 9, 10)
+    routes/parent504.js + routes/student504.js         commit 8 (f9b3b10) — refresh stale Phase-2 SQL implementation-plan comments after Migration 022 reshape; rewrite three SQL examples to project the per-domain JSONB shape; reaffirm explicit-projection discipline and req.targetStudent / req.user.tenant_id binding (security-reviewer MEDIUM finding)
+    routes/parent504.js                                commit 9 (80cfcf1) — correct req.targetStudent typo to req.student in two parent504 comments; the typo would have crashed (or worse, been "fixed" by reaching for req.body.tenant_id) in PR 2 implementation (tenant-isolation-auditor MEDIUM finding)
+    docs/ai-context/PRIVACY_REVIEW.md                  commit 10 (5b44035) — close two privacy-reviewer WARN findings: extend student_504_evaluation_consents paragraph with print-mode caveat for staff_signature_text (parent-facing notice; staff-entered free text crosses the parent boundary at write time); add explicit-projection discipline cross-cutting bullet (parent-scoped reads MUST list parent-visible columns by name; student_504_team_members SELECTs MUST list member_name + member_role only and never include user_id staff audit metadata)
+
+MIGRATIONS RUN
+  Migration 021 — 7 tables + composite (id, tenant_id) FKs + supporting btree
+    indexes on every child FK column + UNIQUE (id, tenant_id) added to
+    existing students table. Idempotent via DO $$ BEGIN IF NOT EXISTS ... END $$
+    blocks. Tables created tenant-scoped from day one.
+  Migration 022 — drops student_504_accommodations (created in Migration 021,
+    held no rows because PR 1 routes are stubs throughout); adds
+    accommodations JSONB DEFAULT '{}'::jsonb to student_504_plans. Domain
+    keys (educational, extracurricular, assessments) come from the form
+    set module's formJ.accommodations.domains[].key. Same-PR shape
+    iteration after reading actual ODE Form J revealed the original
+    schema sketch (rows with a category enum) didn't match the form.
+  Deploy-window guarantee (security-reviewer WARN 2): both migrations
+    ship in the same PR. The deploy window where
+    student_504_accommodations exists with no PR 2 handlers writing
+    to it is zero. No write path may target student_504_accommodations
+    between these two migrations' deploys. If a future cherry-pick
+    ever splits Migration 021 and 022 across deploys, this guarantee
+    no longer holds and write-path safety must be re-verified.
+
+TENANT ISOLATION REVIEW
+  Followup 81 lesson applied from day one. Every cycle child table has
+  both the composite (id, tenant_id) FK reference to its parent AND
+  an explicit btree index on the FK column. Cross-tenant child
+  references are rejected at the SQL layer regardless of any
+  application bug. Prerequisite UNIQUE (id, tenant_id) added to
+  existing students table as a pure additive change.
+  Followup 67 lesson applied from day one. Every new endpoint in
+  routes/student504.js (9 stubs) and routes/parent504.js (2 stubs)
+  uses requireAuth + JWT-derived tenantId from req.user. req.body.tenant_id
+  is never trusted for tenant scoping. Both privacy-reviewer and
+  tenant-isolation-auditor concurrence on this fix shape from
+  Session 29 PR #16 review cycle.
+  Defense in depth at the route boundary, not just runtime filtering:
+  routes/parent504.js physically does not contain handlers for
+  staff-only resources (eligibility determinations, evaluation
+  consent audit trail). A handler bug attempting to expose staff-
+  only data through a parent route is impossible because no such
+  handler exists in the file.
+  Tenant-isolation-auditor verdict on PR #20: APPROVED WITH NOTES.
+    0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW, 4 INFO. The MEDIUM
+    (req.targetStudent.tenant_id reference in routes/parent504.js
+    Phase-2 SQL comments — middleware actually sets req.student)
+    was closed in commit 9 (80cfcf1). The 4 INFO are positive
+    verifications: composite (id, tenant_id) FK pattern across
+    all 504 child tables; tenant_id NOT NULL with supporting
+    btree indexes from day one; students UNIQUE (id, tenant_id)
+    constraint addition; JSONB tenant scoping inheritance on
+    student_504_plans.accommodations.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: every column on the 6 504 tables remaining
+    after Migration 022 (cycles, evaluation_consents,
+    eligibility_determinations, plans, team_members, tenant_form_sets)
+    plus the accommodations JSONB column on student_504_plans. All
+    education-record PII under FERPA + ADA. Three-layer permission
+    model documented in PRIVACY_REVIEW.md. No new PII collection
+    in PR 1 — handlers are stubs; the schema and routes are
+    documented as designed to handle PII when PR 2 fills them in.
+  Logging audit: no new console.error sites in PR 1 (handlers are
+    stubs returning 501).
+  Error responses: all stubs return 501; no error-body exposure
+    surface in PR 1.
+  Cross-tenant risk: zero. Composite-FK defense in depth at the
+    schema layer + JWT-derived tenantId at the route layer + parent
+    route physically separated from staff route. Defense at three
+    layers from day one.
+  Print-mode caveat (PR #20 commit 5b44035 / privacy-reviewer
+    WARN 1): student_504_evaluation_consents.staff_signature_text
+    is a free-text TEXT column on a parent-facing notice (Form C).
+    Staff entering content into that field cross the parent
+    boundary at write time. Mirrors the accommodations JSONB
+    print-mode caveat shape so Phase 2 print rendering of Form C
+    is constrained from day one.
+  Explicit-projection discipline (PR #20 commit 5b44035 / privacy-
+    reviewer WARN 2): parent-scoped reads of 504 tables in
+    routes/parent504.js MUST explicitly project parent-visible
+    columns and never SELECT *. Specifically: student_504_team_members
+    SELECTs in the parent route MUST list member_name, member_role
+    only and never include user_id (staff audit metadata).
+  Privacy-reviewer verdict on PR #20: APPROVED WITH NOTES.
+    0 CRITICAL, 2 WARN, 3 INFO. Both WARN findings were closed
+    in commit 10 (5b44035): WARN 1 — extend
+    student_504_evaluation_consents paragraph with the
+    print-mode caveat for staff_signature_text (Form C is a
+    parent-facing notice; staff-entered free text crosses the
+    parent boundary at write time, not just at render time);
+    WARN 2 — add the explicit-projection cross-cutting bullet
+    (parent-scoped reads MUST list parent-visible columns by
+    name; specifically student_504_team_members SELECTs from
+    routes/parent504.js MUST list member_name + member_role
+    only and never include user_id staff audit metadata). The
+    3 INFO are positive verifications: /procedural-safeguards
+    auth gating; form-set module privacy posture (pure data,
+    no PII); Migration 021 + 022 bootstrap duplication safety.
+  Security-reviewer verdict on PR #20: APPROVED WITH NOTES.
+    0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 WARN, 4 INFO. The MEDIUM
+    (stale Phase-2 SQL implementation-plan comments referencing
+    the dropped student_504_accommodations table) was closed in
+    commit 8 (f9b3b10) via owner-approved Option B scope
+    expansion to all three affected SQL example blocks. The 3
+    WARN findings were captured forward, not closed in-PR:
+    WARN 1 → Followup 85 (shared Pool module consolidation);
+    WARN 2 → captured in PR #20 description as the deploy-window
+    guarantee paragraph (Migrations 021 and 022 must ship in the
+    same deploy; future cherry-picks must preserve the bundling);
+    WARN 3 → captured as a PR 2 implementation note for the
+    /procedural-safeguards endpoint (PR 2 must return only
+    { text: formSet.proceduralSafeguardsText } — no tenant
+    metadata, no school name, no form_set internal identifiers).
+
+VERIFICATION
+  Read-only audit + scoping lock from Session 29 close              architectural decisions executed as agreed (Forms C/I/J; cycle grouping; separate parent routes; three-layer permissions; snapshot pattern as Phase 2+ precedent only; minimum parent rights surface via proceduralSafeguardsText placeholder)
+  node -c on routes/student504.js + routes/parent504.js + server.js  parse OK across all 10 commits
+  Backend boot against local dev DB                                  "Migration 021: 504 v1 foundation tables ready" + "Migration 022: accommodations reshape complete" both log cleanly across two consecutive restarts
+  Direct schema check                                                7 tables created by Migration 021; student_504_accommodations dropped by Migration 022; 6 tables remain in 504 schema; accommodations JSONB column present on student_504_plans with '{}'::jsonb default; UNIQUE (id, tenant_id) constraint landed on students table; all FK column supporting indexes verified via psql \d on each new table
+  grep -c "requireAuth, refuseParentRole, async" routes/student504.js  returns 9 (matches all 9 staff endpoints; no Pattern B inline-call remnants)
+  GET /api/student-504/cycles/student/1 without cookie               401 {"error":"Not authenticated"} — staff route mounted, auth chain intact, JWT-derived tenantId pattern locked in
+  GET /api/parent-504/procedural-safeguards without cookie           401 same body — parent route mounted, auth chain intact
+  Form set module verified verbatim against source PDFs              23 major life activities on Form I page 3; 3 accommodation domain keys + per-domain section structure on Form J pages 1-2; signature-line wording on Form C; no inferred content
+  privacy-reviewer (PR #20)                                          APPROVED WITH NOTES; 0 CRITICAL, 2 WARN, 3 INFO; both WARN closed in commit 10
+  tenant-isolation-auditor (PR #20)                                  APPROVED WITH NOTES; 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW, 4 INFO; MEDIUM closed in commit 9
+  security-reviewer (PR #20)                                         APPROVED WITH NOTES; 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 WARN, 4 INFO; MEDIUM closed in commit 8; 3 WARN captured forward
+  Human review required (§2A point 6)                                PR #20 touches PII + multi-tenancy; cannot self-merge
+
+ITERATION HISTORY (process notes for §4B-scrubbed audit trail)
+  Pattern B → Pattern A middleware composition for refuseParentRole.
+    Original audit plan staged route scaffolds with Pattern B
+    (function-call inside handler body: if (refuseParentRole(req, res))
+    return;). Scoping discussion before commit 2 was pushed surfaced
+    three reasons to switch to Pattern A (middleware in route
+    definition: [requireAuth, refuseParentRole, async handler]):
+    project-precedent consistency with every other auth-gated route
+    in the codebase from Sessions 25/27/28; grep-ability so a single
+    `grep "refuseParentRole" routes/student504.js` returns the route
+    definitions themselves making the gate auditable from the route
+    table at a glance; forgetting risk in PR 2's 9 real handlers
+    where a missing if-return at the top of a new handler under
+    Pattern B would be silently fatal. Pattern A was the right call
+    from the start. Splitting commits to fake a B → A sequence that
+    didn't happen on disk would have been historical fiction; the
+    "we considered B" trail lives in the session conversation
+    transcript and in this entry. Captured as a memory for future
+    sessions.
+  Source-document format issue. First-pass download of Forms C, I, J
+    landed as macOS Pages source documents (.pages binary format)
+    rather than PDFs. Re-exported via macOS Pages → PDF for commit 4.
+    Internal PDF title metadata still carries trailing whitespace
+    from that export flow but the filenames are clean and follow
+    the README's convention. No content fidelity loss.
+  Form J PDF file content mismatch (commit 4 amend recovery).
+    The file saved as
+    docs/references/oregon-ode-2025-form-j-accommodation-plan.pdf
+    actually contained Form I (Eligibility Determination) content.
+    Both PDFs passed all of CC's mechanical checks (file, pdfinfo,
+    byte-size). Cowork independently read the uploaded files via
+    its Read tool and caught the duplicate. Owner re-exported
+    Form J from Pages with the correct source. Commit 4 was already
+    pushed (sha b4f47b6) when the mismatch was caught; resolved via
+    git commit --amend --no-edit + git push --force-with-lease on
+    the personal feature branch (post-amend sha 7dd7a7d). Force-
+    with-lease vs bare force is the safety belt; pattern only
+    acceptable pre-PR-open on personal branches (no PR was open at
+    amend time).
+  Form set content checkpoint (commit 5 pre-write discipline).
+    Cowork did a content-correctness checkpoint on CC's pre-write
+    form set proposal, verifying all quoted material (23 major
+    life activities, 3 accommodation domains, signature-line
+    wording, eligibility outcome options, parent consent text)
+    against the actual source PDFs. Three structural fixes pre-
+    write: knowledgeableOf type changed from 'multiCheckbox' to
+    'radio' (form says "check one"); meetingParticipants columns
+    expanded from 2 collapsed columns to 4 distinct (Name |
+    Signature | Agree | Disagree, with Agree/Disagree as
+    independent checkboxes preserving the "both blank" form
+    state); planDates.heading corrected from a misread first half
+    of a wrapping field label to the neutral "Plan Dates" heading.
+    No file already on disk; checkpoint happened during pre-write
+    proposal review.
+  Migration 022 schema reshape after reading actual ODE Form J.
+    Migration 021's first-pass shape modeled accommodations as rows
+    in a separate student_504_accommodations child table with a
+    category enum. After reading the actual ODE Form J end-to-end
+    for commit 5's form set definition, the accommodations on the
+    form turned out to be naturally per-domain free-form blocks
+    (educational / extracurricular / assessments), not enum-typed
+    rows. Migration 022 dropped student_504_accommodations and
+    added an accommodations JSONB column to student_504_plans,
+    keyed by the form set's domain keys. Same-PR iteration was
+    safe because the table held no rows (PR 1 routes are stubs);
+    a future cherry-pick split would invalidate that safety, hence
+    the deploy-window guarantee captured above.
+
+BRANCH CLEANUP DURING CLOSE
+  feat/504-v1-foundation                       NOT deleted — PR #20 still open at session close, awaiting human merge
+  Stragglers left intact on origin per prior-session policy:
+    origin/chore/activities-log               pre-Session-25 straggler
+    origin/fix/resource-1-4-calendar-underscores  pre-Session-25 straggler
+
+OPEN ITEMS / FOLLOW-UPS
+  - [new; PR #20 process discipline] Followup 84. Backend ESLint
+    setup. Root package.json has no lint script; backend route
+    files are only verified via node -c syntactic parsing. Adjacent
+    to Followup 55 (frontend lint baseline cleanup) but distinct.
+    Out of scope for PR #20; future scheduling.
+
+  - [new; PR #20 security-reviewer WARN 1] Followup 85. Shared
+    Pool module consolidation. Each route file in routes/
+    (including the two new 504 route files) instantiates its
+    own new Pool({ connectionString: process.env.DATABASE_URL,
+    ... }). middleware/authorizeInterventionAccess.js also
+    creates its own pool. Multiplies Postgres connections under
+    load on Vercel serverless. Pre-existing pattern across the
+    repo — not novel in PR #20. Auditor noted "out-of-scope for
+    this PR. Consider before PR 2." Suggested approach: shared
+    db/pool.js module landing before PR 2's real query traffic.
+
+  - [new; PR #20 doc-volume watchpoint] Followup 86.
+    PRIVACY_REVIEW.md split watch. File is currently 277 lines
+    after Session 30's "Section 504 records (FERPA + ADA)"
+    subsection added. Future-watch item: when the file crosses
+    ~500 lines, consider splitting into per-domain files (e.g.,
+    PRIVACY_REVIEW_504.md, PRIVACY_REVIEW_MTSS.md). Not urgent.
+    Cross-cutting framing currently benefits from being in one
+    place.
+
+  - [held; deferred to PR 2+] proceduralSafeguardsText content.
+    oregon-ode-2025.js ships null TODO placeholder. Release
+    blocker for any external-facing 504 plan rendering. Source
+    document needed (procedural safeguards notice) before content
+    can be drafted from it.
+
+  - [held; deferred to PR 2+] Real handler bodies in
+    routes/student504.js (9 stubs) and routes/parent504.js (2
+    stubs). Currently 501. PR 2 fills against the foundation
+    locked in PR #20.
+
+  - [held; deferred to PR 2+] student_504_plans.medical-services
+    persistence. Form set module declares formJ.medicalServices;
+    no DB column yet. Add when Phase 2 form rendering needs it.
+
+  - [held; deferred to Phase 2+] Gated-tier health document
+    handling (Forms D, E). Not in v1 scope.
+
+  - [held; deferred to a future district-uploads feature] Sample
+    upload templates per the Session 29 capture. Districts
+    uploading their own state-specific 504 form-set templates to
+    seed a tenant_form_sets row, paralleling oregon-ode-2025.
+    Out of v1 scope.
+
+NEXT SESSION SHOULD
+  Open by checking PR #20's status. If merged: clean up
+  feat/504-v1-foundation locally + on origin per the established
+  pattern, then begin PR 2 of the 504 v1 series — real handler
+  bodies in routes/student504.js + routes/parent504.js + frontend
+  rendering against the form set definition. PR 2 must keep the
+  Pattern A middleware composition discipline, the explicit-
+  projection discipline (commit 5b44035), and the deploy-window
+  guarantee implicit in the foundation. If PR #20 is still open:
+  do NOT branch from origin/main for further 504 work; resolve
+  the open PR first to avoid stacking PRs on top of an unmerged
+  foundation. The remaining held followups from prior sessions
+  (Followup 67 in particular, raised in urgency by Session 29
+  PR #16) are still candidates for an interleaved sec/ branch
+  before or after PR 2 depending on the production deploy window
+  for the snapshot/print feature.
+================================================================================
