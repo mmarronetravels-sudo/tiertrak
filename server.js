@@ -678,6 +678,22 @@ const createTables = async () => {
     `);
     console.log('Migration 021: 504 v1 foundation tables ready');
 
+    // Migration 022: 504 accommodations JSONB reshape
+    // Reshapes accommodations persistence from a child table with a
+    // category enum to a JSONB column on student_504_plans keyed by the
+    // three domain keys from Form J (educational, extracurricular,
+    // assessments). Drops the now-unused student_504_accommodations table.
+    // Pre-condition: zero rows in student_504_accommodations (PR 1 ships
+    // before any 504 routes are real). Idempotent. See
+    // migration-022-504-accommodations-reshape.sql for full notes.
+    await pool.query(`
+      ALTER TABLE student_504_plans
+        ADD COLUMN IF NOT EXISTS accommodations JSONB DEFAULT '{}'::jsonb;
+
+      DROP TABLE IF EXISTS student_504_accommodations;
+    `);
+    console.log('Migration 022: 504 accommodations reshape ready');
+
   } catch (error) {
     console.error('Error creating tables:', error);
   }
