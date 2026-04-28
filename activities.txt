@@ -1878,3 +1878,256 @@ NEXT SESSION SHOULD
   the 504 v1 series picks up the frontend Form C/I/J rendering
   and CSS-based print gating against the now-implemented backend.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-28T19:45:00Z (Session 35, evening close)
+BRANCH:  chore/activities-log-session-35 (this entry); see PR roster below
+DISPOSITION: kept-for-pr (this entry); 3 PRs merged this session — PR #25
+             (chore/activities-log-session-34) at 9943162, PR #26
+             (chore/pin-node-version) at 9f18e49, PR #24
+             (feat/504-v1-pr2-form-c-handlers) at 1ceb749
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Cowork-driven follow-through session that closed Session 34's
+  primary repo-side merge gate (PR #24, 504 v1 PR 2 — 11 handler
+  bodies) and one of Session 34's net-new follow-ups (Followup #1,
+  Pin Node version explicitly). Three PRs merged in sequence —
+  PR #25 (Session 34 activities log), PR #26 (Pin Node version),
+  PR #24 (504 v1 PR 2). Render auto-deploy of PR #24 in flight at
+  session close. No new feature code in this session; only the
+  three merges + this activities entry on its own chore branch.
+
+FILES TOUCHED
+  activities.txt — this entry; chore/activities-log-session-35
+
+  (No code changes in Session 35 outside the three already-merged
+  PRs. PR #25 changed activities.txt only; PR #26 changed
+  package.json + .nvmrc only; PR #24 changed routes/student504.js
+  + routes/parent504.js only. All three already logged on the
+  Session 34 entry above or in PR #25's own description.)
+
+MIGRATIONS RUN
+  none (Session 35 ran no migrations. PR #24 contained none;
+  Migrations 021/022 shipped in PR #20 last session-arc.)
+
+TENANT ISOLATION REVIEW
+  No DB changes in Session 35. PR #24's tenant-isolation review
+  was completed in Session 34 (tenant-isolation-auditor APPROVED,
+  0/0/0 + 1 LOW pre-existing + 3 INFO; report posted to PR #24
+  record). No fresh scoping work was performed in Session 35;
+  the merge-gate review was the human PII/tenant pass per §2A,
+  satisfied by external human reviewer on PR #24. PRs #25
+  (activities.txt) and #26 (engines + .nvmrc) touch no DB
+  surface and have no tenant scope to review.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in Session 35 (no code changes).
+    PR #24's privacy review was completed in Session 34
+    (privacy-reviewer APPROVED, 0/0/0/0 + 5 INFO; report on
+    PR #24 record). PRs #25 + #26 have zero PII surface.
+  Logging audit: no new logging added in Session 35. PR #24's
+    12 added console.error statements log err.code (PG SQLSTATE)
+    only — verified in Session 34, still good post-merge.
+    Pre-existing requireStudentReadAccess err.message log
+    (middleware/authorizeInterventionAccess.js:229) remains
+    open as Session 34 Followup #5; recommended next-session
+    pickup as sec/middleware-error-message-pii.
+  Cross-tenant risk: none identified. All three Session 35 PRs
+    merged with composite-FK guarantees and middleware-sourced
+    tenant_id intact (verified at PR #24 review). No cross-
+    school read or write paths were introduced.
+  This activities entry: §4B-scrubbed before commit. No student
+    names, no staff names, no tenant slugs, no email addresses.
+    All references to records are by table + count or by generic
+    description, per the landing-the-plane skill guardrail.
+
+VERIFICATION
+  Structural verification per Followup #6 (no root test/lint
+  infra; established precedent across PRs #21, #22, #23, #25):
+    git status (on chore/activities-log-session-35)         clean pre-commit
+    git branch --show-current                               chore/activities-log-session-35 (off main, not main itself per §2A)
+    git log --oneline main -5                               1ceb749 (PR #24) → 9f18e49 (PR #26) → 09ffba3 (Node pin commit) → 9943162 (PR #25) → e747f58 (Session 34 activities commit)
+    npm test                                                fails by design ("Error: no test specified" + exit 1) — Followup #6
+    npm run lint                                            no lint script — Followup #6
+
+  Three Session 35 PR merges (verified via git log on main):
+    PR #25  chore/activities-log-session-34         merge 9943162 at 2026-04-28T18:57:45Z; --merge + --delete-branch
+    PR #26  chore/pin-node-version                  merge 9f18e49 at 2026-04-28T19:23:13Z; --merge + --delete-branch
+    PR #24  feat/504-v1-pr2-form-c-handlers         merge 1ceb749 at 2026-04-28T19:24:07Z; --merge + --delete-branch
+
+  Render deployment verification:
+    PR #24 merge → Render auto-deploy triggered                 in flight at session close
+    PR #24 contains no migrations                                dashboard "Live" + 1-shot 401 probe is the full verification
+    PR #26 merge → auto-deploy triggered but no runtime behavior change (package.json/.nvmrc are build-env metadata, not runtime).
+    Session 33 carryover note still applies: header-based       use Render dashboard "Live" + a post-Live 401 probe on a
+       verification doesn't work on this app                       known route (no /version endpoint yet — Session 32 followup #1
+                                                                   carryover)
+
+  This entry's chore branch:
+    git checkout main; git pull origin main                  main at 1ceb749 (PR #24 merge), clean
+    git checkout -b chore/activities-log-session-35          off main per project convention
+    structural verification per PR #25 + Session-34 precedent (Followup #6)
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Closed by Session 35 ---
+  - Session 33 Priority 1 / Session 34 primary blocker — 504 v1
+    PR 2 fully shipped via PR #24 merge. 11 handlers (9 staff +
+    2 parent) now on main + auto-deploying to Render. All six
+    contract bullets carried forward from Session 32 master
+    index honored (JWT vs middleware tenant_id sourcing,
+    explicit-projection rule, staff_signature_text +
+    accommodations Q2 advisory, /procedural-safeguards return
+    contract, free-text length-cap precedent; CSS-based print
+    gating intentionally deferred to PR 3+).
+  - Session 34 Followup #1 (Pin Node version explicitly) —
+    shipped via PR #26. package.json now has
+    engines: { "node": ">=22.12.0" } (the require()-of-leaf-ESM
+    stabilization floor that PR #24's FORM_SET_REGISTRY pre-load
+    requires). New .nvmrc at repo root pins 22.22.0 (matches
+    Render production version). render.yaml deferred to its own
+    scoped PR per §8 ask-first (see Session 35 net-new below).
+  - Session 34 Followup #8 (procedural — open PR for
+    chore/activities-log-session-34) — shipped via PR #25 at
+    2026-04-28T18:57:45Z. activities.txt now 1880 lines on main
+    immediately prior to this entry.
+
+  --- Awaiting verification (Render auto-deploy) ---
+  - PR #24 Render deploy. Auto-deploy triggered at merge
+    (~19:24Z); status not verified at session close. Deploy-
+    verify per Session 33 carryover note: dashboard "Live" +
+    one-shot 401 probe on a known new endpoint (e.g.,
+    /api/student-504/cycles or /api/parent-504/accommodations).
+    No migrations in PR #24, so dashboard Live + the probe is
+    the full verification. Next session can confirm in <1 min
+    of dashboard time.
+
+  --- New (Session 35) ---
+  - [new; Session 35 doc-drift scope expansion] Vercel→Render
+    doc drift extends beyond CLAUDE.md §2 line 31 to include
+    STACK_ARCHITECTURE.md lines 16–34. PR #26's Phase 1 audit
+    surfaced this. Session 34 master index Priority 4.3 had
+    scoped only the CLAUDE.md change; the doc-only branch
+    (chore/claude-md-render-hosting or similar) needs to cover
+    both files when picked up. Doc-only fix; no code surface.
+  - [new; Session 35 deferral, §8 ask-first] render.yaml IaC
+    bootstrap. PR #26 audit identified that adding IaC config
+    to an already-functioning dashboard-managed Render service
+    is a hosting/deployment-assumption change with real IaC-
+    drift risk (build command, env vars, instance type can
+    diverge between dashboard config and Blueprint config).
+    Explicitly deferred from PR #26 to its own scoped PR if/
+    when an IaC migration is desired. Branch name:
+    chore/render-yaml-bootstrap or similar. Not picked up
+    speculatively; only when the team decides to migrate to
+    IaC for Render config management.
+  - [new; Session 35 stale remote branches] Two pre-Session-25
+    stragglers still on origin: origin/chore/activities-log
+    (no session suffix) and origin/fix/resource-1-4-calendar-
+    underscores. Surfaced again in Session 35; one
+    `git push origin --delete <branch>` per branch closes them.
+    Five-minute task; can ride any future cleanup PR or be done
+    standalone.
+
+  --- Carry-forward from Session 34 (unchanged) ---
+  - Followup #2 — Form-set architecture refactor (shared/ dir
+    or DB-keyed). TODO(form-set-arch) breadcrumb in PR #24
+    code comment. Long-term.
+  - Followup #3 — Free-text and JSONB hygiene pass (repo-wide
+    length-cap adoption). Surfaced during PR #24 commit 2
+    length-cap decision search.
+  - Followup #4 — Add rate-limiting middleware (express-rate-
+    limit globally to /api/student-504 + /api/parent-504 POSTs,
+    then expand to legacy POST surface). Security-reviewer
+    LOW-2 from PR #24 review.
+  - Followup #5 — Middleware err.message log fix
+    (middleware/authorizeInterventionAccess.js:229). Two-line
+    change (err.message → err.code). Real §4B compliance
+    improvement. Tenant-isolation-auditor LOW L1 from PR #24
+    review. Recommended next-session pickup as
+    sec/middleware-error-message-pii. Needs privacy-reviewer
+    + security-reviewer subagents → terminal claude session
+    (IDE-extension Claude Code does not load
+    .claude/agents/*.md).
+  - Followup #6 — Add real npm test and npm run lint scripts.
+    Used as the structural-only VERIFICATION rationale for
+    this entry (per established precedent across PRs #21–#25).
+  - Followup #7 — IDE-vs-terminal subagent registration doc.
+    Single doc PR documenting the asymmetry surfaced in
+    Session 34 (IDE extension does not register
+    .claude/agents/*.md; terminal claude does).
+
+  --- Carry-forward from Session 32 (unchanged) ---
+  - /version endpoint (Session 32 followup #1).
+  - Render auto-deploy latency baseline doc (Session 32
+    followup #3).
+  - Polling-loop pattern reconsideration (Session 32 followup
+    #4).
+  - CLI-based authenticated smoke check (Session 32 followup
+    #5).
+
+  --- Carry-forward (numbering preserved from prior sessions) ---
+  All Session 25–34 followups (57, 58, 59, 61, 62, 63, 64, 65,
+  66, 67, 68, 69, 70, 71, 72, 74, 75, 76, 77, 80, 81, 82, 84,
+  85, 86, plus Session-32 #1–#5 and Session-34 #2–#7) carry
+  forward unchanged. See Session 30 + Session 32 + Session 34
+  master indices for full descriptions.
+
+  --- Optional process feedback memories (Session 35
+      candidates, additive to Session 33 + 34 candidate list) ---
+  - feedback_fresh_session_qualifier.md (Session 35, NEW) —
+    when Cowork-side instructions tell Owner to "open Claude
+    Code" or "switch to a terminal session," default-specify
+    "fresh session, not the previous one." Session 35 produced
+    one replay-paste recurrence directly traceable to a missing
+    qualifier (a directive landed in Session 34's already-closed
+    Claude Code instance, triggering a 529 alongside the
+    replay-paste pattern). Lesson is also captured in the
+    Session 35 master index Technical Notes section.
+  - feedback_strategy_validation_before_commit.md (Session 32
+    candidate, reinforced Session 34 + Session 35) — the
+    missing "fresh session" qualifier above is itself a
+    strategy-validation gap on Cowork's side. Continued
+    reinforcement.
+  - feedback_citation_skepticism.md (Session 32 candidate,
+    reinforced Session 34 + Session 35) — Session 35 produced
+    one mild reinforcement: PR #26 Phase 1 audit verified the
+    actual breadth of the Vercel→Render doc drift before the
+    Session 34 master index's Priority 4.3 scope was assumed
+    correct (it wasn't — STACK_ARCHITECTURE.md lines 16–34
+    were also drifted).
+  - feedback_capability_gap_surfacing.md (Session 34, NEW;
+    not reinforced this session — no new gap surfaced).
+
+  --- Held; deferred to PR 3+ (504 v1 series, post-PR-24-merge) ---
+  Carry-forward unchanged from Session 34 entry above:
+  proceduralSafeguardsText content; Frontend Form C/I/J
+  rendering; CSS-based print gating from day one;
+  student_504_plans medical-services persistence. PR 3 is now
+  unblocked since PR #24 is merged.
+
+  --- Held; deferred to Phase 2+ (504 v1 series, future) ---
+  Carry-forward unchanged from Session 34 entry above:
+  Gated-tier health document handling (Forms D, E); Sample
+  upload templates per Session 29.
+
+NEXT SESSION SHOULD
+  Priority 1 — Open the PR for chore/activities-log-session-35
+  (this branch). gh pr create against main using the standard
+  chore/activities-log template; merge with --merge and
+  --delete-branch per established convention.
+  Priority 2 — Pick the next small followup branch. Recommended:
+  sec/middleware-error-message-pii (Followup #5 from Session 34)
+  for the two-line err.message → err.code fix at
+  middleware/authorizeInterventionAccess.js:229. Real §4B
+  compliance improvement. Run from a terminal claude session
+  in /Users/melaniemarrone/Projects/tiertrak so privacy-reviewer
+  + security-reviewer subagents register.
+  Priority 3 — If/when bandwidth: chore/claude-md-render-hosting
+  (now scope-expanded to cover BOTH CLAUDE.md §2 line 31 AND
+  STACK_ARCHITECTURE.md lines 16–34). Doc-only.
+  Optional verification — Render dashboard eyeball for PR #24
+  Live status + one-shot 401 probe on a new endpoint
+  (/api/student-504/cycles or similar). <1 min of dashboard
+  time. Defer if dashboard is already known-Live.
+================================================================================
