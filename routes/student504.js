@@ -61,11 +61,26 @@ const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)'
 // pg SQLSTATE codes used in handler error branches
 // (https://www.postgresql.org/docs/current/errcodes-appendix.html).
 const PG_FK_VIOLATION = '23503';
+const PG_CHECK_VIOLATION = '23514';
+
+const ALLOWED_CONSENT_STATUS = new Set(['pending', 'granted', 'denied', 'revoked']);
+
+function isValidIsoTimestamp(v) {
+  return typeof v === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
+      .test(v);
+}
 
 // Schema-derived length caps. Keeping them named so handlers don't drift
 // if migration-021 column types ever change.
 const FORM_SET_ID_MAX = 100;
 const FORM_SET_VERSION_MAX = 50;
+
+// Free-text cap. Matches the only existing free-text size-limit pattern
+// in the route directory (routes/tier1-assessments.js:355, notes capped
+// at 300). Applied here to parent_signature_text and staff_signature_text
+// to follow the established precedent.
+const SIGNATURE_TEXT_MAX = 300;
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -276,21 +291,129 @@ router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) =
 // Form C — Evaluation Consents
 // ============================================================
 
-// POST /consents — record a Notice and Consent to Evaluate.
-// Phase 2 implementation:
-//   INSERT INTO student_504_evaluation_consents (cycle_id, tenant_id,
-//     consent_status, parent_signature_text, parent_signature_at,
-//     staff_signature_text, staff_signature_at, created_by) VALUES (...)
+// POST /consents — record a Notice and Consent to Evaluate (Form C).
+//
+// tenant_id and created_by are server-derived from the JWT (req.user) —
+// never read from req.body. Composite FK student_504_evaluation_consents
+// (cycle_id, tenant_id) → student_504_cycles(id, tenant_id) rejects
+// cross-tenant cycle references at the SQL layer regardless of any
+// application bug here.
+//
+// staff_signature_text advisory (PR 2 contract Q2): this column is
+// parent-visible at write time. The Form C document is delivered to
+// parents (printed or exported) with the staff signature block on it,
+// so whatever a staff user writes here will be seen by a parent. Staff
+// must not include staff-only commentary, eligibility reasoning, or
+// other §4B-tier-restricted content in this field. No new server-side
+// validation is added beyond what other free-text fields use; this is
+// a UX/policy rule the frontend Form C surface enforces.
 router.post('/consents', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const userId = req.user.id;
+    const {
+      cycle_id,
+      consent_status,
+      parent_signature_text,
+      parent_signature_at,
+      staff_signature_text,
+      staff_signature_at,
+    } = req.body || {};
+
+    if (!isPositiveInt(cycle_id)) {
+      return res.status(400).json({ error: 'Invalid or missing cycle_id' });
+    }
+    if (consent_status !== undefined && consent_status !== null && !ALLOWED_CONSENT_STATUS.has(consent_status)) {
+      return res.status(400).json({ error: 'Invalid consent_status' });
+    }
+    if (parent_signature_text !== undefined && parent_signature_text !== null) {
+      if (typeof parent_signature_text !== 'string') {
+        return res.status(400).json({ error: 'Invalid parent_signature_text' });
+      }
+      if (parent_signature_text.length > SIGNATURE_TEXT_MAX) {
+        return res.status(400).json({ error: `parent_signature_text exceeds ${SIGNATURE_TEXT_MAX} characters` });
+      }
+    }
+    if (staff_signature_text !== undefined && staff_signature_text !== null) {
+      if (typeof staff_signature_text !== 'string') {
+        return res.status(400).json({ error: 'Invalid staff_signature_text' });
+      }
+      if (staff_signature_text.length > SIGNATURE_TEXT_MAX) {
+        return res.status(400).json({ error: `staff_signature_text exceeds ${SIGNATURE_TEXT_MAX} characters` });
+      }
+    }
+    if (parent_signature_at !== undefined && parent_signature_at !== null && !isValidIsoTimestamp(parent_signature_at)) {
+      return res.status(400).json({ error: 'Invalid parent_signature_at' });
+    }
+    if (staff_signature_at !== undefined && staff_signature_at !== null && !isValidIsoTimestamp(staff_signature_at)) {
+      return res.status(400).json({ error: 'Invalid staff_signature_at' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO student_504_evaluation_consents
+         (cycle_id, tenant_id, consent_status,
+          parent_signature_text, parent_signature_at,
+          staff_signature_text, staff_signature_at, created_by)
+       VALUES ($1, $2, COALESCE($3, 'pending'), $4, $5, $6, $7, $8)
+       RETURNING id, cycle_id, tenant_id, consent_status,
+                 parent_signature_text, parent_signature_at,
+                 staff_signature_text, staff_signature_at,
+                 created_by, created_at, updated_at`,
+      [
+        cycle_id,
+        tenantId,
+        consent_status ?? null,
+        parent_signature_text ?? null,
+        parent_signature_at ?? null,
+        staff_signature_text ?? null,
+        staff_signature_at ?? null,
+        userId,
+      ]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err && err.code === PG_FK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid cycle reference' });
+    }
+    if (err && err.code === PG_CHECK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid value for a constrained field' });
+    }
+    console.error('[student504 POST /consents] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// GET /consents/:id
-// Phase 2 implementation:
-//   SELECT * FROM student_504_evaluation_consents
-//   WHERE id = $1 AND tenant_id = $2
+// GET /consents/:id — fetch one consent record.
+//
+// Explicit projection (no SELECT *) so a future ALTER TABLE on
+// student_504_evaluation_consents cannot widen this response shape
+// without an intentional edit. Tenant-scoped on req.user.tenant_id;
+// 404 for both "doesn't exist" and "wrong tenant" — non-leaky.
 router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const id = Number(req.params.id);
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, cycle_id, tenant_id, consent_status,
+              parent_signature_text, parent_signature_at,
+              staff_signature_text, staff_signature_at,
+              created_by, created_at, updated_at
+       FROM student_504_evaluation_consents
+       WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[student504 GET /consents/:id] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ============================================================
