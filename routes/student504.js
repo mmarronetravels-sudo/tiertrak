@@ -41,10 +41,6 @@ const pool = new Pool({
 // + routes/parent504.js) without consolidating; Followup 1 remains open.
 // ============================================================
 
-// Reference the pool so lint doesn't flag it as unused while handlers
-// are still stubs. PR 2 fills in real pool.query() calls.
-void pool;
-
 // Middleware-style guard composed into every staff route definition
 // alongside requireAuth. Parent-role callers belong on routes/parent504.js;
 // routing them here is a misconfiguration, not a data exposure (the guard
@@ -62,36 +58,218 @@ function refuseParentRole(req, res, next) {
 
 const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)' };
 
+// pg SQLSTATE codes used in handler error branches
+// (https://www.postgresql.org/docs/current/errcodes-appendix.html).
+const PG_FK_VIOLATION = '23503';
+
+// Schema-derived length caps. Keeping them named so handlers don't drift
+// if migration-021 column types ever change.
+const FORM_SET_ID_MAX = 100;
+const FORM_SET_VERSION_MAX = 50;
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
 // ============================================================
 // Cycles — POST, GET by student, GET by id
 // ============================================================
 
 // POST /cycles — create a new 504 cycle for a student.
-// Phase 2 implementation:
-//   const tenantId = req.user.tenant_id;
-//   const { student_id, form_set_id, form_set_version } = req.body;
-//   INSERT INTO student_504_cycles (tenant_id, student_id, form_set_id,
-//     form_set_version, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *
-//   Composite FK rejects if (student_id, tenant_id) is not in students.
+//
+// tenant_id and created_by are server-derived from the JWT (req.user) —
+// never read from req.body. Composite FK student_504_cycles
+// (student_id, tenant_id) → students(id, tenant_id) rejects cross-tenant
+// student references at the SQL layer regardless of any application bug.
+//
+// form_set_id + form_set_version are validated against tenant_form_sets
+// scoped on req.user.tenant_id with is_active=TRUE before insertion.
+// tenant_form_sets has UNIQUE (tenant_id, form_set_id) but no constraint
+// limiting one active row per tenant, so multiple form sets may be active
+// concurrently — body inputs are validated against the row that matches.
 router.post('/cycles', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const userId = req.user.id;
+    const { student_id, form_set_id, form_set_version } = req.body || {};
+
+    if (!isPositiveInt(student_id)) {
+      return res.status(400).json({ error: 'Invalid or missing student_id' });
+    }
+    if (typeof form_set_id !== 'string' || form_set_id.length === 0 || form_set_id.length > FORM_SET_ID_MAX) {
+      return res.status(400).json({ error: 'Invalid or missing form_set_id' });
+    }
+    if (typeof form_set_version !== 'string' || form_set_version.length === 0 || form_set_version.length > FORM_SET_VERSION_MAX) {
+      return res.status(400).json({ error: 'Invalid or missing form_set_version' });
+    }
+
+    // SELECT-then-INSERT TOCTOU is accepted: a tenant admin deactivating
+    // this form set between the two queries produces a stale-form-set
+    // cycle, not a tenant boundary violation (§5) or PII exposure (§4B).
+    const formSetCheck = await pool.query(
+      `SELECT 1 FROM tenant_form_sets
+       WHERE tenant_id = $1 AND form_set_id = $2 AND form_set_version = $3 AND is_active = TRUE
+       LIMIT 1`,
+      [tenantId, form_set_id, form_set_version]
+    );
+    if (formSetCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid form set or version for this tenant' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO student_504_cycles
+         (tenant_id, student_id, form_set_id, form_set_version, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, tenant_id, student_id, form_set_id, form_set_version,
+                 status, created_by, created_at, updated_at`,
+      [tenantId, student_id, form_set_id, form_set_version, userId]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err && err.code === PG_FK_VIOLATION) {
+      // Composite FK rejected (student_id, tenant_id). Generic 400 — do not
+      // surface PG's detail string, which can include identifying values.
+      return res.status(400).json({ error: 'Invalid student reference' });
+    }
+    // Avoid logging err.message; PG error bodies can carry column values
+    // that count as PII per CLAUDE.md §4B. SQLSTATE alone is safe.
+    console.error('[student504 POST /cycles] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // GET /cycles/student/:studentId — list cycles for a student.
-// Phase 2 implementation:
-//   SELECT * FROM student_504_cycles
-//   WHERE student_id = $1 AND tenant_id = $2
-//   ORDER BY created_at DESC
+//
+// Result is empty if the studentId does not exist in this tenant — that's
+// indistinguishable from "no cycles yet," which is the intended non-leaky
+// behavior (no probe for cross-tenant student existence).
 router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const studentId = Number(req.params.studentId);
+    if (!isPositiveInt(studentId)) {
+      return res.status(400).json({ error: 'Invalid studentId' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, tenant_id, student_id, form_set_id, form_set_version,
+              status, created_by, created_at, updated_at
+       FROM student_504_cycles
+       WHERE student_id = $1 AND tenant_id = $2
+       ORDER BY created_at DESC`,
+      [studentId, tenantId]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error('[student504 GET /cycles/student/:studentId] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// GET /cycles/:cycleId — get one cycle with all its child forms.
-// Phase 2 implementation:
-//   Cycle row + json_agg of consents + eligibility + plans + team_members
-//   WHERE cycle_id = $1 AND tenant_id = $2
+// GET /cycles/:cycleId — cycle bundle: cycle row + child forms + team.
+//
+// Explicit-projection discipline (Q1a in the PR 2 contract): every column
+// in every aggregation is named, so a future ALTER TABLE on any of the
+// child tables cannot widen this response shape without an intentional
+// edit here. determination_notes IS staff-only sensitive content per the
+// permission tier matrix in migration-021-504-foundation.sql; it IS
+// reachable on this staff route per the same matrix, but the parent
+// route family (routes/parent504.js) does not expose this resource at
+// all. tenant scoping is enforced both on the outer cycle row and on
+// every inner subquery so a cross-tenant child row is unreachable even
+// if an FK ever drifted.
 router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const cycleId = Number(req.params.cycleId);
+    if (!isPositiveInt(cycleId)) {
+      return res.status(400).json({ error: 'Invalid cycleId' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         c.id,
+         c.tenant_id,
+         c.student_id,
+         c.form_set_id,
+         c.form_set_version,
+         c.status,
+         c.created_by,
+         c.created_at,
+         c.updated_at,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', ec.id,
+             'cycle_id', ec.cycle_id,
+             'consent_status', ec.consent_status,
+             'parent_signature_text', ec.parent_signature_text,
+             'parent_signature_at', ec.parent_signature_at,
+             'staff_signature_text', ec.staff_signature_text,
+             'staff_signature_at', ec.staff_signature_at,
+             'created_by', ec.created_by,
+             'created_at', ec.created_at,
+             'updated_at', ec.updated_at
+           ) ORDER BY ec.created_at)
+           FROM student_504_evaluation_consents ec
+           WHERE ec.cycle_id = c.id AND ec.tenant_id = c.tenant_id
+         ), '[]'::json) AS consents,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', ed.id,
+             'cycle_id', ed.cycle_id,
+             'eligibility_status', ed.eligibility_status,
+             'determination_notes', ed.determination_notes,
+             'determined_at', ed.determined_at,
+             'created_by', ed.created_by,
+             'created_at', ed.created_at,
+             'updated_at', ed.updated_at
+           ) ORDER BY ed.created_at)
+           FROM student_504_eligibility_determinations ed
+           WHERE ed.cycle_id = c.id AND ed.tenant_id = c.tenant_id
+         ), '[]'::json) AS eligibility_determinations,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', p.id,
+             'cycle_id', p.cycle_id,
+             'plan_status', p.plan_status,
+             'effective_date', p.effective_date,
+             'review_date', p.review_date,
+             'accommodations', p.accommodations,
+             'created_by', p.created_by,
+             'created_at', p.created_at,
+             'updated_at', p.updated_at
+           ) ORDER BY p.created_at)
+           FROM student_504_plans p
+           WHERE p.cycle_id = c.id AND p.tenant_id = c.tenant_id
+         ), '[]'::json) AS plans,
+         COALESCE((
+           -- Staff projection. Parent reads of student_504_team_members
+           -- require a narrower projection per PR 2 contract Q1(a) —
+           -- do not copy this shape into a parent route.
+           SELECT json_agg(json_build_object(
+             'id', tm.id,
+             'cycle_id', tm.cycle_id,
+             'user_id', tm.user_id,
+             'member_name', tm.member_name,
+             'member_role', tm.member_role,
+             'created_at', tm.created_at
+           ) ORDER BY tm.created_at)
+           FROM student_504_team_members tm
+           WHERE tm.cycle_id = c.id AND tm.tenant_id = c.tenant_id
+         ), '[]'::json) AS team_members
+       FROM student_504_cycles c
+       WHERE c.id = $1 AND c.tenant_id = $2`,
+      [cycleId, tenantId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[student504 GET /cycles/:cycleId] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ============================================================
