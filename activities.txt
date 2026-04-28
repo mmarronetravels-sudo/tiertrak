@@ -1316,3 +1316,290 @@ NEXT SESSION SHOULD
   before or after PR 2 depending on the production deploy window
   for the snapshot/print feature.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-27T18:30:00-07:00 (Sessions 31 + 32, cohesive arc)
+BRANCHES:
+  chore/activities-log-session-29   (merged as PR #21 → 82f45a6, merge commit 21375d3)
+  chore/activities-log-session-30   (merged as PR #22 → 6bc4ec2, merge commit 675a608)
+  feat/504-v1-foundation            (merged as PR #20 → 10 commits 84aeb74 + 7673de8 + 536ca74 + 7dd7a7d + 13b1b1a + 9ebbb53 + 8f14b34 + f9b3b10 + 80cfcf1 + 5b44035, merge commit cb3c603)
+DISPOSITION: all merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two-session arc captured as one cohesive entry per the Session 31
+  master index plan ("will be drafted post-§2A-resolution to capture
+  full arc"). Session 31 (pre-work execution + §2A discussion paused)
+  shipped two overdue activities.txt entries for Sessions 29 and 30
+  via PR #21 and PR #22. Session 32 resolved the §2A bind via path 1
+  (hold the line — recruit an independent human reviewer), merged
+  PR #20 (504 v1 foundation), verified the Render auto-deploy via
+  a 404→401 transition signal on a new endpoint, ran the 11-endpoint
+  401 sweep matrix against the new 504 surface, and cleaned up the
+  feature branch local + remote. PR #20 is the foundation that PR 2+
+  (Form C handlers, frontend rendering) builds against.
+
+  No code changes in either session beyond the activities.txt entries
+  themselves. PR #20's substantive code landed in Session 30 and was
+  merged unchanged; Session 31 paused for the §2A decision; Session 32
+  executed the merge per the path-1 substitute review.
+
+  Two process disciplines exercised in Session 32 worth flagging.
+  First: post-merge state verification — gh pr view 20 was used as
+  independent confirmation of MERGED state with mergedAt timestamp
+  before advancing to deploy verification, per the Session 31 lesson
+  not to trust merge-command exit codes alone. Second: pre-merge
+  baseline header probe caught the deploy-strategy gap before any
+  destructive action — confirmed that last-modified / age / x-render-
+  build-id headers are absent on this Render deployment, prompting
+  a strategy swap to 404→401 transition + dashboard Live cross-check
+  before the merge command ran. Without that probe, the merge would
+  have shipped with no working deploy-confirmation signal.
+
+§2A RESOLUTION (path 1 — hold the line)
+  Independent §2A reviewer walkthrough by an Ed Tech specialist on
+  2026-04-27, covering the actual diff (file-by-file across all 10
+  commits) and the feature surface (504 v1 foundation: schema,
+  tenant scoping, Pattern A middleware composition, FERPA + ADA
+  tables). Reviewer is positioned to spot backend code issues and
+  reported the diff clean — no findings, no concerns flagged.
+  Combined with the three reviewer-subagent verdicts (privacy-
+  reviewer, security-reviewer, tenant-isolation-auditor — all
+  APPROVED WITH NOTES, zero CRITICAL findings as of Session 30
+  close), this satisfies §2A: the merger is not the sole pair of
+  eyes that reviewed the change. §2A walkthrough paragraph added
+  to PR #20 description pre-merge, so the documented reviewer
+  trail rides on the PR record.
+
+FILES TOUCHED
+  activities.txt
+    Session 29 entry appended  (+253 lines)  PR #21 commit 82f45a6 (merge 21375d3)
+    Session 30 entry appended  (+312 lines)  PR #22 commit 6bc4ec2 (merge 675a608)
+    Session 31 + 32 entry appended (this commit on chore/activities-log-session-31-32)
+  PR #20 merged into main on 2026-04-28T00:39:13Z (Session 32):
+    migrations/migration-021-504-foundation.sql       merged unchanged from feat/504-v1-foundation
+    migrations/migration-022-accommodations-jsonb.sql merged unchanged
+    routes/student504.js                              merged unchanged
+    routes/parent504.js                               merged unchanged
+    server.js                                         merged unchanged (mounts + migration bootstrap)
+    docs/references/<504 source documents + README>  merged unchanged
+    docs/ai-context/PRIVACY_REVIEW.md                 merged unchanged
+    frontend/src/data/504-form-sets/oregon-ode-2025.js merged unchanged
+    (refer to Session 30 entry for full per-file diff inventory; this
+    session merged that diff unchanged via gh pr merge --merge)
+
+MIGRATIONS RUN
+  Session 31: none (chore branches, doc-only).
+  Session 32: Migrations 021 + 022 deployed to production via PR #20
+    merge → Render auto-deploy. Both ran in same deploy window per
+    the deploy-window guarantee paragraph in PR #20 description (021
+    creates student_504_accommodations; 022 drops it and reshapes
+    accommodations to JSONB on student_504_plans; deploy window in
+    which 021's table exists with no PR-2 handlers writing to it is
+    zero). Render dashboard log lines confirmed Migration 020 (pre-
+    existing), Migration 021 (NEW), Migration 022 (NEW) all ran in
+    sequence on the post-merge deploy. No errors, no rollback.
+
+TENANT ISOLATION REVIEW
+  Session 31 entries: doc-only appends, no DB changes, no tenant
+    surface touched.
+  Session 32 PR #20 merge: tenant scoping reviewed in Session 30
+    by tenant-isolation-auditor (APPROVED WITH NOTES, 0 CRITICAL,
+    2 WARN non-blocking, 3 INFO) and walked end-to-end with the
+    independent §2A reviewer on 2026-04-27. Composite (id, tenant_id)
+    FK pattern on all 504 child tables; UNIQUE (id, tenant_id) added
+    to existing students table; JWT-derived req.user.tenant_id on
+    every staff route (Followup 67 pattern applied from day one to
+    the new 504 surface); middleware-derived req.student.tenant_id
+    on parent routes; defense-in-depth structural separation via
+    routes/parent504.js (file physically does not contain handlers
+    for staff-only resources, regardless of any future runtime bug).
+    Post-merge 401 sweep confirmed all 11 new endpoints reject
+    unauthenticated callers — see VERIFICATION below.
+  Session 32 chore branch (this entry): doc-only append, no DB
+    changes, no tenant surface touched.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched in this entry: none. §4B scrub applied — no
+    student names, no student IDs, no staff names, no email
+    addresses, no actual school slugs / tenant identifiers. "Ed Tech
+    specialist" is a role descriptor, not PII. Where rows are
+    referenced anywhere in the entry, by table name + count, never
+    by identifying field.
+  PII fields touched by PR #20 merge: schema-level only — 7 tables
+    created carrying FERPA + ADA fields (Form C consent text, Form I
+    eligibility-determination notes (staff-only), Form J accommodation
+    plan JSONB), all behind requireAuth + tenant scoping. No rows
+    inserted by stub handlers; PR 2 will be the first session to
+    insert real 504 records. Privacy-reviewer cleared APPROVED WITH
+    NOTES, 0 CRITICAL, 2 WARN both closed in commits 8f14b34 and
+    5b44035 (Session 30, captured in PR #20 description).
+  Logging audit: verified no PII in this entry. Structural-only
+    references throughout — commits, branch names, file paths,
+    HTTP status codes, table names, migration filenames.
+  Cross-tenant risk: none identified. Composite FK schema rejects
+    cross-tenant child references at the SQL layer regardless of
+    application-layer bugs; defense-in-depth at parent route
+    boundary. Verified again during Session 32 post-merge sweep.
+
+VERIFICATION
+  no test/lint infra at repo root (Followup 84); doc-only diff
+    verified structurally per PR #21 + PR #22 precedent
+
+  Session 32 — pre-merge investigation + strategy swap:
+    git fetch origin; tip cross-check pre-merge        origin/main 675a608 = local; origin/feat/504-v1-foundation 5b440359 = local; no remote drift
+    Pre-merge baseline header probe                     curl -I against /, /health, /healthcheck, /version, /api/health on tiertrak-api.onrender.com — no last-modified, no age (cf-cache-status DYNAMIC pass-through), no x-render-build-id, no commit-SHA header. Session 29 lesson (last-modified + age) does not work on this Render deployment as configured.
+    ETag analysis                                       /health body contains a per-request timestamp → ETag changes per request, not per deploy; / body is a static string → ETag stable across deploys. Both useless as a deploy signal.
+    Strategy swap (pre-merge)                           swapped to 404→401 transition on /api/parent-504/procedural-safeguards as primary signal, Render dashboard "Live" status as secondary. Captured caveat: if 404→401 transition closes before first probe, fall back to dashboard alone.
+    11-endpoint 401 sweep matrix enumerated             from feat/504-v1-foundation:routes/student504.js (9 endpoints) + routes/parent504.js (2 endpoints), with corresponding Express mount paths /api/student-504 + /api/parent-504 read from feat/504-v1-foundation:server.js
+    Auth-chain regression candidate analysis             surfaced legacy gap (most pre-PR routes have no requireAuth — Followup 67 already tracking; the 504 surface explicitly does not inherit this gap per PR #20 description). Selected Candidate A: GET /api/student-documents/categories (requireAuth-only, returns static category list, no PII in response body, recent file edit was unrelated error-message scrubbing).
+
+  Session 32 — merge mechanics:
+    gh pr merge 20 --merge (no -d, no extra flags)      succeeded silently
+    gh pr view 20 (independent post-merge verification)  state MERGED, mergedAt 2026-04-28T00:39:13Z, mergeCommit cb3c603 (Session 31 lesson applied: do not trust merge-command exit code alone)
+    git pull origin main                                 main advanced 675a608 → cb3c603
+    git log --oneline 675a608..HEAD                      11 commits (1 merge commit + 10 feature SHAs preserved in order: 5b44035, 80cfcf1, f9b3b10, 8f14b34, 9ebbb53, 13b1b1a, 7dd7a7d, 536ca74, 7673de8, 84aeb74)
+
+  Session 32 — deploy verification:
+    Pre-deploy baseline probe                            /api/parent-504/procedural-safeguards returned 401 at 2026-04-28T00:40:29Z, ~76s after merge — Render deploy completed faster than expected; the 404 window closed before the first probe could capture it
+    Re-probe for stability                               401 stable at 2026-04-28T00:43:56Z (~4.7 min post-merge); deploy is steady-state, not mid-rollover
+    Render dashboard cross-check                         "Live" confirmed at ~17:39:51 PDT, ~38s after merge timestamp; explains why the 404 window closed before the first probe
+    Render deploy logs (read by owner)                   Migration 020 (pre-existing), Migration 021 (NEW, 504 v1 foundation tables), Migration 022 (NEW, accommodations reshape) all confirmed in sequence; 021 + 022 in same deploy per the deploy-window guarantee
+
+  Session 32 — production smoke:
+    11/11 401 sweep on new 504 endpoints                 all returned 401 unauthenticated (synthetic UUID 00000000-0000-0000-0000-000000000000 for every path param; --max-time 10; no PII in probes; status code only, body discarded). Auth chain intact across the full new 504 surface — no 200 (bypass), no 404 (missing mount), no 5xx (handler crash). See PR #20 description for the per-row matrix.
+    Auth-chain regression Candidate A                    GET /api/student-documents/categories unauth → 401 with structured {"error":"Not authenticated"} body. Authenticated 200 path skipped — cookie-domain cross-origin behavior, expected, not a regression. Coverage sufficient for a foundation/stub PR.
+
+  Session 32 — branch cleanup:
+    git branch -d feat/504-v1-foundation                 deleted local (was 5b44035)
+    git ls-remote --heads origin feat/504-v1-foundation  still present (GitHub auto-delete-on-merge did not fire — Session 31 saw same intermittency: fired for PR #21, not PR #22; Session 32 confirms it also did not fire for PR #20)
+    git push origin --delete feat/504-v1-foundation      remote deleted; remote-tracking ref auto-pruned by push --delete
+    git status (on main)                                  clean, working tree matches origin at cb3c603
+    git branch (local)                                    main only
+    git branch -r (remote-tracking)                       origin/main + two pre-Session-25 stragglers (origin/chore/activities-log, origin/fix/resource-1-4-calendar-underscores)
+
+  This entry's chore PR (Session 32, post-merge cleanup):
+    Structural verification per PR #21 + PR #22 precedent (Followup 84 — no root test/lint infra)
+    git status (on chore/activities-log-session-31-32)    activities.txt modified (this entry's append); no other files
+    git fetch --prune origin                              no stale refs to reconcile
+    git merge-base --is-ancestor cb3c603 HEAD             confirms branch built on post-PR-#20-merge main
+    git log --oneline main..HEAD (post-commit)            single chore commit appending this entry
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Closed by this entry ---
+  - PR #20 (504 v1 foundation) — merged 2026-04-28T00:39:13Z, merge
+    commit cb3c603, deployed and smoke-verified.
+  - §2A discussion (paused at end of Session 31) — resolved via
+    path 1 (hold the line). Independent §2A reviewer walkthrough on
+    2026-04-27 (Ed Tech specialist; backend-positioned) reported the
+    diff clean; combined with the three reviewer-subagent verdicts,
+    this satisfies §2A separation-of-duties requirement.
+
+  --- New (Session 32) ---
+  - [new; Session 32 deploy verification] /version endpoint. Add a
+    /version route on the backend returning
+    { commit: process.env.RENDER_GIT_COMMIT }. ~5 line change in
+    server.js. Reason: today's deploy verification fell back to a
+    404→401 transition signal because no last-modified / age /
+    x-render-build-id headers are exposed on this Render deployment;
+    that transition closed in <80s before the baseline probe could
+    capture the 404 state. A /version endpoint that returns the
+    deployed commit SHA gives an unambiguous, latency-independent
+    deploy-confirmation signal next time.
+  - [new; Session 32 documentation] Source comment on
+    GET /api/parent-504/procedural-safeguards documenting why
+    requireAuth alone (no per-student or role guard) is intentional.
+    Per the file's design notes the safeguards text is per-tenant
+    identical, no studentId is in the path, and no per-student
+    access check applies. It is currently the only requireAuth-only
+    handler in the new 504 surface and reads as a possible missing
+    guard during cold review without context. Single-comment fix.
+  - [new; Session 32 operations] Document Render auto-deploy latency
+    baseline for tiertrak-api.onrender.com. Observed ~38s from merge
+    push to dashboard "Live" status today, including Migrations 021
+    + 022. Worth recording in docs/ai-context/STACK_ARCHITECTURE.md
+    or a new operational runbook so future merge plans do not budget
+    multi-minute verification windows that close in under a minute.
+  - [new; Session 32 process] Polling-loop pattern reconsideration.
+    The 30s/10min poll loop assumes a multi-minute deploy window;
+    today's evidence is that for small Express apps on Render with
+    quick migrations, the window can close before the first probe
+    fires. Future verification should either (a) capture the
+    pre-merge baseline before triggering the merge command (not
+    after), or (b) skip polling entirely and rely on dashboard
+    "Live" event + a one-shot post-Live probe.
+
+  --- New (Session 31) — carry forward as future-followup candidates ---
+  - GitHub auto-delete-on-merge toggle verification. Session 31
+    surfaced intermittent behavior (fired for PR #21, not PR #22);
+    Session 32 confirms it also did not fire for PR #20. Worth a
+    30-second check of repo Settings → General → "Automatically
+    delete head branches" toggle when next in GitHub UI.
+  - Owner-developer framing reconciliation. Project's custom
+    instructions frame owner as non-technical; owner asserted in
+    Session 31 they are the developer of this project. §2A path-1
+    resolution in Session 32 means this framing is no longer blocking
+    — separation of duties is satisfied via the independent reviewer
+    regardless of owner's role. Decision deferred; not urgent.
+
+  --- Optional process feedback memories (Sessions 30-31 candidates) ---
+  - feedback_merge_state_verification.md (Session 31) — re-verify
+    GitHub merge state via gh pr view before relying on owner-stated
+    merge. Reinforced in Session 32: gh pr view 20 was the
+    independent post-merge confirmation per Session 31 lesson;
+    pattern held cleanly.
+  - feedback_consistency_drift_check.md (Session 31) — when applying
+    explicit replacements during a revision, check whether the
+    replacements create phrasing drift in adjacent artifact regions
+    and surface as a numbered-options decision.
+  - feedback_pre_write_source_verification.md (Session 30) — verify
+    middleware / JWT / schema-bound variable names by reading source
+    files before approving audit plans.
+  - feedback_cowork_content_verification.md (Session 30) — when
+    files are uploaded relevant to a CC task, Cowork independently
+    reads them via Read tool to cross-check CC's mechanical checks.
+
+  --- Carry-forward (numbering preserved from prior sessions) ---
+  All Session 25-30 followups (57, 58, 59, 61, 62, 63, 64, 65, 66,
+  67, 68, 69, 70, 71, 72, 74, 75, 76, 77, 80, 81, 82, 84, 85, 86)
+  carry forward unchanged. See Session 30 master index for full
+  descriptions. Followup 84 (no backend test / lint infra) was
+  the explicit rationale for this entry's structural-only
+  VERIFICATION block per the PR #21 and PR #22 precedent.
+
+  --- Held; deferred to PR 2+ (504 v1 series, post-merge) ---
+  - proceduralSafeguardsText content. oregon-ode-2025.js ships null
+    TODO placeholder. Release blocker for any external-facing 504
+    plan rendering. Source document needed (procedural safeguards
+    notice) before content can be drafted from it.
+  - Real handler bodies in routes/student504.js (9 stubs) and
+    routes/parent504.js (2 stubs). Currently 501. PR 2 fills against
+    the foundation locked in PR #20.
+  - student_504_plans medical-services persistence. Form set module
+    declares formJ.medicalServices; no DB column yet. Add when
+    Phase 2 form rendering needs it.
+
+  --- Held; deferred to Phase 2+ (504 v1 series, future) ---
+  - Gated-tier health document handling (Forms D, E). Not in v1 scope.
+  - Sample upload templates per the Session 29 capture. Districts
+    uploading state-specific 504 form-set templates to seed
+    tenant_form_sets rows. Out of v1 scope.
+
+NEXT SESSION SHOULD
+  Begin PR 2 of the 504 v1 series — real handler bodies in
+  routes/student504.js + routes/parent504.js + frontend rendering
+  against the form set definition. PR 2 must keep the Pattern A
+  middleware composition discipline, the explicit-projection rule
+  on parent reads, and the deploy-window guarantee implicit in the
+  foundation. JWT-derived req.user.tenant_id on staff routes and
+  middleware-derived req.student.tenant_id on parent routes are the
+  invariants to hold; no req.body.tenant_id reads. Optional
+  interleave: a sec/ branch addressing Followup 67 broadly across
+  the legacy routes that currently lack auth (most pre-PR-20 routes
+  per Session 32 audit), depending on production deploy window for
+  the snapshot/print feature. Also consider knocking out the four
+  Session 32 / Session 31 followups (/version endpoint, procedural-
+  safeguards comment, Render latency doc, polling-loop pattern note)
+  as a small chore PR before PR 2 starts — none are blockers but
+  closing them while context is fresh is cheap.
+================================================================================
