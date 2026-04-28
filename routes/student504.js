@@ -56,8 +56,6 @@ function refuseParentRole(req, res, next) {
   next();
 }
 
-const NOT_IMPLEMENTED = { error: 'Not implemented in PR 1 (foundation scaffold)' };
-
 // pg SQLSTATE codes used in handler error branches
 // (https://www.postgresql.org/docs/current/errcodes-appendix.html).
 const PG_FK_VIOLATION = '23503';
@@ -65,11 +63,27 @@ const PG_CHECK_VIOLATION = '23514';
 
 const ALLOWED_CONSENT_STATUS = new Set(['pending', 'granted', 'denied', 'revoked']);
 const ALLOWED_ELIGIBILITY_STATUS = new Set(['pending', 'eligible', 'not_eligible']);
+const ALLOWED_PLAN_STATUS = new Set(['draft', 'active', 'expired', 'discontinued']);
 
 function isValidIsoTimestamp(v) {
   return typeof v === 'string' &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
       .test(v);
+}
+
+// effective_date and review_date are DATE columns on student_504_plans,
+// not TIMESTAMP. Strict YYYY-MM-DD shape; PG validates calendar legality.
+function isValidDateOnly(v) {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
+// accommodations is a JSONB column on student_504_plans (migration-022,
+// reshape from the dropped student_504_accommodations table). Form J
+// stores per-domain text keyed by educational/extracurricular/assessments
+// per the form-set module — but the schema accepts any JSON object, so
+// validate object-ness here, not internal shape.
+function isPlainJsonObject(v) {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 // Schema-derived length caps. Keeping them named so handlers don't drift
@@ -534,44 +548,154 @@ router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, asy
 // Form J — Plans
 // ============================================================
 
-// POST /plans — create the 504 Accommodation Plan record.
-// Accommodations are stored as a JSONB value on the plan row itself
-// (Migration 022 reshape — domain-keyed dict matching
-// frontend/src/data/504-form-sets/oregon-ode-2025.js
-// formJ.accommodations.domains), not as separate child rows.
-// Phase 2 implementation:
-//   INSERT INTO student_504_plans (cycle_id, tenant_id, plan_status,
-//     effective_date, review_date, accommodations, created_by)
-//     VALUES (...)
-// tenant_id is sourced from req.user.tenant_id (JWT-derived) — never
-// from request body.
+// POST /plans — create the 504 Accommodation Plan record (Form J).
+//
+// tenant_id and created_by are server-derived from the JWT (req.user) —
+// never read from req.body. Composite FK student_504_plans
+// (cycle_id, tenant_id) → student_504_cycles(id, tenant_id) rejects
+// cross-tenant cycle references at the SQL layer.
+//
+// accommodations advisory (parent-visible at write time): the
+// accommodations JSONB column is the canonical storage for what
+// parents read via GET /api/parent-504/accommodations/student/:studentId
+// (commit 5). Whatever a staff user writes here will be seen by the
+// parent of any student linked to this plan's cycle. Staff must not
+// include staff-only commentary, eligibility reasoning, or other §4B-
+// tier-restricted content in any accommodations text. Same UX/policy
+// rule as staff_signature_text on /consents (PR 2 contract Q2);
+// grep-able via "parent-visible at write time."
+//
+// accommodations storage shape: a JSONB column on student_504_plans
+// (migration-022 reshape from the dropped student_504_accommodations
+// child table). No json_agg sub-collection here — the column is
+// stored and returned as a single JSONB value, keyed by Form J domain
+// (educational / extracurricular / assessments) per the form-set
+// module. Validation enforces object-ness only; internal key shape is
+// a frontend/form-set concern.
 router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const userId = req.user.id;
+    const {
+      cycle_id,
+      plan_status,
+      effective_date,
+      review_date,
+      accommodations,
+    } = req.body || {};
+
+    if (!isPositiveInt(cycle_id)) {
+      return res.status(400).json({ error: 'Invalid or missing cycle_id' });
+    }
+    if (plan_status !== undefined && plan_status !== null && !ALLOWED_PLAN_STATUS.has(plan_status)) {
+      return res.status(400).json({ error: 'Invalid plan_status' });
+    }
+    if (effective_date !== undefined && effective_date !== null && !isValidDateOnly(effective_date)) {
+      return res.status(400).json({ error: 'Invalid effective_date' });
+    }
+    if (review_date !== undefined && review_date !== null && !isValidDateOnly(review_date)) {
+      return res.status(400).json({ error: 'Invalid review_date' });
+    }
+    if (accommodations !== undefined && accommodations !== null && !isPlainJsonObject(accommodations)) {
+      return res.status(400).json({ error: 'Invalid accommodations (must be a JSON object)' });
+    }
+
+    const accommodationsParam = (accommodations === undefined || accommodations === null)
+      ? null
+      : JSON.stringify(accommodations);
+
+    const result = await pool.query(
+      `INSERT INTO student_504_plans
+         (cycle_id, tenant_id, plan_status, effective_date, review_date,
+          accommodations, created_by)
+       VALUES ($1, $2, COALESCE($3, 'draft'), $4, $5,
+               COALESCE($6::jsonb, '{}'::jsonb), $7)
+       RETURNING id, cycle_id, tenant_id, plan_status,
+                 effective_date, review_date, accommodations,
+                 created_by, created_at, updated_at`,
+      [
+        cycle_id,
+        tenantId,
+        plan_status ?? null,
+        effective_date ?? null,
+        review_date ?? null,
+        accommodationsParam,
+        userId,
+      ]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err && err.code === PG_FK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid cycle reference' });
+    }
+    if (err && err.code === PG_CHECK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid value for a constrained field' });
+    }
+    console.error('[student504 POST /plans] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// GET /plans/:id — plan + team members.
-// Phase 2 implementation (explicit-projection only — never SELECT *):
-//   SELECT p.id,
-//          p.cycle_id,
-//          p.accommodations,
-//          p.plan_status,
-//          p.effective_date,
-//          p.review_date,
-//          p.created_by,
-//          p.created_at,
-//          p.updated_at
-//   FROM student_504_plans p
-//   WHERE p.id = $1 AND p.tenant_id = $2     -- req.user.tenant_id (JWT)
+// GET /plans/:id — plan row + team members for the plan's cycle.
 //
-// Then a separate SELECT against student_504_team_members for the
-// matching cycle_id (also tenant-scoped). Migration 022 reshaped
-// accommodations from a child table (student_504_accommodations,
-// dropped) to a JSONB column on student_504_plans; the projection
-// above includes p.accommodations directly, no separate aggregation
-// needed. tenant_id is sourced from req.user.tenant_id (JWT-derived)
-// — never from request body.
+// Single round-trip with a correlated json_agg subquery for team
+// members, mirroring the GET /cycles/:cycleId bundle pattern.
+// Explicit projection on the plan row AND on the team_members
+// aggregation (Q1a) — the same staff-projection comment as
+// /cycles/:cycleId applies: a parent route reading
+// student_504_team_members would require a narrower projection.
+//
+// Tenant scoping: outer plan row scoped on req.user.tenant_id; inner
+// team_members subquery additionally scoped on c.tenant_id via the
+// cycle JOIN as defense in depth (composite FKs already enforce the
+// match). 404 covers both "not found" and "wrong tenant" — non-leaky.
 router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const id = Number(req.params.id);
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         p.id,
+         p.cycle_id,
+         p.tenant_id,
+         p.plan_status,
+         p.effective_date,
+         p.review_date,
+         p.accommodations,
+         p.created_by,
+         p.created_at,
+         p.updated_at,
+         COALESCE((
+           -- Staff projection. Parent reads of student_504_team_members
+           -- require a narrower projection per PR 2 contract Q1(a) —
+           -- do not copy this shape into a parent route.
+           SELECT json_agg(json_build_object(
+             'id', tm.id,
+             'cycle_id', tm.cycle_id,
+             'user_id', tm.user_id,
+             'member_name', tm.member_name,
+             'member_role', tm.member_role,
+             'created_at', tm.created_at
+           ) ORDER BY tm.created_at)
+           FROM student_504_team_members tm
+           WHERE tm.cycle_id = p.cycle_id AND tm.tenant_id = p.tenant_id
+         ), '[]'::json) AS team_members
+       FROM student_504_plans p
+       WHERE p.id = $1 AND p.tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[student504 GET /plans/:id] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
 module.exports = router;
