@@ -1603,3 +1603,278 @@ NEXT SESSION SHOULD
   as a small chore PR before PR 2 starts — none are blockers but
   closing them while context is fresh is cheap.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-28T16:25:43Z
+BRANCH:  feat/504-v1-pr2-form-c-handlers
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/24
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Priority 1 from Session 33 master index: 504 v1 PR 2 — implement
+  the 11 handler bodies stubbed by PR #20 (9 staff endpoints in
+  routes/student504.js + 2 parent endpoints in routes/parent504.js)
+  against the Migration 021/022 schema. Six contract bullets
+  carried forward verbatim from Session 32 master index (JWT vs
+  middleware tenant_id sourcing, explicit-projection rule,
+  staff_signature_text + accommodations Q2 advisory, /procedural-
+  safeguards return contract, free-text length-cap precedent,
+  CSS-based print gating from day one). PR 2 lands handlers + the
+  first six bullets; print gating is the FE concern deferred to
+  PR 3.
+
+FILES TOUCHED
+  routes/student504.js — 9 staff handlers (cycles ×3, consents ×2,
+    eligibility ×2, plans ×2) replacing PR #20 stubs; +542/-91
+  routes/parent504.js — 2 parent handlers (accommodations,
+    procedural-safeguards) replacing PR #20 stubs + Followup #2
+    source comment + FORM_SET_REGISTRY pre-load; +202/-41
+  activities.txt — this entry; chore/activities-log-session-34
+
+MIGRATIONS RUN
+  none (PR 2 is handlers-only; Migrations 021/022 shipped in PR #20)
+
+TENANT ISOLATION REVIEW
+  Every new query tenant-scoped: 4 INSERTs source tenant_id from
+    req.user.tenant_id (JWT-derived); 7 SELECTs include tenant_id
+    in the WHERE clause; parent /accommodations sources tenantId
+    from req.student.tenant_id (set by requireStudentReadAccess
+    middleware from the students row server-side, not from
+    req.body or req.params).
+  Composite FK enforcement: Migration 021 (cycle_id, tenant_id) →
+    student_504_cycles(id, tenant_id) and (student_id, tenant_id)
+    → students(id, tenant_id) reject cross-tenant child references
+    at the SQL layer regardless of application-layer bugs; SQLSTATE
+    23503 mapped to generic 400.
+  Defense-in-depth: GET /cycles/:cycleId and GET /plans/:id
+    re-scope every inner json_agg subquery on c.tenant_id (or
+    p.tenant_id) on top of the composite-FK guarantee.
+  tenant-isolation-auditor verdict: APPROVED — 0 CRITICAL,
+    0 HIGH, 0 MEDIUM, 1 LOW (pre-existing middleware err.message
+    log noted as out-of-scope), 3 INFO. Posted to PR #24 record.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: parent_signature_text, staff_signature_text,
+    accommodations JSONB, determination_notes (staff-only,
+    reachable on 3 staff endpoints, not exposed on parent surface).
+    Length-cap discipline: parent_signature_text and
+    staff_signature_text capped at 300 chars (matches sole repo
+    precedent in routes/tier1-assessments.js); determination_notes
+    uncapped (eligibility reasoning paragraphs, staff-only, not
+    parent-route-reachable).
+  Logging audit: 12 added console.error statements log err.code
+    (PG SQLSTATE) only; never err.message, never row content,
+    never request body. Privacy-reviewer verified all 12.
+  Cross-tenant risk: none identified. Privacy-reviewer verdict:
+    APPROVED — 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW, 5 INFO. All
+    INFO items are positive verifications (no findings to fix).
+  staff_signature_text + accommodations marked "parent-visible at
+    write time" with route-level UX advisory comments (Q2 contract
+    bullet); UX/policy rule, not server-side enforced.
+  /procedural-safeguards returns { text: formSet.proceduralSafeguardsText }
+    at status 200; today resolves to { text: null } until content
+    lands per the form-set module placeholder (Q4 contract bullet
+    held precisely; release-blocker is content-side, tracked
+    separately, not a code fault). Followup #2 source comment
+    (24 lines, 4 reasons) explaining requireAuth-only
+    intentionality landed in commit 5; closes Session 32
+    Followup #2.
+
+VERIFICATION
+  Structural verification per Followup 84 (no root test/lint infra):
+    git status (on feat/504-v1-pr2-form-c-handlers)         clean post-commit-5
+    git log --oneline main..HEAD                            5 feature commits (eb14f16 cycles → 2d03c9a consents → 89a3a03 eligibility → d72d6ab plans → 1c36ab9 parent), no merge commits
+    node --check routes/student504.js                       syntax OK
+    node --check routes/parent504.js                        syntax OK
+    node -e "require('./routes/parent504.js')"              module loads; FORM_SET_REGISTRY pre-load via require() of leaf ESM works
+    git push -u origin feat/504-v1-pr2-form-c-handlers      pushed; tracking origin set
+    gh pr create --base main                                PR #24 opened with §2A template + 13 sections
+    gh pr edit 24 --body                                    4 description edits applied (determination_notes count fix, accommodations Q2 disclosure, 2 reviewer-focus bullets)
+    gh pr view 24 --json comments                           verified: 1 vercel preview comment + 3 reviewer-subagent reports posted as PR comments
+    npm test                                                fails by design ("Error: no test specified" + exit 1) — Followup 84
+    npm run lint                                            no lint script — Followup 84
+
+  Reviewer-subagent gate (run via separate terminal claude session because
+  the IDE-extension session does not register .claude/agents/*.md):
+    privacy-reviewer            APPROVED — 0/0/0/0 + 5 INFO (positive verifications). Posted to PR #24 record at issuecomment-4337160164.
+    security-reviewer           APPROVED WITH NOTES — 0/0/0 + 3 LOW + 2 INFO. LOW items are pre-existing repo gaps (rate limiting, JSONB depth/size guard, FK-only validation on POST /cycles), not regressions. Posted at issuecomment-4337160400.
+    tenant-isolation-auditor    APPROVED — 0/0/0 + 1 LOW (pre-existing middleware err.message log, out of scope) + 3 INFO. Posted at issuecomment-4337160570.
+
+  Render deployment verification:
+    Render service Node version (verified via dashboard)    22.22.0 (≥22.12 required for require() of leaf ESM module)
+    Render Build Command (verified via dashboard)           default `npm install` (no exclusions; frontend/src/ ships)
+    git ls-files frontend/src/data/504-form-sets/<form-set>  tracked since 13b1b1a; not gitignored
+
+  This entry's chore branch:
+    git checkout main; git pull origin main                 main at ba0479d, clean
+    git checkout -b chore/activities-log-session-34         off main per project convention
+    structural verification per PR #21/#22/Session-31-32 precedent (Followup 84)
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Closed by this entry ---
+  - Priority 1 from Session 33 master index (504 v1 PR 2). 11/11
+    handlers implemented in 5 commits, PR #24 opened with all
+    contract decisions (Q1a / Q2 / Q4 / Q5 / date validators /
+    free-text length cap / TOCTOU) documented in commit bodies +
+    PR description.
+  - Followup #2 from Session 32 master index (source comment on
+    /api/parent-504/procedural-safeguards documenting
+    requireAuth-only intentionality). 24-line comment block landed
+    in commit 5 covering 4 reasons (no per-student guard, no role
+    guard, no PII, no cross-tenant risk).
+
+  --- Awaiting human review (§2A) ---
+  - PR #24 NOT MERGED. §2A forbids self-merge on PII/tenant-touching
+    PRs. All three reviewer-subagents posted clean approves to the
+    PR record; human PII/tenant review remains the gate per project
+    convention. Next session should land the human review pass and
+    decide merge timing.
+
+  --- New (Session 34) ---
+  - [new; Session 34 reviewer feedback] Rate limiting on POST
+    endpoints. Repo-wide grep finds zero express-rate-limit /
+    rateLimit usage. Security-reviewer LOW-2 — not introduced by
+    this branch (consistent with existing precedent), tracked as
+    a separate backlog item. Recommend a sec/ branch adding
+    express-rate-limit globally to /api/student-504 and
+    /api/parent-504 POSTs, then expanding to legacy POST surface.
+  - [new; Session 34 reviewer feedback] accommodations JSONB
+    depth/size guard. Security-reviewer LOW-3 — POST /plans
+    accepts a plain JSON object via isPlainJsonObject but does not
+    cap byte size or nesting depth. A staff caller already
+    authenticated and tenant-bound could push a multi-MB JSONB
+    that the parent then reads back. Recommend a server-side
+    JSON.stringify(accommodations).length < N_KB guard. Small
+    follow-up; not a regression.
+  - [new; Session 34 reviewer feedback] requireStudentReadAccess
+    middleware logs err.message. Tenant-isolation-auditor LOW L1 —
+    the middleware (pre-existing in
+    middleware/authorizeInterventionAccess.js:229) still uses
+    console.error('[requireStudentReadAccess]', err.message)
+    which can carry PG row values that count as PII. Out of scope
+    for PR #24 (no diff line touches the middleware), but worth a
+    fix-it pass on all middleware err.message logs in a sec/ or
+    chore/ branch.
+  - [new; Session 34 deployment] Pin Node version explicitly. No
+    render.yaml, no .nvmrc, no engines field in package.json;
+    production Node version is set only in the Render dashboard
+    (verified 22.22.0 today). PR #24's FORM_SET_REGISTRY pattern
+    needs ≥22.12 to work; a future dashboard change to <22.12
+    would silently break server start. Add engines: { "node":
+    ">=22.12" } to package.json and either a .nvmrc for local-dev
+    parity or a minimal render.yaml pinning the build env.
+    Captured in PR #24 description.
+  - [new; Session 34 architecture] Form-set architecture pass.
+    PR #24's FORM_SET_REGISTRY require()s a frontend ESM module
+    from the backend (frontend/src/data/504-form-sets/...);
+    functional but cross-tree. Long-term: move form-set content
+    to a shared/ directory imported by both, OR store form-set
+    content in the database keyed by form_set_id. TODO(form-set-
+    arch) breadcrumb left in the code comment. Not refactored
+    in PR 2.
+  - [new; Session 34 hygiene] Free-text length-cap pass. Repo-wide
+    grep found one cap pattern (routes/tier1-assessments.js:355,
+    300 chars on tier1 notes); every other free-text field is
+    uncapped. Adopt a generous-but-finite cap (e.g., 10000 chars)
+    on all uncapped TEXT-typed fields across routes/ as
+    defense-in-depth. Surfaced during PR #24 commit 2 length-cap
+    decision search.
+  - [new; Session 34 tooling] IDE-extension vs terminal claude
+    subagent-registration asymmetry. The VS Code Claude extension
+    session in which this branch was developed does NOT register
+    project-defined subagents from .claude/agents/*.md; the Agent
+    tool only exposed claude-code-guide / Explore / general-
+    purpose / Plan / statusline-setup. The fresh terminal claude
+    session that owner ran for the three reviewer subagents DID
+    register them and produced clean approves. Worth documenting
+    in docs/ai-context/ as a process note: project subagents must
+    be invoked from a terminal claude session, not from the IDE
+    extension, until/unless the IDE extension catches up. Possible
+    upstream issue to file with Anthropic.
+
+  --- Held; carried from Session 32 ---
+  - /version endpoint (Session 32 followup #1). Add /version
+    returning { commit: process.env.RENDER_GIT_COMMIT } in
+    server.js. ~5 line change. Reason: PR #24 deploy will need
+    verification; without /version, the only signals are the
+    404→401 transition (Session 32 lesson: closes too fast on
+    small Express + Render — under 80s) and the dashboard "Live"
+    status. /version is the durable fix.
+  - Render auto-deploy latency baseline doc (Session 32 followup
+    #3). Observed ~38s merge-to-Live in Session 32. Recordable
+    in docs/ai-context/STACK_ARCHITECTURE.md.
+  - Polling-loop pattern reconsideration (Session 32 followup
+    #4). 30s/10min poll loop assumes multi-minute deploy windows;
+    Render evidence is sub-minute. Future: capture pre-merge
+    baseline BEFORE triggering merge, or skip polling.
+  - CLI-based authenticated smoke check (Session 32 followup #5).
+    Browser cross-origin cookie limitations meant the
+    authenticated regression couldn't be completed via address-
+    bar navigation. Document a curl-from-local-env-var workflow.
+
+  --- Carry-forward (numbering preserved from prior sessions) ---
+  All Session 25-32 followups (57, 58, 59, 61, 62, 63, 64, 65, 66,
+  67, 68, 69, 70, 71, 72, 74, 75, 76, 77, 80, 81, 82, 84, 85, 86,
+  Session-32-#1-#5) carry forward unchanged. See Session 30 +
+  Session 32 master indices for full descriptions. Followup 84
+  (no backend test / lint infra) was again the explicit rationale
+  for this entry's structural-only VERIFICATION block.
+
+  --- Optional process feedback memories (Session 33 + 34 candidates) ---
+  - feedback_strategy_validation_before_commit.md (Session 32
+    candidate, reinforced Session 34) — when a draft message
+    references prior conversation state (e.g., re-pasted approval
+    text), pause to check whether the state has advanced since
+    the message was drafted before acting on it. Reinforced
+    multiple times in Session 34 (replay-paste detection at
+    commit 4 boundary, again at commit 5 boundary).
+  - feedback_citation_skepticism.md (Session 32 candidate,
+    reinforced Session 34) — verify cited file paths and code
+    references exist before relying on them in implementation
+    plans. Reinforced in Session 34 by Q5 schema verification
+    (multi-active-row finding from re-reading migration-021)
+    and Render Node version verification (path 1 vs 3 decision
+    in deployment audit).
+  - feedback_capability_gap_surfacing.md (Session 34, NEW) —
+    when an environment cannot fulfill a directive (e.g.,
+    subagent types not registered, no browser access for
+    dashboard verification, no Render API token), surface the
+    gap with options (A/B/C) rather than silently substituting.
+    Pattern reinforced twice in Session 34 (subagent
+    registration; Render dashboard verification).
+
+  --- Held; deferred to PR 3+ (504 v1 series, post-PR-24-merge) ---
+  - proceduralSafeguardsText content. Form-set module still ships
+    null TODO placeholder; PR #24's /procedural-safeguards returns
+    { text: null } per the contract. Release blocker for any
+    external-facing 504 plan rendering. Source document needed
+    (procedural safeguards notice) before content can be drafted.
+  - Frontend Form C/I/J rendering against the form-set definition
+    (PR 3+). PR 2 is handlers only; FE rendering is the next layer.
+  - CSS-based print gating from day one (Session 32 PR 2 contract
+    bullet, intentionally deferred). Frontend concern; explicitly
+    out of PR 2 scope per the PR #24 description.
+  - student_504_plans medical-services persistence. Form set
+    module declares formJ.medicalServices; no DB column yet.
+    Add when Phase 2 form rendering needs it.
+
+  --- Held; deferred to Phase 2+ (504 v1 series, future) ---
+  - Gated-tier health document handling (Forms D, E). Not in
+    v1 scope.
+  - Sample upload templates per Session 29. Districts uploading
+    state-specific 504 form-set templates to seed
+    tenant_form_sets rows. Out of v1 scope.
+
+NEXT SESSION SHOULD
+  Drive the §2A human review pass on PR #24 and merge if findings
+  are accepted. After merge, deploy-verify per PR #20 precedent
+  (404→401 transition or, if the /version endpoint is the first
+  PR 3 chore, use that signal). Optional pre-PR-3 chore: bundle
+  the small followups into one or two short PRs — pin Node
+  version + add /version endpoint + Render latency doc + polling-
+  loop pattern note can all ride a single chore branch. JSONB
+  depth/size guard, rate limiting, middleware err.message log
+  are larger and warrant their own sec/ branches. Then PR 3 of
+  the 504 v1 series picks up the frontend Form C/I/J rendering
+  and CSS-based print gating against the now-implemented backend.
+================================================================================
