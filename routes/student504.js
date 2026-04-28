@@ -64,6 +64,7 @@ const PG_FK_VIOLATION = '23503';
 const PG_CHECK_VIOLATION = '23514';
 
 const ALLOWED_CONSENT_STATUS = new Set(['pending', 'granted', 'denied', 'revoked']);
+const ALLOWED_ELIGIBILITY_STATUS = new Set(['pending', 'eligible', 'not_eligible']);
 
 function isValidIsoTimestamp(v) {
   return typeof v === 'string' &&
@@ -420,21 +421,113 @@ router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
 // Form I — Eligibility Determinations
 // ============================================================
 
-// POST /eligibility-determinations
-// Phase 2 implementation:
-//   INSERT INTO student_504_eligibility_determinations (cycle_id,
-//     tenant_id, eligibility_status, determination_notes (staff-only!),
-//     determined_at, created_by) VALUES (...)
+// POST /eligibility-determinations — record a Form I determination.
+//
+// tenant_id and created_by are server-derived from the JWT (req.user) —
+// never read from req.body. Composite FK
+// student_504_eligibility_determinations (cycle_id, tenant_id) →
+// student_504_cycles(id, tenant_id) rejects cross-tenant cycle
+// references at the SQL layer.
+//
+// determination_notes is STAFF-ONLY per the §4B permission tier matrix
+// in migration-021-504-foundation.sql. Reachable on this staff route;
+// the parent route family (routes/parent504.js) does NOT expose this
+// resource at all and therefore cannot leak this column. No length cap
+// is applied here: the field is intended for eligibility reasoning
+// paragraphs and the codebase's only existing free-text cap
+// (routes/tier1-assessments.js:355, 300 chars on tier1 notes) is too
+// short for that semantic. Other "notes" fields in the codebase
+// (mtssMeetings.notes, progressNotes.note, interventionPlans, etc.)
+// are uncapped, which is the majority house style being followed.
 router.post('/eligibility-determinations', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const userId = req.user.id;
+    const {
+      cycle_id,
+      eligibility_status,
+      determination_notes,
+      determined_at,
+    } = req.body || {};
+
+    if (!isPositiveInt(cycle_id)) {
+      return res.status(400).json({ error: 'Invalid or missing cycle_id' });
+    }
+    if (eligibility_status !== undefined && eligibility_status !== null && !ALLOWED_ELIGIBILITY_STATUS.has(eligibility_status)) {
+      return res.status(400).json({ error: 'Invalid eligibility_status' });
+    }
+    if (determination_notes !== undefined && determination_notes !== null && typeof determination_notes !== 'string') {
+      return res.status(400).json({ error: 'Invalid determination_notes' });
+    }
+    if (determined_at !== undefined && determined_at !== null && !isValidIsoTimestamp(determined_at)) {
+      return res.status(400).json({ error: 'Invalid determined_at' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO student_504_eligibility_determinations
+         (cycle_id, tenant_id, eligibility_status,
+          determination_notes, determined_at, created_by)
+       VALUES ($1, $2, COALESCE($3, 'pending'), $4, $5, $6)
+       RETURNING id, cycle_id, tenant_id, eligibility_status,
+                 determination_notes, determined_at,
+                 created_by, created_at, updated_at`,
+      [
+        cycle_id,
+        tenantId,
+        eligibility_status ?? null,
+        determination_notes ?? null,
+        determined_at ?? null,
+        userId,
+      ]
+    );
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err && err.code === PG_FK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid cycle reference' });
+    }
+    if (err && err.code === PG_CHECK_VIOLATION) {
+      return res.status(400).json({ error: 'Invalid value for a constrained field' });
+    }
+    console.error('[student504 POST /eligibility-determinations] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// GET /eligibility-determinations/:id
-// Phase 2 implementation: full SELECT * is acceptable on the staff
-// route — determination_notes IS reachable here. The parent route
-// (routes/parent504.js) does NOT expose this resource at all.
+// GET /eligibility-determinations/:id — fetch one Form I determination.
+//
+// Explicit projection (Q1a) — even though the PR #20 stub note said
+// "full SELECT * is acceptable on the staff route," the projection-
+// discipline rule applies on staff routes too: a future ALTER TABLE
+// on student_504_eligibility_determinations should not be able to
+// widen this response shape without an intentional edit. Projection
+// includes determination_notes (staff-only, reachable here per the
+// §4B tier matrix). Tenant-scoped on req.user.tenant_id; 404 covers
+// both "not found" and "wrong tenant" — non-leaky. The parent route
+// family does NOT expose this resource at all.
 router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, async (req, res) => {
-  res.status(501).json(NOT_IMPLEMENTED);
+  try {
+    const tenantId = req.user.tenant_id;
+    const id = Number(req.params.id);
+    if (!isPositiveInt(id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, cycle_id, tenant_id, eligibility_status,
+              determination_notes, determined_at,
+              created_by, created_at, updated_at
+       FROM student_504_eligibility_determinations
+       WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[student504 GET /eligibility-determinations/:id] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ============================================================
