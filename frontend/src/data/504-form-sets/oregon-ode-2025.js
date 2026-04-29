@@ -10,6 +10,16 @@
 // Form letters (C / I / J) match ODE's published labeling and the persistsTo
 // table mapping established in Migration 021.
 
+// Identity exported as named constants so the staff frontend can reference
+// "this tenant's form set" without scattering magic strings across components.
+// Future single-tenant swap (e.g., a different state's form set) becomes a
+// one-line import change in the consumer. The backend validates these against
+// tenant_form_sets at cycle creation time (routes/student504.js POST /cycles),
+// so a misconfigured tenant produces a clean 400 — no hard-coded coupling
+// across the boundary.
+export const FORM_SET_ID = 'oregon-ode-2025';
+export const FORM_SET_VERSION = '08/2023';
+
 const STUDENT_INFORMATION_FIELDS = [
   { key: 'studentName',        label: 'Student Name',        type: 'text' },
   { key: 'meetingDate',        label: 'Date',                type: 'date' },
@@ -62,8 +72,8 @@ const MAJOR_LIFE_ACTIVITIES = [
 ];
 
 export const oregonOde2025 = {
-  formSetId: 'oregon-ode-2025',
-  formSetVersion: '08/2023',
+  formSetId: FORM_SET_ID,
+  formSetVersion: FORM_SET_VERSION,
   jurisdiction: { state: 'OR', authority: 'ODE', year: 2025 },
   sourceCitation:
     'Oregon Department of Education, Section 504 Handbook (08/2023). Forms C, I, J.',

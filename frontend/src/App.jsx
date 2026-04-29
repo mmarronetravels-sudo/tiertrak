@@ -26,6 +26,7 @@ import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewMod
 import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
+import Section504Tab from './components/Section504/Section504Tab';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -4325,6 +4326,11 @@ if (!user) {
             </div>
           </div>
         )}
+
+        {/* Section 504 — staff-only; component additionally guards on
+            user.role !== 'parent' and the /api/student-504 routes refuse
+            parent role at the boundary. */}
+        <Section504Tab user={user} API_URL={API_URL} student={selectedStudent} />
 </div>
     );
   };
