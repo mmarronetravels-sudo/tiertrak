@@ -88,3 +88,31 @@ export function isoTimestampToDate(iso) {
   const d = String(dt.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+// ============================================================
+// Date-only extractor for pg DATE-column values from the bundle.
+//
+// pg DATE columns serialize over JSON as UTC-midnight ISO timestamps
+// ('2026-04-28T00:00:00.000Z'). isoTimestampToDate() above uses LOCAL
+// date components, which silently shifts a UTC-midnight timestamp back
+// one day in any negative-offset zone (Pacific evening: stored 4/28
+// would hydrate as 4/27). That helper is correct for the noon-local
+// TIMESTAMP columns used by Form C's signature_at fields and Form I's
+// determined_at, but wrong for the pure DATE columns introduced on
+// student_504_plans (effective_date, review_date).
+//
+// This helper sidesteps timezone conversion entirely by extracting the
+// YYYY-MM-DD prefix as a string. The prefix is correct in any zone
+// because the backend stored it as a date-only value (no UTC<->local
+// reinterpretation can change a calendar date with no time component).
+//
+// Accepts either a pre-sliced YYYY-MM-DD string or a full ISO
+// timestamp; returns '' for empty/invalid input. Used to hydrate
+// Form J's effective_date / review_date inputs in view mode.
+// ============================================================
+export function dateOnlyFromBundle(value) {
+  if (typeof value !== 'string' || value.length < 10) return '';
+  const prefix = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return '';
+  return prefix;
+}

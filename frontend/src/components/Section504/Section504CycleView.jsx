@@ -4,12 +4,11 @@ import { logError } from '../../utils/logError';
 import { getCycleBundle } from './api';
 import FormCConsentModal from './FormCConsentModal';
 import FormIDeterminationModal from './FormIDeterminationModal';
+import FormJPlanModal from './FormJPlanModal';
 
 // Single-cycle drill-in. Renders the cycle bundle (cycle row + consents
 // + eligibility_determinations + plans + team_members) and exposes the
-// "Add Form C" action via FormCConsentModal in commit 2. Forms I and J
-// land in commits 3 and 4 — their sections render existing rows
-// read-only with disabled "Add" buttons in this commit.
+// "Add Form C / I / J" actions via the three form modals.
 //
 // Append-only revision UX (Q3 in the audit plan):
 //   - Backend orders consents/determinations/plans ASC by created_at,
@@ -30,6 +29,7 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
   const [loadError, setLoadError] = useState(null);
   const [formCModal, setFormCModal] = useState(null); // null | { mode, consent? }
   const [formIModal, setFormIModal] = useState(null); // null | { mode, determination? }
+  const [formJModal, setFormJModal] = useState(null); // null | { mode, plan? }
   const [historyOpen, setHistoryOpen] = useState({}); // { c: bool, i: bool, j: bool }
 
   const reload = useCallback(async () => {
@@ -120,8 +120,9 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
             title="Form J — Accommodation Plan"
             revisions={plans}
             describe={(p) => `${p.plan_status} · saved ${new Date(p.created_at).toLocaleString()}`}
-            onAdd={null}
-            disabledReason="Form J editor lands in commit 4"
+            onAdd={() => setFormJModal({ mode: 'add' })}
+            onViewCurrent={(p) => setFormJModal({ mode: 'view', plan: p })}
+            onViewHistorical={(p) => setFormJModal({ mode: 'view', plan: p })}
             historyOpen={!!historyOpen.j}
             onToggleHistory={() => setHistoryOpen((p) => ({ ...p, j: !p.j }))}
           />
@@ -156,6 +157,21 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
           onClose={() => setFormIModal(null)}
           onSaved={() => {
             setFormIModal(null);
+            reload();
+          }}
+        />
+      )}
+
+      {formJModal && (
+        <FormJPlanModal
+          API_URL={API_URL}
+          user={user}
+          cycleId={cycleId}
+          mode={formJModal.mode}
+          existingPlan={formJModal.plan || null}
+          onClose={() => setFormJModal(null)}
+          onSaved={() => {
+            setFormJModal(null);
             reload();
           }}
         />

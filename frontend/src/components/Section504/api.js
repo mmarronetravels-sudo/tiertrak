@@ -129,3 +129,45 @@ export function createDetermination(API_URL, body) {
     body: JSON.stringify(body),
   });
 }
+
+// POST /api/student-504/plans — Form J (Section 504 Student Accommodation Plan).
+//
+// Append-only revision contract identical to /consents and /eligibility-
+// determinations: each successful POST creates a NEW row in
+// student_504_plans for the cycle. No PUT — staff cannot edit a saved plan
+// in place; "Save" again creates a new revision.
+//
+// Body shape (all optional except cycle_id):
+//   {
+//     cycle_id,
+//     plan_status?:    'draft' | 'active' | 'expired' | 'discontinued',
+//     effective_date?: 'YYYY-MM-DD',
+//     review_date?:    'YYYY-MM-DD',
+//     accommodations?: { educational?: string,
+//                        extracurricular?: string,
+//                        assessments?: string },
+//   }
+//
+// plan_status default behavior: if the caller omits plan_status, the
+// backend's INSERT uses COALESCE($3, 'draft') so the new row lands as
+// 'draft'. The parent route GET /accommodations/student/:studentId
+// projects only plans where plan_status = 'active', so a 'draft'
+// revision is PARENT-INVISIBLE by design. The "activate plan" UI
+// to flip a draft to active is a separately tracked followup branch —
+// not in this commit. FormJPlanModal omits plan_status from its POST
+// body for exactly this reason; see the modal's file header.
+//
+// Privacy: every persisted column on student_504_plans is parent-
+// visible at write time per the parent route projection above. Staff
+// must NOT include staff-only commentary (eligibility reasoning,
+// evaluator interpretations, other §4B-tier-restricted content) in
+// any of the three accommodations text fields. The FE surface that
+// drives this resource MUST display the parent-visible warning to
+// staff before save.
+export function createPlan(API_URL, body) {
+  return send(API_URL, `/student-504/plans`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
