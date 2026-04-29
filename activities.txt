@@ -2131,3 +2131,482 @@ NEXT SESSION SHOULD
   (/api/student-504/cycles or similar). <1 min of dashboard
   time. Defer if dashboard is already known-Live.
 ================================================================================
+
+================================================================================
+SESSION: 2026-04-29T00:55:00Z (Session 36, sandbox provisioning)
+BRANCH:  chore/activities-log-session-36 (this entry); see PR roster below
+DISPOSITION: kept-for-pr (this entry); 2 PRs merged this session — PR #27
+             (chore/activities-log-session-35) at 0fe44ab, PR #28
+             (chore/seed-humble-isd-sandbox) at dbae061. Production seed
+             pasted by operator into Render SQL console; new tenant
+             provisioned at tenant_id 9 (Humble ISD Demo / humble-isd-demo)
+             and verified live (admin login confirmed working dashboard
+             with 18 students + 10 active interventions visible).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Provisioned the second sandbox tenant in the Render-hosted
+  production database via a local-only SQL-emitter pattern.
+  Operator-pasted SQL flow (no DB connection from the repo;
+  matches established convention from feedback memory
+  user_db_workflow.md). Two new files added in PR #28 — a
+  synthetic-data roster module and a Node SQL emitter that
+  bcrypt-hashes 6 locally-generated random passwords at 10
+  rounds and emits a single-transaction DO-block SQL payload to
+  stdout, with the password table written to stderr exactly
+  once at end-of-run. Three reviewer subagents (privacy-
+  reviewer, security-reviewer, tenant-isolation-auditor)
+  invoked on PR #28; all three returned APPROVED with zero
+  CRITICAL/HIGH/MEDIUM findings. Operator pasted the emitted
+  SQL into Render's SQL console, the transaction committed
+  without preflight abort, and verification login on the first
+  district_admin account confirmed the new tenant is fully
+  functional.
+
+  No schema changes. Seed is pure DML against existing tables
+  (tenants, users, students, student_interventions,
+  progress_notes, parent_student_links, tenant_intervention_bank).
+  All inserts scoped via PL/pgSQL v_tenant_id captured from
+  INSERT INTO tenants ... RETURNING id. Three preflight RAISE
+  EXCEPTION guards: (1) subdomain collision, (2) cross-tenant
+  email collision across all six seed emails, (3) intervention-
+  template-name validation against the system-default bank
+  (tenant_id IS NULL).
+
+FILES TOUCHED
+  data/humble-isd-sandbox-roster.js                     +172  new
+    Synthetic data module exporting TENANT, ADMINS (2),
+    STAFF (4), STUDENTS (18), INTERVENTIONS (10), PROGRESS_NOTES
+    (23), PARENT_LINK (1). Roster is the source of truth for
+    the seed; fictional throughout, including the humble.edu
+    email domain (real Humble ISD uses humbleisd.net — verified
+    via EDUCAUSE WHOIS by privacy-reviewer). Tier spread at
+    8 / 7 / 3 (T1 / T2 / T3) across two campuses (12 students
+    K-5, 6 students 6-8). Intervention start dates and
+    progress-note timestamps stored as days-before-today
+    offsets so the seed re-runs cleanly weeks later without
+    drifting into the past.
+
+  scripts/seed-humble-isd-sandbox.js                    +344  new
+    Local-only SQL emitter. No pg import, no DATABASE_URL
+    read, no network. Generates 16-char base64url passwords
+    (~96 bits entropy each) via crypto.randomBytes(12),
+    bcrypt-hashes at 10 rounds (matches routes/auth.js:68
+    convention), embeds only hashes in the SQL on stdout,
+    prints plaintext password table on stderr at end-of-run.
+    Plaintext never written to file, never console.log'd,
+    never embedded in any commit. Three preflights inside a
+    single BEGIN ... COMMIT wrapping a DO $hbl$ block.
+
+  activities.txt                                        +N    this entry
+    Session 36 log, on chore/activities-log-session-36 branch.
+
+  (No code changes outside PR #28's two new files. PR #27 was
+  Session 35's activities log only.)
+
+MIGRATIONS RUN
+  none
+
+  PR #28's emitted SQL is DML against existing tables, not
+  schema migration. No ALTER TABLE, no CREATE TABLE, no DROP.
+  The SQL was paste-executed once by the operator in Render's
+  SQL console; outcome captured below under VERIFICATION.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor APPROVED on PR #28
+    (0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW + 5 INFO).
+    Report posted at PR #28 record.
+
+  Audit highlights:
+    - 11 distinct INSERT shapes audited + 3 preflights + 7
+      rollback DELETEs.
+    - tenant_id binding via single PL/pgSQL variable
+      v_tenant_id, captured from INSERT INTO tenants ...
+      RETURNING id INTO v_tenant_id. PL/pgSQL guarantees the
+      variable cannot be NULL at any dependent INSERT.
+    - All student-scoped child tables (student_interventions,
+      progress_notes, parent_student_links) join via
+      `s.tenant_id = v_tenant_id` predicate in the SELECT, so
+      a student with the same (first_name, last_name) in
+      another tenant could not be matched.
+    - tenant_intervention_bank insert mirrors
+      routes/tenants.js:53-66 literally — SELECT only on
+      tenant_id IS NULL (system-default rows). No cross-tenant
+      template borrowing possible.
+    - Preflight 2 (cross-tenant email collision check) is
+      intentionally unscoped across all tenants (defense in
+      depth, stricter than the schema's UNIQUE(tenant_id, email)
+      requires). Reviewer confirmed this is the right design
+      for sandbox provisioning.
+    - Rollback SQL block (in PR #28 body) verified FK-safe and
+      tenant-scoped at every DELETE, with a NULL-guard against
+      the case where the tenant is already gone.
+
+  Production verification (operator-confirmed):
+    Tenant id 9 (Humble ISD Demo / humble-isd-demo) created
+    cleanly, no preflight aborts, transaction committed.
+    Login on the first district_admin account showed dashboard
+    with 18 students and intervention assignments visible.
+    No cross-tenant data leakage observed (Lincoln Elementary
+    tenant_id=1 and Parkview Elementary remain isolated; not
+    inspected directly but no path in the seed could have
+    affected them).
+
+PRIVACY REVIEW (Section 4B)
+  privacy-reviewer APPROVED on PR #28
+    (0 CRITICAL / 0 HIGH / 0 MEDIUM + 2 LOW + 3 INFO).
+    Report posted at PR #28 record.
+
+  PII fields touched in the seed: students.first_name,
+    students.last_name, students.grade, students.tier,
+    students.area, students.risk_level, users.email,
+    users.full_name, users.role, student_interventions.notes,
+    progress_notes.note. EVERY value is synthetic — no real
+    student or staff record was inserted. Roster-file docstring
+    asserts synthetic-only; reviewer verified by structural
+    inspection (alliterative naming pattern, sequential
+    synthetic external IDs not from any real SIS format,
+    absence of PII fingerprints in free-text notes — no SSN-
+    shaped values, no phone/address regex matches).
+
+  Domain verification: the demo email domain confirmed
+    unregistered via EDUCAUSE WHOIS. The chosen demo domain
+    does not collide with any real institution. All six
+    accounts use the demo domain consistently — verified by
+    domain extraction grep across both files.
+
+  Logging audit: no PII in logs. Plaintext passwords never
+    touch stdout, never touch a file, never touch a logger;
+    they exist only on stderr at end-of-run and in the
+    operator's terminal scrollback. Emitted SQL contains
+    bcrypt hashes only. Four RAISE NOTICE / RAISE EXCEPTION
+    sites in the emitted SQL surface tenant subdomain, seed
+    email, template name, and tenant id (integer) — none of
+    those values are PII. Operator-confirmed cleanup of
+    /tmp/humble-seed.sql post-paste; bcrypt hashes for the
+    six accounts no longer exist on the operator's
+    filesystem.
+
+  Cross-tenant risk: none identified. See tenant-isolation
+    review above.
+
+  This activities entry: §4B-scrubbed before commit. No
+    synthetic student names, no synthetic staff names, no
+    email addresses, no credentials, no progress-note content.
+    Tenant identity (Humble ISD Demo / humble-isd-demo /
+    tenant_id 9) is permitted per operator direction in the
+    /landing-the-plane handoff because the tenant is itself a
+    declared sandbox and not a real district. Row counts and
+    table names are referenced freely. All references to
+    individuals are by table + role ("first district_admin
+    account"), never by name or email.
+
+  LOW findings (optional, not addressed in PR #28):
+    L1 — main().catch error path interpolates roster strings
+       (student_external_id, assigned_by_email) into err.message.
+       Not §4B-violating because data is synthetic. Future
+       template-reuse hazard if the script is copy-pasted for
+       a real-tenant seed.
+    L2 — absolute filesystem path in roster docstring
+       (/Users/melaniemarrone/Documents/Claude/Humble ISD/...).
+       Leaks operator's local layout into the repo. Not PII.
+    Both noted for the followups list under doc/hygiene.
+
+  Cross-tenant cosmetic-change lesson saved to memory:
+    feedback_cosmetic_change_cross_tenant.md. Caught mid-PR
+    when the original brief asked for an "optional small FE
+    label tweak" to display the student_support_specialist
+    role as 'Interventionist' for the sandbox's interventionist
+    persona. The FE strings live as inline literals in
+    App.jsx and StaffModals.jsx (no central role-label map),
+    which means the "small change" would have relabeled the
+    role for Lincoln and Parkview tenants too. Caught as a §5
+    cross-tenant visibility change dressed up as a one-tenant
+    change; FE tweak dropped, escalated to followup branch
+    migration/add-interventionist-role.
+
+VERIFICATION
+  Three reviewer subagents on PR #28 (terminal claude session,
+  not IDE — required for .claude/agents/*.md to register; see
+  Session 34 followup #7). Reports posted verbatim as PR
+  comments via the gh pr comment --body-file tempfile pattern
+  (so backticks + box-drawing characters survive shell
+  escaping):
+    privacy-reviewer            APPROVED  0/0/0/2/3
+        comment 4339729141
+    security-reviewer           APPROVED  0/0/0/2/3
+        comment 4339764707
+    tenant-isolation-auditor    APPROVED  0/0/0/0/5
+        comment 4339787624
+
+  Substantive mid-flight reviewer-driven hardening:
+    - Preflight 3 added during Cowork-driven inspection of the
+      intervention_template_id lookup. Original subquery used
+      LIMIT 1 against intervention_templates by name, which
+      silently masked two distinct failure modes: (a) zero
+      matches → silent NULL into student_interventions
+      (intervention_template_id is nullable in the schema —
+      verified at schema.sql:58, no migration tightens it),
+      and (b) duplicate name → silent arbitrary row pick
+      because the LIMIT 1 hides Postgres' built-in scalar-
+      subquery >1-row error. Fix: add Preflight 3 looping
+      over distinct template names with COUNT(*) <> 1
+      RAISE EXCEPTION, AND drop LIMIT 1 from the intervention
+      INSERTs so duplicates surface as a Postgres error even
+      if Preflight 3 were bypassed. Belt-and-suspenders.
+      Verified all 6 referenced template names match
+      schema.sql:80-95 and migration-003-categorize-
+      interventions.sql character-for-character before commit.
+    - INTERVENTIONS[].start_date converted from hardcoded
+      ISO date strings to start_age_days integer offsets,
+      mirroring the PROGRESS_NOTES[].age_days pattern. Seed
+      SQL computes CURRENT_DATE - INTERVAL '<N> days' at
+      run time so demo data ages gracefully across re-runs.
+      Range 43-92 days (~6-13 weeks back).
+    - Unicode escape \u2019 in one progress-note string
+      replaced with literal right-single-quote. No remaining
+      \uXXXX escapes anywhere in the roster file.
+
+  Structural verification (Followup #6 — no real test/lint
+  infra; established precedent across PRs #21, #22, #23,
+  #25, #28):
+    git status                                              clean
+    git branch --show-current                               chore/activities-log-session-36 (off main, not main itself per §2A)
+    git log --oneline main -5                               0fe44ab (PR #27) → dbae061 (PR #28) → 7050169 (script commit) → 9cc6ab5 (roster commit) → 1ceb749 (PR #24)
+    node -c data/humble-isd-sandbox-roster.js               syntax-clean
+    node -c scripts/seed-humble-isd-sandbox.js              syntax-clean
+    node scripts/seed-humble-isd-sandbox.js > /tmp/x.sql    clean exit; 23 KB SQL emitted; 6-row password table on stderr; tempfile + dry-run passwords discarded immediately
+    npm test                                                fails by design ("Error: no test specified" + exit 1) — Followup #6
+    npm run lint                                            no lint script — Followup #6 (frontend has eslint but Session 36 didn't touch frontend)
+
+  PR merge sequence (verified via git log on main):
+    PR #27  chore/activities-log-session-35       merge 0fe44ab at 2026-04-29T00:42:52Z; --merge + --delete-branch
+    PR #28  chore/seed-humble-isd-sandbox         merge dbae061 at <merge-time>; --merge (operator-driven)
+
+  Production seed run (operator):
+    Operator generated fresh passwords via
+    `node scripts/seed-humble-isd-sandbox.js > /tmp/humble-seed.sql`,
+    pasted /tmp/humble-seed.sql into Render's SQL console,
+    transaction committed without preflight abort, then
+    deleted /tmp/humble-seed.sql. Verification login on the
+    first district_admin account showed working dashboard
+    with all 18 students and 10 active interventions visible.
+    Tenant id 9 confirmed.
+
+  Render deployment verification:
+    PR #28 merge → Render auto-deploy triggered            no runtime behavior change (data/ + scripts/ are not bundled into the server runtime); dashboard verification not strictly required
+    PR #27 merge → activities.txt only, no deploy impact.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- New from Session 36 ---
+
+  Followup #1 (NEW) — feat/tenant-expiration. Schema column on
+    tenants for expiration date + middleware to deny access on
+    expired tenants + admin UI surface to set/clear expiration.
+    Use case: sandbox tenants like Humble ISD Demo should be
+    timeboxed (e.g., 30 / 60 / 90 days) so demo accounts don't
+    accumulate indefinitely in production. Schema change is
+    ask-first per §8.
+
+  Followup #2 (NEW) — feat/export-testing-accommodations.
+    CSV export endpoint that returns all students who have any
+    intervention from a named-set of testing-accommodation
+    templates assigned (e.g., Extended Time, Read Aloud,
+    Reduced Distractions, Calculator Use, Word Bank — see
+    migration-003-categorize-interventions.sql:23-31). Export
+    must be tenant-scoped via JWT-derived tenant_id and never
+    accept a tenant_id from the request body. Privacy-reviewer
+    + security-reviewer + tenant-isolation-auditor required at
+    PR time per §2A and §8 (CSV export of student records is
+    a §4B trigger).
+
+  Followup #3 (NEW) — feat/map-progress-monitoring-upload.
+    Ingest MAP Growth (NWEA) progress monitoring CSVs from
+    teacher MAP dashboards. Goal: consolidate all progress
+    monitoring into TierTrak so MTSS teams stop juggling
+    multiple dashboards. Adjacent to the screener-upload
+    feature surface but distinct (MAP is interim assessment
+    progress monitoring, not universal screener). New
+    dependency on a CSV format we don't yet handle — ask-first
+    per §8 if it requires a new import pipeline. Privacy
+    review required at PR time (NWEA CSVs include student
+    full names, IDs, and assessment scores).
+
+  Followup #4 (Session 36 — Privacy review LOW L1, optional)
+    main().catch error message in
+    scripts/seed-humble-isd-sandbox.js:341 may interpolate
+    roster fields. Not §4B-violating with synthetic data.
+    Hazard for future template reuse with real PII. Two-line
+    docstring warning at the top of main().catch is sufficient
+    if/when the script is templatized.
+
+  Followup #5 (Session 36 — Privacy review LOW L2, optional)
+    Absolute local filesystem path in
+    data/humble-isd-sandbox-roster.js:8 docstring. Not PII;
+    cosmetic cleanup. Replace with a non-path reference.
+
+  Followup #6 (Session 36 — Security review LOW L1, optional)
+    --dry-run flag documented in
+    scripts/seed-humble-isd-sandbox.js:17 docstring but not
+    parsed by process.argv. No-op alias for default behavior
+    today; future-regression hazard if a real DB-connecting
+    mode is ever added. Drop the docstring line OR add a real
+    --dry-run parse that prints a stderr banner.
+
+  Followup #7 (Session 36 — Security review LOW L2, optional)
+    Operator workflow doc in
+    scripts/seed-humble-isd-sandbox.js:34-35 names
+    /tmp/humble-seed.sql as the redirect target. bcrypt
+    hashes left on disk under a predictable path are a
+    bruteforce target if the laptop is later compromised
+    (LOW because of bcrypt cost 10 + 96-bit entropy). Tighten
+    docstring to recommend mktemp + shred -u; emphasize
+    "delete immediately after pasting." Operator already
+    cleaned up /tmp/humble-seed.sql in this session, so the
+    risk is closed for this run; the doc tightening is for
+    future operators.
+
+  --- Pre-existing latent followups surfaced during PR #28
+      audit (already in PR #28's body) ---
+
+  Followup #8 — sec/auth-tenant-create-endpoint. POST
+    /api/tenants at routes/tenants.js:41 is currently
+    unauthenticated. Surfaced during PR #28 audit; out of
+    scope for the seed PR.
+
+  Followup #9 — migration/add-interventionist-role. Add
+    'interventionist' to users.role CHECK constraint and
+    audit all references (FE labels in App.jsx + StaffModals,
+    STAFF_ROLES in routes/staffManagement.js, VALID_ROLES in
+    routes/auth.js + routes/users.js, school_wide_access
+    defaulting in staffManagement.js, middleware allow-lists).
+    Schema work, not a cosmetic FE relabel. See
+    feedback_cosmetic_change_cross_tenant.md memory.
+
+  Followup #10 — sec/server-js-boot-seed-tenant-id-3.
+    server.js:371-383 runtime "test users seeded" block
+    targets tenant_id = 3, which is unrelated to the Lincoln
+    seed in seed-test-data.sql (tenant_id = 1). Latent
+    inconsistency carried forward. Now that Humble is at
+    tenant_id 9, the boot-seed could attempt to insert into
+    a tenant id that may or may not exist depending on prod
+    state — should be audited and either deleted or fixed.
+
+  Followup #11 — sec/valid-roles-drift-mtss-support.
+    VALID_ROLES in routes/auth.js:17 and routes/users.js:13
+    is missing 'mtss_support', which routes/staffManagement.js
+    recognizes as a valid staff role. Drift between the two
+    arrays.
+
+  Followup #12 — sec/parent-student-links-tenant-id-column.
+    Already-known bug: routes/auth.js:341-345 inserts a
+    tenant_id column into parent_student_links that does not
+    exist in the schema (Session 33 master index Followup #2,
+    confirmed again in Session 36 PR #28 audit). The Humble
+    seed correctly inserts only (parent_user_id, student_id,
+    relationship). The auth.js INSERT path will fail at
+    runtime if anyone tries to use POST /api/auth/create-parent.
+
+  --- Carry-forward from Session 35 ---
+
+  Session-35 Followup #1 — Render dashboard eyeball for PR #24
+    Live status. Likely closed by PR #28's successful Render
+    auto-deploy + operator's verification login on the seeded
+    tenant (login flows through the same auth middleware that
+    PR #24 added handlers around). Verify and close.
+
+  Session-35 Followup #2 — TODO(form-set-arch) breadcrumb
+    in PR #24 commit 2 code comment. Long-term.
+
+  Session-35 Followup #3 — Free-text and JSONB hygiene pass
+    (repo-wide length-cap adoption).
+
+  Session-35 Followup #4 — Add rate-limiting middleware
+    (express-rate-limit globally to /api/student-504 +
+    /api/parent-504 POSTs, then expand to legacy POST surface).
+
+  Session-35 Followup #5 — Middleware err.message log fix
+    (middleware/authorizeInterventionAccess.js:229). Two-line
+    change. Real §4B compliance improvement. Recommended next-
+    session pickup as sec/middleware-error-message-pii.
+
+  Session-35 Followup #6 — Add real npm test and npm run lint
+    scripts. Used as the structural-only VERIFICATION
+    rationale for this entry per established precedent across
+    PRs #21–#25, #28.
+
+  Session-35 Followup #7 — IDE-vs-terminal subagent
+    registration doc.
+
+  --- Carry-forward from Session 32 (unchanged) ---
+  - /version endpoint (Session 32 followup #1).
+  - Render auto-deploy latency baseline doc (Session 32
+    followup #3).
+  - Polling-loop pattern reconsideration (Session 32
+    followup #4).
+  - CLI-based authenticated smoke check (Session 32
+    followup #5).
+
+  --- Carry-forward (numbering preserved from prior sessions) ---
+  All Session 25–34 followups (57, 58, 59, 61, 62, 63, 64, 65,
+  66, 67, 68, 69, 70, 71, 72, 74, 75, 76, 77, 80, 81, 82, 84,
+  85, 86, plus Session-32 #1–#5 and Session-34 #2–#7) carry
+  forward unchanged. See Session 30 + Session 32 + Session 34
+  master indices for full descriptions.
+
+  --- Process feedback memories (additive across sessions) ---
+  - feedback_cosmetic_change_cross_tenant.md (Session 36, NEW)
+    — when asked for a "small cosmetic FE change" in
+    TierTrak, check whether the target string is inline
+    literal vs centralized config before doing it. Inline
+    literals in a multi-tenant UI mean the diff would change
+    every tenant, which is a §5 cross-tenant visibility
+    change masquerading as a one-tenant change. Heuristic:
+    "Would this UI string look the same to a different
+    tenant if I'm honest about what 'tenant' means in this
+    product?" If yes-but-they-might-want-something-different,
+    it's not cosmetic — it's tenant-scoped config wearing a
+    cosmetic costume. Owner explicitly named this as the §5
+    system working correctly during PR #28 brief.
+  - feedback_fresh_session_qualifier.md (Session 35) —
+    carry-forward.
+  - feedback_strategy_validation_before_commit.md (Session 32
+    candidate) — carry-forward.
+  - feedback_citation_skepticism.md (Session 32 candidate) —
+    carry-forward.
+  - feedback_capability_gap_surfacing.md (Session 34) —
+    carry-forward.
+
+  --- Held; deferred to PR 3+ (504 v1 series, post-PR-24-merge) ---
+  Carry-forward unchanged: proceduralSafeguardsText content;
+  Frontend Form C/I/J rendering; CSS-based print gating from
+  day one; student_504_plans medical-services persistence.
+
+  --- Held; deferred to Phase 2+ (504 v1 series, future) ---
+  Carry-forward unchanged: Gated-tier health document
+  handling (Forms D, E); Sample upload templates per
+  Session 29.
+
+NEXT SESSION SHOULD
+  Priority 1 — Open the PR for chore/activities-log-session-36
+  (this branch). gh pr create against main using the standard
+  chore/activities-log template; merge with --merge and
+  --delete-branch per established convention.
+  Priority 2 — Pick the next small followup branch.
+  Recommended: sec/middleware-error-message-pii (Session-35
+  Followup #5) for the two-line err.message → err.code fix at
+  middleware/authorizeInterventionAccess.js:229. Real §4B
+  compliance improvement. Run from a terminal claude session
+  in /Users/melaniemarrone/Projects/tiertrak so privacy-
+  reviewer + security-reviewer subagents register.
+  Alternative Priority 2 — pick up the most operationally
+  valuable Session 36 NEW followup. feat/tenant-expiration is
+  the natural next step now that we have two sandbox tenants
+  in production (Lincoln + Humble) without an expiration
+  story.
+  Priority 3 — If/when bandwidth: chore/claude-md-render-
+  hosting (still open from Session 35). Doc-only.
+  Optional verification — Render dashboard eyeball for PR #28
+  Live status. Likely closed by operator's verification login
+  on tenant id 9; confirm and close Session-35 Followup #1.
+================================================================================
