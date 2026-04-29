@@ -2381,7 +2381,7 @@ NEXT SESSION SHOULD
 ================================================================================
 SESSION: 2026-04-29T16:00:00-07:00 (38b — same-day continuation)
 BRANCH:  chore/activities-log-session-38b
-DISPOSITION: pr-opened:<URL filled in after gh pr create>
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/32
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Same-day continuation of Session 38. Resumed from a fresh terminal
