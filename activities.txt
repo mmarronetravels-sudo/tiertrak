@@ -2379,3 +2379,232 @@ NEXT SESSION SHOULD
   (Task #2 carryover from Session 37 partial master index, now
   pending two sessions in a row). Trivial gh pr create + merge.
 ================================================================================
+SESSION: 2026-04-29T16:00:00-07:00 (38b — same-day continuation)
+BRANCH:  chore/activities-log-session-38b
+DISPOSITION: pr-opened:<URL filled in after gh pr create>
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Same-day continuation of Session 38. Resumed from a fresh terminal
+  claude session (so the project reviewer subagents register, which the
+  IDE-extension Claude Code does not load). Five tracks landed:
+  (1) opened the 504 FE PR with the §2A 8-section template + full body;
+  (2) ran the three reviewer subagents and posted their reports verbatim
+      as PR comments;
+  (3) carried the PR through §2A human review by a non-Owner ed tech
+      specialist and merged to main;
+  (4) registered the Oregon ODE 2025 form set for two production tenants
+      via Render psql one-shot;
+  (5) cleaned up an accidental empty cycle on one of those tenants via a
+      preflight-protected Render psql DELETE.
+  Five-commit FE branch feat/504-form-cij-frontend is now on main;
+  production data state is consistent with the v1 504 release plan for
+  May 4.
+
+PR #31 — feat/504-form-cij-frontend → main
+  Title: feat(504): Section 504 tab — cycle list + Form C/I/J modals + print gating
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/31
+  Body:  §2A 8-section template, fully filled. SQL-layer cross-tenant
+         probe results embedded verbatim in the Tenant isolation check
+         section (4 zero-row foreign-tenant probes + 1 one-row sanity
+         probe). Privacy impact section names every PII field touched on
+         the branch and cites PRIVACY_REVIEW.md §504. Pre-merge action
+         items list called out the runtime cross-tenant probe in
+         incognito and the three reviewer subagents.
+  Three Owner-approved adjustments applied to the body before posting
+  (dangling "above." stripped from Ask-first items first bullet; Cmd+F
+  precision tightened in Privacy impact; activities.txt line citation
+  added under the Session 38 followups header).
+
+REVIEWER SUBAGENTS (three; reports posted as PR #31 comments verbatim)
+  - privacy-reviewer        APPROVED, severity 0/0/0/0/6 (C/H/M/L/I)
+                            Six INFO findings, all confirming the
+                            design holds (print-isolation invariant,
+                            error-envelope discipline, logError-call
+                            audit, interpolateTemplate fail-closed,
+                            cross-tenant FE risk surface, data
+                            minimization).
+  - security-reviewer       APPROVED, severity 0/0/0/1/4
+                            Single LOW = intentional api.js opacity
+                            trade-off (response bodies discarded,
+                            status-only Error thrown), documented in
+                            api.js header, no fix needed.
+  - tenant-isolation-auditor APPROVED, severity 0/0/0/0/5
+                            Backend tenant-scoping pattern verified
+                            intact at HEAD for all four staff GET
+                            resources the FE drills into;
+                            tenant_form_sets registration gate
+                            verified before cycle creation; six
+                            tenant-scoped tables in migration 021
+                            verified intact.
+  All three reports posted via gh pr comment 31 --body-file <tempfile>;
+  tempfiles cleaned up after post.
+
+§2A HUMAN REVIEW
+  Non-Owner ed tech specialist reviewed and approved on PR #31 for the
+  audit trail. §2A merge gate satisfied — Owner did not self-merge.
+
+PR #31 — MERGED
+  Merged 2026-04-29T21:22:56Z, merge commit 0b959a9 on origin/main.
+  Render auto-deployed; staff Section 504 surface live in production.
+
+PRODUCTION DB WRITES (Render psql, one-shot, BEGIN/COMMIT, DO block,
+  preflight-protected with RAISE EXCEPTION, idempotent where applicable)
+
+  - tenant_form_sets: 2 rows added.
+    For two production tenants (tenant_ids 4 and 8), registering the
+    Oregon ODE 2025 form set (form_set_id='oregon-ode-2025',
+    form_set_version='08/2023', is_active=t). Lookup by exact tenants.
+    name with count-check preflight (mirrors the seed-humble-isd-
+    sandbox.js pattern; tenants.name is not UNIQUE in schema.sql so a
+    defensive count check raises on miss-or-ambiguous). ON CONFLICT
+    (tenant_id, form_set_id) DO NOTHING for idempotent rerun. Post-
+    commit SELECT confirmed 2 rows, both is_active=t.
+
+  - student_504_cycles: 1 row deleted.
+    tenant_id 4, cycle id 2; an accidental empty cycle. Preflight
+    verified zero rows in all four child tables (student_504_evaluation_
+    consents, student_504_eligibility_determinations, student_504_plans,
+    student_504_team_members). DELETE was tenant-scoped (id AND
+    tenant_id in WHERE clause). Composite-FK ON DELETE CASCADE on the
+    four child tables would have cascaded if non-empty, but the
+    preflight made that unreachable. student_504_accommodations is
+    transitive via plans (FK to plans, not cycles); plans=0 implies
+    accommodations=0. Post-commit SELECT confirmed remaining=0.
+
+TENANT ISOLATION REVIEW
+  No new SQL queries on the FE branch (PR #31). The three production
+  DB writes (2 INSERT + 1 DELETE) were all tenant-scoped via Render
+  psql DO blocks. Every WHERE clause carried both id and tenant_id;
+  every INSERT body carried the looked-up tenant_id from the preflight
+  rather than a client-supplied value. No cross-tenant reads or writes
+  introduced. The tenant-isolation-auditor subagent (report posted on
+  PR #31) verified the backend pattern is intact at HEAD for all four
+  504 staff resources and confirmed migration 021's composite-FK + UNIQUE
+  (id, tenant_id) constraints are intact across the six tenant-scoped
+  504 tables plus tenant_form_sets.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched by the FE branch (read-only on the FE; persisted
+  by routes shipped in earlier PRs):
+    - student_504_evaluation_consents.parent_signature_text /
+      .staff_signature_text (parent-visible at write time; amber
+      warning surface in Form C add mode)
+    - student_504_eligibility_determinations.determination_notes
+      (staff-only per privacy tier matrix; rendered inside .no-print
+      scope on Form I per the load-bearing privacy assertion)
+    - student_504_plans.accommodations JSONB (parent-visible at write
+      time when plan_status='active'; default plan_status='draft' is
+      parent-invisible)
+  Logging audit: privacy-reviewer subagent verified zero PII reaches
+  any console.* path; api.js error envelope discards response bodies
+  and throws status-only Error; security-reviewer flagged the same
+  opacity trade-off as a documented LOW with no fix needed.
+  Cross-tenant risk: none. Tenant-isolation-auditor verified the FE
+  never transmits a tenant identifier in URL, body, query string, or
+  fetch header; the bundle response contains tenant_id but no FE code
+  path keys behavior off it.
+  Print-preview privacy assertion verified at runtime: Cmd+F on Form I
+  print preview returned 0 of 0 matches for the staff-only test string
+  used to verify that determination_notes never reaches the parent-
+  facing print artifact. Defense-in-depth: structural sibling isolation
+  + .no-print CSS rule + parent route family has no eligibility-
+  determinations handler at all.
+  Production DB writes scrubbed for §4B: no tenant subdomains, no user
+  emails, no student/staff names, no signature text, no quoted test
+  strings appear in any audit log, error path, or response body opened
+  by these writes.
+
+VERIFICATION
+  No code changes this session continuation; tests and lint not re-run.
+  Last clean-build / lint state documented in the Session 38 entry
+  carries forward unchanged (vite build clean across all 5 commits;
+  lint = 73 errors / 16 warnings, all pre-existing in App.jsx,
+  tier1Pdf.js, ResourcesView.jsx; zero lint errors in any of the 5
+  Section 504 files or index.css).
+  PR #31 merge commit on origin/main: 0b959a9.
+  PR #31 reviewer-subagent comment URLs (verbatim, posted in order):
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613266  (privacy-reviewer)
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613342  (security-reviewer)
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613427  (tenant-isolation-auditor)
+  tenant_form_sets registration: post-commit SELECT returned 2 rows,
+    both is_active=t.
+  student_504_cycles deletion: post-commit SELECT returned remaining=0.
+
+DEFERRED (disclosed in PR #31 body, accepted by reviewer)
+  - Runtime cross-tenant probe in fresh Chrome incognito window. The
+    SQL-layer evidence (5-query Render psql probe documented in commit
+    24dcfdd's message) was the authoritative §5 verification for merge.
+    Runtime probe accepted as a post-merge sanity check rather than a
+    pre-merge gate.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from this Session 38b continuation ---
+  - Molalla River Academy (tenant_id=8) has no subdomain set in the
+    tenants table. Column is UNIQUE-but-nullable per schema.sql:8, so
+    the schema permits this, but if any auth-routing or tenant-
+    resolution code path keys off subdomain, this tenant may currently
+    lack a working portal URL. Worth investigating whether provisioning
+    gap (tenant onboarded before subdomain was wired into auth?) or
+    intentional configuration. Not blocking the form-set registration
+    that landed this session.
+  - Cycle ID label leaks global SERIAL across tenants. The UI displays
+    the raw student_504_cycles.id (a global SERIAL), which means cycle
+    IDs jump between tenants and reveal cross-tenant activity volume to
+    staff. Should display a per-tenant or per-student local sequence
+    number instead.
+  - Add void/cancel ability for accidental cycles. Today, the only
+    recourse for an accidental cycle creation is a manual Render psql
+    DELETE (this session's cleanup task). Need a UI + route for staff
+    to soft-delete (status='cancelled'?) or hard-delete an empty cycle
+    from the staff side. The cycle-deletion DO block landed this session
+    is the reference for what the new route should authorize and check.
+  - Runtime cross-tenant probe in incognito (deferred from PR #31 pre-
+    merge to post-merge sanity).
+
+  --- Carry-forward from Session 38 entry (still pending; see lines
+      2200-2381 of activities.txt for the full Session 38 followup
+      list) ---
+  - Procedural safeguards content drop (Owner-side authoring)
+  - Multi-screener scope confirmation with the May-4 district (Owner-
+    side outreach)
+  - tenant_form_sets registration for additional non-demo tenants —
+    NOTE: 2 of these landed this session (tenant_ids 4 + 8); any
+    further May-4 districts beyond those two are still pending
+  - Form J plan-status workflow ("activate plan" UI)
+  - Cookie-carryover-across-logout investigation
+  - 504 saved-at timestamps display in UTC, not user local time
+  - 504 schema gap (eligibility sub-states: with-plan vs.
+    technically-eligible-no-plan)
+  - 504 polish (pre-fill student-info on Form I from student record)
+  - Form J parent consent DB persistence (legal question: printed
+    signature sufficiency vs. digital persistence requirement)
+  - Trailing blank page in print preview (cosmetic)
+  - 504 v1 series followups carried forward unchanged from Session 35
+    (render-only Form C field persistence, dev Vite proxy for feature-
+    branch smoke tests, SMOKE_TESTING.md walkthrough, tenant-form-set
+    admin UI)
+  - Long-tail followups numbered 57+ from prior master indices
+    (carry-forward, unchanged)
+
+NEXT SESSION SHOULD
+  Priority 1 — Merge PR #30 (chore/activities-log-session-38, the
+  original Session 38 entry — STILL OPEN at the time of this 38b
+  continuation close) and merge this 38b PR. PR #30's commit ed44d9b
+  is the parent of this 38b branch, so once 38b lands on main, PR #30
+  becomes redundant and can be closed-not-merged with a "superseded by
+  38b" comment. Alternative: merge PR #30 first, then 38b lands clean
+  with just the new continuation commit. Either order works; the
+  former is fewer clicks.
+  Priority 2 — If the runtime cross-tenant probe in incognito hasn't
+  been done yet (~5 min in a fresh Chrome incognito window), do it as
+  the post-merge sanity check called out in PR #31's body.
+  Priority 3 — Choose the next 504 followup. Recommended: void/cancel
+  ability for accidental cycles (NEW Session 38b followup). The DO
+  block from this session is the route-authorization reference. UI is
+  small. Closes the gap that necessitated the manual DELETE this
+  session.
+  Optional — Open the PR for chore/activities-log-session-36
+  (still pending across Sessions 36, 37, 38, and 38b now). Trivial
+  gh pr create + merge.
+================================================================================
