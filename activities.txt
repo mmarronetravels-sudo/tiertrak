@@ -2131,3 +2131,480 @@ NEXT SESSION SHOULD
   (/api/student-504/cycles or similar). <1 min of dashboard
   time. Defer if dashboard is already known-Live.
 ================================================================================
+SESSION: 2026-04-29T12:51:02-07:00
+BRANCH:  feat/504-form-cij-frontend
+DISPOSITION: kept (5 commits ahead of origin/main, pushed to
+             origin/feat/504-form-cij-frontend; PR opening deferred
+             to a fresh terminal claude session per the reviewer-
+             subagent registration asymmetry — Priority 4 in the
+             partial master index resumption queue from Session 37)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Resumed feat/504-form-cij-frontend from a Session 37 mid-flight
+  pause. Smoke-tested commit 3 (Form I editor + staff-only
+  determination_notes panel) through a 13-step checklist; planned,
+  implemented, committed, and smoke-tested commit 4 (Form J
+  Accommodation Plan); planned, implemented, and committed commit 5
+  (print-gating CSS + Print buttons + privacy assertion). Cross-
+  tenant isolation verified at the SQL layer via a 5-query Render
+  psql probe. Five 504 FE commits now ride the feature branch
+  awaiting PR. Print-preview smoke test was deferred at session
+  landing per Owner call.
+
+FILES TOUCHED
+  Commit 4 (36b0891) — Form J Accommodation Plan:
+    frontend/src/components/Section504/FormJPlanModal.jsx — NEW;
+      ~700 lines; full mode='add'/'view' modal mirroring Form I
+      structure with 3 persisted accommodations textareas + 2
+      persisted dates; single data-print-section="form-j" wrapper
+      (no staff-only sibling — every persisted column on the plan
+      table is parent-visible per the parent route family).
+    frontend/src/components/Section504/api.js — adds createPlan
+      wrapper; documents plan_status='draft' default behavior and
+      parent-visibility implications.
+    frontend/src/components/Section504/Section504CycleView.jsx —
+      wires Form J Add/View into the cycle bundle drill-in; adds
+      formJModal state + modal mount; removes the commit-2
+      placeholder copy.
+    frontend/src/components/Section504/helpers.js — adds
+      dateOnlyFromBundle helper for pg DATE-column hydration in
+      view mode (UTC-midnight ISO timestamp prefix slice; sidesteps
+      the isoTimestampToDate local-component bug for negative-
+      offset timezones).
+  Commit 5 (24dcfdd) — print gating + Print buttons + privacy
+                       assertion:
+    frontend/src/index.css — additive @media print rules:
+      .no-print with display: none, @page margins, textarea
+      print-expansion. Pre-existing MTSS Report rules untouched.
+    frontend/src/components/Section504/FormCConsentModal.jsx —
+      NEW data-print-section="form-c" wrapper (Form C had no
+      print scope previously); .no-print on chrome and italic
+      helpers; Print button in footer.
+    frontend/src/components/Section504/FormIDeterminationModal.jsx
+      — .print-form on existing form-i wrapper; .no-print on
+      existing staff-only sibling wrapper (load-bearing for the
+      privacy assertion — staff-only determination_notes column
+      rendered inside .no-print scope is verified absent from
+      print preview by construction); .no-print on chrome and
+      italic helpers; Print button in footer.
+    frontend/src/components/Section504/FormJPlanModal.jsx —
+      .print-form on existing form-j wrapper; .no-print on chrome,
+      banners (view-mode + conditionalNotice + amber), and italic
+      helpers; Print button in footer.
+
+MIGRATIONS RUN
+  none (no schema changes this session)
+
+TENANT ISOLATION REVIEW
+  No new DB queries introduced. Commit 4's createPlan wrapper hits
+  the existing routes/student504.js POST /plans endpoint, which
+  derives tenant_id server-side from req.user.tenant_id (JWT
+  claim) per the explicit-projection comments in the route file.
+  Composite-FK schema (Migration 021) rejects cross-tenant child
+  references at the SQL layer. Commit 5 is CSS + JSX class
+  additions only, no routes touched. No new SQL queries to scope.
+
+  SQL-layer cross-tenant verification (Render psql, 5 read-only
+  SELECT queries) performed before commit 5 landed:
+    - 4 probes scoped to a foreign tenant for IDs known to exist
+      on the demo tenant: cycles, evaluation_consents, eligibility
+      determinations, plans tables. Each returned 0 rows.
+    - 1 sanity-check probe scoped to the demo tenant for the same
+      cycle id. Returned 1 row as expected.
+    Result: route-level WHERE clause shape (id = $1 AND tenant_id
+    = $2) provably enforces isolation at the SQL layer.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched on this branch (read-only on the FE; persisted
+  by routes shipped in earlier PRs):
+    - student_504_evaluation_consents.parent_signature_text /
+      .staff_signature_text (parent-visible at write time; amber
+      warning surface in Form C add mode)
+    - student_504_eligibility_determinations.determination_notes
+      (staff-only per privacy tier matrix; rendered inside
+      .no-print scope on Form I per the commit 5 privacy
+      assertion)
+    - student_504_plans.accommodations JSONB (parent-visible at
+      write time; amber warning surface in Form J add mode)
+  Logging audit: verified no PII surfaces in any commit-4 or
+  commit-5 console.error or response error envelope. logError
+  wrapper in createPlan / createDetermination / createConsent
+  maps every network failure to a generic message; status code is
+  the only identifier in the response error path.
+  Cross-tenant risk: none identified. Commit 4 introduces a new
+  POST resource that inherits the established tenant-derivation +
+  composite-FK pattern. Commit 5 introduces no new data flows;
+  CSS scoping does not introduce cross-tenant risk because the
+  underlying bundle data was already tenant-scoped at the route
+  layer (verified by the SQL probe above).
+
+VERIFICATION
+  npm --prefix frontend run build — clean (vite build succeeded;
+    existing 500 kB chunk advisory unchanged across all 5 commits
+    this session).
+  npm --prefix frontend run lint — 73 errors / 16 warnings, all
+    in pre-existing files (App.jsx, tier1Pdf.js, ResourcesView.jsx)
+    — same set carried forward unchanged across all 5 commits this
+    session. ZERO lint errors in any of the 5 commit-touched
+    Section 504 files or index.css.
+  Manual smoke test commit 3 (Form I) — 13-step checklist, all
+    verified clean: render-only fields hidden in view mode, q3
+    status tile (not radio), meeting date timezone round-trip
+    correct (Pacific evening save survived the noon-local helper),
+    staff panel default-CLOSED in view mode + default-OPEN in add
+    mode, determination_notes test string round-tripped,
+    append-only with no carry-over including determination_notes.
+  Manual smoke test commit 4 (Form J) — full add/view round-trip,
+    all verified clean: Q4 timezone (effective_date and review_date
+    round-tripped through UTC-midnight ISO serialization via
+    dateOnlyFromBundle, hydrated correctly in view mode), Q2a
+    no-plan-status-on-save POST contract (request body had no
+    plan_status key; backend response showed plan_status='draft'
+    from COALESCE default), Q3a conditionalNotice visible in
+    add-mode banner only, Q5/Q6 render-only fields hidden in view
+    mode, append-only blank on second Add including the JSONB
+    accommodations carry-over check.
+  Cross-tenant SQL probe — 5 queries via Render psql, all
+    expected results (4 zero-row foreign-tenant probes + 1
+    sanity-check one-row probe). (No npm test suite at project
+    root; root npm test exits 1 by design — Followup #6 from
+    Session 34 still open.)
+  Commit message rendering verified clean for both commit 4 +
+    commit 5 (no markdown auto-link / mailto syntax in git log -1
+    output).
+  Print-preview smoke test (verification plan documented in commit
+    5's audit) — DEFERRED at landing on Owner call. Tracked in
+    OPEN ITEMS below.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Above the May 4 release line ---
+  - Open the PR for feat/504-form-cij-frontend against main. Run
+    from a terminal claude session in
+    /Users/melaniemarrone/Projects/tiertrak so privacy-reviewer +
+    security-reviewer + tenant-isolation-auditor subagents
+    register (IDE-extension Claude Code does not load
+    .claude/agents/*.md). Per §2A: human review by someone other
+    than Owner required before merge (renders student PII;
+    tenant-scoped data fetch surfaces).
+  - Print-preview smoke test (deferred from this session at
+    landing). Per the verification plan documented in commit 5's
+    audit: open each form (C, I, J) in add mode, fill test data,
+    click new Print button, verify Chrome's print preview shows
+    parent-facing content + hides FE chrome. Form I specifically:
+    Cmd+F search for the determination_notes test string MUST
+    return zero matches in the print preview (the load-bearing
+    privacy assertion verification at runtime).
+  - Runtime cross-tenant probe in incognito (NEW Session 38
+    followup) — re-run the 4-endpoint fetch loop in a fresh Chrome
+    incognito window before requesting PR review. ~5 minutes.
+    Converts the SQL-layer evidence into runtime evidence at the
+    route layer. Goal: identical 404-with-no-leaky-body response
+    on all four endpoints when probed by a foreign-tenant JWT.
+  - Procedural safeguards content drop — author the Oregon ODE
+    2025 procedural safeguards text and replace the null
+    proceduralSafeguardsText in the form-set module. Owner-side
+    authoring; trivial code drop once content is ready.
+  - Multi-screener scope confirmation with the school district
+    targeting May 4 (Owner-side outreach) — without confirmation
+    the multi-screener track stays parked.
+  - tenant_form_sets registration for the two non-demo tenants
+    in the production tenants table that will need 504 cycles
+    by May 4. Same one-shot SQL pattern used in Session 37
+    (different tenant ids).
+  - Form J plan-status workflow (the "activate plan" UI) —
+    decision pending on whether parents need plan visibility for
+    the May 4 release; Owner-side outreach determines above-or-
+    below the line.
+
+  --- Below the May 4 line ---
+  - Cookie-carryover-across-logout investigation (NEW Session 38
+    followup) — chore-level investigation into whether the
+    /api/auth/logout endpoint correctly clears the auth cookie.
+    A test-setup false alarm during Session 38's first
+    cross-tenant probe attempt suggested the cookie persisted
+    across what looked like a clean logout. Could be a session-
+    management bug or a procedural multi-tab confusion. Worth a
+    separate session.
+  - 504 saved-at timestamps display in UTC, not user local time,
+    on the form cards — Task carryover from earlier this branch.
+  - 504 schema gap — distinguish eligibility sub-states (with-
+    plan vs. technically-eligible-no-plan); current DB enum
+    collapses both to 'eligible'. Tracked Cowork-side.
+  - 504 polish — pre-fill student-info fields on Form I from
+    the student record so staff don't retype.
+  - Form J parent consent DB persistence (NEW Session 38
+    followup) — Form J's parentConsent block is render-only in
+    v1. Legal question: does the printed signature alone suffice,
+    or is digital persistence required for FERPA / §504 audit
+    trails? Decide before adding a column.
+  - 504 v1 series followups carried forward unchanged from
+    Session 35: render-only Form C field persistence, dev Vite
+    proxy for feature-branch smoke tests, SMOKE_TESTING.md
+    walkthrough doc, tenant-form-set admin UI.
+
+  --- Carry-forward (unchanged from Session 35 entry) ---
+  All Session 25–35 followups carry forward unchanged. The
+  chore/activities-log-session-36 branch (pushed in Session 36
+  with no PR opened) is still pending Task #2 from the Session
+  37 partial master index. The two pre-Session-25 stragglers
+  (origin/chore/activities-log without session suffix and
+  origin/fix/resource-1-4-calendar-underscores) are also still
+  pending five-minute deletes. Render-yaml-bootstrap deferred
+  PR. Form-set architecture refactor. Free-text and JSONB hygiene
+  pass. Rate-limiting middleware. Middleware err.message log fix
+  (sec/middleware-error-message-pii). Session 32 followups
+  (#1–#5). Session 34 followups (#2–#7). All other long-tail
+  followups numbered 57+ from prior master indices.
+
+NEXT SESSION SHOULD
+  Priority 1 — Open the PR for chore/activities-log-session-38
+  (this branch). Standard chore/activities-log template; merge
+  with --merge and --delete-branch per established convention.
+  Priority 2 — Open the PR for feat/504-form-cij-frontend (the
+  5-commit 504 FE branch). Run from a terminal claude session in
+  /Users/melaniemarrone/Projects/tiertrak so the three reviewer
+  subagents register. Run all three (privacy-reviewer, security-
+  reviewer, tenant-isolation-auditor) and post their reports as
+  PR comments via gh pr comment <num> --body-file tempfile.
+  Priority 3 — Run the deferred print-preview smoke test for
+  commits 4 + 5 of feat/504-form-cij-frontend. The Form I Cmd+F
+  determination_notes leak check is the load-bearing privacy
+  verification.
+  Priority 4 — Run the runtime cross-tenant probe in a fresh
+  incognito window before requesting PR review (NEW Session 38
+  followup). Converts the SQL-layer evidence into runtime
+  evidence at the route layer.
+  Optional — Open the PR for chore/activities-log-session-36
+  (Task #2 carryover from Session 37 partial master index, now
+  pending two sessions in a row). Trivial gh pr create + merge.
+================================================================================
+SESSION: 2026-04-29T16:00:00-07:00 (38b — same-day continuation)
+BRANCH:  chore/activities-log-session-38b
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/32
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Same-day continuation of Session 38. Resumed from a fresh terminal
+  claude session (so the project reviewer subagents register, which the
+  IDE-extension Claude Code does not load). Five tracks landed:
+  (1) opened the 504 FE PR with the §2A 8-section template + full body;
+  (2) ran the three reviewer subagents and posted their reports verbatim
+      as PR comments;
+  (3) carried the PR through §2A human review by a non-Owner ed tech
+      specialist and merged to main;
+  (4) registered the Oregon ODE 2025 form set for two production tenants
+      via Render psql one-shot;
+  (5) cleaned up an accidental empty cycle on one of those tenants via a
+      preflight-protected Render psql DELETE.
+  Five-commit FE branch feat/504-form-cij-frontend is now on main;
+  production data state is consistent with the v1 504 release plan for
+  May 4.
+
+PR #31 — feat/504-form-cij-frontend → main
+  Title: feat(504): Section 504 tab — cycle list + Form C/I/J modals + print gating
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/31
+  Body:  §2A 8-section template, fully filled. SQL-layer cross-tenant
+         probe results embedded verbatim in the Tenant isolation check
+         section (4 zero-row foreign-tenant probes + 1 one-row sanity
+         probe). Privacy impact section names every PII field touched on
+         the branch and cites PRIVACY_REVIEW.md §504. Pre-merge action
+         items list called out the runtime cross-tenant probe in
+         incognito and the three reviewer subagents.
+  Three Owner-approved adjustments applied to the body before posting
+  (dangling "above." stripped from Ask-first items first bullet; Cmd+F
+  precision tightened in Privacy impact; activities.txt line citation
+  added under the Session 38 followups header).
+
+REVIEWER SUBAGENTS (three; reports posted as PR #31 comments verbatim)
+  - privacy-reviewer        APPROVED, severity 0/0/0/0/6 (C/H/M/L/I)
+                            Six INFO findings, all confirming the
+                            design holds (print-isolation invariant,
+                            error-envelope discipline, logError-call
+                            audit, interpolateTemplate fail-closed,
+                            cross-tenant FE risk surface, data
+                            minimization).
+  - security-reviewer       APPROVED, severity 0/0/0/1/4
+                            Single LOW = intentional api.js opacity
+                            trade-off (response bodies discarded,
+                            status-only Error thrown), documented in
+                            api.js header, no fix needed.
+  - tenant-isolation-auditor APPROVED, severity 0/0/0/0/5
+                            Backend tenant-scoping pattern verified
+                            intact at HEAD for all four staff GET
+                            resources the FE drills into;
+                            tenant_form_sets registration gate
+                            verified before cycle creation; six
+                            tenant-scoped tables in migration 021
+                            verified intact.
+  All three reports posted via gh pr comment 31 --body-file <tempfile>;
+  tempfiles cleaned up after post.
+
+§2A HUMAN REVIEW
+  Non-Owner ed tech specialist reviewed and approved on PR #31 for the
+  audit trail. §2A merge gate satisfied — Owner did not self-merge.
+
+PR #31 — MERGED
+  Merged 2026-04-29T21:22:56Z, merge commit 0b959a9 on origin/main.
+  Render auto-deployed; staff Section 504 surface live in production.
+
+PRODUCTION DB WRITES (Render psql, one-shot, BEGIN/COMMIT, DO block,
+  preflight-protected with RAISE EXCEPTION, idempotent where applicable)
+
+  - tenant_form_sets: 2 rows added.
+    For two production tenants (tenant_ids 4 and 8), registering the
+    Oregon ODE 2025 form set (form_set_id='oregon-ode-2025',
+    form_set_version='08/2023', is_active=t). Lookup by exact tenants.
+    name with count-check preflight (mirrors the seed-humble-isd-
+    sandbox.js pattern; tenants.name is not UNIQUE in schema.sql so a
+    defensive count check raises on miss-or-ambiguous). ON CONFLICT
+    (tenant_id, form_set_id) DO NOTHING for idempotent rerun. Post-
+    commit SELECT confirmed 2 rows, both is_active=t.
+
+  - student_504_cycles: 1 row deleted.
+    tenant_id 4, cycle id 2; an accidental empty cycle. Preflight
+    verified zero rows in all four child tables (student_504_evaluation_
+    consents, student_504_eligibility_determinations, student_504_plans,
+    student_504_team_members). DELETE was tenant-scoped (id AND
+    tenant_id in WHERE clause). Composite-FK ON DELETE CASCADE on the
+    four child tables would have cascaded if non-empty, but the
+    preflight made that unreachable. student_504_accommodations is
+    transitive via plans (FK to plans, not cycles); plans=0 implies
+    accommodations=0. Post-commit SELECT confirmed remaining=0.
+
+TENANT ISOLATION REVIEW
+  No new SQL queries on the FE branch (PR #31). The three production
+  DB writes (2 INSERT + 1 DELETE) were all tenant-scoped via Render
+  psql DO blocks. Every WHERE clause carried both id and tenant_id;
+  every INSERT body carried the looked-up tenant_id from the preflight
+  rather than a client-supplied value. No cross-tenant reads or writes
+  introduced. The tenant-isolation-auditor subagent (report posted on
+  PR #31) verified the backend pattern is intact at HEAD for all four
+  504 staff resources and confirmed migration 021's composite-FK + UNIQUE
+  (id, tenant_id) constraints are intact across the six tenant-scoped
+  504 tables plus tenant_form_sets.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched by the FE branch (read-only on the FE; persisted
+  by routes shipped in earlier PRs):
+    - student_504_evaluation_consents.parent_signature_text /
+      .staff_signature_text (parent-visible at write time; amber
+      warning surface in Form C add mode)
+    - student_504_eligibility_determinations.determination_notes
+      (staff-only per privacy tier matrix; rendered inside .no-print
+      scope on Form I per the load-bearing privacy assertion)
+    - student_504_plans.accommodations JSONB (parent-visible at write
+      time when plan_status='active'; default plan_status='draft' is
+      parent-invisible)
+  Logging audit: privacy-reviewer subagent verified zero PII reaches
+  any console.* path; api.js error envelope discards response bodies
+  and throws status-only Error; security-reviewer flagged the same
+  opacity trade-off as a documented LOW with no fix needed.
+  Cross-tenant risk: none. Tenant-isolation-auditor verified the FE
+  never transmits a tenant identifier in URL, body, query string, or
+  fetch header; the bundle response contains tenant_id but no FE code
+  path keys behavior off it.
+  Print-preview privacy assertion verified at runtime: Cmd+F on Form I
+  print preview returned 0 of 0 matches for the staff-only test string
+  used to verify that determination_notes never reaches the parent-
+  facing print artifact. Defense-in-depth: structural sibling isolation
+  + .no-print CSS rule + parent route family has no eligibility-
+  determinations handler at all.
+  Production DB writes scrubbed for §4B: no tenant subdomains, no user
+  emails, no student/staff names, no signature text, no quoted test
+  strings appear in any audit log, error path, or response body opened
+  by these writes.
+
+VERIFICATION
+  No code changes this session continuation; tests and lint not re-run.
+  Last clean-build / lint state documented in the Session 38 entry
+  carries forward unchanged (vite build clean across all 5 commits;
+  lint = 73 errors / 16 warnings, all pre-existing in App.jsx,
+  tier1Pdf.js, ResourcesView.jsx; zero lint errors in any of the 5
+  Section 504 files or index.css).
+  PR #31 merge commit on origin/main: 0b959a9.
+  PR #31 reviewer-subagent comment URLs (verbatim, posted in order):
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613266  (privacy-reviewer)
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613342  (security-reviewer)
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/31#issuecomment-4347613427  (tenant-isolation-auditor)
+  tenant_form_sets registration: post-commit SELECT returned 2 rows,
+    both is_active=t.
+  student_504_cycles deletion: post-commit SELECT returned remaining=0.
+
+DEFERRED (disclosed in PR #31 body, accepted by reviewer)
+  - Runtime cross-tenant probe in fresh Chrome incognito window. The
+    SQL-layer evidence (5-query Render psql probe documented in commit
+    24dcfdd's message) was the authoritative §5 verification for merge.
+    Runtime probe accepted as a post-merge sanity check rather than a
+    pre-merge gate.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from this Session 38b continuation ---
+  - Molalla River Academy (tenant_id=8) has no subdomain set in the
+    tenants table. Column is UNIQUE-but-nullable per schema.sql:8, so
+    the schema permits this, but if any auth-routing or tenant-
+    resolution code path keys off subdomain, this tenant may currently
+    lack a working portal URL. Worth investigating whether provisioning
+    gap (tenant onboarded before subdomain was wired into auth?) or
+    intentional configuration. Not blocking the form-set registration
+    that landed this session.
+  - Cycle ID label leaks global SERIAL across tenants. The UI displays
+    the raw student_504_cycles.id (a global SERIAL), which means cycle
+    IDs jump between tenants and reveal cross-tenant activity volume to
+    staff. Should display a per-tenant or per-student local sequence
+    number instead.
+  - Add void/cancel ability for accidental cycles. Today, the only
+    recourse for an accidental cycle creation is a manual Render psql
+    DELETE (this session's cleanup task). Need a UI + route for staff
+    to soft-delete (status='cancelled'?) or hard-delete an empty cycle
+    from the staff side. The cycle-deletion DO block landed this session
+    is the reference for what the new route should authorize and check.
+  - Runtime cross-tenant probe in incognito (deferred from PR #31 pre-
+    merge to post-merge sanity).
+
+  --- Carry-forward from Session 38 entry (still pending; see lines
+      2200-2381 of activities.txt for the full Session 38 followup
+      list) ---
+  - Procedural safeguards content drop (Owner-side authoring)
+  - Multi-screener scope confirmation with the May-4 district (Owner-
+    side outreach)
+  - tenant_form_sets registration for additional non-demo tenants —
+    NOTE: 2 of these landed this session (tenant_ids 4 + 8); any
+    further May-4 districts beyond those two are still pending
+  - Form J plan-status workflow ("activate plan" UI)
+  - Cookie-carryover-across-logout investigation
+  - 504 saved-at timestamps display in UTC, not user local time
+  - 504 schema gap (eligibility sub-states: with-plan vs.
+    technically-eligible-no-plan)
+  - 504 polish (pre-fill student-info on Form I from student record)
+  - Form J parent consent DB persistence (legal question: printed
+    signature sufficiency vs. digital persistence requirement)
+  - Trailing blank page in print preview (cosmetic)
+  - 504 v1 series followups carried forward unchanged from Session 35
+    (render-only Form C field persistence, dev Vite proxy for feature-
+    branch smoke tests, SMOKE_TESTING.md walkthrough, tenant-form-set
+    admin UI)
+  - Long-tail followups numbered 57+ from prior master indices
+    (carry-forward, unchanged)
+
+NEXT SESSION SHOULD
+  Priority 1 — Merge PR #30 (chore/activities-log-session-38, the
+  original Session 38 entry — STILL OPEN at the time of this 38b
+  continuation close) and merge this 38b PR. PR #30's commit ed44d9b
+  is the parent of this 38b branch, so once 38b lands on main, PR #30
+  becomes redundant and can be closed-not-merged with a "superseded by
+  38b" comment. Alternative: merge PR #30 first, then 38b lands clean
+  with just the new continuation commit. Either order works; the
+  former is fewer clicks.
+  Priority 2 — If the runtime cross-tenant probe in incognito hasn't
+  been done yet (~5 min in a fresh Chrome incognito window), do it as
+  the post-merge sanity check called out in PR #31's body.
+  Priority 3 — Choose the next 504 followup. Recommended: void/cancel
+  ability for accidental cycles (NEW Session 38b followup). The DO
+  block from this session is the route-authorization reference. UI is
+  small. Closes the gap that necessitated the manual DELETE this
+  session.
+  Optional — Open the PR for chore/activities-log-session-36
+  (still pending across Sessions 36, 37, 38, and 38b now). Trivial
+  gh pr create + merge.
+================================================================================
