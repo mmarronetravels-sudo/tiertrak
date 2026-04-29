@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, AlertTriangle } from 'lucide-react';
+import { X, Save, AlertCircle, AlertTriangle, Printer } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { createPlan } from './api';
 import { dateOnlyFromBundle } from './helpers';
@@ -228,14 +228,14 @@ const FormJPlanModal = ({
               Form J — {formJ.title}
             </h2>
             {isView && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <span className="no-print text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 Read-only revision
               </span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600"
+            className="no-print p-1 text-slate-400 hover:text-slate-600"
             aria-label="Close"
           >
             <X size={20} />
@@ -244,7 +244,7 @@ const FormJPlanModal = ({
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {isView && (
-            <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <div className="no-print text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               Saved revisions include only the legally-binding fields
               (accommodations text, plan effective date, next review date).
               To print Form J with the full student information, plan
@@ -253,7 +253,7 @@ const FormJPlanModal = ({
           )}
 
           {!isView && (
-            <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <div className="no-print text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               <strong>Note:</strong> {formJ.conditionalNotice}
             </div>
           )}
@@ -262,17 +262,17 @@ const FormJPlanModal = ({
           {/* PRINT SCOPE — single sibling. Form J has no staff-only       */}
           {/* content; every persisted column on student_504_plans is      */}
           {/* parent-visible via routes/parent504.js GET                    */}
-          {/* /accommodations/student/:studentId. Commit 5 will add         */}
+          {/* /accommodations/student/:studentId. Commit 5 added            */}
           {/* .print-form to this wrapper.                                  */}
           {/* ============================================================ */}
-          <div data-print-section="form-j" className="space-y-6">
+          <div data-print-section="form-j" className="print-form space-y-6">
             {/* Student information — all render-only on Form J */}
             {!isView && (
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold text-slate-700">
                   Student Information
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   These fields appear on the printed Form J but are not
                   stored on save (no DB column). Plan effective date and
                   next review date are persisted in the Plan Dates section
@@ -304,7 +304,7 @@ const FormJPlanModal = ({
                 {formJ.planDates.heading}
               </h3>
               {!isView && (
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Date of Initial Plan and Annual Plan Review Due Date are
                   persisted on save (effective_date and review_date columns
                   on student_504_plans). The other four dates appear on the
@@ -378,7 +378,7 @@ const FormJPlanModal = ({
                 {formJ.accommodations.instruction}
               </p>
               {!isView && (
-                <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                <div className="no-print flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                   <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                   <span>
                     <strong>Parent-visible at write time.</strong> The
@@ -426,7 +426,7 @@ const FormJPlanModal = ({
                 <p className="text-sm font-medium text-slate-700">
                   {formJ.medicalServices.label}
                 </p>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form J but is not
                   stored on save (no DB column).
                 </p>
@@ -473,7 +473,7 @@ const FormJPlanModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formJ.educationalPlacement.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form J but is not
                   stored on save.
                 </p>
@@ -527,7 +527,7 @@ const FormJPlanModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formJ.teamTable.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form J but is not
                   stored on save (504 team membership has its own
                   student_504_team_members table; no POST handler in PR #24).
@@ -606,7 +606,7 @@ const FormJPlanModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formJ.parentConsent.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   {formJ.parentConsent.helpText} · Render-only — appears
                   on the printed Form J but is not stored on save (no DB
                   column).
@@ -669,19 +669,27 @@ const FormJPlanModal = ({
           {/* ============================================================ */}
 
           {saveError && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+            <div className="no-print flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{saveError}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-200">
+        <div className="no-print flex items-center justify-end gap-2 p-4 border-t border-slate-200">
           <button
             onClick={onClose}
             className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
           >
             {isView ? 'Close' : 'Cancel'}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+          >
+            <Printer size={16} />
+            Print
           </button>
           {!isView && (
             <button

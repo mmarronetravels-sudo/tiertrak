@@ -6,6 +6,7 @@ import {
   Lock,
   ChevronDown,
   ChevronRight,
+  Printer,
 } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { createDetermination } from './api';
@@ -233,14 +234,14 @@ const FormIDeterminationModal = ({
               Form I — {formI.title}
             </h2>
             {isView && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <span className="no-print text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 Read-only revision
               </span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600"
+            className="no-print p-1 text-slate-400 hover:text-slate-600"
             aria-label="Close"
           >
             <X size={20} />
@@ -249,7 +250,7 @@ const FormIDeterminationModal = ({
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {isView && (
-            <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <div className="no-print text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               Saved revisions include only the legally-binding fields (eligibility
               status, determination date) plus the staff-only determination notes.
               To print Form I with the full evaluation summary, team table, and
@@ -258,18 +259,20 @@ const FormIDeterminationModal = ({
           )}
 
           {/* ============================================================ */}
-          {/* PRINT SCOPE — form-set content. Commit 5 will add .print-form */}
+          {/* PRINT SCOPE — form-set content. Commit 5 added .print-form    */}
           {/* to this wrapper. determination_notes panel is OUTSIDE this    */}
-          {/* div by construction; see file header for the structural rule.*/}
+          {/* div by construction (it's a sibling, not a descendant) AND     */}
+          {/* carries .no-print on its wrapper for double exclusion. See     */}
+          {/* file header for the structural rule.                           */}
           {/* ============================================================ */}
-          <div data-print-section="form-i" className="space-y-6">
+          <div data-print-section="form-i" className="print-form space-y-6">
             {/* Student information */}
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-slate-700">
                 Student Information
               </h3>
               {!isView && (
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Eight of these fields appear on the printed Form I but are not
                   stored on save (no DB column). The Date field is persisted as
                   the determination date.
@@ -317,7 +320,7 @@ const FormIDeterminationModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formI.teamTable.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form I but is not stored
                   on save.
                 </p>
@@ -387,7 +390,7 @@ const FormIDeterminationModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formI.sectionA.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form I but is not stored
                   on save.
                 </p>
@@ -621,7 +624,7 @@ const FormIDeterminationModal = ({
                 <h3 className="text-sm font-semibold text-slate-700">
                   {formI.meetingParticipants.heading}
                 </h3>
-                <p className="text-xs text-slate-500 italic">
+                <p className="no-print text-xs text-slate-500 italic">
                   Render-only — appears on the printed Form I but is not stored
                   on save.
                 </p>
@@ -706,11 +709,14 @@ const FormIDeterminationModal = ({
 
           {/* ============================================================ */}
           {/* STAFF-ONLY PANEL — sibling of the print scope above.          */}
-          {/* Commit 5 will add .no-print to this wrapper. determination_  */}
+          {/* Commit 5 added .no-print to this wrapper. determination_     */}
           {/* notes is staff-only per PRIVACY_REVIEW.md and the parent     */}
           {/* route family has no handler for this resource at all.        */}
+          {/* The .no-print rule (display: none !important in @media       */}
+          {/* print) removes this entire subtree from print layout —       */}
+          {/* badge, lock icon, italic helper, AND the textarea contents. */}
           {/* ============================================================ */}
-          <div data-print-section="staff-only">
+          <div data-print-section="staff-only" className="no-print">
             <div className="rounded-lg border border-slate-300 bg-slate-50">
               <button
                 type="button"
@@ -753,19 +759,27 @@ const FormIDeterminationModal = ({
           </div>
 
           {saveError && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+            <div className="no-print flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{saveError}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-200">
+        <div className="no-print flex items-center justify-end gap-2 p-4 border-t border-slate-200">
           <button
             onClick={onClose}
             className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
           >
             {isView ? 'Close' : 'Cancel'}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+          >
+            <Printer size={16} />
+            Print
           </button>
           {!isView && (
             <button

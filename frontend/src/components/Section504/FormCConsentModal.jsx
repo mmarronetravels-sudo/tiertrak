@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, AlertCircle, AlertTriangle } from 'lucide-react';
+import { X, Save, AlertCircle, AlertTriangle, Printer } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { createConsent } from './api';
 import { interpolateTemplate, dateToIsoTimestamp, isoTimestampToDate } from './helpers';
@@ -153,14 +153,14 @@ const FormCConsentModal = ({
               Form C — {formC.title}
             </h2>
             {isView && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              <span className="no-print text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 Read-only revision
               </span>
             )}
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600"
+            className="no-print p-1 text-slate-400 hover:text-slate-600"
             aria-label="Close"
           >
             <X size={20} />
@@ -174,14 +174,24 @@ const FormCConsentModal = ({
               cannot be reproduced when re-viewing a saved revision.
               Followup branch: feat/504-form-c-render-payload-persistence */}
           {isView && (
-            <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <div className="no-print text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               Saved revisions include only the legally-binding fields (status, signatures, dates).
               To print Form C with parent contact info and evaluation methods, add a new revision.
             </div>
           )}
 
-          {/* Header fields */}
-          <section className="space-y-3">
+          {/* ============================================================ */}
+          {/* PRINT SCOPE — single sibling. Form C has no staff-only       */}
+          {/* content; every persisted column on student_504_evaluation_   */}
+          {/* consents is parent-visible by design. Commit 5 added         */}
+          {/* .print-form to this wrapper. The wrapper covers all          */}
+          {/* parent-facing form content; FE chrome (modal header, footer, */}
+          {/* view-mode banner, amber warning, italic helper copy,         */}
+          {/* saveError) is OUTSIDE this wrapper or carries .no-print.     */}
+          {/* ============================================================ */}
+          <div data-print-section="form-c" className="print-form space-y-6">
+            {/* Header fields */}
+            <section className="space-y-3">
             <h3 className="text-sm font-semibold text-slate-700">Notice header</h3>
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
@@ -221,7 +231,7 @@ const FormCConsentModal = ({
                 maxLength={SIGNATURE_TEXT_MAX}
                 className={inputBase}
               />
-              <div className="mt-1 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+              <div className="no-print mt-1 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 <span>
                   <strong>Parent-visible at write time.</strong> The "From" line is rendered as your
@@ -240,7 +250,7 @@ const FormCConsentModal = ({
           {!isView && (
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-700">Evaluation method</h3>
-              <p className="text-xs text-slate-500 italic">
+              <p className="no-print text-xs text-slate-500 italic">
                 These selections appear on the printed Form C but are not stored on save (no DB column).
               </p>
               <p className="text-sm text-slate-600">{formC.proposalLeadIn}</p>
@@ -334,7 +344,7 @@ const FormCConsentModal = ({
           {!isView && (
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-700">{formC.contactBlock.label}</h3>
-              <p className="text-xs text-slate-500 italic">
+              <p className="no-print text-xs text-slate-500 italic">
                 These appear on the printed Form C but are not stored on save (no DB column).
               </p>
               <div className="grid grid-cols-2 gap-3">
@@ -358,22 +368,34 @@ const FormCConsentModal = ({
             </section>
           )}
 
-          <p className="text-xs text-slate-500 italic">Enclosure: {formC.enclosure}</p>
+            <p className="text-xs text-slate-500 italic">Enclosure: {formC.enclosure}</p>
+          </div>
+          {/* ============================================================ */}
+          {/* END PRINT SCOPE                                                */}
+          {/* ============================================================ */}
 
           {saveError && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+            <div className="no-print flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
               <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <span>{saveError}</span>
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-200">
+        <div className="no-print flex items-center justify-end gap-2 p-4 border-t border-slate-200">
           <button
             onClick={onClose}
             className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
           >
             {isView ? 'Close' : 'Cancel'}
+          </button>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200"
+          >
+            <Printer size={16} />
+            Print
           </button>
           {!isView && (
             <button
