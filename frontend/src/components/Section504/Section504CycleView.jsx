@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, Eye, AlertCircle, ChevronDown, ChevronRight } from 'lu
 import { logError } from '../../utils/logError';
 import { getCycleBundle } from './api';
 import FormCConsentModal from './FormCConsentModal';
+import FormIDeterminationModal from './FormIDeterminationModal';
 
 // Single-cycle drill-in. Renders the cycle bundle (cycle row + consents
 // + eligibility_determinations + plans + team_members) and exposes the
@@ -28,6 +29,7 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [formCModal, setFormCModal] = useState(null); // null | { mode, consent? }
+  const [formIModal, setFormIModal] = useState(null); // null | { mode, determination? }
   const [historyOpen, setHistoryOpen] = useState({}); // { c: bool, i: bool, j: bool }
 
   const reload = useCallback(async () => {
@@ -107,8 +109,9 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
             title="Form I — Eligibility Determination"
             revisions={determinations}
             describe={(d) => `${d.eligibility_status} · saved ${new Date(d.created_at).toLocaleString()}`}
-            onAdd={null}
-            disabledReason="Form I editor lands in the next commit"
+            onAdd={() => setFormIModal({ mode: 'add' })}
+            onViewCurrent={(d) => setFormIModal({ mode: 'view', determination: d })}
+            onViewHistorical={(d) => setFormIModal({ mode: 'view', determination: d })}
             historyOpen={!!historyOpen.i}
             onToggleHistory={() => setHistoryOpen((p) => ({ ...p, i: !p.i }))}
           />
@@ -138,6 +141,21 @@ const Section504CycleView = ({ user, API_URL, student, cycleId, onBack }) => {
           onClose={() => setFormCModal(null)}
           onSaved={() => {
             setFormCModal(null);
+            reload();
+          }}
+        />
+      )}
+
+      {formIModal && (
+        <FormIDeterminationModal
+          API_URL={API_URL}
+          user={user}
+          cycleId={cycleId}
+          mode={formIModal.mode}
+          existingDetermination={formIModal.determination || null}
+          onClose={() => setFormIModal(null)}
+          onSaved={() => {
+            setFormIModal(null);
             reload();
           }}
         />

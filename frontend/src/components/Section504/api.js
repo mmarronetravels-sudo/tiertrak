@@ -100,3 +100,32 @@ export function createConsent(API_URL, body) {
     body: JSON.stringify(body),
   });
 }
+
+// POST /api/student-504/eligibility-determinations — Form I.
+//
+// Append-only revision contract identical to /consents: each successful
+// POST creates a NEW row; no PUT. Latest-by-created_at is "current."
+//
+// Body shape (all optional except cycle_id):
+//   {
+//     cycle_id,
+//     eligibility_status?:    'pending' | 'eligible' | 'not_eligible',
+//     determination_notes?:   string (UNCAPPED — eligibility reasoning
+//                             paragraphs, see route comment),
+//     determined_at?:         ISO timestamp (YYYY-MM-DDTHH:MM:SSZ),
+//   }
+//
+// Privacy: determination_notes is STAFF-ONLY per the §4B permission
+// tier matrix. The parent route family does NOT expose this resource at
+// all (routes/parent504.js has no eligibility-determinations handler),
+// so the column cannot leak via the parent surface. The FE surface that
+// drives this field MUST keep it OUTSIDE any print-scope container so
+// commit 5's CSS print gating reliably excludes it from the printed
+// Form I delivered to the parent.
+export function createDetermination(API_URL, body) {
+  return send(API_URL, `/student-504/eligibility-determinations`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}
