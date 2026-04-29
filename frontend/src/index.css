@@ -1,10 +1,34 @@
 @import "tailwindcss";
-/* Print Styles for MTSS Report */
+/* Print Styles for MTSS Report and Section 504 forms.
+ *
+ * The MTSS Report rules below were the original intent of this block.
+ * Section 504 (commit 5 of feat/504-form-cij-frontend) layers ADDITIVE
+ * rules on top, without altering the MTSS Report behavior:
+ *
+ *   - .no-print { display: none !important } removes elements from print
+ *     layout entirely. display: none overrides the .fixed.inset-0 *
+ *     visibility: visible rule above, so a .no-print descendant of a
+ *     visible modal still vanishes during print. This is how Form I's
+ *     staff-only determination_notes panel is excluded — see
+ *     FormIDeterminationModal.jsx file header for the structural rule
+ *     and grep target.
+ *
+ *   - @page sets the print page margins so form content has breathing
+ *     room on the printed page.
+ *
+ *   - The textarea rule lets long content (long accommodations text on
+ *     Form J, long Section A textareas on Form I, long assessmentsList
+ *     on Form C) render its full height during print rather than
+ *     clipping to its on-screen rows. height: auto + overflow: visible
+ *     is the cleanest CSS-only approach; some browsers' print engines
+ *     still clip very long content, which is a known print-CSS quirk
+ *     not worth solving with JSX duplication.
+ */
 @media print {
   body * {
     visibility: hidden;
   }
-  
+
   .fixed.inset-0 {
     position: absolute !important;
     visibility: visible !important;
@@ -13,8 +37,22 @@
     height: auto !important;
     overflow: visible !important;
   }
-  
+
   .fixed.inset-0 * {
     visibility: visible !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 0.5in;
+  }
+
+  textarea {
+    height: auto !important;
+    min-height: 5rem;
+    overflow: visible !important;
   }
 }
