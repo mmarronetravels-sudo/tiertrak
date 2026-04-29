@@ -71,3 +71,32 @@ export function createCycle(API_URL, { student_id, form_set_id, form_set_version
     body: JSON.stringify({ student_id, form_set_id, form_set_version }),
   });
 }
+
+// POST /api/student-504/consents — Form C (Prior Notice and Consent to Evaluate).
+//
+// Append-only revision contract: each successful POST creates a NEW row in
+// student_504_evaluation_consents for the cycle. The cycle bundle returns
+// the full history; latest-by-created_at is treated as "current" by the FE.
+// There is no PUT — staff cannot edit a saved consent in place; they
+// "Save" again, which appends a new revision.
+//
+// Body shape (all optional except cycle_id):
+//   {
+//     cycle_id,
+//     consent_status?:        'pending' | 'granted' | 'denied' | 'revoked',
+//     parent_signature_text?: string (≤300 chars),
+//     parent_signature_at?:   ISO timestamp (YYYY-MM-DDTHH:MM:SSZ),
+//     staff_signature_text?:  string (≤300 chars),
+//     staff_signature_at?:    ISO timestamp,
+//   }
+//
+// Privacy: staff_signature_text is parent-visible at write time per the
+// PRIVACY_REVIEW.md print-mode caveat. The FE surface that drives this
+// field MUST display the parent-visible warning to staff before save.
+export function createConsent(API_URL, body) {
+  return send(API_URL, `/student-504/consents`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  });
+}

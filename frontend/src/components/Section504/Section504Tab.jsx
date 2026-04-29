@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Shield, Plus, AlertCircle } from 'lucide-react';
+import { Shield, Plus, AlertCircle, ArrowRight } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { listCyclesForStudent, createCycle } from './api';
+import Section504CycleView from './Section504CycleView';
 import {
   FORM_SET_ID,
   FORM_SET_VERSION,
@@ -33,6 +34,9 @@ const Section504Tab = ({ user, API_URL, student }) => {
   const [loadError, setLoadError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+  // When set, replaces the cycle list with the drill-in for that cycle.
+  // null → list view. Cleared on Back to cycles.
+  const [selectedCycleId, setSelectedCycleId] = useState(null);
 
   useEffect(() => {
     if (!student?.id) return;
@@ -91,7 +95,7 @@ const Section504Tab = ({ user, API_URL, student }) => {
             Form set: {FORM_SET_ID} ({FORM_SET_VERSION})
           </span>
         </div>
-        {!student.archived && (
+        {!student.archived && !selectedCycleId && (
           <button
             onClick={handleStartCycle}
             disabled={creating}
@@ -103,61 +107,77 @@ const Section504Tab = ({ user, API_URL, student }) => {
         )}
       </div>
 
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
+      {selectedCycleId ? (
+        <Section504CycleView
+          user={user}
+          API_URL={API_URL}
+          student={student}
+          cycleId={selectedCycleId}
+          onBack={() => setSelectedCycleId(null)}
+        />
+      ) : (
+        <>
+          {loading && <p className="text-sm text-slate-500">Loading…</p>}
 
-      {loadError && (
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
-          <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <span>{loadError}</span>
-        </div>
-      )}
+          {loadError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{loadError}</span>
+            </div>
+          )}
 
-      {createError && (
-        <div className="flex items-start gap-2 p-3 mb-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
-          <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <span>{createError}</span>
-        </div>
-      )}
+          {createError && (
+            <div className="flex items-start gap-2 p-3 mb-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
+              <span>{createError}</span>
+            </div>
+          )}
 
-      {!loading && !loadError && cycles.length === 0 && (
-        <p className="text-sm text-slate-500">
-          No 504 cycles yet. Click{' '}
-          <span className="font-medium">Start 504 Cycle</span> to begin.
-        </p>
-      )}
+          {!loading && !loadError && cycles.length === 0 && (
+            <p className="text-sm text-slate-500">
+              No 504 cycles yet. Click{' '}
+              <span className="font-medium">Start 504 Cycle</span> to begin.
+            </p>
+          )}
 
-      {!loading && cycles.length > 0 && (
-        <ul className="divide-y divide-slate-100">
-          {cycles.map((cycle, idx) => (
-            <li
-              key={cycle.id}
-              className="py-3 flex items-center justify-between gap-4"
-            >
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-slate-800">
-                    Cycle #{cycle.id}
-                  </span>
-                  {idx === 0 && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                      Current
-                    </span>
-                  )}
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize">
-                    {cycle.status}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Started {new Date(cycle.created_at).toLocaleDateString()} ·
-                  Form set {cycle.form_set_id} ({cycle.form_set_version})
-                </p>
-              </div>
-              <span className="text-xs text-slate-400">
-                Forms C/I/J — next commit
-              </span>
-            </li>
-          ))}
-        </ul>
+          {!loading && cycles.length > 0 && (
+            <ul className="divide-y divide-slate-100">
+              {cycles.map((cycle, idx) => (
+                <li
+                  key={cycle.id}
+                  className="py-3 flex items-center justify-between gap-4"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-slate-800">
+                        Cycle #{cycle.id}
+                      </span>
+                      {idx === 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                          Current
+                        </span>
+                      )}
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize">
+                        {cycle.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Started {new Date(cycle.created_at).toLocaleDateString()}{' '}
+                      · Form set {cycle.form_set_id} ({cycle.form_set_version})
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCycleId(cycle.id)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 rounded-lg"
+                  >
+                    Open
+                    <ArrowRight size={14} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </div>
   );
