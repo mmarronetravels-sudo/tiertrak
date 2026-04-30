@@ -102,6 +102,62 @@ function isPositiveInt(n) {
 }
 
 // ============================================================
+// Tenant configuration — active form set
+// ============================================================
+
+// GET /active-form-set — return this tenant's currently active 504 form set.
+//
+// Drives the staff Section 504 tab visibility gate (Followup #26): tenants
+// that have not been provisioned with a tenant_form_sets row should not see
+// the 504 tab at all, since none of the staff workflows (start cycle, write
+// Form C/I/J) can succeed for them. The frontend treats any non-OK from
+// this endpoint — including 404 — as "tab off."
+//
+// Mirrors the SELECT shape used by parent504.js GET /procedural-safeguards:
+// same tenant scoping, same is_active filter, same most-recently-created
+// tiebreaker for the "multiple active rows" edge case the schema permits
+// (tenant_form_sets has UNIQUE (tenant_id, form_set_id) but no constraint
+// limiting one active row per tenant). A schema-level fix is tracked
+// separately and intentionally NOT in scope for this endpoint.
+//
+// Differences from the parent route's tenant_form_sets read:
+//   - refuseParentRole gated. Parent users have no use for the staff tab
+//     visibility gate; routing parents here is a misconfiguration, not a
+//     data exposure (the guard 403s before any query runs).
+//   - Returns BOTH form_set_id AND form_set_version, since the staff FE
+//     uses both fields when POSTing to /cycles. This lets the FE drop the
+//     compile-time form-set-identity import and treat the DB as the
+//     source of truth.
+//
+// CLAUDE.md compliance:
+//   - §4B: tenant_form_sets carries no PII (tenant_id is an internal id;
+//     form_set_id and form_set_version are published policy identifiers
+//     shared across tenants). Nothing logged on the success path.
+//   - §5: tenantId is derived from req.user.tenant_id (JWT claim) — never
+//     read from req.body, req.query, or req.params. Cross-tenant read is
+//     impossible via this handler.
+router.get('/active-form-set', requireAuth, refuseParentRole, async (req, res) => {
+  try {
+    const tenantId = req.user.tenant_id;
+    const result = await pool.query(
+      `SELECT form_set_id, form_set_version
+       FROM tenant_form_sets
+       WHERE tenant_id = $1 AND is_active = TRUE
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [tenantId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No active form set for tenant' });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[student504 GET /active-form-set] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ============================================================
 // Cycles — POST, GET by student, GET by id
 // ============================================================
 
