@@ -2608,3 +2608,238 @@ NEXT SESSION SHOULD
   (still pending across Sessions 36, 37, 38, and 38b now). Trivial
   gh pr create + merge.
 ================================================================================
+SESSION: 2026-04-30T09:57:54-07:00 (39)
+BRANCH:  chore/activities-log-session-39
+DISPOSITION: pr-opened:<URL — fill in after gh pr create>
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three things landed: (1) hot fix for a production CSV-import crash
+  (missing lucide-react icon import) shipped as PR #33; (2) the Session
+  38 + 38b activities entries shipped to main as PR #32 with a pre-merge
+  §4B catch-and-scrub on the Session 38b entry, plus PR #30 closing
+  transitively via GitHub reachability auto-merge; (3) Owner-side
+  scoping conversation about a new prospect in Honduras with no code
+  work produced — sandbox planning deferred to Session 40 pending an
+  email exchange. No migrations, no production DB writes, no schema
+  changes this session.
+
+PR #33 — fix/csv-import-icon-import → main (MERGED)
+  Title: fix(students): add missing FileSpreadsheet icon import
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/33
+  Hot fix for a production crash on the staff Import CSV surface. In
+  production the bundle index-Cumojc4B.js threw "Uncaught
+  ReferenceError: FileSpreadsheet is not defined" the moment a staff
+  user clicked Import CSV — the modal's header rendered
+  <FileSpreadsheet /> at App.jsx:5662 and the modal's button rendered
+  it again at App.jsx:5713, but the symbol was never added to the
+  lucide-react import block at App.jsx:4. Fix was a one-line additive
+  insertion of FileSpreadsheet next to FileText. Diff: 1+/1- (trailing
+  whitespace deliberately preserved so the diff was purely additive).
+  Pre-fix verified the symbol is a real lucide-react export; post-fix
+  vite build clean (only the carried-forward 500 kB chunk advisory)
+  and zero new lint errors on the touched line. No reviewer subagents
+  required (icon-import-only render fix touches no PII / auth / SQL /
+  tenant surfaces); §2A self-merge per CLAUDE.md.
+
+  Smoke-test design pivot: the standard local-DB smoke test path
+  (start backend locally, override VITE_API_URL, reset the local
+  seed test admin password via scripts/seed-tier1-local-test.js, log
+  in) was abandoned
+  mid-session after the wasted-effort discovery that the localhost
+  Vite frontend reads VITE_API_URL from .env which points at the
+  production Render backend. The local-DB password reset therefore
+  had no effect on the localhost frontend's auth flow. Pivoted to:
+  localhost frontend (with the fix) authenticated against the
+  production Render backend with real production credentials, modal-
+  renders verification only, no CSV uploaded. Render-only fix →
+  modal-renders is the full surface area. After merge + Render auto-
+  deploy, repeated the verification on the live production site with
+  hard-refresh + DevTools open — modal opened clean, icon visible,
+  zero FileSpreadsheet errors. No data written at any point in the
+  smoke-test loop.
+
+  Engineering note worth banking: in this codebase's current dev
+  setup, `npm --prefix frontend run dev` does NOT auto-wire to a
+  local backend — it reads VITE_API_URL from .env, which currently
+  resolves to production. Verifying VITE_API_URL is a required
+  preflight before any local-DB-side smoke-test prep. SMOKE_TESTING.md
+  (Followup #11) needs this in its first paragraph.
+
+PR #32 — chore/activities-log-session-38b → main (MERGED with §4B scrub)
+  URL: https://github.com/mmarronetravels-sudo/tiertrak/pull/32
+  Carried the Session 38 entry (commit ed44d9b, originally pushed as
+  PR #30) plus the Session 38b same-day continuation entry (commits
+  1177807 + ea6d784) plus a pre-merge §4B scrub commit (8e6b04b)
+  added in Session 39.
+
+  §4B catch pre-merge: the Session 38b entry as originally drafted
+  named one Oregon production tenant by school-district name in the
+  "Net-new from this Session 38b continuation" followups section.
+  CLAUDE.md §4B treats a school's actual name as PII. Caught in
+  Owner-side review of `gh pr diff 32` before merge; scrubbed via a
+  fourth commit (8e6b04b) replacing the school name with "One Oregon
+  production tenant (tenant_id=8)" so the followup remains actionable
+  without naming the tenant. Audit-trail comment posted to PR #32
+  documenting that the framing in the original PR body ("tenant
+  names appear only in PR cross-references which are public-record
+  school-district names, not §4B PII") was wrong on two counts:
+  (a) school names ARE §4B PII per CLAUDE.md, and (b) the name in
+  question appeared in the body of the followup, not in a
+  cross-reference.
+
+  Merged 2026-04-30T17:24:00Z, merge commit 9cf0b01.
+
+PR #30 — chore/activities-log-session-38 → main (AUTO-MERGED via reachability)
+  URL: https://github.com/mmarronetravels-sudo/tiertrak/pull/30
+  Closed-as-merged automatically when PR #32 landed. Mechanism:
+  GitHub auto-merges a PR transitively when its head commit becomes
+  reachable from the base by any path. PR #30's head was ed44d9b
+  (the Session 38 entry, the parent of PR #32's branch), so the
+  moment 9cf0b01 landed on main, ed44d9b was reachable and GitHub
+  flipped PR #30 to MERGED at 2026-04-30T17:24:01Z (one second after
+  PR #32) with no separate merge commit produced. Audit-trail comment
+  posted explaining the mechanism for future reviewers.
+
+  Engineering note worth banking: when stacking a chore PR off
+  another chore PR (which we did here for the Session 38b
+  continuation), expect transitive auto-merge rather than manual
+  closure. `gh pr close` will reject the close attempt with "can't
+  be closed because it was already merged". If audit-trail comments
+  matter, post them via `gh pr comment` (which works on merged PRs)
+  rather than chaining them to `gh pr close`.
+
+FILES TOUCHED
+  PR #33: frontend/src/App.jsx — line 4, +1 symbol (FileSpreadsheet)
+    in the existing lucide-react import block adjacent to FileText.
+    No other lines changed.
+  PR #32 (Session 39 commit only — earlier commits documented in
+    Session 38 + 38b entries): activities.txt:2543 — line edit
+    replacing the school name with "One Oregon production tenant
+    (tenant_id=8)". Surrounding paragraph (2544-2549) unchanged.
+  PR #32 + PR #30 PR comments: GitHub-side audit trail; no repo
+    files modified.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No new SQL queries, no new routes, no DB schema changes, no
+  production DB writes this session. PR #33 is a pure FE render
+  change touching no data layer; PR #32 §4B scrub is metadata only.
+
+PRIVACY REVIEW (Section 4B)
+  PR #33: render-only icon import; no PII fields, error envelopes,
+    logging paths, or response bodies touched. No 4B surfaces.
+  PR #32 §4B scrub commit (8e6b04b): explicitly removed §4B PII from
+    the activities entry pre-merge (school name → tenant_id
+    reference). Post-scrub re-scan: zero remaining school names,
+    student names, staff names, emails, signature text, tenant
+    subdomains. Tenant integer IDs (tenant_id=4, 8) appear —
+    internal database IDs, not §4B PII per established convention.
+
+VERIFICATION
+  PR #33:
+  - vite build clean (only carried-forward 500 kB chunk advisory)
+  - eslint frontend/src/App.jsx — pre-existing 44 errors / 11
+    warnings unchanged; new line added zero errors
+  - Manual smoke test (localhost frontend + production Render
+    backend, real prod credentials): Import CSV modal opened
+    cleanly, FileSpreadsheet icon rendered at both call sites,
+    zero new console errors. No data written.
+  - Production verification post-deploy: hard-refresh on the live
+    production site with DevTools open, click Import CSV — modal
+    opened clean, icon visible, zero FileSpreadsheet errors. No
+    data written.
+  PR #32:
+  - gh pr view 32 mergeStateStatus = CLEAN before and after the
+    §4B scrub commit
+  - grep on the school name removed by the scrub commit — zero
+    matches post-scrub (catching the one §4B leak; full re-scan
+    also clean for other school names and PII)
+  - Post-merge: git log origin/main --oneline -5 confirms 9cf0b01
+    (PR #32 merge) at HEAD with the expected commit chain
+  PR #30: gh pr view 30 confirms state=MERGED, mergedAt=
+    2026-04-30T17:24:01Z, mergeCommit.oid=ed44d9b (original head;
+    no separate merge commit).
+
+DEFERRED
+  - Honduras prospect sandbox provisioning. Owner-side conversation
+    only this session — confirmed prospect is an American /
+    international school in Honduras with Cognia accreditation, no
+    Section 504 use, but loved the rest of the demo surfaces.
+    Sandbox provisioning gated on a follow-up email exchange to
+    confirm scope, urgency, calendar alignment, and any other fit
+    details before code work begins. Planned for Session 40.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 39 ---
+  - #26 NEW — Hide Section 504 tab on tenants with no active
+    `tenant_form_sets` row. Currently the staff-side Section 504 tab
+    renders on every student profile regardless of form-set
+    registration, and clicking "Start 504 Cycle" returns a 400 error
+    envelope. For non-504 customers (Honduras-style international,
+    future non-Oregon pre-form-set US tenants), the tab should be
+    hidden entirely via a tenant-scoped conditional (likely
+    fetch-on-mount of tenant_form_sets state, hide tab if no active
+    row). Surfaced by the Honduras prospect conversation; will become
+    a fast-follow if the Honduras prospect signs.
+
+  --- Followups carried forward with priority changes ---
+  - #11 — docs(dev): SMOKE_TESTING.md walkthrough. PRIORITY UPGRADED.
+    This session burned ~30 minutes on dev-environment friction
+    (wrong-DB password reset, then prod-creds-pivot smoke test) that
+    a one-paragraph "logging into a sandbox tenant for local smoke
+    testing — first decide local-vs-prod backend" would have
+    prevented. Promote from "below the line" to a real fast-follow
+    at the next quiet moment.
+  - #22 — .claude/settings.json drift cleanup. DIAGNOSTIC ADDED. The
+    file re-appears as drift on every branch switch with the same
+    modification, indicating auto-write by the IDE/harness rather
+    than human edit. Cleanup strategy should investigate the
+    auto-write source first (gitignore the file? carve out
+    auto-managed vs Owner-managed sections? accept that the file is
+    auto-managed?), not commit the current state.
+
+  --- Stale local + remote refs surfaced this session ---
+  - Local branches with no open PR (carryover; safe `-d` candidates
+    whenever desired): chore/activities-log-session-36,
+    chore/activities-log-session-38, chore/seed-humble-isd-sandbox,
+    feat/504-form-cij-frontend.
+  - Remote-only stragglers: origin/chore/activities-log (no session
+    suffix; pre-Session-25 pending), origin/fix/resource-1-4-
+    calendar-underscores (pre-Session-25 pending),
+    origin/fix/csv-import-icon-import (PR #33 was merged via the
+    GitHub UI without --delete-branch, so the remote ref persists).
+    Five-minute cleanup whenever convenient.
+
+  --- Carry-forward from Session 38 / 38b (unchanged) ---
+  All other followups from the consolidated Session 38 / 38b followup
+  list carry forward unchanged: #1, #3, #12, #17 (the May 4 release
+  commitment for the 504 FE shipped in Session 38, but these
+  followups remain open on their own merits); #2, #5-#10, #13-#21,
+  #23-#25. See the prior master-index file for the full list.
+
+NEXT SESSION SHOULD
+  Priority 1 — Owner-side draft + send the Honduras prospect
+  fit-confirmation email. Planning work; no code yet. Sandbox
+  provisioning is gated on response.
+
+  Priority 2 — Once Honduras prospect responds, plan Session 40
+  proper for sandbox provisioning. Reuse scripts/seed-humble-isd-
+  sandbox.js as a template but parameterize for: a different tenant
+  name (TBD with prospect), no tenant_form_sets row registered
+  (since they don't use 504), and possibly a slimmer student roster
+  appropriate for the demo size. Decide whether Followup #26 (hide
+  504 tab) is a fast-follow that lands first so the Honduras tenant
+  has a clean product surface from day one.
+
+  Priority 3 — Optional: take Followup #19 (runtime cross-tenant
+  probe in incognito) — still parked from PR #31 pre-merge, ~5
+  minutes. Converts the SQL-layer evidence in PR #31's body to
+  runtime route-level evidence at the route layer.
+
+  Priority 4 — Optional: stale-branch cleanup (the four local
+  branches + three remote-only stragglers surfaced in this session).
+  Five-minute job; quiet-moment work.
+================================================================================
