@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Shield, Plus, AlertCircle, ArrowRight } from 'lucide-react';
 import { logError } from '../../utils/logError';
-import { listCyclesForStudent, createCycle } from './api';
+import { listCyclesForStudent, createCycle, getActiveFormSet } from './api';
 import Section504CycleView from './Section504CycleView';
-import {
-  FORM_SET_ID,
-  FORM_SET_VERSION,
-} from '../../data/504-form-sets/oregon-ode-2025';
 
 // Staff-only Section 504 surface for the student profile.
 //
@@ -37,6 +33,12 @@ const Section504Tab = ({ user, API_URL, student }) => {
   // When set, replaces the cycle list with the drill-in for that cycle.
   // null → list view. Cleared on Back to cycles.
   const [selectedCycleId, setSelectedCycleId] = useState(null);
+  // Active form set for the calling tenant, or null. Followup #26:
+  // null is overloaded — it covers BOTH "fetch in flight" (initial state)
+  // and "tenant has no active form set configured." Both render the same
+  // way (whole component returns null), so a single state slot suffices
+  // and no separate loading/error flag is needed for this fetch.
+  const [activeFormSet, setActiveFormSet] = useState(null);
 
   useEffect(() => {
     if (!student?.id) return;
@@ -56,6 +58,23 @@ const Section504Tab = ({ user, API_URL, student }) => {
         if (!cancelled) setLoading(false);
       }
     })();
+    // Active form set fetch (Followup #26). Runs in parallel with the
+    // cycles fetch — neither awaits the other. A 404 from the backend
+    // ("tenant has no active form set") is an expected configuration
+    // state, not an error, and propagates here as a thrown Error via
+    // api.js's send() wrapper. Either branch leaves activeFormSet at the
+    // right value (object on success, null on any failure including
+    // 404), and the render gate below treats null as "tab off."
+    (async () => {
+      try {
+        const fs = await getActiveFormSet(API_URL);
+        if (!cancelled) setActiveFormSet(fs);
+      } catch (err) {
+        // err carries no PII — api.js throws a status-only Error. Safe to log.
+        logError('[Section504Tab active form set]', err);
+        if (!cancelled) setActiveFormSet(null);
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -67,8 +86,8 @@ const Section504Tab = ({ user, API_URL, student }) => {
     try {
       const created = await createCycle(API_URL, {
         student_id: student.id,
-        form_set_id: FORM_SET_ID,
-        form_set_version: FORM_SET_VERSION,
+        form_set_id: activeFormSet.form_set_id,
+        form_set_version: activeFormSet.form_set_version,
       });
       // Append-only timeline; newest first means prepend.
       setCycles((prev) => [created, ...prev]);
@@ -84,6 +103,10 @@ const Section504Tab = ({ user, API_URL, student }) => {
 
   if (!student) return null;
   if (user?.role === 'parent') return null;
+  // Followup #26: hide the tab entirely if this tenant has no active form
+  // set configured. Covers both the in-flight initial state and the
+  // genuinely-unconfigured state — see activeFormSet declaration above.
+  if (!activeFormSet) return null;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
@@ -92,7 +115,7 @@ const Section504Tab = ({ user, API_URL, student }) => {
           <Shield size={20} className="text-slate-400" />
           <h2 className="text-lg font-semibold text-slate-800">Section 504</h2>
           <span className="text-xs text-slate-400">
-            Form set: {FORM_SET_ID} ({FORM_SET_VERSION})
+            Form set: {activeFormSet.form_set_id} ({activeFormSet.form_set_version})
           </span>
         </div>
         {!student.archived && !selectedCycleId && (

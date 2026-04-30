@@ -49,6 +49,20 @@ export function listCyclesForStudent(API_URL, studentId) {
   });
 }
 
+// GET /api/student-504/active-form-set
+// Returns { form_set_id, form_set_version } for the calling tenant's
+// currently active 504 form set. Drives the Section 504 tab visibility
+// gate (Followup #26): the backend returns 404 when no active row exists,
+// which propagates here as a thrown Error via send(). Callers MUST treat
+// any thrown error as "no active form set" and hide the tab — do NOT
+// surface a "tab broken" message, since "no form set yet" is a normal,
+// expected configuration state for newly provisioned tenants.
+export function getActiveFormSet(API_URL) {
+  return send(API_URL, `/student-504/active-form-set`, {
+    method: 'GET',
+  });
+}
+
 // GET /api/student-504/cycles/:cycleId
 // Returns the cycle bundle: cycle row + consents[] + eligibility_determinations[]
 // + plans[] + team_members[]. 404 for both "not found" and "wrong tenant".
