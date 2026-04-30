@@ -2540,7 +2540,7 @@ DEFERRED (disclosed in PR #31 body, accepted by reviewer)
 OPEN ITEMS / FOLLOW-UPS
 
   --- Net new from this Session 38b continuation ---
-  - Molalla River Academy (tenant_id=8) has no subdomain set in the
+  - One Oregon production tenant (tenant_id=8) has no subdomain set in the
     tenants table. Column is UNIQUE-but-nullable per schema.sql:8, so
     the schema permits this, but if any auth-routing or tenant-
     resolution code path keys off subdomain, this tenant may currently
