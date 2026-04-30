@@ -2610,7 +2610,7 @@ NEXT SESSION SHOULD
 ================================================================================
 SESSION: 2026-04-30T09:57:54-07:00 (39)
 BRANCH:  chore/activities-log-session-39
-DISPOSITION: pr-opened:<URL — fill in after gh pr create>
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/34
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Three things landed: (1) hot fix for a production CSV-import crash
