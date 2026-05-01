@@ -2845,7 +2845,7 @@ NEXT SESSION SHOULD
 ================================================================================
 SESSION: 2026-04-30T19:30:00-07:00 (40)
 BRANCH:  chore/activities-log-session-40
-DISPOSITION: pr-opened:<TBD-after-pr-create>
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/37
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Same-day continuation of Session 39 (which closed mid-morning).
