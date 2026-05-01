@@ -208,6 +208,12 @@ function validateRoster(roster) {
       } else if (hasLineBreak(a.full_name)) {
         errors.push(`ADMINS[${i}].full_name: must not contain carriage returns or newlines; got: ${fmt(a.full_name)}`);
       }
+      // role is OPTIONAL on ADMINS. Defaults to 'district_admin' in buildSql.
+      // If specified, must be one of ALLOWED_ROLES — typical override is
+      // 'school_admin' for non-district tenants (charter, international).
+      if (a.role !== undefined && !ALLOWED_ROLES.has(a.role)) {
+        errors.push(`ADMINS[${i}].role: when specified, must be one of [${[...ALLOWED_ROLES].map(r => `'${r}'`).join(', ')}]; got: ${fmt(a.role)}`);
+      }
     });
   }
 
@@ -413,13 +419,14 @@ function sqlInt(n) {
 async function buildSql(roster, rosterPath) {
   // Build accounts in stable order: admins first, then staff in roster
   // file order. This is also the order the password table will print.
-  // ADMINS auto-fill role='district_admin' and school_wide_access=true,
-  // mirroring scripts/seed-humble-isd-sandbox.js semantics.
+  // ADMINS default to role='district_admin' but may override via a.role
+  // (e.g., 'school_admin' for charter/international tenants).
+  // school_wide_access stays hardcoded true for ADMINS.
   const accounts = [
     ...roster.ADMINS.map(a => ({
       email: a.email,
       full_name: a.full_name,
-      role: 'district_admin',
+      role: a.role || 'district_admin',
       school_wide_access: true,
       kind: 'admin',
     })),
