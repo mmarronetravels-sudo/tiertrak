@@ -3383,3 +3383,404 @@ NEXT SESSION SHOULD
   Session-40 branches plus the long-standing carryover). Five-
   minute job.
 ================================================================================
+SESSION: 2026-05-01T11:00:00-07:00 (41)
+BRANCH:  chore/activities-log-session-41
+DISPOSITION: pr-opened:<TBD-after-pr-create>
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three docs PRs landed and one stale-branch cleanup. Net engineering
+  output: docs/operational-notes/ now holds the consolidated operational
+  rules from Sessions 38b/39/40 production-data-ops experience;
+  Followups #11 and #34 are closed; six stale refs were swept; one
+  stale ref intentionally retained as new Followup #35.
+
+  No application code touched. No production database writes. No
+  schema changes. No PII fields read or written.
+
+  (1) PR #37 — landed Session 40 activities entry on main (chore/
+      activities-log self-merge pattern, two-commit URL fill).
+  (2) PR #38 — closes Followup #34. New
+      docs/operational-notes/cc-chat-rendering.md documenting a
+      three-point byte-diff diagnostic of CC's chat-rendering
+      pipeline. Three findings; original Session 40 hypothesis
+      (smart-quote / em-dash / base64url corruption) NOT supported
+      by the diagnostic.
+  (3) PR #39 — closes Followup #11. New
+      docs/operational-notes/smoke-testing.md consolidating
+      operational rules from Sessions 38b/39/40 into a runbook.
+  (4) P6 — stale-branch cleanup. Six refs deleted; one (calendar-
+      underscores) deferred as new Followup #35.
+
+PR #37 — chore/activities-log-session-40 → main (MERGED)
+  Title: chore(activities): log Session 40 — PR #35 (504 tab hide)
+         + PR #36 (generic seed script) + first non-Oregon prospect
+         provisioned
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/37
+  Merged 2026-05-01T14:52:19Z, merge commit a5db51e.
+
+  Standard chore/activities-log self-merge pattern. Two-commit URL
+  fill (placeholder DISPOSITION on commit-1 (3d5097f), real PR URL
+  on commit-2 (10b6c44)).
+
+  Pre-merge §4B audit caught and scrubbed two PII surfaces in the
+  Session 40 draft before commit:
+    - The prospect's school name appeared 2 times (originally
+      reported as 3, self-corrected pre-execution after a re-grep)
+      in CATCHES #5 and #6. Replaced with "the prospect" / "the
+      new prospect" in both places. Engineering content
+      (chat-rendering hypothesis, Cowork-side miss observation)
+      survived intact.
+    - Two synthetic student names in the PRODUCTION DB WRITES
+      section's cleanup paragraph. Replaced with "Student-A" /
+      "Student-B" placeholders. Worth banking: synthetic student
+      names attached to real production DB rows are treated as
+      §4B PII by Cowork-side playbook with no carve-out for
+      synthetic origin; the same STOP rule applies symmetrically
+      to describing the scrub itself (don't name what was
+      scrubbed). Future activities entries follow the same rule
+      in both directions.
+
+  No reviewer subagents required (chore/activities-log + §4B-clean
+  metadata; permission-by-omission framing). §2A self-merge.
+
+PR #38 — docs/followup-34-chat-rendering → main (MERGED)
+  Title: docs(operational-notes): CC chat rendering and password
+         fidelity findings (Followup #34)
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/38
+  Merged 2026-05-01T16:10:38Z, merge commit 503dd93.
+
+  Closes Followup #34. New file
+  docs/operational-notes/cc-chat-rendering.md (129 lines)
+  documenting a three-point byte-diff diagnostic of CC's chat-
+  rendering pipeline. Repro script lives in operator workspace
+  (Path B, never committed); only the findings note enters the
+  repo.
+
+  Diagnostic methodology:
+    - Point A: operator's local terminal direct stderr, byte-faithful
+      ground truth (`node <script> 2> /tmp/A.bin`).
+    - Point B: CC bash tool stderr-to-disk via redirect, then xxd to
+      disk (`node <script> 2> /tmp/B.bin && xxd /tmp/B.bin > /tmp/B.hex`).
+    - Point C: CC chat panel rendered output, copied by operator
+      into local file, then xxd locally.
+    - Pairwise diffs: A-vs-B isolates bash-tool capture; B-vs-C
+      isolates chat-rendering plus clipboard; A-vs-C is end-to-end.
+
+  Three findings:
+    1. CR (0x0D) → LF (0x0A) in-place byte substitution at the
+       chat-display-to-clipboard layer. Single-byte transform,
+       identical file size, observed at byte offset 0x44b in
+       TEST 25 carriageReturn. Reproducible. Severity: moderate.
+       The only character-level transform observed across the
+       entire 33-test battery.
+    2. Line-level structural corruption in CC's bash-tool-result-
+       to-chat-display layer. Observed once when CC reported
+       `head -40 /tmp/B.hex` to chat: line 0x60's right-side
+       ASCII gloss column showed line 0x10's gloss content while
+       the hex column remained correct. The on-disk /tmp/B.hex
+       was correct (the operator verified locally). One
+       observation, NOT deliberately reproduced — characterized
+       in the doc as "worth banking, not isolated bug." Severity:
+       unknown. The most plausible candidate explanation for
+       Session 40's bcrypt-verify failures, but suggestive rather
+       than confirmed.
+    3. Lazy-render selection truncation in VS Code's CC chat
+       panel. Operator's first attempt to select-and-copy the
+       full chat output truncated at TEST 18 of 33 because
+       off-screen content wasn't in the DOM. Silent data loss,
+       no error indicator. Severity: high. Workaround: scroll
+       the chat panel to the bottom of the rendered content
+       before select-all.
+
+  Notable non-findings (Session 40's hypothesis NOT supported):
+    - Base64url alphabet (TESTs 01-04, including hyphen runs and
+      underscore runs) survived clean.
+    - Smart-typography candidates (TESTs 05-10): no em-dash
+      transforms, no curly quotes, no ellipsis collapse, no
+      apostrophe smart-quoting.
+    - Markdown attractor characters (TESTs 11-16): all preserved.
+    - Backslash escapes, multi-space runs, HTML angle brackets,
+      control bytes (tab, NUL, ESC) — all preserved.
+    - Column-aligned table (TEST 31): full multi-row table came
+      through byte-clean.
+    - Adversarial cell-edge tests (TESTs 32, 33) targeting the
+      "trailing hyphen at base64url cell edge becomes em-dash"
+      hypothesis specifically: did NOT corrupt.
+
+  Operational rule (run in operator's local terminal, never via
+  CC's bash tool, for sensitive output) reinforced, not loosened.
+
+  No reviewer subagents required (doc-only, no PII, no SQL, no
+  routes; permission-by-omission framing). §2A self-merge.
+
+PR #39 — docs/followup-11-smoke-testing → main (MERGED)
+  Title: docs(operational-notes): smoke-testing runbook
+         (Followup #11)
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/39
+  Merged 2026-05-01T16:52:22Z, merge commit 62ab49e.
+
+  Closes Followup #11. New file
+  docs/operational-notes/smoke-testing.md (176 lines) consolidating
+  operational rules from Sessions 38b/39/40 into a runbook for
+  future operators.
+
+  Six body sections:
+    1. VITE_API_URL preflight before any local-DB work.
+    2. Production data ops via Render psql (one-shot pattern with
+       BEGIN/COMMIT + RAISE EXCEPTION preflights, RAISE NOTICE
+       post-commit, /tmp/<file>.sql cleanup).
+    3. Seed scripts and password handling (the local-terminal
+       rule; cites cc-chat-rendering.md for the WHY, this doc is
+       the HOW). Section explicitly says do NOT redirect stderr
+       to a file (`2> passwords.txt` and equivalents); plaintexts
+       must stay in volatile terminal scrollback. Includes Cmd-K
+       scrollback clearing as post-delivery hygiene.
+    4. Roster template-name verification (the
+       `SELECT name FROM intervention_templates WHERE tenant_id
+       IS NULL ORDER BY name` pre-flight before drafting any
+       roster's INTERVENTIONS array).
+    5. Password rotation when chat exposure happens (UPDATE
+       skeleton in BEGIN/COMMIT envelope; hashes only in SQL;
+       plaintexts hand-delivered out-of-band).
+    6. VS Code chat panel lazy-render selection-truncation gotcha
+       (cites cc-chat-rendering.md Finding 3).
+
+  Plus a scannable pre-flight checklist (8 items mapping to the
+  body sections) and a Related section. Master-index aspirational
+  name SMOKE_TESTING.md resolves to this kebab-case path via a
+  one-line note at the top of the doc.
+
+  Establishes "note" vs "runbook" genre split inside
+  docs/operational-notes/: cc-chat-rendering.md is a "note"
+  (postmortem / findings); smoke-testing.md is a "runbook"
+  (procedure / checklist). Title parallel ("Cowork-side
+  operational note" vs "Cowork-side operational runbook") signals
+  the intended division of labor. Convention going forward.
+
+  No reviewer subagents required (doc-only, no PII, no SQL, no
+  routes; permission-by-omission framing). §2A self-merge.
+
+P6 — stale-branch cleanup
+  Six stale refs deleted from local + origin (rows 1-6 of the
+  P6 audit table):
+    - chore/activities-log-session-38 (local + remote, empty)
+    - chore/seed-humble-isd-sandbox (local + remote, empty)
+    - feat/504-form-cij-frontend (local + remote, empty)
+    - fix/csv-import-icon-import (remote-only, empty; PR #33
+      had been merged via GitHub UI without --delete-branch)
+    - chore/activities-log-session-36 (local + remote, had
+      unique commit 34a4a90 documenting Session 36 sandbox
+      provisioning; activities-log gap accepted permanently —
+      see Catches below)
+    - origin/chore/activities-log (remote-only, had unique
+      commit 56a9efd documenting the calendar-underscores
+      session; coupled with the deferred fix branch)
+
+  One stale ref intentionally retained:
+    - origin/fix/resource-1-4-calendar-underscores. 4 commits
+      shorten 12-char `____________` table-cell runs to
+      6-char `______` in 3 tier1-resources markdown files
+      (1.2-mtss-team-roles.md, 1.3-mtss-handbook.md,
+      1.4-annual-mtss-calendar.md). Cosmetic .docx-export
+      wrap fix. Pre-Session-25 vintage; deprioritized at the
+      time. Tracked as new Followup #35.
+
+  Six tracking refs swept via `git remote prune origin` from
+  this session-cycle's --delete-branch merges:
+    - origin/chore/activities-log-session-39 (PR #34)
+    - origin/chore/activities-log-session-40 (PR #37)
+    - origin/chore/seed-tenant-sandbox-template (PR #36)
+    - origin/docs/followup-11-smoke-testing (PR #39)
+    - origin/docs/followup-34-chat-rendering (PR #38)
+    - origin/feat/504-tab-hide-on-no-formset (PR #35)
+
+  Final state per `git branch -a`: only main + origin/main +
+  origin/fix/resource-1-4-calendar-underscores remain.
+
+PRODUCTION DB WRITES
+  None this session.
+
+TENANT ISOLATION REVIEW
+  No new SQL, no new routes, no schema changes, no production
+  DB writes. PR #37 / #38 / #39 are documentation-only or
+  metadata-only (activities.txt). P6 is git-ref operations
+  only. Multi-tenant isolation surface area is zero.
+
+PRIVACY REVIEW (Section 4B)
+  PR #37 (Session 40 activities entry):
+    - Pre-merge §4B audit caught two scrub targets in the
+      draft: the prospect's school name (2 occurrences in
+      CATCHES #5 and #6) and two synthetic student names
+      (PRODUCTION DB WRITES cleanup paragraph). Both classes
+      scrubbed before commit. Engineering content survived
+      all four scrubs intact.
+    - Post-scrub re-grep confirmed zero remaining occurrences
+      of the four scrub targets in activities.txt.
+  PR #38 + PR #39:
+    - Doc-only changes; no PII fields touched.
+    - Pre-commit grep verified zero matches for school name,
+      country name, or specific student/staff names.
+    - Pre-commit grep verified zero `http://` or `](`
+      markdown link syntax (auto-linkification check —
+      same class of issue caught for SMOKE_TESTING.md
+      references in earlier sessions).
+  P6: Branch deletes only; no content touched.
+
+VERIFICATION
+  PR #37: build N/A (activities.txt is markdown-flavored
+    text; no build pipeline). Pre-merge §4B audit run via
+    grep on the draft + post-merge re-grep on activities.txt
+    (both clean).
+  PR #38: build N/A; pre-merge auto-link grep clean (zero
+    `http://` or `](`); pre-merge §4B grep clean.
+  PR #39: build N/A; pre-merge auto-link grep clean;
+    pre-merge §4B grep clean.
+  P6: post-cleanup `git branch -a` confirmed expected final
+    state; `git remote prune origin` swept tracking refs;
+    `git status` confirmed working tree clean except parked
+    `.claude/settings.json` drift.
+  No application code changed this session, so frontend
+  build/lint not exercised end-to-end. Confirmatory
+  `npx eslint src/components/Section504/` run during
+  landing-the-plane: clean. Pre-existing main state carries
+  forward.
+
+CATCHES (Cowork-side and Claude Code-side observations worth banking)
+
+  1. CC discipline: surface-rather-than-silently-execute moves.
+     Two examples this session:
+     - Caught my own bash redirect-order bug pre-execution
+       (`2>&1 > /tmp/B.bin` would have produced an empty
+       B.bin because bash processes redirects left-to-right
+       and `2>&1` snapshots fd1's previous destination; the
+       correct order is `> /tmp/B.bin 2>&1`). Surfaced before
+       running rather than silently producing an empty
+       capture and a misleading shasum comparison.
+     - Self-corrected the audit count from "3 occurrences of
+       the prospect's school name" to "2 occurrences" with
+       receipts after a re-grep. Surfaced the count error
+       rather than quietly tightening it. The third candidate
+       I had vaguely flagged as "indirectly via Followup #11
+       reference" turned out not to exist on re-inspection.
+     Six sessions running with this discipline. Worth banking
+     as load-bearing pattern.
+
+  2. §2A self-merge framing sharpened. CC's audit on PR #37
+     produced the more precise framing: "permission-by-
+     omission, §4B cleanliness as the load-bearing
+     precondition." Used verbatim in PR bodies for #37, #38,
+     #39. Going forward this is the canonical framing for
+     chore/activities-log and docs-only self-merge PRs;
+     "chore/activities-log self-merge convention" is the
+     less-precise shorthand and should be deprecated.
+
+  3. Followup #34 diagnostic narrowed the original hypothesis.
+     Session 40 attributed the password mismatch to "smart-
+     quote substitution, em-dash transformation of trailing -
+     in base64url passwords, or column-alignment-induced
+     copy-paste error." NONE of these reproduced in the
+     33-test diagnostic. The actual finding was much narrower
+     (single-byte CR→LF substitution + a one-time line-level
+     structural observation). The operational rule didn't
+     change, but the explanation banked in the codebase is
+     now sharper than the original hypothesis. Worth banking
+     as a discipline note: a hypothesis stated in one session
+     is not load-bearing until a follow-up diagnostic
+     confirms it; the rule it justifies can stand even if the
+     hypothesis is wrong, but the codebase explanation should
+     be tightened to match the evidence.
+
+  4. Genre split in docs/operational-notes/: "note" =
+     postmortem / findings (cc-chat-rendering.md), "runbook" =
+     procedure / checklist (smoke-testing.md). Title parallel
+     ("Cowork-side operational note" vs "Cowork-side
+     operational runbook") signals the intended division of
+     labor. Convention going forward; future operational
+     content should declare its genre via the title prefix.
+
+  5. Lazy-render selection truncation discovered as a separate
+     finding during the diagnostic execution itself. The
+     operator's first attempt to copy CC's chat output for
+     Point C captured only TESTs 1-18 of 33 because VS Code's
+     chat panel renders lazily (off-screen content not in DOM
+     until scrolled). Documented in cc-chat-rendering.md
+     Finding 3 and smoke-testing.md Section 6. The diagnostic
+     workflow itself surfaced a hazard the diagnostic was not
+     looking for — a useful instance of the "instrument with
+     enough surface area that adjacent bugs surface" pattern.
+
+  6. Session 36 activities-log gap accepted permanently
+     during P6. PR #28 (Session 36 underlying work — Humble
+     ISD sandbox provisioned at tenant_id=9) is on main; the
+     entry that documented it (commit 34a4a90 on
+     chore/activities-log-session-36) never landed.
+     Backfilling would have required a §4B audit on a
+     pre-discipline-era draft. Discarded; gap accepted.
+     Future session entries that need to reference the
+     underlying work cite tenant_id=9 directly without
+     expecting a corresponding activities entry to exist.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 41 ---
+  - #35 NEW — fix/resource-1-4-calendar-underscores: 4 commits
+    on origin shorten 12-char `____________` table-cell runs
+    to 6-char `______` in docs/tier1-resources/
+    1.2-mtss-team-roles.md, 1.3-mtss-handbook.md,
+    1.4-annual-mtss-calendar.md. Cosmetic .docx-export wrap
+    fix. Pre-Session-25 vintage; deprioritized at the time.
+    Small enough to land in a future quiet-moment session via
+    PR; would need §2A template + permission-by-omission
+    self-merge (no PII, no SQL, no auth).
+
+  --- Closed this session ---
+  - #11 — docs(dev): SMOKE_TESTING.md walkthrough. CLOSED via
+    PR #39. Doc lives at docs/operational-notes/smoke-testing.md.
+  - #34 — Investigate the CC chat rendering / password
+    fidelity issue. CLOSED via PR #38. Diagnostic findings
+    live at docs/operational-notes/cc-chat-rendering.md.
+
+  --- Followups carried forward unchanged from Session 40 ---
+  - #22 — .claude/settings.json drift cleanup. Diagnostic
+    still holds: file auto-regenerates on every branch switch.
+    The parked drift remained untouched throughout this
+    session.
+  - #27, #28, #29, #30, #31, #32, #33 — Generic seed-script
+    polish + tenant_form_sets schema partial unique index.
+    Bundle candidate for a future quiet morning per Session
+    40's NEXT SESSION SHOULD Priority 4. None addressed this
+    session.
+
+  --- Stale local + remote refs ---
+  - All carryover stale refs from Session 39's master index
+    cleared this session via P6, except #35 above.
+  - This session's --delete-branch merges (PRs #37 / #38 /
+    #39) cleaned via `git remote prune origin`; no leftover
+    tracking refs.
+
+NEXT SESSION SHOULD
+  Priority 1 — Land Session 41 entry (this file) on its own
+  chore/activities-log-session-41 branch. Self-mergeable via
+  the permission-by-omission, §4B-cleanliness-as-load-bearing-
+  precondition framing. Two-commit URL fill pattern same as
+  PR #37.
+
+  Priority 2 — Optional: bundle Followups #29, #30, #31 (and
+  potentially #32, #33) into a single seed-script polish PR.
+  All small, all in the same files, none customer-visible.
+  Good batch for a quiet morning. Carryover from Session 40.
+
+  Priority 3 — Optional: Followup #35 (calendar-underscores
+  cosmetic fix). 4 commits already on origin/fix/resource-1-4-
+  calendar-underscores; needs §2A PR template + permission-
+  by-omission self-merge. Small.
+
+  Priority 4 — Optional: Owner-side prospect day-1+ kickoff
+  follow-up (Session 40 carryover, Priority 2 there).
+
+  Priority 5 — Optional: Followup #28 (tenant_form_sets
+  partial unique index migration). Out of scope for PR #35;
+  needs its own migration PR with §2A template, requires
+  non-Owner human review since it's a schema change, plus
+  tenant-isolation-auditor subagent.
+================================================================================
