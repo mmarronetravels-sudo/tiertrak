@@ -147,7 +147,24 @@ function loadRoster(rosterPath) {
 
 function validateRoster(roster) {
   const errors = [];
-  const fmt = (v) => JSON.stringify(v);
+  // Truncate stringified values in error messages so an operator who pastes
+  // real PII into a malformed roster field doesn't splash a full identifying
+  // record across stderr. 80 chars is enough to show the type and shape of
+  // small primitives without leaking a whole record. Falls back to String(v)
+  // when JSON.stringify returns undefined (functions, symbols, bare undefined)
+  // and to a sentinel when stringify throws (circular refs, BigInt).
+  const MAX_FMT_LENGTH = 80;
+  const fmt = (v) => {
+    let s;
+    try {
+      s = JSON.stringify(v);
+    } catch (_err) {
+      return '<unstringifiable>';
+    }
+    if (s === undefined) s = String(v);
+    if (s.length <= MAX_FMT_LENGTH) return s;
+    return s.slice(0, MAX_FMT_LENGTH - 3) + '...';
+  };
   // TENANT.name flows raw into an emitted "-- " SQL comment header; an embedded
   // \n would terminate the comment and let arbitrary SQL ride along ahead of
   // BEGIN. Also reject on the other free-form display strings as defense in
