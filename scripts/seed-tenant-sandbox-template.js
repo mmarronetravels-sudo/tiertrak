@@ -69,6 +69,25 @@ const ALLOWED_TIERS = new Set([1, 2, 3]);
 const ALLOWED_AREAS = new Set(['Behavior', 'Academic', 'Social-Emotional']);
 const ALLOWED_RISK_LEVELS = new Set(['low', 'moderate', 'high']);
 
+// Allowed top-level roster keys and per-entity object keys, used by
+// collectRosterWarnings() to flag operator typos (e.g., 'gradle' instead of
+// 'grade') that would otherwise be silently discarded. Warnings are non-fatal:
+// the script still emits SQL if validation passes. An operator who legitimately
+// adds an extra field for human readability will see a WARN line every run as
+// a reminder to remove it.
+const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  'TENANT', 'ADMINS', 'STAFF', 'STUDENTS', 'INTERVENTIONS', 'PROGRESS_NOTES', 'PARENT_LINK',
+]);
+const ALLOWED_KEYS = {
+  TENANT: new Set(['name', 'type', 'subdomain']),
+  ADMINS: new Set(['email', 'full_name', 'role']),
+  STAFF: new Set(['email', 'full_name', 'role', 'school_wide_access']),
+  STUDENTS: new Set(['external_id', 'first_name', 'last_name', 'grade', 'tier', 'area', 'risk_level']),
+  INTERVENTIONS: new Set(['student_external_id', 'template_name', 'assigned_by_email', 'progress', 'start_age_days', 'notes']),
+  PROGRESS_NOTES: new Set(['student_external_id', 'author_email', 'age_days', 'note']),
+  PARENT_LINK: new Set(['parent_email', 'student_external_id', 'relationship']),
+};
+
 // ---------------------------------------------------------------------------
 // CLI arg parsing
 // ---------------------------------------------------------------------------
@@ -385,6 +404,44 @@ function validateRoster(roster) {
   }
 
   return errors;
+}
+
+// Walk the roster and flag any keys that aren't in ALLOWED_KEYS. Non-fatal:
+// returns a string[] of warnings. Operators see typos like 'gradle' instead
+// of 'grade' which would otherwise be silently discarded by the script's
+// expected-key-only validator. Walks in roster declaration order so the
+// warnings read top-down through the operator's roster file.
+function collectRosterWarnings(roster) {
+  const warnings = [];
+
+  for (const k of Object.keys(roster)) {
+    if (!ALLOWED_TOP_LEVEL_KEYS.has(k)) {
+      warnings.push(`roster: unknown top-level key ${JSON.stringify(k)} — will be ignored`);
+    }
+  }
+
+  const checkObject = (obj, label, allowed) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+    for (const k of Object.keys(obj)) {
+      if (!allowed.has(k)) {
+        warnings.push(`${label}: unknown key ${JSON.stringify(k)} — will be ignored`);
+      }
+    }
+  };
+  const checkArray = (arr, label, allowed) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach((item, i) => checkObject(item, `${label}[${i}]`, allowed));
+  };
+
+  checkObject(roster.TENANT,        'TENANT',         ALLOWED_KEYS.TENANT);
+  checkArray(roster.ADMINS,         'ADMINS',         ALLOWED_KEYS.ADMINS);
+  checkArray(roster.STAFF,          'STAFF',          ALLOWED_KEYS.STAFF);
+  checkArray(roster.STUDENTS,       'STUDENTS',       ALLOWED_KEYS.STUDENTS);
+  checkArray(roster.INTERVENTIONS,  'INTERVENTIONS',  ALLOWED_KEYS.INTERVENTIONS);
+  checkArray(roster.PROGRESS_NOTES, 'PROGRESS_NOTES', ALLOWED_KEYS.PROGRESS_NOTES);
+  checkObject(roster.PARENT_LINK,   'PARENT_LINK',    ALLOWED_KEYS.PARENT_LINK);
+
+  return warnings;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,6 +768,12 @@ async function main() {
     process.stderr.write(`seed-tenant-sandbox-template: ${err.message}\n`);
     process.exit(2);
   }
+
+  // Print unknown-key warnings (non-fatal) before validation runs, so typos
+  // like 'gradle' get flagged on every run regardless of whether validation
+  // succeeds. Exit code is unaffected.
+  const warnings = collectRosterWarnings(roster);
+  for (const w of warnings) process.stderr.write(`WARN: ${w}\n`);
 
   const errors = validateRoster(roster);
   if (errors.length > 0) {

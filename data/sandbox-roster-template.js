@@ -102,8 +102,8 @@ const STAFF = [
 ];
 
 // At least one STUDENTS entry is required. external_id is roster-only and
-// must be unique within this array. Optional fields (campus, etc.) may be
-// added for human readability but are not inserted into the database.
+// must be unique within this array. Unknown fields will produce a stderr
+// WARN line on every run; remove or rename them to match the schema.
 const STUDENTS = [
   {
     external_id: 'DEMO-001',                // Unique within STUDENTS; roster-only
