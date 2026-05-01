@@ -2843,3 +2843,543 @@ NEXT SESSION SHOULD
   branches + three remote-only stragglers surfaced in this session).
   Five-minute job; quiet-moment work.
 ================================================================================
+SESSION: 2026-04-30T19:30:00-07:00 (40)
+BRANCH:  chore/activities-log-session-40
+DISPOSITION: pr-opened:<TBD-after-pr-create>
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Same-day continuation of Session 39 (which closed mid-morning).
+  Three engineering tracks landed and one new customer was onboarded
+  end-to-end:
+
+  (1) PR #35 — Followup #26: hide the staff Section 504 tab on
+      tenants with no active tenant_form_sets row. Tenant-scoped
+      GET endpoint + frontend visibility gate.
+  (2) PR #36 — school-agnostic generic sandbox seed script
+      (scripts/seed-tenant-sandbox-template.js) plus a committed
+      roster schema template (data/sandbox-roster-template.js).
+      Generalizes the Humble seed pattern so future prospects can
+      be provisioned via workspace-located roster files that never
+      enter the repo.
+  (3) Production provisioning of a new prospect tenant via the new
+      generic script: a Latin American international K-12 school
+      (Cognia-accredited, English-language, no Section 504 use,
+      Feb-Nov academic calendar). 8 users (1 school admin + 5
+      teachers + 1 counselor + 1 demo parent), 270 synthetic
+      K-12 students, 30 interventions, 61 progress notes, and a
+      starter intervention bank. Tenant_id=10.
+  (4) Welcome doc generated and delivered to the prospect's
+      primary admin via a secure out-of-band channel.
+
+  No schema migrations. Two production database write operations:
+  the tenant provisioning itself, and a same-tenant password rotation
+  to recover from a chat-rendering issue (see Followup #34).
+
+PR #35 — feat/504-tab-hide-on-no-formset → main (MERGED)
+  Title: feat(504): hide Section 504 tab on tenants with no active form_set
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/35
+
+  Followup #26. Adds a tenant-scoped GET /api/student-504/active-
+  form-set endpoint that returns the calling tenant's currently
+  active form set (form_set_id + form_set_version) or 404 when no
+  active row exists. The Section 504 staff tab now fetches this on
+  mount and returns null from the component when no active form set
+  is configured — covering both the in-flight initial state and the
+  genuinely-unconfigured state with a single overloaded null check.
+
+  For tenants like Lincoln/Parkview seed and the new prospect
+  provisioned this session, staff no longer see a 504 tab that
+  crashes with a 400 error envelope when "Start 504 Cycle" is
+  clicked. The backend gate at POST /cycles continues to enforce
+  tenant_form_sets-presence authoritatively; this PR added only the
+  FE-side visibility match.
+
+  Files touched (3 files, ~75 LOC):
+    - routes/student504.js: new GET /active-form-set with
+      requireAuth + refuseParentRole, tenant scoping from JWT,
+      parent504.js-precedent 404 shape, ORDER BY created_at DESC
+      LIMIT 1 tiebreaker for the multi-active-row schema edge case.
+    - frontend/src/components/Section504/api.js: new
+      getActiveFormSet wrapper routed through send() (existing
+      house style; throws on non-OK).
+    - frontend/src/components/Section504/Section504Tab.jsx: state
+      + parallel fetch in existing useEffect, single-null-check
+      render gate, runtime form-set values replacing compile-time
+      oregon-ode-2025 import.
+
+  Reviewer subagents at PR time:
+    - tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN /
+      5 INFO (all positive observations on tenant scoping, error
+      logging, FE non-bypass).
+    - privacy-reviewer: NOT required (no PII fields touched).
+    - security-reviewer: NOT required (no auth/JWT/upload/SQL-
+      injection-risk surfaces).
+
+  §2A non-Owner human review: APPROVED by Owner's ed tech specialist.
+
+  Verification:
+    - vite build clean.
+    - eslint src/components/Section504/ clean.
+    - Prod smoke test: tab visible on a form-set-registered tenant
+      (existing behavior preserved); active-form-set endpoint
+      returns 200 with body; zero new console errors.
+    - Post-merge prod verification later in session: tab hidden
+      on the new non-form-set prospect tenant (live Followup #26
+      verification with real customer data).
+
+  Merged 2026-04-30T19:27:57Z, merge commit 73c970a.
+
+PR #36 — chore/seed-tenant-sandbox-template → main (MERGED with security-reviewer notes)
+  Title: chore(seed): add generic sandbox tenant seeder + schema template
+  URL:   https://github.com/mmarronetravels-sudo/tiertrak/pull/36
+
+  Adds scripts/seed-tenant-sandbox-template.js (697 lines) — a
+  school-agnostic generic version of the existing Humble seed
+  script. Takes a roster file at an absolute path via --roster,
+  validates the roster against a strict schema, generates per-user
+  bcrypt-hashed credentials, and emits a single BEGIN/COMMIT-
+  wrapped DO block to stdout for hand-pasting into Render psql.
+  The script does not connect to a database directly.
+
+  Also adds data/sandbox-roster-template.js (158 lines) — a
+  committed placeholder-only schema-doc file with a §4B privacy
+  banner instructing operators to copy outside the repo, populate
+  with synthetic data, and pass the absolute path to the seed
+  script. Path B convention per the Session 39 master index §4B
+  question is now established: school-specific roster data lives
+  in workspace, never in the repo.
+
+  Pre-implementation audit + Owner review approved three design
+  decisions:
+    - Index-based PL/pgSQL variable scheme (v_user_1..v_user_N)
+      derived from [...ADMINS, ...STAFF] order, with trailing
+      SQL comments naming each user for operator readability.
+    - --dry-run flag removed (the script has no other mode; a
+      no-op alias was misleading tech debt).
+    - Dollar-quote tag sanitized (subdomain → [a-zA-Z0-9_] with
+      'sandbox' fallback) to prevent identifier-collision on
+      hyphen-bearing subdomains.
+
+  Plus three Owner-approved refinements during implementation:
+    - Validator error messages naming offending key paths and
+      valid-option enums (priority on the new
+      school_wide_access-required check, since Humble-pattern
+      operators migrating to the generic script will hit it).
+    - Sanitized dollar-quote tag verified against test roster.
+    - Empty-array guards on STAFF / INTERVENTIONS / PROGRESS_NOTES
+      / PARENT_LINK confirmed by visual inspection.
+
+  Existing scripts/seed-humble-isd-sandbox.js and data/humble-isd-
+  sandbox-roster.js intentionally untouched in this branch.
+  Retiring the legacy pair is a separate decision for after the
+  generic script has been exercised on a real new tenant.
+
+  Reviewer subagents at PR time:
+    - tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN /
+      5 INFO (10 emitted DML statements + 3 preflight SELECTs all
+      properly tenant-scoped via v_tenant_id captured from
+      RETURNING id; parent_student_links's known no-tenant_id gap
+      explicitly cited).
+    - security-reviewer: APPROVED WITH NOTES, 0 CRITICAL / 0
+      HIGH / 1 MEDIUM / 1 LOW / 8 INFO. The MEDIUM (defense-in-
+      depth: TENANT.name interpolated raw into two SQL line-
+      comment headers; rejecting \r/\n in the validator would
+      close the only non-trivial SQL-injection surface) was
+      Owner-acknowledged and tracked as Followup #29; PR landed
+      as-is per Owner decision.
+    - privacy-reviewer: APPROVED, 0 CRITICAL / 0 HIGH / 0
+      MEDIUM / 2 LOW / 9 INFO. Both LOWs (validator JSON.stringify
+      truncation, unknown-key warning) tracked as Followups
+      #30 + #31, non-blocking.
+
+  §2A non-Owner human review: APPROVED by Owner's ed tech
+  specialist.
+
+  Verification: node -c on both files clean; CLI gauntlet (4 tests:
+  no-args / relative path / non-.js extension / absolute path to
+  existing humble-isd-sandbox-roster.js) all passing with expected
+  exit codes; sanitized dollar-quote tag verified
+  (humble-isd-demo → humble_isd_demo).
+
+  Merged 2026-04-30T20:13:40Z, merge commit 580f57b.
+
+PRODUCTION DB WRITES (Render psql one-shots, BEGIN/COMMIT, DO blocks)
+
+  Tenant provisioning for the prospect (tenant_id=10):
+    - tenants: 1 row created. Type='school', subdomain set to
+      a sanitized prospect-specific slug.
+    - users: 8 rows created. 1 school admin (real prospect
+      contact email) + 5 synthetic teachers + 1 synthetic
+      counselor + 1 synthetic demo parent. Synthetic accounts
+      use the IETF-reserved .example TLD on a sandbox-specific
+      subdomain so emails cannot accidentally route to a real
+      mail system.
+    - students: 270 rows. K-12, ~21 per grade. Tier
+      distribution: 200 / 55 / 15 (T1 / T2 / T3). Synthetic
+      Latin American + American name mix appropriate for an
+      international school in the prospect's country.
+    - student_interventions: 30 rows initially (15 T3 + 15 T2
+      students each receiving one intervention). Templates
+      drawn from 14 distinct system-default
+      intervention_templates (verified against the production
+      bank via a read-only psql query during a preflight
+      iteration; first attempt failed Preflight 3 due to
+      template name mismatches — see "Catches" below).
+    - progress_notes: 61 rows initially. 1-3 notes per
+      intervention'd student, dated 1-91 days ago.
+    - parent_student_links: 1 row.
+    - tenant_intervention_bank: 61 rows auto-seeded mirroring
+      routes/tenants.js's auto-seed for is_starter=TRUE
+      templates.
+
+    Single atomic DO block, three preflight RAISE EXCEPTIONs
+    (subdomain uniqueness, email uniqueness, intervention-
+    template name match-count = 1), and a final RAISE NOTICE
+    confirming the tenant id post-commit.
+
+  Cleanup operation immediately after provisioning:
+    - student_interventions: 2 rows deleted.
+    - progress_notes: 5 rows deleted.
+
+    These were unexpected duplicates surfaced when the post-commit
+    verification SELECT showed counts of 32/66 instead of the
+    expected 30/61. Diagnosed as the seed script's emit-time
+    name-based reference resolution: the roster contained two
+    duplicate first+last name combinations across grade levels
+    (Student-A grade 1 / grade 6, Student-B grade 1 / grade 5),
+    and the script's INSERT INTO student_interventions
+    statements use a (first_name, last_name) WHERE clause that
+    matched both colliding student rows for each duplicate name.
+    Tier 1 students inadvertently received the same interventions
+    as their colliding T2/T3 namesakes. Surgical cleanup via a
+    tenant-scoped DELETE on (student.tenant_id = 10 AND
+    student.tier = 1) for both tables, verified counts dropped
+    to 30 and 61 inside a transaction before COMMIT. Tracked
+    long-form as Followup #33.
+
+  Password rotation later in session (recovery from chat-rendering
+  mismatch — see Followup #34 / "Catches" below):
+    - users: 8 rows updated. password_hash + updated_at refreshed
+      via UPDATE statements wrapped in BEGIN/COMMIT. Plaintexts
+      generated locally in the operator's terminal (not via CC's
+      bash tool) so they bypass any chat-rendering concerns; SQL
+      file contained only bcrypt hashes for hand-paste into psql.
+      All 8 logins verified post-rotation.
+
+TENANT ISOLATION REVIEW
+  PR #35: APPROVED by tenant-isolation-auditor (5 INFO, all
+  positive). Single new SELECT on tenant_form_sets correctly
+  scoped via JWT-derived tenant_id; existing parent504 precedent
+  patterns followed.
+
+  PR #36: APPROVED by tenant-isolation-auditor (5 INFO, all
+  positive). 10 emitted DML statements + 3 preflight SELECTs all
+  properly tenant-scoped via v_tenant_id captured from
+  RETURNING id. The script's design ensures every downstream
+  INSERT references the just-created tenant; no cross-tenant
+  pathway exists in the emitted SQL. parent_student_links's
+  known no-tenant_id-column gap (existing schema followup) was
+  acknowledged but not introduced by this PR.
+
+  Production DB writes: every WHERE clause in the cleanup DELETE
+  and the password rotation UPDATE included explicit tenant_id=10
+  scoping (or a subquery filtering by tenant_id). No cross-tenant
+  read or write surfaced this session.
+
+PRIVACY REVIEW (Section 4B)
+  PR #35: render-only icon import; no PII fields, no logging
+  changes. privacy-reviewer not required.
+
+  PR #36: APPROVED by privacy-reviewer (2 LOW / 9 INFO, no
+  blockers). Committed roster template ships with placeholder-only
+  values plus a §4B banner instructing operators to keep filled-in
+  rosters out of the repo. Two LOW recommendations tracked as
+  Followups #30 + #31.
+
+  Production prospect data: real customer admin email + real
+  customer school name + real customer accreditation context all
+  live exclusively in (a) the production tenants/users tables and
+  (b) the operator-local welcome doc that was hand-delivered via
+  a secure out-of-band channel. NO real customer identifying data
+  enters this activities entry, nor any committed file in the
+  repo, nor any PR title/body/comment, nor any reviewer-subagent
+  report.
+
+  The synthetic 270-student roster lives only in the operator's
+  workspace folder (uncommitted): file path is workspace-only and
+  re-rendering the roster requires regenerating from the operator-
+  local generator. The tenant_id=10 rows in production are
+  internal database identifiers, not §4B PII.
+
+VERIFICATION
+  PR #35:
+    - vite build clean.
+    - eslint src/components/Section504/ clean.
+    - Prod smoke test post-deploy: hard-refresh, modal-renders
+      verification on a form-set-registered tenant, no new console
+      errors, active-form-set endpoint returns 200.
+    - Live verification later in session: tab confirmed hidden on
+      a real non-form-set tenant (the new prospect).
+
+  PR #36:
+    - Both files syntax-clean (node -c).
+    - CLI gauntlet 4/4 passing with expected exit codes.
+    - No backend lint script available at repo root (pre-existing
+      project gap surfaced rather than silently skipped).
+
+  Production tenant_id=10:
+    - Pre-flight: subdomain not pre-existing (0 rows on lookup
+      query before the seed run).
+    - First seed attempt FAILED on Preflight 3 (intervention
+      template name mismatch); transaction rolled back atomically
+      with no partial state. Roster regenerated with verified
+      template names from the production intervention_templates
+      table and re-attempted.
+    - Second seed attempt: SUCCESSFUL. Final RAISE NOTICE
+      confirmed tenant id=10 post-commit.
+    - Counts post-cleanup: users=8 / students=270 /
+      interventions=30 / progress_notes=61 /
+      tenant_intervention_bank=61 — all matching expected.
+    - Live login verification: primary admin login + one synthetic
+      teacher login both succeeded (after the password rotation
+      recovery); tenant view confirmed scoped to the prospect
+      tenant only; Section 504 tab confirmed hidden on student
+      profiles (live Followup #26 verification on a real
+      non-form-set tenant).
+
+CATCHES (Cowork-side and Claude Code-side observations worth banking)
+
+  1. Provisioning preflight discipline. The seed script's three
+     RAISE EXCEPTION preflights (subdomain unique, email unique,
+     intervention-template name match) caught the first
+     provisioning attempt's template-name mismatch cleanly: the
+     entire transaction rolled back with zero partial state. No
+     manual cleanup needed; just regenerate the roster with valid
+     template names and retry. This is the script's atomic-
+     transaction design working as intended.
+
+  2. Roster template names must match production intervention_
+     templates exactly. First attempt used 4 plausible-sounding
+     names (Reading Intervention, Math Intervention, Behavior
+     Support Plan, Check-In/Check-Out (CICO)) that don't exist
+     in the production system-default bank. Production has 70
+     templates with very specific names (e.g., the actual entry
+     is "Check-in/Check-out" with lowercase "in" and no
+     parenthetical). For future tenant provisionings, query
+     intervention_templates WHERE tenant_id IS NULL ORDER BY name
+     before drafting roster INTERVENTIONS to avoid this loop.
+
+  3. Schema knowledge gaps from Cowork-side cost iteration. Two
+     verification queries failed mid-session due to wrong column
+     name assumptions: student_interventions has no tenant_id
+     column (scoping is via student_id → students.tenant_id);
+     student_interventions's template FK column is
+     intervention_template_id, not template_id. Both surfaced via
+     ERROR responses and were quickly corrected. Worth banking:
+     when writing verification queries against tenant-scoped
+     tables, prefer JOINs through the canonical tenant-scoping
+     column rather than assuming a redundant tenant_id on every
+     table.
+
+  4. Seed script reference resolution by name is fragile. The
+     seed script's INSERT INTO student_interventions and
+     PROGRESS_NOTES statements resolve student references by
+     (first_name, last_name) WHERE clauses rather than by
+     external_id (or by tracking the INSERT...RETURNING student
+     ids in a JS-side map). Synthetic rosters at any reasonable
+     scale will have name collisions (the 270-student roster
+     produced 2 duplicate name pairs by chance via the random
+     name generator). When a name collides, the script inserts
+     the same intervention/note against EVERY matching student
+     — which surfaced as +2 interventions and +5 progress notes
+     attached to Tier 1 students that should have had none.
+     Cleanup was straightforward (tenant-scoped DELETE on T1
+     students for those two tables) and the underlying tenant
+     scoping was correct. But the script should be hardened:
+     resolve references by external_id (tracked via INSERT...
+     RETURNING) rather than by name lookup. Tracked as
+     Followup #33.
+
+  5. CC chat rendering and password fidelity. The original
+     prospect provisioning's plaintext passwords (output by the
+     seed script via CC's bash tool, captured as part of CC's
+     tool result, then rendered into CC chat) did not bcrypt-
+     verify against the corresponding hashes in the database.
+     CC's standalone test on a tiny isolated roster showed all
+     plaintext + hash pairs verifying correctly — the script's
+     emit logic is provably sound. So the corruption happened
+     between the script's stderr and the operator's clipboard
+     (the chat-rendering layer). Most likely candidates: markdown
+     processing in the chat UI transformed a base64url character
+     (- ↔ em-dash, smart-quote substitution); column-alignment-
+     induced copy-paste error; or some other subtle character-
+     substitution in the rendered table. Recovery worked
+     around the issue cleanly: a rotation script was run in the
+     operator's local terminal (NOT via CC's bash tool), so
+     plaintexts went directly to terminal scrollback (byte-
+     accurate); UPDATE statements via psql replaced the original
+     hashes; logins verified post-rotation. Future password-
+     handling work follows the same rule: seed scripts run in
+     the operator's terminal, never via CC's bash tool. Tracked
+     as Followup #34.
+
+  6. Cowork-side miss on the password-handling channel. The
+     initial seed run for the new prospect was via CC's bash
+     tool, which placed plaintexts in the chat transcript. CC
+     flagged this correctly at the time ("Plaintext passwords
+     are now in this conversation transcript. That's an inherent
+     side effect of running the script via the Bash tool").
+     Cowork-side did not redirect the seed script run to the
+     operator's local terminal at that point — that decision
+     would have prevented both the rotation requirement AND the
+     chat-rendering mismatch issue downstream. For Session 41+:
+     the SMOKE_TESTING.md walkthrough (Followup #11) and any
+     future password-related operational doc must lead with
+     "run in your local terminal, never via CC's bash tool."
+
+  7. Atomic transaction recovery works as designed. Three
+     transactions were attempted today (initial seed, cleanup,
+     password rotation) and one of them rolled back cleanly on a
+     preflight RAISE EXCEPTION. Zero partial-state cleanup
+     needed across the day. The DO-block + BEGIN/COMMIT envelope
+     plus RAISE EXCEPTION preflights remain the load-bearing
+     pattern for any production DB write involving multiple
+     tables.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 40 ---
+  - #27 NEW — Reconcile users.role CHECK constraint between repo
+    migrations and production. Production CHECK accepts 8 roles
+    (district_admin, school_admin, teacher, counselor,
+    behavior_specialist, student_support_specialist, mtss_support,
+    parent); repo migration-001-update-roles.sql defines only 5.
+    Drift suggests prod was hand-widened or a migration was
+    drafted but never committed. Reconcile before any
+    fresh-environment deploy (e.g., a staging environment) where
+    the repo migrations would be replayed and produce a CHECK
+    constraint missing 3 roles.
+  - #28 NEW — tenant_form_sets schema: add a partial unique index
+    `(tenant_id) WHERE is_active = TRUE` to enforce
+    one-active-row-per-tenant at the schema level. Currently
+    handled at the runtime tiebreaker (ORDER BY created_at DESC
+    LIMIT 1) in both routes/parent504.js and the new
+    /active-form-set endpoint, but it's a smell that the schema
+    permits multiple active rows. Tracked as out-of-scope for
+    PR #35 by the tenant-isolation-auditor.
+  - #29 NEW (security-reviewer M1) — Generic seed script: add
+    \r/\n rejection in validateRoster for TENANT.name,
+    TENANT.type, ADMINS[i].full_name, STAFF[i].full_name. Closes
+    the only non-trivial SQL-injection surface (TENANT.name is
+    interpolated raw into two -- SQL line-comment headers; a
+    roster with embedded newlines could break out of the comment
+    and inject SQL ahead of BEGIN). Reviewer rated MEDIUM
+    defense-in-depth, Owner accepted as non-blocking; this
+    followup closes it.
+  - #30 NEW (privacy-reviewer LOW-1) — Generic seed script:
+    truncate JSON.stringify output in validator error messages
+    to a fixed length (~80 chars) so accidentally-pasted real PII
+    in a roster cannot splash a full identifying record across
+    stderr. Defensive against operator-side mistakes; not a §4B
+    violation per the reviewer (operator-terminal stderr ≠
+    frontend/log/tracking) but worth closing.
+  - #31 NEW (privacy-reviewer LOW-2) — Generic seed script:
+    either warn on unknown roster keys, OR enumerate the
+    accepted optional fields in the committed template. Hygiene
+    suggestion to prevent operators from typo'ing a field name
+    (e.g., 'gradle' instead of 'grade') and not realizing the
+    field was silently discarded.
+  - #32 NEW — Generic seed script: allow ADMINS roster entries
+    to specify their own role explicitly instead of hardcoding
+    'district_admin'. For schools that aren't districts (e.g.,
+    international or charter schools), 'school_admin' is the
+    natural role; hardcoding district_admin is a Humble-pattern
+    artifact that doesn't fit the general case. Functionally
+    harmless (district_admin >= school_admin in permissions) but
+    cosmetically wrong in any UI surface that displays role.
+  - #33 NEW — Generic seed script: resolve roster references by
+    external_id rather than by (first_name, last_name) name
+    lookup. Real-world synthetic rosters at any reasonable scale
+    will have name collisions; the current behavior inserts
+    intervention/note rows against EVERY matching student,
+    duplicating data across colliding namesakes. Cleanest fix:
+    track student_external_id → DB students.id in a JS-side map
+    via INSERT...RETURNING, then reference that map for all
+    downstream INSERTs (interventions, notes, parent links).
+    Same pattern as varByEmail for users.
+  - #34 NEW — Investigate the CC chat rendering / password
+    fidelity issue. The seed script's plaintext output, when
+    captured via CC's bash tool and rendered into chat,
+    produced password values that did not bcrypt-verify against
+    the corresponding hashes that landed in the database. The
+    script itself is provably correct (CC's isolated-roster
+    repro showed all plaintext+hash pairs verifying). The
+    corruption happened between stderr and clipboard.
+    Diagnostic should: (a) write a small repro that runs the
+    seed script in CC's bash tool and dumps both rendered chat
+    output and raw stderr bytes to a file, (b) byte-by-byte
+    diff to identify which character(s) were transformed,
+    (c) document the affected character set in a Cowork-facing
+    operational note. Workaround already established (run the
+    script in the operator's local terminal, never via CC's
+    bash tool); this followup is for understanding, not for
+    unblocking customer work.
+
+  --- Followups carried forward unchanged from Session 39 ---
+  - #11 docs(dev): SMOKE_TESTING.md walkthrough.
+    PRIORITY UPGRADED AGAIN. Today's session cost ~30 min on
+    chat-rendering / password handling friction in addition to
+    Session 39's prior friction. SMOKE_TESTING.md should
+    consolidate: (a) verify VITE_API_URL before any local-DB
+    work; (b) seed scripts run in the operator's local
+    terminal, never via CC's bash tool; (c) password rotation
+    pattern via UPDATE SQL when chat exposure happens; (d) the
+    Render psql one-shot pattern for production data ops.
+  - #22 .claude/settings.json drift cleanup. Diagnostic still
+    holds: file auto-regenerates on every branch switch.
+  - All other followups from Session 39's consolidated list
+    carry forward unchanged.
+
+  --- Stale local + remote refs ---
+  - Carryover from Session 39: chore/activities-log-session-36,
+    chore/activities-log-session-38, chore/seed-humble-isd-
+    sandbox, feat/504-form-cij-frontend (local); origin/chore/
+    activities-log, origin/fix/resource-1-4-calendar-
+    underscores, origin/fix/csv-import-icon-import (remote
+    only).
+  - Plus today's: feat/504-tab-hide-on-no-formset and chore/
+    seed-tenant-sandbox-template should be cleanly deletable
+    locally and remotely after the merges (--delete-branch was
+    used, but verify next quiet moment).
+
+NEXT SESSION SHOULD
+  Priority 1 — Land Session 40 entry (this file) on its own
+  chore/activities-log-session-40 branch. Self-mergeable
+  (chore/activities-log convention, §4B-clean metadata).
+
+  Priority 2 — Owner-side: prospect kickoff follow-up. Day-1
+  check-in with the prospect's primary admin via the secure
+  channel they were onboarded over. Confirm successful login,
+  any first-impression questions, and the evaluation timeline
+  expectations.
+
+  Priority 3 — Followup #34 diagnostic. Quiet-moment
+  investigation but high-value: chat-rendering issues affect
+  any future password flow. ~30 min: write a small repro in CC,
+  byte-diff stderr vs chat output, document the affected
+  character set. Convert workaround into a permanent operational
+  rule.
+
+  Priority 4 — Bundle Followups #29, #30, #31 (and potentially
+  #32, #33) into a single seed-script polish PR. All five are
+  small (each <30 LOC), all in the same files, none customer-
+  visible. Good batch for a quiet morning.
+
+  Priority 5 — Followup #11 (SMOKE_TESTING.md). Now bumped twice;
+  worth promoting to a real fast-follow. The doc would have
+  prevented multiple loops across Sessions 39 and 40.
+
+  Priority 6 — Optional: stale-branch cleanup (the merged
+  Session-40 branches plus the long-standing carryover). Five-
+  minute job.
+================================================================================
