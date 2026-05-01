@@ -148,6 +148,11 @@ function loadRoster(rosterPath) {
 function validateRoster(roster) {
   const errors = [];
   const fmt = (v) => JSON.stringify(v);
+  // TENANT.name flows raw into an emitted "-- " SQL comment header; an embedded
+  // \n would terminate the comment and let arbitrary SQL ride along ahead of
+  // BEGIN. Also reject on the other free-form display strings as defense in
+  // depth, even though they only land inside single-quoted SQL string literals.
+  const hasLineBreak = (s) => /[\r\n]/.test(s);
 
   // TENANT
   if (!roster.TENANT || typeof roster.TENANT !== 'object') {
@@ -156,12 +161,16 @@ function validateRoster(roster) {
     const t = roster.TENANT;
     if (typeof t.name !== 'string' || !t.name.trim()) {
       errors.push(`TENANT.name: must be a non-empty string; got: ${fmt(t.name)}`);
+    } else if (hasLineBreak(t.name)) {
+      errors.push(`TENANT.name: must not contain carriage returns or newlines; got: ${fmt(t.name)}`);
     }
     if (typeof t.subdomain !== 'string' || !/^[a-z0-9-]+$/.test(t.subdomain)) {
       errors.push(`TENANT.subdomain: must match /^[a-z0-9-]+$/ (lowercase letters, digits, hyphens only); got: ${fmt(t.subdomain)}`);
     }
     if (typeof t.type !== 'string' || !t.type.trim()) {
       errors.push(`TENANT.type: must be a non-empty string; got: ${fmt(t.type)}`);
+    } else if (hasLineBreak(t.type)) {
+      errors.push(`TENANT.type: must not contain carriage returns or newlines; got: ${fmt(t.type)}`);
     }
   }
 
@@ -179,6 +188,8 @@ function validateRoster(roster) {
       }
       if (typeof a.full_name !== 'string' || !a.full_name.trim()) {
         errors.push(`ADMINS[${i}].full_name: must be a non-empty string; got: ${fmt(a.full_name)}`);
+      } else if (hasLineBreak(a.full_name)) {
+        errors.push(`ADMINS[${i}].full_name: must not contain carriage returns or newlines; got: ${fmt(a.full_name)}`);
       }
     });
   }
@@ -197,6 +208,8 @@ function validateRoster(roster) {
       }
       if (typeof s.full_name !== 'string' || !s.full_name.trim()) {
         errors.push(`STAFF[${i}].full_name: must be a non-empty string; got: ${fmt(s.full_name)}`);
+      } else if (hasLineBreak(s.full_name)) {
+        errors.push(`STAFF[${i}].full_name: must not contain carriage returns or newlines; got: ${fmt(s.full_name)}`);
       }
       if (typeof s.role !== 'string' || !ALLOWED_ROLES.has(s.role)) {
         errors.push(`STAFF[${i}].role: must be one of [${[...ALLOWED_ROLES].map(r => `'${r}'`).join(', ')}]; got: ${fmt(s.role)}`);
