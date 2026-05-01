@@ -502,6 +502,16 @@ async function buildSql(roster, rosterPath) {
   const varByEmail = {};
   accounts.forEach((a, i) => { varByEmail[a.email] = `v_user_${i + 1}`; });
 
+  // Parallel scheme for students: v_student_1 ... v_student_M, in roster
+  // declaration order. Populated post-INSERT via RETURNING id, then used
+  // to wire interventions / progress notes / parent links to the right
+  // student row even when first+last names collide. Pre-#33 the script
+  // resolved students by (first_name, last_name) which silently attached
+  // rows to BOTH students of a colliding name pair (production incident
+  // during prospect provisioning, see activities.txt Session 40 catches).
+  const varByExternalId = {};
+  roster.STUDENTS.forEach((s, i) => { varByExternalId[s.external_id] = `v_student_${i + 1}`; });
+
   // Generate one password + hash per account. Plaintext goes to a parallel
   // array we will print to stderr at the end. Hashes go into the SQL.
   const plaintexts = [];
@@ -542,6 +552,13 @@ async function buildSql(roster, rosterPath) {
   for (let i = 0; i < accounts.length; i += 1) {
     const a = accounts[i];
     lines.push(`  v_user_${i + 1}        INTEGER; -- ${a.email} (${a.role})`);
+  }
+  // One INTEGER per student, populated by RETURNING id from the INSERT
+  // INTO students block. Comment shows external_id + first/last name so
+  // the operator can audit the mapping.
+  for (let i = 0; i < roster.STUDENTS.length; i += 1) {
+    const s = roster.STUDENTS[i];
+    lines.push(`  v_student_${i + 1}     INTEGER; -- ${s.external_id} (${s.first_name} ${s.last_name})`);
   }
   lines.push('  v_existing_email TEXT;');
   lines.push('BEGIN');
@@ -610,13 +627,18 @@ async function buildSql(roster, rosterPath) {
   }
 
   lines.push('  -- ----- Students -----');
+  lines.push('  -- Each student is inserted with RETURNING id INTO v_student_N so downstream');
+  lines.push('  -- INSERTs (interventions, progress notes, parent links) can reference the');
+  lines.push('  -- exact row even when first+last names collide.');
   for (const s of roster.STUDENTS) {
-    lines.push(
-      `  INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level) VALUES ` +
-      `(v_tenant_id, ${sqlString(s.first_name)}, ${sqlString(s.last_name)}, ${sqlString(s.grade)}, ${sqlInt(s.tier)}, ${sqlString(s.area)}, ${sqlString(s.risk_level)});`
-    );
+    const studentVar = varByExternalId[s.external_id];
+    if (!studentVar) throw new Error(`Roster mismatch: no student var for ${s.external_id}`);
+    lines.push(`  -- ${s.external_id} — ${s.first_name} ${s.last_name}`);
+    lines.push('  INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level)');
+    lines.push(`  VALUES (v_tenant_id, ${sqlString(s.first_name)}, ${sqlString(s.last_name)}, ${sqlString(s.grade)}, ${sqlInt(s.tier)}, ${sqlString(s.area)}, ${sqlString(s.risk_level)})`);
+    lines.push(`  RETURNING id INTO ${studentVar};`);
+    lines.push('');
   }
-  lines.push('');
 
   if (roster.INTERVENTIONS.length > 0) {
     lines.push('  -- ----- Active interventions (Tier 2 + Tier 3) -----');
@@ -625,14 +647,14 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- staff member listed in the roster. start_date is computed from today.');
     lines.push('');
     for (const iv of roster.INTERVENTIONS) {
-      const student = roster.STUDENTS.find(s => s.external_id === iv.student_external_id);
+      const studentVar = varByExternalId[iv.student_external_id];
       // Validator already guarantees these resolve, but defense in depth:
-      if (!student) throw new Error(`Roster mismatch: no student for ${iv.student_external_id}`);
+      if (!studentVar) throw new Error(`Roster mismatch: no student var for ${iv.student_external_id}`);
       const assignerVar = varByEmail[iv.assigned_by_email];
       if (!assignerVar) throw new Error(`Roster mismatch: no user var for ${iv.assigned_by_email}`);
-      lines.push(`  -- ${student.first_name} ${student.last_name} (${student.external_id}) — ${iv.template_name}`);
+      lines.push(`  -- ${iv.student_external_id} — ${iv.template_name}`);
       lines.push('  INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, status, progress, start_date)');
-      lines.push('  SELECT s.id,');
+      lines.push(`  VALUES (${studentVar},`);
       // No LIMIT 1: Preflight 3 guarantees exactly one match, and dropping
       // LIMIT 1 means a future regression (someone duplicates a template
       // name) would surface as a Postgres error instead of an arbitrary-
@@ -643,8 +665,7 @@ async function buildSql(roster, rosterPath) {
       lines.push(`         ${sqlString(iv.notes)},`);
       lines.push(`         'active',`);
       lines.push(`         ${sqlInt(iv.progress)},`);
-      lines.push(`         CURRENT_DATE - INTERVAL '${sqlInt(iv.start_age_days)} days'`);
-      lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+      lines.push(`         CURRENT_DATE - INTERVAL '${sqlInt(iv.start_age_days)} days');`);
       lines.push('');
     }
   }
@@ -655,16 +676,15 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- chronology renders correctly in the activity feed.');
     lines.push('');
     for (const n of roster.PROGRESS_NOTES) {
-      const student = roster.STUDENTS.find(s => s.external_id === n.student_external_id);
-      if (!student) throw new Error(`Roster mismatch: no student for ${n.student_external_id}`);
+      const studentVar = varByExternalId[n.student_external_id];
+      if (!studentVar) throw new Error(`Roster mismatch: no student var for ${n.student_external_id}`);
       const authorVar = varByEmail[n.author_email];
       if (!authorVar) throw new Error(`Roster mismatch: no user var for ${n.author_email}`);
       lines.push('  INSERT INTO progress_notes (student_id, author_id, note, created_at)');
-      lines.push('  SELECT s.id,');
+      lines.push(`  VALUES (${studentVar},`);
       lines.push(`         ${authorVar},`);
       lines.push(`         ${sqlString(n.note)},`);
-      lines.push(`         CURRENT_TIMESTAMP - INTERVAL '${sqlInt(n.age_days)} days'`);
-      lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+      lines.push(`         CURRENT_TIMESTAMP - INTERVAL '${sqlInt(n.age_days)} days');`);
     }
     lines.push('');
   }
@@ -674,13 +694,12 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- parent_student_links has NO tenant_id column (known followup; see CLAUDE.md');
     lines.push('  -- and routes/auth.js:341).');
     const link = roster.PARENT_LINK;
-    const student = roster.STUDENTS.find(s => s.external_id === link.student_external_id);
-    if (!student) throw new Error(`Roster mismatch: no student for parent link ${link.student_external_id}`);
+    const studentVar = varByExternalId[link.student_external_id];
+    if (!studentVar) throw new Error(`Roster mismatch: no student var for parent link ${link.student_external_id}`);
     const parentVar = varByEmail[link.parent_email];
     if (!parentVar) throw new Error(`Roster mismatch: no user var for ${link.parent_email}`);
     lines.push('  INSERT INTO parent_student_links (parent_user_id, student_id, relationship)');
-    lines.push(`  SELECT ${parentVar}, s.id, ${sqlString(link.relationship)}`);
-    lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+    lines.push(`  VALUES (${parentVar}, ${studentVar}, ${sqlString(link.relationship)});`);
     lines.push('');
   }
 
