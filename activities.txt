@@ -3385,7 +3385,7 @@ NEXT SESSION SHOULD
 ================================================================================
 SESSION: 2026-05-01T11:00:00-07:00 (41)
 BRANCH:  chore/activities-log-session-41
-DISPOSITION: pr-opened:<TBD-after-pr-create>
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/40
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Three docs PRs landed and one stale-branch cleanup. Net engineering
