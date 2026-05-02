@@ -63,6 +63,7 @@ CREATE TABLE student_interventions (
     progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
     start_date DATE DEFAULT CURRENT_DATE,
     end_date DATE,
+    no_progress_monitoring_required BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
