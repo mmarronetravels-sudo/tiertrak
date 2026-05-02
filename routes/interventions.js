@@ -3,7 +3,8 @@ const router = express.Router();
 const { Pool } = require('pg');
 const {
   requireAuth,
-  requireStudentReadAccess
+  requireStudentReadAccess,
+  requireWriteAccessByInterventionId
 } = require('../middleware/authorizeInterventionAccess');
 require('dotenv').config();
 
@@ -81,21 +82,37 @@ router.delete('/templates/:id', async (req, res) => {
 });
 
 // Assign an intervention to a student
-router.post('/assign', async (req, res) => {
+router.post('/assign', requireAuth, async (req, res) => {
   try {
-    // mtss_support cannot assign interventions
-    const userRole = req.headers['x-user-role'];
-    if (userRole === 'mtss_support') {
+    // Role gate: only school staff can assign. mtss_support and parents are
+    // explicitly rejected. Sourced from req.user.role (cookie/JWT-verified)
+    // rather than the prior x-user-role header (client-spoofable).
+    if (req.user.role === 'mtss_support') {
       return res.status(403).json({ error: 'MTSS Support staff cannot assign interventions' });
     }
-    const { student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency = 'weekly', start_date, end_date } = req.body;
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    const { student_id, intervention_template_id, intervention_name, notes, log_frequency = 'weekly', start_date, end_date } = req.body;
+
+    // Tenant verification: student must belong to caller's tenant.
+    const studentResult = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentResult.rows.length === 0 || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
     const cleanStartDate = start_date || new Date().toISOString().split('T')[0];
     const cleanEndDate = end_date === '' ? null : end_date || null;
+    // assigned_by is server-derived from the JWT-verified caller, not the body.
     const result = await pool.query(
-      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, start_date, end_date) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, start_date, end_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, cleanStartDate, cleanEndDate]
+      [student_id, intervention_template_id, req.user.id, intervention_name, notes, log_frequency, cleanStartDate, cleanEndDate]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -104,16 +121,16 @@ router.post('/assign', async (req, res) => {
 });
 
 // Update an intervention's progress
-router.patch('/:id/progress', async (req, res) => {
+router.patch('/:interventionId/progress', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
     const { progress } = req.body;
     const result = await pool.query(
-      `UPDATE student_interventions 
+      `UPDATE student_interventions
        SET progress = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 
+       WHERE id = $2
+         AND student_id IN (SELECT id FROM students WHERE tenant_id = $3)
        RETURNING *`,
-      [progress, id]
+      [progress, req.intervention.id, req.intervention.tenant_id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
@@ -125,22 +142,22 @@ router.patch('/:id/progress', async (req, res) => {
 });
 
 // Update an intervention's status
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:interventionId/status', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
     const { status } = req.body;
-    
+
     const updateFields = { status };
     if (status === 'completed' || status === 'discontinued') {
       updateFields.end_date = new Date();
     }
-    
+
     const result = await pool.query(
-      `UPDATE student_interventions 
+      `UPDATE student_interventions
        SET status = $1, end_date = $2, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3 
+       WHERE id = $3
+         AND student_id IN (SELECT id FROM students WHERE tenant_id = $4)
        RETURNING *`,
-      [status, updateFields.end_date || null, id]
+      [status, updateFields.end_date || null, req.intervention.id, req.intervention.tenant_id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
@@ -182,9 +199,8 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
 
 
 // Set or update intervention goal
-router.patch('/:id/goal', async (req, res) => {
+router.patch('/:interventionId/goal', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
     const { goal_description, goal_target_date, goal_target_rating } = req.body;
 
     const result = await pool.query(`
@@ -193,8 +209,9 @@ router.patch('/:id/goal', async (req, res) => {
           goal_target_date = $2,
           goal_target_rating = $3
       WHERE id = $4
+        AND student_id IN (SELECT id FROM students WHERE tenant_id = $5)
       RETURNING *
-    `, [goal_description, goal_target_date, goal_target_rating, id]);
+    `, [goal_description, goal_target_date, goal_target_rating, req.intervention.id, req.intervention.tenant_id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
@@ -208,26 +225,26 @@ router.patch('/:id/goal', async (req, res) => {
 });
 
 // Archive an intervention (soft delete — preserves all data)
-router.put('/student-interventions/:id/archive', async (req, res) => {
+router.put('/student-interventions/:interventionId/archive', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { archived_by, archive_reason } = req.body;
-    
+    const { archive_reason } = req.body;
+    // archived_by is server-derived from the JWT-verified caller, not the body.
     const result = await pool.query(`
-      UPDATE student_interventions 
+      UPDATE student_interventions
       SET status = 'archived',
           archived_at = CURRENT_TIMESTAMP,
           archived_by = $1,
           archive_reason = $2,
           end_date = CURRENT_DATE
       WHERE id = $3
+        AND student_id IN (SELECT id FROM students WHERE tenant_id = $4)
       RETURNING *
-    `, [archived_by, archive_reason || null, id]);
-    
+    `, [req.user.id, archive_reason || null, req.intervention.id, req.intervention.tenant_id]);
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error archiving intervention:', error);
@@ -237,25 +254,24 @@ router.put('/student-interventions/:id/archive', async (req, res) => {
 
 
 // Unarchive an intervention (restore to active)
-router.put('/student-interventions/:id/unarchive', async (req, res) => {
+router.put('/student-interventions/:interventionId/unarchive', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
-    
     const result = await pool.query(`
-      UPDATE student_interventions 
+      UPDATE student_interventions
       SET status = 'active',
           archived_at = NULL,
           archived_by = NULL,
           archive_reason = NULL,
           end_date = NULL
       WHERE id = $1
+        AND student_id IN (SELECT id FROM students WHERE tenant_id = $2)
       RETURNING *
-    `, [id]);
-    
+    `, [req.intervention.id, req.intervention.tenant_id]);
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error unarchiving intervention:', error);
@@ -264,25 +280,43 @@ router.put('/student-interventions/:id/unarchive', async (req, res) => {
 });
 
 // Delete an intervention permanently (admin only — for mistakes)
-router.delete('/student-interventions/:id', async (req, res) => {
+router.delete('/student-interventions/:interventionId', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    // First delete related records that reference this intervention
-    await pool.query('DELETE FROM weekly_progress WHERE student_intervention_id = $1', [id]);
-    await pool.query('DELETE FROM intervention_assignments WHERE student_intervention_id = $1', [id]);
-    await pool.query('DELETE FROM mtss_meeting_interventions WHERE student_intervention_id = $1', [id]);
-    
-    // Now delete the intervention itself
-    const result = await pool.query(
-      'DELETE FROM student_interventions WHERE id = $1 RETURNING *', 
-      [id]
+    const interventionId = req.intervention.id;
+    const tenantId = req.intervention.tenant_id;
+    // Cascading deletes — all keyed off the middleware-verified intervention id.
+    // Defense-in-depth tenant guards on each statement so any future bypass
+    // still fails closed.
+    const tenantGuard = `student_intervention_id IN (
+      SELECT si.id FROM student_interventions si
+      JOIN students s ON s.id = si.student_id
+      WHERE s.tenant_id = $2
+    )`;
+    await pool.query(
+      `DELETE FROM weekly_progress WHERE student_intervention_id = $1 AND ${tenantGuard}`,
+      [interventionId, tenantId]
     );
-    
+    await pool.query(
+      `DELETE FROM intervention_assignments WHERE student_intervention_id = $1 AND ${tenantGuard}`,
+      [interventionId, tenantId]
+    );
+    await pool.query(
+      `DELETE FROM mtss_meeting_interventions WHERE student_intervention_id = $1 AND ${tenantGuard}`,
+      [interventionId, tenantId]
+    );
+
+    const result = await pool.query(
+      `DELETE FROM student_interventions
+       WHERE id = $1
+         AND student_id IN (SELECT id FROM students WHERE tenant_id = $2)
+       RETURNING *`,
+      [interventionId, tenantId]
+    );
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Intervention not found' });
     }
-    
+
     res.json({ success: true, message: 'Intervention permanently deleted' });
   } catch (error) {
     console.error('Error deleting intervention:', error);
