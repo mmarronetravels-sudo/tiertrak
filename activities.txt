@@ -4551,3 +4551,203 @@ NEXT SESSION SHOULD
   prediction); Owner to confirm and update master index
   accordingly.
 ================================================================================
+================================================================================
+SESSION: 2026-05-02T07:45:00-07:00 (Session 44)
+BRANCH:  feat/note-only-intervention-flag (PR #45, MERGED f654813)
+         chore/activities-log-session-44 (this entry, self-merge per Session 41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:f654813 (PR #45 — feat/note-only-intervention-flag)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/46 (chore/activities-log-session-44)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Single workstream: the Phase-1-planned feat/ work, queued during
+  Session 43's sec/ pivot, landed as PR #45. Adds a
+  no_progress_monitoring_required boolean to BOTH
+  student_interventions and mtss_meeting_interventions
+  (Option α — snapshot to meeting at save time, mirroring
+  Migration 020's weekly_progress_snapshot "frozen at first save"
+  contract). Lets staff document interventions that don't require
+  ongoing weekly progress logs (e.g., preferential seating)
+  without surfacing them in missing-logs notifications or
+  triggering the amber "no logs recorded" warning in MTSS meeting
+  views. Rides directly on the auth/tenant foundation laid by
+  PR #43 — the new PATCH /:interventionId/monitoring-flag endpoint
+  uses requireAuth + requireWriteAccessByInterventionId without
+  any middleware changes.
+
+PR #45 — feat/note-only-intervention-flag → main (MERGED f654813)
+
+  Four-commit bundle: the originally-planned 3 commits (migration,
+  backend, frontend) plus a reviewer-prompted PRIVACY_REVIEW.md
+  addendum (privacy-reviewer's WARN asked for the new column to
+  be inventoried before merge).
+
+  Per-commit summary:
+
+    - 3f17dd6 Migration 023: ADD COLUMN IF NOT EXISTS
+      no_progress_monitoring_required BOOLEAN NOT NULL DEFAULT
+      false on BOTH student_interventions and
+      mtss_meeting_interventions. Idempotent. schema.sql updated
+      for student_interventions only — mtss_meeting_interventions
+      does not live in schema.sql (intentional asymmetry, matches
+      Migration 020's weekly_progress_snapshot precedent).
+
+    - 795aced Backend wiring across 3 route files.
+      routes/interventions.js: POST /assign extends to accept
+      the new field with strict-coerce (=== true; anything else
+      becomes false); new PATCH /:interventionId/monitoring-flag
+      mirrors /progress, /status, /goal — requireAuth +
+      requireWriteAccessByInterventionId, typeof === 'boolean'
+      validation, defense-in-depth tenant guard.
+      routes/weeklyProgress.js: missing-logs filter gains
+      AND si.no_progress_monitoring_required IS NOT TRUE
+      (null-safe by choice — the migration's NOT NULL DEFAULT
+      false makes nulls structurally impossible, but free
+      defense against direct-SQL drift).
+      routes/mtssMeetings.js: interventions-summary SELECT
+      extended; new readNoProgressMonitoringFlag helper mirrors
+      computeWeeklyProgressSnapshot's tenant-bind
+      defense-in-depth. Meeting POST always reads the flag fresh
+      from student_interventions inside the transaction; meeting
+      PUT preserves prior snapshot value for already-present
+      interventions and reads fresh only for newly-added ones
+      (preserve-on-edit symmetry with weekly_progress_snapshot).
+      New PATCH endpoint deliberately uses generic 500 messages —
+      does NOT inherit Followup #41's legacy error.message
+      leakage pattern.
+
+    - f9469c5 Frontend wiring. Checkbox in Add Intervention
+      create form ("No progress monitoring required" + helper
+      text "Documents the intervention without requiring weekly
+      progress logs. Notes can still be added at any time.").
+      "Note only" sky-toned pill badge with ClipboardList icon
+      inline-duplicated across 4 surfaces (matches existing repo
+      style — status pills, plan-status circles, frequency
+      badges all inline): staff intervention list cards, parent
+      portal active interventions, live MTSS meeting form view,
+      saved meeting report viewer. Surface 1 carries a lockstep
+      comment naming the other 3 sites + their approximate line
+      numbers. Flag-flip toggle button on the staff card calls
+      PATCH /:interventionId/monitoring-flag (gated on
+      canManageInterventions). MTSS meeting view (live + saved):
+      amber "no logs recorded" warning replaced with calm
+      slate-toned info note ("Progress monitoring not required
+      for this intervention") for note-only interventions;
+      "Logs: N" stat becomes "Logs: not required". Saved viewer
+      reads the snapshotted flag (Option α); live view reads the
+      live interventions-summary value. intervention_reviews
+      builders in MTSSMeetingFormModal.jsx carry the flag through
+      to the snapshot at meeting save.
+
+    - b30fd4e Add no_progress_monitoring_required to
+      docs/ai-context/PRIVACY_REVIEW.md field inventory under
+      "What is NOT PII (but still be careful)" — per
+      privacy-reviewer WARN on PR #45. One-bullet entry: column
+      name + both tables + Migration 023 reference + plain-
+      language definition + staff/parent surface exposure +
+      Option α snapshot one-liner + explicit non-PII
+      justification.
+
+  Reviewer verdicts:
+    - privacy-reviewer: APPROVED WITH NOTES (no CRITICAL / no
+      HIGH). One WARN: requested PRIVACY_REVIEW.md inventory
+      addition. Resolved by Commit 4 (b30fd4e).
+    - tenant-isolation-auditor: APPROVED WITH NOTES (no
+      CRITICAL / no HIGH). One MEDIUM: ride-along on Followup
+      #67 — the new readNoProgressMonitoringFlag helper inherits
+      the same caveat as computeWeeklyProgressSnapshot
+      (mtssMeetings.js POST/PUT lack requireAuth; tenant bind
+      sourced from req.body.tenant_id rather than a JWT-derived
+      value). Reviewer's guidance: out-of-scope-but-track; the
+      helper will inherit the corrected tenant source naturally
+      when #67 lands. No new followup needed; #67 already
+      tracks it.
+    - Non-Owner ed-tech human review per §2A line 79: APPROVED.
+
+  Migration dry-run on local dev DB: successful. Production
+  migration via the Render External PSQL Command + \i workflow
+  per memory: successful. Verify-SELECT on prod confirmed both
+  tables landed with column_default = false and is_nullable = NO
+  for the new boolean column.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 44 ---
+
+  - #45 NEW (low-severity, hardening) — Audit logging for
+    no_progress_monitoring_required flag-flips. Deliberately
+    deferred from PR #45 per Phase 1 plan. Pattern: log to an
+    audit table (or extend existing audit infrastructure if any)
+    on every PATCH /:interventionId/monitoring-flag write —
+    captures who flipped the flag, when, and the prior/new
+    value. Useful for parent-conference contextualization ("this
+    intervention was reclassified as note-only on <date>") and
+    for any future privacy-incident triage. Not blocking;
+    schedule when convenient.
+
+  --- Closed by Session 44 ---
+
+  - PR #45 (feat/note-only-intervention-flag) — MERGED f654813.
+    Both reviewer subagents approved with notes; non-Owner
+    human review obtained. --delete-branch on local + remote.
+
+  --- Followups carried forward unchanged from prior sessions ---
+
+  - #67 (POST/PUT in routes/mtssMeetings.js lack requireAuth —
+    pre-dating Sessions 43/44 per existing comment in that
+    file) — confirmed still open. PR #45's
+    readNoProgressMonitoringFlag helper rides along with the
+    same caveat as computeWeeklyProgressSnapshot. Tenant-
+    isolation-auditor's MEDIUM on PR #45 is bookkeeping for
+    this inheritance — not a new finding. No PR-side action
+    was needed.
+
+  - #41 (low-severity, error.message leakage in legacy
+    routes/interventions.js handlers) — Session 44's new PATCH
+    /:interventionId/monitoring-flag deliberately did NOT
+    inherit this pattern (uses generic 500 messages). Legacy
+    cleanup remains scoped to a future PR.
+
+  - #11, #22, #36, #37 (candidate), #38 (candidate), #39, #40,
+    #42, #43, #44 — all carried forward unchanged. Not
+    advanced this session.
+
+  --- Stale local + remote refs ---
+
+  - feat/note-only-intervention-flag — DELETED on PR #45 merge
+    (--delete-branch, local + remote).
+  - chore/activities-log-session-44 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface).
+  - All other prior session refs carry forward per Session 43's
+    "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Two viable next sec/ PR scopes carried forward
+  from Session 43 unchanged: (a) Bundle Followups #67 + #40
+  (mtssMeetings POST/PUT/DELETE) into a single mtssMeetings.js
+  sweep — same file, same pattern, four routes total. PR #45's
+  readNoProgressMonitoringFlag helper will pick up the
+  corrected tenant source naturally when this lands. (b) Run
+  a separate interventions.js-only sweep covering Followup #43
+  (templates CRUD). Read endpoints from #39 can follow either
+  or be bundled. Owner to choose.
+
+  Priority 2 — Followup #45 (audit logging for monitoring-flag
+  flips) is non-blocking; schedule when convenient.
+
+  Priority 3 — Followups #41, #42, #44 are non-blocking
+  hardening / verification carried forward from Session 43.
+
+  Priority 4 — Followup #22 (.claude/settings.json drift)
+  remains an open ergonomic gap, unchanged from Sessions
+  42/43. Drift remained in working tree throughout Session 44
+  and explicitly not committed in any of PR #45's 4 commits.
+
+  Priority 5 — Followup #11 docs(dev): SMOKE_TESTING.md
+  walkthrough. Priority held; overdue per Sessions 42/43
+  notes.
+
+  Priority 6 — Followups #29–#33 should now be transitively
+  closed by PR #41 merge (per Session 43's observation);
+  Owner to confirm and update master index accordingly.
+================================================================================
