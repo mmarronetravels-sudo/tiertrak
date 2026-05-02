@@ -4315,3 +4315,239 @@ NEXT SESSION SHOULD
   being noisy. Not blocking, but the noise costs cycles
   every session.
 ================================================================================
+================================================================================
+SESSION: 2026-05-02T06:00:00-07:00 (Session 43)
+BRANCH:  sec/intervention-routes-tenant-scope (PR #43, MERGED d02d721)
+         chore/activities-log-session-43 (this entry, self-merge per Session 41/42 canonical convention)
+DISPOSITION: merged:d02d721 (PR #43 — sec/intervention-routes-tenant-scope)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/44 (chore/activities-log-session-43)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Single workstream: a security retrofit landed as the required
+  precursor to the upcoming feat/note-only-intervention-flag PR.
+  The original audit identified 4 vulnerable routes in
+  routes/interventions.js (POST /assign + 3 PATCH endpoints) plus
+  1 in routes/mtssMeetings.js. During implementation of the
+  interventions.js commit, a full file read surfaced 3 additional
+  same-pattern gaps (PUT /:interventionId/archive,
+  PUT /:interventionId/unarchive, DELETE /:interventionId). Owner
+  approved scope-expansion to all 7 same-file routes; mtssMeetings.js
+  remained at 1 route per stated scope discipline. Net effect: 8
+  routes locked down (auth + tenant scoping) across two backend
+  files plus one stale FE comment refreshed.
+
+PR #43 — sec/intervention-routes-tenant-scope → main (MERGED d02d721)
+
+  Four-commit bundle. All commits scoped to backend auth + tenant
+  scoping plus a single 6-line FE comment refresh. No request-path
+  behavior changes for legitimate FE callers — URLs unchanged via
+  Express positional matching; body fields like assigned_by /
+  archived_by silently ignored where server-derived values are now
+  used (FE still sends them; server now uses req.user.id instead).
+
+  Per-commit summary:
+
+    - ed38bf6 Add requireWriteAccessByInterventionId middleware
+      export (no-op until wired up). 21-line addition to
+      middleware/authorizeInterventionAccess.js. Mirrors the
+      existing requireWriteAccessByBody helper but sources the
+      intervention id from req.params.interventionId.
+
+    - ffc8181 Lock down all 7 mutation routes in
+      routes/interventions.js with auth + tenant scoping. POST
+      /assign: requireAuth; role check moved from spoofable
+      x-user-role header to req.user.role; parent role explicitly
+      rejected; assigned_by server-derived from req.user.id;
+      inline tenant verification of student_id. PATCH/PUT/DELETE:
+      requireAuth + requireWriteAccessByInterventionId +
+      defense-in-depth tenant-bound SQL clauses
+      (student_id IN (SELECT id FROM students WHERE tenant_id) for
+      UPDATEs; explicit tenant-bound subquery for the DELETE
+      cascade across weekly_progress, intervention_assignments,
+      mtss_meeting_interventions). URL params renamed
+      :id -> :interventionId in 6 routes to match middleware
+      convention. FE-facing URLs unchanged.
+
+    - c6bb692 Lock down GET
+      /student/:studentId/interventions-summary in
+      routes/mtssMeetings.js. Adds requireAuth +
+      requireStudentReadAccess + JOIN-based tenant binding
+      mirroring the computeWeeklyProgressSnapshot precedent in
+      the same file.
+
+    - 224a08f Update MTSSMeetingFormModal comment to reflect
+      data-shape rationale (auth-posture distinction obsolete
+      after auth-gate retrofit). 1-file FE comment refresh
+      (4 -> 6 lines): kept the durable per-row vs aggregates
+      distinction, dropped the now-stale auth-gated vs
+      unauthenticated framing.
+
+  Reviewer subagents (security-reviewer + tenant-isolation-auditor)
+  both approved per Owner. Non-Owner human review per §2A line 79
+  obtained. Merged 2026-05-02T14:05Z as d02d721 with --delete-branch
+  (local + remote).
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 43 ---
+
+  - #39 NEW (high-severity) — routes/mtssMeetings.js: GET
+    /student/:studentId, GET /:id, GET
+    /student/:studentId/count all lack requireAuth and
+    tenant scoping. The first two return student PII
+    (first_name, last_name, grade) cross-tenant; the third
+    returns counts only (lower severity but same gap).
+    Same retrofit pattern as PR #43 — different file scope.
+    Held narrow per Owner scope discipline; track for
+    separate PR.
+
+  - #40 NEW (high-severity, next-up per Owner explicit
+    flagging) — routes/mtssMeetings.js: DELETE /:id is a
+    destructive cross-tenant operation with no auth and no
+    tenant scope. Anyone with a meeting id can delete it,
+    cascading to mtss_meeting_interventions. Higher
+    severity than the read leaks in #39. Should be the
+    next sec/ PR.
+
+  - #41 NEW (low-severity, hardening) — Multiple handlers
+    in routes/interventions.js still return 500 responses
+    with res.status(500).json({ error: error.message }).
+    Can leak DB error text (constraint violation messages,
+    column names, etc.). Pre-existing pattern, untouched
+    in PR #43. Replace with generic error messages +
+    console.error for the actual stack.
+
+  - #42 NEW (medium-severity, hardening) — DELETE
+    /student-interventions/:interventionId in
+    routes/interventions.js performs 4 cascading DELETEs
+    without a transaction wrapper. Mid-cascade failure
+    leaves orphaned rows in 1-3 of the dependent tables.
+    Pre-existing — untouched in PR #43. Wrap in
+    BEGIN/COMMIT/ROLLBACK using pool.connect() per the
+    routes/mtssMeetings.js POST / precedent.
+
+  - #43 NEW (high-severity) — routes/interventions.js
+    templates CRUD: GET /templates/tenant/:tenantId
+    (lines 18-44), POST /templates (lines 47-60), DELETE
+    /templates/:id (lines 63-82) lack requireAuth and
+    tenant scoping. Surfaced by security-reviewer
+    (MEDIUM) and tenant-isolation-auditor (LOW) during
+    PR #43 review; both classified as
+    out-of-scope-but-track. Same pattern as the 7
+    mutation routes locked down in PR #43, different
+    table (intervention_templates). Recommend bundling
+    as next sec/ PR. (Followup-number / PR-number
+    collision is coincidental — namespaces are
+    independent.)
+
+  - #44 NEW (medium-severity, verification) — Confirm
+    global rate limiter coverage on /api/interventions.
+    Security-reviewer flagged POST /assign accepts
+    external input without explicit per-route rate
+    limiting; CLAUDE.md §5 requires rate limiting on
+    endpoints accepting external input. Verify
+    app.js/server.js applies a global limiter; if yes,
+    mark verified; if no, add one.
+
+  --- Closed by Session 43 ---
+
+  - PR #43 (sec/intervention-routes-tenant-scope) —
+    MERGED d02d721. Both reviewer subagents approved;
+    non-Owner human review obtained. --delete-branch on
+    local + remote.
+
+  - Note (not my work, transitive observation): PR #41
+    (fix/seed-roster-validation-hardening, Session 42's
+    parked seed-script bundle) merged as f30f743 during
+    this session. Session 42's open list flagged
+    Followups #29–#33 as "Will close on PR #41 merge" —
+    they should now be transitively closed. Recording
+    the observation; not claiming the closure since the
+    work was Session 41/42's. Owner to confirm in their
+    pass.
+
+  --- Folded into PR #43 (no longer followups) ---
+
+  - Mid-implementation discovery: archive/unarchive/delete
+    same-pattern gaps in routes/interventions.js —
+    surfaced during the interventions.js commit's full
+    file read. Owner approved scope-expansion to all 7
+    routes. Folded into commit ffc8181. Not tracked as a
+    followup.
+
+  - Mid-implementation discovery: stale FE comment in
+    MTSSMeetingFormModal.jsx distinguishing auth-gated
+    from unauthenticated — fixed in commit 224a08f. Not
+    tracked as a followup.
+
+  --- Followups carried forward unchanged from prior sessions ---
+
+  - #11 docs(dev): SMOKE_TESTING.md walkthrough. Priority
+    held; overdue per Session 42's notes.
+
+  - #22 .claude/settings.json drift cleanup. Drift
+    remained in working tree throughout this session and
+    explicitly not committed in any of the 4 PR #43
+    commits. Same handling as Session 42.
+
+  - #36, #37 (candidate), #38 (candidate) — carried
+    forward unchanged. Not advanced this session.
+
+  - #67 (POST/PUT in routes/mtssMeetings.js lack
+    requireAuth — pre-dating this session per existing
+    comment in that file at lines 192-194) — confirmed
+    still open. Untouched in PR #43 per scope discipline.
+    New followups #39 and #40 are tangential to this
+    same file and should be triaged together when the
+    next mtssMeetings.js sec/ PR is scoped.
+
+  --- Stale local + remote refs ---
+
+  - sec/intervention-routes-tenant-scope — DELETED on
+    PR #43 merge (--delete-branch, local + remote).
+  - chore/activities-log-session-43 — current branch for
+    this entry's PR. Self-merge eligible (no §4B / §5
+    surface).
+  - All other prior session refs carry forward per
+    Session 42's "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Open feat/note-only-intervention-flag per
+  the 4-commit breakdown approved at the start of this
+  session (migration -> backend wiring -> frontend ->
+  activities log). All product decisions baked in are
+  documented in the conversation history and the PR #43
+  description; the feat/ PR is unblocked now that PR #43
+  has merged.
+
+  Priority 2 — Two viable next sec/ PR scopes:
+  (a) Bundle Followup #67 (mtssMeetings POST/PUT) +
+  Followup #40 (mtssMeetings DELETE) into a single
+  mtssMeetings.js sweep — same file, same pattern, four
+  routes total. (b) Run a separate interventions.js-only
+  sweep covering Followup #43 (templates CRUD: GET tenant
+  templates, POST template, DELETE template) — same file
+  as PR #43 but a different table (intervention_templates)
+  and a different surface (admin template management, not
+  student interventions). Read endpoints from #39 can
+  follow either or be bundled depending on review
+  tolerance. Owner to choose between one combined sec/ PR
+  (interventions + mtssMeetings) and two focused PRs.
+
+  Priority 3 — Followups #41, #42, and #44 are
+  non-blocking hardening / verification; schedule when
+  convenient. #42 is medium-severity (orphan-row data
+  integrity); #44 is medium-severity (rate-limiter
+  verification, then add if missing); #41 is
+  low-severity (info leakage in error responses).
+
+  Priority 4 — Followup #22 (.claude/settings.json drift)
+  remains an open ergonomic gap, unchanged from
+  Session 42.
+
+  Priority 5 — Followups #29–#33 transitively closed by
+  PR #41 merge during this session (per Session 42
+  prediction); Owner to confirm and update master index
+  accordingly.
+================================================================================
