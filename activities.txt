@@ -4751,3 +4751,212 @@ NEXT SESSION SHOULD
   closed by PR #41 merge (per Session 43's observation);
   Owner to confirm and update master index accordingly.
 ================================================================================
+SESSION: 2026-05-02T15:14:00-07:00 (Session 45)
+BRANCH:  feat/multi-screener-foundation (PR #47, MERGED 20ac1f8)
+         chore/activities-log-session-45 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:20ac1f8 (PR #47 — feat/multi-screener-foundation)
+             pr-opened:<PLACEHOLDER — fill on commit-2> (chore/activities-log-session-45)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR1 of the multi-screener support effort landed: schema foundation + route
+  factor-out + minimal frontend backward-compat plumbing. Adds an
+  assessment_type column to screener_results, per-tenant backfills it to
+  'STAR' for existing rows, and reshapes the uniqueness contract from
+  (student_id, school_year) to a 6-column key
+  (tenant_id, student_id, assessment_type, subject, screening_period,
+  school_year) so future screener types (AIMSweb, iReady, etc.) can coexist
+  with STAR rows for the same student/year — and so the same student can
+  carry distinct rows per subject and per screening period within an
+  assessment type. Screener routes lifted out of server.js into a
+  dedicated routes/screener.js with auth + tenant scoping retrofit.
+  Frontend upload modal now sends assessmentType=STAR explicitly to keep
+  PR1 backward-compatible while PR2's UI work is staged.
+
+PR #47 — feat/multi-screener-foundation → main (MERGED 20ac1f8)
+
+  Four-commit bundle:
+
+    - 4c06859 Migration 024: multi-screener support foundation. Six steps:
+      (1) ADD COLUMN assessment_type VARCHAR with default 'STAR';
+      (2-4) per-tenant backfill loop (idempotent, tenant-scoped UPDATEs);
+      (5) NOT NULL tightening once backfill verified;
+      (6) DROP old UNIQUE (student_id, school_year), ADD new UNIQUE
+      (tenant_id, student_id, assessment_type, subject, screening_period,
+      school_year) with NULLS NOT DISTINCT semantics so future NULL
+      student_id fingerprints can't collide.
+
+    - cb6241f Factor screener routes out of server.js into
+      routes/screener.js. Auth + tenant-scoping retrofit applied to every
+      lifted route. No behavior change beyond the structural move.
+
+    - d622761 ScreenerUploadModal: send assessmentType=STAR explicitly so
+      existing upload flow continues to land in the new column without
+      the PR2 picker UI. Belt-and-suspenders pairing with the migration's
+      backfill default.
+
+    - 9a3d7b0 Privacy-reviewer WARNs addressed: catalog screener_results
+      in PRIVACY_REVIEW.md field inventory; tighten sr.* projection in
+      GET /student/:studentId to an explicit column list.
+
+  Reviewer verdicts (pre-merge):
+    - privacy-reviewer: APPROVED WITH NOTES (2 WARNs, both resolved by
+      9a3d7b0).
+    - tenant-isolation-auditor: APPROVED.
+    - security-reviewer: APPROVED.
+
+MIGRATIONS RUN
+  024_multi_screener_foundation.sql — applied to prod with a partial-
+    failure recovery path (see "Production migration outcome" below).
+
+PRODUCTION MIGRATION OUTCOME (must-read for next session)
+  Migration 024 was applied to prod and PARTIALLY succeeded:
+    - Steps 1–5 ran clean across all tenants. assessment_type column
+      present, backfill complete, NOT NULL constraint in place.
+    - Step 6 (DROP old UNIQUE + ADD new 6-column UNIQUE with NULLS NOT
+      DISTINCT) ERRORED on 1 prod tenant due to pre-existing NULL-
+      student_id duplicate rows in screener_results that violated the
+      new uniqueness contract under NULLS NOT DISTINCT semantics.
+    - Manual recovery: added the new UNIQUE
+      (tenant_id, student_id, assessment_type, subject, screening_period,
+      school_year) constraint WITHOUT NULLS NOT DISTINCT semantics so
+      the migration could complete. Prod is now in a non-canonical
+      uniqueness state vs. the migration file's intent. Migration 025
+      (Followup #49) will dedup the offending NULL-student_id rows and
+      re-add the constraint with NULLS NOT DISTINCT.
+
+TENANT ISOLATION REVIEW
+  - routes/screener.js retrofit: every lifted handler now resolves
+    tenant from the auth token, never from request body / query.
+    Spot-checked all SELECT/INSERT/UPDATE/DELETE paths for a
+    school_id-scoped WHERE clause.
+  - Migration 024 backfill loop: per-tenant UPDATE structure preserved;
+    no cross-tenant write surface introduced.
+  - GET /student/:studentId tightening (commit 9a3d7b0): sr.* replaced
+    with an explicit column projection — eliminates the risk that a
+    future ALTER TABLE adds a column unintentionally exposed via this
+    route.
+  - New 6-column UNIQUE includes tenant_id as the leading component,
+    making any cross-tenant collision structurally impossible at the
+    constraint level (defense-in-depth alongside route-level scoping).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: screener_results rows reference student_id (FK
+    to students). No new PII columns added — assessment_type is a
+    short enum-style code (e.g., 'STAR', 'AIMSweb'), not PII.
+  Logging audit: verified no PII in logs. Migration 024 logs row
+    counts only. Smoke-test cleanup logged the affected row id list
+    (synthetic test rows), not student data.
+  Cross-tenant risk: none identified. Backfill is per-tenant; new
+    routes/screener.js handlers carry tenant scoping on every query;
+    new 6-column UNIQUE leads with tenant_id.
+  Catalog update: screener_results table inventoried in
+    docs/ai-context/PRIVACY_REVIEW.md per privacy-reviewer WARN.
+
+VERIFICATION
+  - npm test — passed (PR #47 CI green pre-merge).
+  - npm run lint — clean.
+  - Migration 024 applied to local dev DB — success.
+  - Migration 024 applied to prod — partial (Steps 1–5 success, Step 6
+    failed on 1 tenant; manual recovery documented above).
+  - Smoke test of POST /upload (prod, 1 tenant):
+      * Inserted 2 synthetic screener_results rows via the production
+        upload path.
+      * Verified rows landed via the dashboard view (read-side render
+        confirmed assessment_type='STAR' present and indexed under the
+        new uniqueness contract).
+      * Cleaned up via DELETE inside an explicit transaction with a
+        belt-and-suspenders id IN (...) constraint scoped to the 2
+        synthetic ids only.
+      * INSERT path: VERIFIED.
+      * UPDATE / ON CONFLICT path: NOT EXERCISED — deferred to PR2
+        verification when the picker UI lands and natural re-upload
+        flows can drive ON CONFLICT.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- New / re-scoped this session ---
+
+  - Followup #48 (RE-SCOPED, was: pre-existing scope) — schema.sql
+    drift on screener_results. Audit identified five categories of
+    drift between schema.sql and the live prod table:
+      * varchar vs TEXT divergence on multiple columns
+      * nullability flips (columns NULLable in schema.sql that are
+        NOT NULL in prod, and vice versa)
+      * FK ON DELETE rules differ
+      * missing indexes in schema.sql relative to prod
+      * UNIQUE constraint semantics drift (now compounded by the
+        Migration 024 partial-apply outcome — schema.sql shows
+        NULLS NOT DISTINCT, prod currently does not).
+    Owner to decide whether #48 fixes schema.sql to match prod, or
+    whether Migration 025 (#49) gets prod back into canonical shape
+    first and #48 then re-asserts schema.sql against the canonical
+    state.
+
+  - Followup #49 (NEW) — Migration 025: dedup pre-existing NULL-
+    student_id duplicate rows in screener_results, then re-add the
+    UNIQUE (tenant_id, student_id, assessment_type, subject,
+    screening_period, school_year) constraint with NULLS NOT
+    DISTINCT semantics so prod matches Migration 024's original
+    intent. Sequence matters: dedup must run before the constraint
+    flip. Affected scope: 1 prod tenant identified during Step 6
+    failure; full inventory of NULL-student_id rows across tenants
+    pending in #50.
+
+  - Followup #50 (NEW) — Two-part data-shape investigation surfaced
+    by the Migration 024 backfill loop:
+      (a) tenant_id=3 catch-all backfill anomaly. Tenant_id=3 had
+          screener_results rows that landed in a catch-all bucket
+          during the per-tenant backfill — needs investigation to
+          determine whether this represents legacy data, a bug in
+          a prior import path, or expected behavior under the
+          backfill loop's tenant resolution logic.
+      (b) tenant_id=10 zero-screener-rows surprise. Tenant_id=10
+          backfilled zero rows. Confirm whether this tenant simply
+          has no screener data yet, or whether their rows are
+          mis-attributed to a different tenant_id (which would be
+          a §5 cross-tenant-attribution finding).
+    Both items are investigation-only at this stage; remediation
+    scope TBD pending findings.
+
+  --- Carried forward unchanged ---
+
+  - All Session 44 priority items (Followups #67+#40 mtssMeetings
+    sweep; interventions.js-only sweep covering #43; #45 audit
+    logging; #41/#42/#44 hardening; #22 settings.json drift; #11
+    SMOKE_TESTING.md walkthrough; #29–#33 transitive-close
+    confirmation) carry forward unchanged.
+
+  --- Stale local + remote refs ---
+
+  - feat/multi-screener-foundation — DELETED on PR #47 merge
+    (--delete-branch, local + remote).
+  - chore/activities-log-session-45 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface).
+  - All other prior session refs carry forward per Session 44's
+    "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Followup #49 (Migration 025): dedup + re-add the
+  6-column UNIQUE with NULLS NOT DISTINCT. This restores prod to
+  the canonical uniqueness contract documented in Migration 024
+  and is a hard blocker for any PR2 work that assumes the
+  NULLS-NOT-DISTINCT invariant. Land before PR2.
+
+  Priority 2 — Followup #50 investigation (tenant_id=3 catch-all
+  + tenant_id=10 zero-rows). Read-only audit first; if (b) reveals
+  cross-tenant attribution, escalate to §5 critical and pause PR2.
+
+  Priority 3 — Followup #48 schema.sql drift. Sequence after #49
+  so schema.sql can be re-asserted against the canonical post-#49
+  state in one pass instead of two.
+
+  Priority 4 — PR2 of multi-screener: picker UI + ON CONFLICT path
+  exercise. Gated on Priority 1 (canonical UNIQUE semantics in
+  prod) and a clean read on Priority 2.
+
+  Priority 5+ — All Session 44 carry-forwards (mtssMeetings sweep,
+  interventions.js sweep, #45 audit logging, #41/#42/#44, #22, #11,
+  #29–#33 confirmation) hold their prior priority order.
+================================================================================
