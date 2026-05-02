@@ -3788,7 +3788,7 @@ NEXT SESSION SHOULD
 SESSION: 2026-05-01T23:30:00-04:00 (Session 42)
 BRANCH:  fix/seed-roster-validation-hardening (PR #41, parked human-reviewer-pending)
          chore/activities-log-session-42 (this entry, self-merge per Session 41 canonical convention)
-DISPOSITION: pr-opened:<<TODO_FILL_ON_SECOND_COMMIT>> (chore/activities-log-session-42)
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/42 (chore/activities-log-session-42)
              pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/41 (seed-script bundle, NOT merged this session)
              merged:fdcb707 (PR #6 — Resource 1.4 calendar-underscores cosmetic fix)
 --------------------------------------------------------------------------------
