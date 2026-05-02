@@ -67,27 +67,27 @@ const STAFF = [
 ];
 
 const STUDENTS = [
-  // Tier 3 — high need, mixed campus
-  { external_id: 'TX-DEMO-006', first_name: 'Finn',     last_name: 'Flores',    grade: '2', campus: 'Pecan Grove Elementary',     tier: 3, area: 'Academic',         risk_level: 'high'     },
-  { external_id: 'TX-DEMO-010', first_name: 'Joaquín',  last_name: 'Juárez',    grade: '4', campus: 'Pecan Grove Elementary',     tier: 3, area: 'Academic',         risk_level: 'high'     },
-  { external_id: 'TX-DEMO-016', first_name: 'Paolo',    last_name: 'Peña',      grade: '7', campus: 'Cypress Crossing Middle School', tier: 3, area: 'Academic',     risk_level: 'high'     },
+  // Tier 3 — high need
+  { external_id: 'TX-DEMO-006', first_name: 'Finn',     last_name: 'Flores',    grade: '2', tier: 3, area: 'Academic',         risk_level: 'high'     },
+  { external_id: 'TX-DEMO-010', first_name: 'Joaquín',  last_name: 'Juárez',    grade: '4', tier: 3, area: 'Academic',         risk_level: 'high'     },
+  { external_id: 'TX-DEMO-016', first_name: 'Paolo',    last_name: 'Peña',      grade: '7', tier: 3, area: 'Academic',     risk_level: 'high'     },
   // Tier 2 — moderate need
-  { external_id: 'TX-DEMO-002', first_name: 'Beck',     last_name: 'Bautista',  grade: 'K', campus: 'Pecan Grove Elementary',     tier: 2, area: 'Academic',         risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-004', first_name: 'Devon',    last_name: 'Delgado',   grade: '1', campus: 'Pecan Grove Elementary',     tier: 2, area: 'Academic',         risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-008', first_name: 'Hudson',   last_name: 'Herrera',   grade: '3', campus: 'Pecan Grove Elementary',     tier: 2, area: 'Behavior',         risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-012', first_name: 'Luis',     last_name: 'Linares',   grade: '5', campus: 'Pecan Grove Elementary',     tier: 2, area: 'Academic',         risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-013', first_name: 'Maya',     last_name: 'Mendoza',   grade: '6', campus: 'Cypress Crossing Middle School', tier: 2, area: 'Social-Emotional', risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-014', first_name: 'Nico',     last_name: 'Navarro',   grade: '6', campus: 'Cypress Crossing Middle School', tier: 2, area: 'Behavior',     risk_level: 'moderate' },
-  { external_id: 'TX-DEMO-018', first_name: 'Reyna',    last_name: 'Ramírez',   grade: '8', campus: 'Cypress Crossing Middle School', tier: 2, area: 'Academic',     risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-002', first_name: 'Beck',     last_name: 'Bautista',  grade: 'K', tier: 2, area: 'Academic',         risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-004', first_name: 'Devon',    last_name: 'Delgado',   grade: '1', tier: 2, area: 'Academic',         risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-008', first_name: 'Hudson',   last_name: 'Herrera',   grade: '3', tier: 2, area: 'Behavior',         risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-012', first_name: 'Luis',     last_name: 'Linares',   grade: '5', tier: 2, area: 'Academic',         risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-013', first_name: 'Maya',     last_name: 'Mendoza',   grade: '6', tier: 2, area: 'Social-Emotional', risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-014', first_name: 'Nico',     last_name: 'Navarro',   grade: '6', tier: 2, area: 'Behavior',     risk_level: 'moderate' },
+  { external_id: 'TX-DEMO-018', first_name: 'Reyna',    last_name: 'Ramírez',   grade: '8', tier: 2, area: 'Academic',     risk_level: 'moderate' },
   // Tier 1 — on track
-  { external_id: 'TX-DEMO-001', first_name: 'Adriana',  last_name: 'Acosta',    grade: 'K', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-003', first_name: 'Camila',   last_name: 'Castillo',  grade: '1', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-005', first_name: 'Emilia',   last_name: 'Espinoza',  grade: '2', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-007', first_name: 'Gabriela', last_name: 'Garza',     grade: '3', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-009', first_name: 'Iris',     last_name: 'Ibañez',    grade: '4', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-011', first_name: 'Kaylee',   last_name: 'Khan',      grade: '5', campus: 'Pecan Grove Elementary',     tier: 1, area: 'Academic',         risk_level: 'low'      },
-  { external_id: 'TX-DEMO-015', first_name: 'Olympia',  last_name: 'Ortiz',     grade: '7', campus: 'Cypress Crossing Middle School', tier: 1, area: 'Academic',     risk_level: 'low'      },
-  { external_id: 'TX-DEMO-017', first_name: 'Quincy',   last_name: 'Quiñonez',  grade: '8', campus: 'Cypress Crossing Middle School', tier: 1, area: 'Academic',     risk_level: 'low'      },
+  { external_id: 'TX-DEMO-001', first_name: 'Adriana',  last_name: 'Acosta',    grade: 'K', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-003', first_name: 'Camila',   last_name: 'Castillo',  grade: '1', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-005', first_name: 'Emilia',   last_name: 'Espinoza',  grade: '2', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-007', first_name: 'Gabriela', last_name: 'Garza',     grade: '3', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-009', first_name: 'Iris',     last_name: 'Ibañez',    grade: '4', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-011', first_name: 'Kaylee',   last_name: 'Khan',      grade: '5', tier: 1, area: 'Academic',         risk_level: 'low'      },
+  { external_id: 'TX-DEMO-015', first_name: 'Olympia',  last_name: 'Ortiz',     grade: '7', tier: 1, area: 'Academic',     risk_level: 'low'      },
+  { external_id: 'TX-DEMO-017', first_name: 'Quincy',   last_name: 'Quiñonez',  grade: '8', tier: 1, area: 'Academic',     risk_level: 'low'      },
 ];
 
 // Intervention assignments — Tier 2 + Tier 3 only. Tier 1 students are clean.

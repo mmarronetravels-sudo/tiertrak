@@ -36,9 +36,11 @@
  *                                'teacher', 'counselor', 'behavior_specialist',
  *                                'student_support_specialist', 'mtss_support',
  *                                'parent')
- *                        ADMINS are auto-assigned 'district_admin' by the
- *                        seed script — do not put a role on ADMINS entries.
- *                        STAFF must specify a role explicitly.
+ *                        ADMINS default to 'district_admin'. Override by
+ *                        setting `role` explicitly on an ADMINS entry — e.g.,
+ *                        'school_admin' for charter or international tenants.
+ *                        Any ALLOWED_ROLES value is permitted. STAFF must
+ *                        specify a role explicitly.
  *   - users.school_wide_access  REQUIRED on every STAFF entry. Boolean. The
  *                        seed script does NOT infer this from role.
  *   - tenants.subdomain  Lowercase letters, digits, hyphens only
@@ -80,10 +82,13 @@ const TENANT = {
 };
 
 // At least one ADMINS entry is required. The first admin's user-id is used
-// as activated_by for the tenant_intervention_bank auto-seed. ADMINS are
-// auto-assigned role='district_admin' and school_wide_access=true.
+// as activated_by for the tenant_intervention_bank auto-seed. ADMINS default
+// to role='district_admin' and always get school_wide_access=true. Override
+// `role` per-entry for non-district tenants.
 const ADMINS = [
   { email: 'admin1@example.invalid', full_name: 'Replace Me Admin One' },
+  // e.g., role: 'school_admin' for charter/international tenants:
+  // { email: 'admin2@example.invalid', full_name: 'Replace Me Admin Two', role: 'school_admin' },
 ];
 
 // STAFF may be empty. school_wide_access is REQUIRED on every entry.
@@ -97,8 +102,8 @@ const STAFF = [
 ];
 
 // At least one STUDENTS entry is required. external_id is roster-only and
-// must be unique within this array. Optional fields (campus, etc.) may be
-// added for human readability but are not inserted into the database.
+// must be unique within this array. Unknown fields will produce a stderr
+// WARN line on every run; remove or rename them to match the schema.
 const STUDENTS = [
   {
     external_id: 'DEMO-001',                // Unique within STUDENTS; roster-only

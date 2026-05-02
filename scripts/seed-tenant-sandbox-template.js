@@ -69,6 +69,25 @@ const ALLOWED_TIERS = new Set([1, 2, 3]);
 const ALLOWED_AREAS = new Set(['Behavior', 'Academic', 'Social-Emotional']);
 const ALLOWED_RISK_LEVELS = new Set(['low', 'moderate', 'high']);
 
+// Allowed top-level roster keys and per-entity object keys, used by
+// collectRosterWarnings() to flag operator typos (e.g., 'gradle' instead of
+// 'grade') that would otherwise be silently discarded. Warnings are non-fatal:
+// the script still emits SQL if validation passes. An operator who legitimately
+// adds an extra field for human readability will see a WARN line every run as
+// a reminder to remove it.
+const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  'TENANT', 'ADMINS', 'STAFF', 'STUDENTS', 'INTERVENTIONS', 'PROGRESS_NOTES', 'PARENT_LINK',
+]);
+const ALLOWED_KEYS = {
+  TENANT: new Set(['name', 'type', 'subdomain']),
+  ADMINS: new Set(['email', 'full_name', 'role']),
+  STAFF: new Set(['email', 'full_name', 'role', 'school_wide_access']),
+  STUDENTS: new Set(['external_id', 'first_name', 'last_name', 'grade', 'tier', 'area', 'risk_level']),
+  INTERVENTIONS: new Set(['student_external_id', 'template_name', 'assigned_by_email', 'progress', 'start_age_days', 'notes']),
+  PROGRESS_NOTES: new Set(['student_external_id', 'author_email', 'age_days', 'note']),
+  PARENT_LINK: new Set(['parent_email', 'student_external_id', 'relationship']),
+};
+
 // ---------------------------------------------------------------------------
 // CLI arg parsing
 // ---------------------------------------------------------------------------
@@ -147,7 +166,29 @@ function loadRoster(rosterPath) {
 
 function validateRoster(roster) {
   const errors = [];
-  const fmt = (v) => JSON.stringify(v);
+  // Truncate stringified values in error messages so an operator who pastes
+  // real PII into a malformed roster field doesn't splash a full identifying
+  // record across stderr. 80 chars is enough to show the type and shape of
+  // small primitives without leaking a whole record. Falls back to String(v)
+  // when JSON.stringify returns undefined (functions, symbols, bare undefined)
+  // and to a sentinel when stringify throws (circular refs, BigInt).
+  const MAX_FMT_LENGTH = 80;
+  const fmt = (v) => {
+    let s;
+    try {
+      s = JSON.stringify(v);
+    } catch (_err) {
+      return '<unstringifiable>';
+    }
+    if (s === undefined) s = String(v);
+    if (s.length <= MAX_FMT_LENGTH) return s;
+    return s.slice(0, MAX_FMT_LENGTH - 3) + '...';
+  };
+  // TENANT.name flows raw into an emitted "-- " SQL comment header; an embedded
+  // \n would terminate the comment and let arbitrary SQL ride along ahead of
+  // BEGIN. Also reject on the other free-form display strings as defense in
+  // depth, even though they only land inside single-quoted SQL string literals.
+  const hasLineBreak = (s) => /[\r\n]/.test(s);
 
   // TENANT
   if (!roster.TENANT || typeof roster.TENANT !== 'object') {
@@ -156,12 +197,16 @@ function validateRoster(roster) {
     const t = roster.TENANT;
     if (typeof t.name !== 'string' || !t.name.trim()) {
       errors.push(`TENANT.name: must be a non-empty string; got: ${fmt(t.name)}`);
+    } else if (hasLineBreak(t.name)) {
+      errors.push(`TENANT.name: must not contain carriage returns or newlines; got: ${fmt(t.name)}`);
     }
     if (typeof t.subdomain !== 'string' || !/^[a-z0-9-]+$/.test(t.subdomain)) {
       errors.push(`TENANT.subdomain: must match /^[a-z0-9-]+$/ (lowercase letters, digits, hyphens only); got: ${fmt(t.subdomain)}`);
     }
     if (typeof t.type !== 'string' || !t.type.trim()) {
       errors.push(`TENANT.type: must be a non-empty string; got: ${fmt(t.type)}`);
+    } else if (hasLineBreak(t.type)) {
+      errors.push(`TENANT.type: must not contain carriage returns or newlines; got: ${fmt(t.type)}`);
     }
   }
 
@@ -179,6 +224,14 @@ function validateRoster(roster) {
       }
       if (typeof a.full_name !== 'string' || !a.full_name.trim()) {
         errors.push(`ADMINS[${i}].full_name: must be a non-empty string; got: ${fmt(a.full_name)}`);
+      } else if (hasLineBreak(a.full_name)) {
+        errors.push(`ADMINS[${i}].full_name: must not contain carriage returns or newlines; got: ${fmt(a.full_name)}`);
+      }
+      // role is OPTIONAL on ADMINS. Defaults to 'district_admin' in buildSql.
+      // If specified, must be one of ALLOWED_ROLES — typical override is
+      // 'school_admin' for non-district tenants (charter, international).
+      if (a.role !== undefined && !ALLOWED_ROLES.has(a.role)) {
+        errors.push(`ADMINS[${i}].role: when specified, must be one of [${[...ALLOWED_ROLES].map(r => `'${r}'`).join(', ')}]; got: ${fmt(a.role)}`);
       }
     });
   }
@@ -197,6 +250,8 @@ function validateRoster(roster) {
       }
       if (typeof s.full_name !== 'string' || !s.full_name.trim()) {
         errors.push(`STAFF[${i}].full_name: must be a non-empty string; got: ${fmt(s.full_name)}`);
+      } else if (hasLineBreak(s.full_name)) {
+        errors.push(`STAFF[${i}].full_name: must not contain carriage returns or newlines; got: ${fmt(s.full_name)}`);
       }
       if (typeof s.role !== 'string' || !ALLOWED_ROLES.has(s.role)) {
         errors.push(`STAFF[${i}].role: must be one of [${[...ALLOWED_ROLES].map(r => `'${r}'`).join(', ')}]; got: ${fmt(s.role)}`);
@@ -351,6 +406,44 @@ function validateRoster(roster) {
   return errors;
 }
 
+// Walk the roster and flag any keys that aren't in ALLOWED_KEYS. Non-fatal:
+// returns a string[] of warnings. Operators see typos like 'gradle' instead
+// of 'grade' which would otherwise be silently discarded by the script's
+// expected-key-only validator. Walks in roster declaration order so the
+// warnings read top-down through the operator's roster file.
+function collectRosterWarnings(roster) {
+  const warnings = [];
+
+  for (const k of Object.keys(roster)) {
+    if (!ALLOWED_TOP_LEVEL_KEYS.has(k)) {
+      warnings.push(`roster: unknown top-level key ${JSON.stringify(k)} — will be ignored`);
+    }
+  }
+
+  const checkObject = (obj, label, allowed) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+    for (const k of Object.keys(obj)) {
+      if (!allowed.has(k)) {
+        warnings.push(`${label}: unknown key ${JSON.stringify(k)} — will be ignored`);
+      }
+    }
+  };
+  const checkArray = (arr, label, allowed) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach((item, i) => checkObject(item, `${label}[${i}]`, allowed));
+  };
+
+  checkObject(roster.TENANT,        'TENANT',         ALLOWED_KEYS.TENANT);
+  checkArray(roster.ADMINS,         'ADMINS',         ALLOWED_KEYS.ADMINS);
+  checkArray(roster.STAFF,          'STAFF',          ALLOWED_KEYS.STAFF);
+  checkArray(roster.STUDENTS,       'STUDENTS',       ALLOWED_KEYS.STUDENTS);
+  checkArray(roster.INTERVENTIONS,  'INTERVENTIONS',  ALLOWED_KEYS.INTERVENTIONS);
+  checkArray(roster.PROGRESS_NOTES, 'PROGRESS_NOTES', ALLOWED_KEYS.PROGRESS_NOTES);
+  checkObject(roster.PARENT_LINK,   'PARENT_LINK',    ALLOWED_KEYS.PARENT_LINK);
+
+  return warnings;
+}
+
 // ---------------------------------------------------------------------------
 // SQL helpers
 // ---------------------------------------------------------------------------
@@ -383,13 +476,14 @@ function sqlInt(n) {
 async function buildSql(roster, rosterPath) {
   // Build accounts in stable order: admins first, then staff in roster
   // file order. This is also the order the password table will print.
-  // ADMINS auto-fill role='district_admin' and school_wide_access=true,
-  // mirroring scripts/seed-humble-isd-sandbox.js semantics.
+  // ADMINS default to role='district_admin' but may override via a.role
+  // (e.g., 'school_admin' for charter/international tenants).
+  // school_wide_access stays hardcoded true for ADMINS.
   const accounts = [
     ...roster.ADMINS.map(a => ({
       email: a.email,
       full_name: a.full_name,
-      role: 'district_admin',
+      role: a.role || 'district_admin',
       school_wide_access: true,
       kind: 'admin',
     })),
@@ -407,6 +501,16 @@ async function buildSql(roster, rosterPath) {
   // for the tenant_intervention_bank auto-seed).
   const varByEmail = {};
   accounts.forEach((a, i) => { varByEmail[a.email] = `v_user_${i + 1}`; });
+
+  // Parallel scheme for students: v_student_1 ... v_student_M, in roster
+  // declaration order. Populated post-INSERT via RETURNING id, then used
+  // to wire interventions / progress notes / parent links to the right
+  // student row even when first+last names collide. Pre-#33 the script
+  // resolved students by (first_name, last_name) which silently attached
+  // rows to BOTH students of a colliding name pair (production incident
+  // during prospect provisioning, see activities.txt Session 40 catches).
+  const varByExternalId = {};
+  roster.STUDENTS.forEach((s, i) => { varByExternalId[s.external_id] = `v_student_${i + 1}`; });
 
   // Generate one password + hash per account. Plaintext goes to a parallel
   // array we will print to stderr at the end. Hashes go into the SQL.
@@ -448,6 +552,13 @@ async function buildSql(roster, rosterPath) {
   for (let i = 0; i < accounts.length; i += 1) {
     const a = accounts[i];
     lines.push(`  v_user_${i + 1}        INTEGER; -- ${a.email} (${a.role})`);
+  }
+  // One INTEGER per student, populated by RETURNING id from the INSERT
+  // INTO students block. Comment shows external_id + first/last name so
+  // the operator can audit the mapping.
+  for (let i = 0; i < roster.STUDENTS.length; i += 1) {
+    const s = roster.STUDENTS[i];
+    lines.push(`  v_student_${i + 1}     INTEGER; -- ${s.external_id} (${s.first_name} ${s.last_name})`);
   }
   lines.push('  v_existing_email TEXT;');
   lines.push('BEGIN');
@@ -516,13 +627,18 @@ async function buildSql(roster, rosterPath) {
   }
 
   lines.push('  -- ----- Students -----');
+  lines.push('  -- Each student is inserted with RETURNING id INTO v_student_N so downstream');
+  lines.push('  -- INSERTs (interventions, progress notes, parent links) can reference the');
+  lines.push('  -- exact row even when first+last names collide.');
   for (const s of roster.STUDENTS) {
-    lines.push(
-      `  INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level) VALUES ` +
-      `(v_tenant_id, ${sqlString(s.first_name)}, ${sqlString(s.last_name)}, ${sqlString(s.grade)}, ${sqlInt(s.tier)}, ${sqlString(s.area)}, ${sqlString(s.risk_level)});`
-    );
+    const studentVar = varByExternalId[s.external_id];
+    if (!studentVar) throw new Error(`Roster mismatch: no student var for ${s.external_id}`);
+    lines.push(`  -- ${s.external_id} — ${s.first_name} ${s.last_name}`);
+    lines.push('  INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level)');
+    lines.push(`  VALUES (v_tenant_id, ${sqlString(s.first_name)}, ${sqlString(s.last_name)}, ${sqlString(s.grade)}, ${sqlInt(s.tier)}, ${sqlString(s.area)}, ${sqlString(s.risk_level)})`);
+    lines.push(`  RETURNING id INTO ${studentVar};`);
+    lines.push('');
   }
-  lines.push('');
 
   if (roster.INTERVENTIONS.length > 0) {
     lines.push('  -- ----- Active interventions (Tier 2 + Tier 3) -----');
@@ -531,14 +647,14 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- staff member listed in the roster. start_date is computed from today.');
     lines.push('');
     for (const iv of roster.INTERVENTIONS) {
-      const student = roster.STUDENTS.find(s => s.external_id === iv.student_external_id);
+      const studentVar = varByExternalId[iv.student_external_id];
       // Validator already guarantees these resolve, but defense in depth:
-      if (!student) throw new Error(`Roster mismatch: no student for ${iv.student_external_id}`);
+      if (!studentVar) throw new Error(`Roster mismatch: no student var for ${iv.student_external_id}`);
       const assignerVar = varByEmail[iv.assigned_by_email];
       if (!assignerVar) throw new Error(`Roster mismatch: no user var for ${iv.assigned_by_email}`);
-      lines.push(`  -- ${student.first_name} ${student.last_name} (${student.external_id}) — ${iv.template_name}`);
+      lines.push(`  -- ${iv.student_external_id} — ${iv.template_name}`);
       lines.push('  INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, status, progress, start_date)');
-      lines.push('  SELECT s.id,');
+      lines.push(`  VALUES (${studentVar},`);
       // No LIMIT 1: Preflight 3 guarantees exactly one match, and dropping
       // LIMIT 1 means a future regression (someone duplicates a template
       // name) would surface as a Postgres error instead of an arbitrary-
@@ -549,8 +665,7 @@ async function buildSql(roster, rosterPath) {
       lines.push(`         ${sqlString(iv.notes)},`);
       lines.push(`         'active',`);
       lines.push(`         ${sqlInt(iv.progress)},`);
-      lines.push(`         CURRENT_DATE - INTERVAL '${sqlInt(iv.start_age_days)} days'`);
-      lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+      lines.push(`         CURRENT_DATE - INTERVAL '${sqlInt(iv.start_age_days)} days');`);
       lines.push('');
     }
   }
@@ -561,16 +676,15 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- chronology renders correctly in the activity feed.');
     lines.push('');
     for (const n of roster.PROGRESS_NOTES) {
-      const student = roster.STUDENTS.find(s => s.external_id === n.student_external_id);
-      if (!student) throw new Error(`Roster mismatch: no student for ${n.student_external_id}`);
+      const studentVar = varByExternalId[n.student_external_id];
+      if (!studentVar) throw new Error(`Roster mismatch: no student var for ${n.student_external_id}`);
       const authorVar = varByEmail[n.author_email];
       if (!authorVar) throw new Error(`Roster mismatch: no user var for ${n.author_email}`);
       lines.push('  INSERT INTO progress_notes (student_id, author_id, note, created_at)');
-      lines.push('  SELECT s.id,');
+      lines.push(`  VALUES (${studentVar},`);
       lines.push(`         ${authorVar},`);
       lines.push(`         ${sqlString(n.note)},`);
-      lines.push(`         CURRENT_TIMESTAMP - INTERVAL '${sqlInt(n.age_days)} days'`);
-      lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+      lines.push(`         CURRENT_TIMESTAMP - INTERVAL '${sqlInt(n.age_days)} days');`);
     }
     lines.push('');
   }
@@ -580,13 +694,12 @@ async function buildSql(roster, rosterPath) {
     lines.push('  -- parent_student_links has NO tenant_id column (known followup; see CLAUDE.md');
     lines.push('  -- and routes/auth.js:341).');
     const link = roster.PARENT_LINK;
-    const student = roster.STUDENTS.find(s => s.external_id === link.student_external_id);
-    if (!student) throw new Error(`Roster mismatch: no student for parent link ${link.student_external_id}`);
+    const studentVar = varByExternalId[link.student_external_id];
+    if (!studentVar) throw new Error(`Roster mismatch: no student var for parent link ${link.student_external_id}`);
     const parentVar = varByEmail[link.parent_email];
     if (!parentVar) throw new Error(`Roster mismatch: no user var for ${link.parent_email}`);
     lines.push('  INSERT INTO parent_student_links (parent_user_id, student_id, relationship)');
-    lines.push(`  SELECT ${parentVar}, s.id, ${sqlString(link.relationship)}`);
-    lines.push(`  FROM students s WHERE s.tenant_id = v_tenant_id AND s.first_name = ${sqlString(student.first_name)} AND s.last_name = ${sqlString(student.last_name)};`);
+    lines.push(`  VALUES (${parentVar}, ${studentVar}, ${sqlString(link.relationship)});`);
     lines.push('');
   }
 
@@ -674,6 +787,12 @@ async function main() {
     process.stderr.write(`seed-tenant-sandbox-template: ${err.message}\n`);
     process.exit(2);
   }
+
+  // Print unknown-key warnings (non-fatal) before validation runs, so typos
+  // like 'gradle' get flagged on every run regardless of whether validation
+  // succeeds. Exit code is unaffected.
+  const warnings = collectRosterWarnings(roster);
+  for (const w of warnings) process.stderr.write(`WARN: ${w}\n`);
 
   const errors = validateRoster(roster);
   if (errors.length > 0) {
