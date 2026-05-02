@@ -52,6 +52,7 @@ const interventionBankRoutes = require('./routes/interventionBank');
 const tier1AssessmentsRoutes = require('./routes/tier1-assessments');
 const student504Routes = require('./routes/student504');
 const parent504Routes = require('./routes/parent504');
+const screenerRoutes = require('./routes/screener');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -723,6 +724,7 @@ app.use('/api/intervention-bank', interventionBankRoutes);
 app.use('/api/tier1-assessments', tier1AssessmentsRoutes);
 app.use('/api/student-504', student504Routes);
 app.use('/api/parent-504', parent504Routes);
+app.use('/api/screener-results', screenerRoutes);
 
 // Test route
 app.get('/', (req, res) => {
@@ -790,130 +792,6 @@ app.post('/api/contact', async (req, res) => {
 });
 
 // Start server
-// ── SCREENER RESULTS ──────────────────────────────────────────────────────
-
-app.get('/api/screener-results/student/:studentId', async (req, res) => {
-  try {
-    var result = await pool.query(
-      'SELECT * FROM screener_results' +
-      ' WHERE student_id = $1' +
-      ' ORDER BY school_year DESC, screening_period ASC, subject ASC',
-      [req.params.studentId]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Student screener fetch error:', err);
-    res.status(500).json({ error: 'Fetch failed' });
-  }
-});
-app.get('/api/screener-results/:tenantId', async (req, res) => {
-  try {
-    var tenantId = req.params.tenantId;
-    var schoolYear = req.query.schoolYear || null;
-    var period = req.query.period || null;
-    var subject = req.query.subject || null;
-
-   var conditions = ['sr.tenant_id = $1'];
-    var values = [tenantId];
-    var idx = 2;
-
-    if (schoolYear) { conditions.push('school_year = $' + idx); idx++; values.push(schoolYear); }
-    if (period)     { conditions.push('screening_period = $' + idx); idx++; values.push(period); }
-    if (subject)    { conditions.push('subject = $' + idx); idx++; values.push(subject); }
-
-var sql = 'SELECT sr.*, s.first_name, s.last_name, COALESCE(s.grade, sr.grade) as grade' +
-      ' FROM screener_results sr' +
-      ' LEFT JOIN students s ON sr.student_id = s.id' +
-      ' WHERE ' + conditions.join(' AND ') +
-      ' ORDER BY sr.grade, sr.student_last_name, sr.student_first_name';
-
-    var result = await pool.query(sql, values);
-    res.json(result.rows);
-  } catch (err) {
-    console.error('Screener fetch error:', err);
-    res.status(500).json({ error: 'Fetch failed' });
-  }
-});
-app.post('/api/screener-results/upload', async (req, res) => {
-  try {
-    var { tenantId, screeningPeriod, schoolYear, rows } = req.body;
-    var uploadedBy = null;
-    var matched = 0;
-    var unmatched = [];
-    var savedIds = [];
-
-    // Normalize YY-MM-DD to YYYY-MM-DD
-    function normalizeDate(dateStr) {
-  if (!dateStr) return null;
-  if (dateStr.trim() === '-' || dateStr.trim() === '') return null;
-  var parts = dateStr.split('-');
-  if (parts.length === 3 && parts[0].length === 2) {
-    return '20' + parts[0] + '-' + parts[1] + '-' + parts[2];
-  }
-  return dateStr;
-}
-function normalizeBenchmark(val) {
-      if (!val) return val;
-      var v = val.trim();
-      if (v === 'Intervention') return 'Below Benchmark';
-      if (v === 'On Watch') return 'Near Benchmark';
-      return v;
-    }
-
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-       row.benchmarkCategory = normalizeBenchmark(row.benchmarkCategory);
-      var cleanDate = normalizeDate(row.testDate) || null;  
-      var studentResult = await pool.query(
-        'SELECT id FROM students WHERE tenant_id = $1' +
-        ' AND LOWER(first_name) = LOWER($2) AND LOWER(last_name) = LOWER($3)',
-        [tenantId, row.firstName, row.lastName]
-      );
-
-      var studentId = studentResult.rows.length > 0 ? studentResult.rows[0].id : null;
-      if (studentId) { matched++; }
-      else { unmatched.push(row.firstName + ' ' + row.lastName); }
-
-      var cleanDate  = normalizeDate(row.testDate) || null;
-var cleanScore = (row.scaledScore && row.scaledScore.trim() !== '-' && row.scaledScore.trim() !== '') ? parseInt(row.scaledScore) : null;
-var cleanPct   = (row.percentileRank && row.percentileRank.trim() !== '-' && row.percentileRank.trim() !== '') ? parseInt(row.percentileRank) : null;
-
-      var insertResult = await pool.query(
-        'INSERT INTO screener_results' +
-        ' (tenant_id, student_id, student_first_name, student_last_name,' +
-        '  external_student_id, grade, screener_name, subject,' +
-        '  screening_period, school_year, test_date, scaled_score,' +
-        '  percentile_rank, benchmark_category, uploaded_by)' +
-        ' VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)' +
-        ' ON CONFLICT (tenant_id, student_id, subject, screening_period, school_year)' +
-        ' DO UPDATE SET' +
-        '   scaled_score = EXCLUDED.scaled_score,' +
-        '   percentile_rank = EXCLUDED.percentile_rank,' +
-        '   benchmark_category = EXCLUDED.benchmark_category,' +
-        '   test_date = EXCLUDED.test_date,' +
-        '   uploaded_by = EXCLUDED.uploaded_by,' +
-        '   uploaded_at = NOW()' +
-        ' RETURNING id',
-        [tenantId, studentId, row.firstName, row.lastName,
-         row.externalStudentId || null, row.grade, row.screenerName,
-         row.subject, screeningPeriod, schoolYear, cleanDate,
-         cleanScore, cleanPct, row.benchmarkCategory, uploadedBy]
-      );
-      savedIds.push(insertResult.rows[0].id);
-    }
-
-    res.json({
-      success: true,
-      totalRows: rows.length,
-      matched: matched,
-      unmatched: unmatched,
-      savedCount: savedIds.length
-    });
-  } catch (err) {
-    console.error('Screener upload error:', err);
-    res.status(500).json({ error: 'Upload failed' });
-  }
-});
 app.listen(PORT, () => {
   console.log(`ScholarPath Intervention Management server running at http://localhost:${PORT}`);
 });

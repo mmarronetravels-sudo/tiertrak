@@ -68,6 +68,38 @@ CREATE TABLE student_interventions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Universal screener results — STAR, MAP, DIBELS, DIBELS Spelling, iReady.
+-- assessment_type identifies the vendor; (tenant_id, student_id,
+-- assessment_type, subject, screening_period, school_year) is unique per
+-- vendor result. Reconciled into the repo by Migration 024 — the table
+-- previously existed in prod via out-of-band DDL.
+CREATE TABLE screener_results (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+    student_first_name TEXT NOT NULL,
+    student_last_name TEXT NOT NULL,
+    external_student_id TEXT,
+    grade TEXT,
+    screener_name TEXT,
+    assessment_type TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    screening_period TEXT NOT NULL,
+    school_year TEXT NOT NULL,
+    test_date DATE,
+    scaled_score INTEGER,
+    percentile_rank INTEGER,
+    benchmark_category TEXT,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT screener_results_unique_per_period_assessment
+      UNIQUE NULLS NOT DISTINCT
+      (tenant_id, student_id, assessment_type, subject, screening_period, school_year)
+);
+
+CREATE INDEX idx_screener_results_dashboard_filters
+  ON screener_results (tenant_id, school_year, screening_period, subject, assessment_type);
+
 -- Progress notes
 CREATE TABLE progress_notes (
     id SERIAL PRIMARY KEY,

@@ -81,6 +81,29 @@ Cross-cutting notes:
   - Gated-tier health document handling (Forms D, E in the ODE handbook — schema not yet defined)
 - No data-minimization exceptions are added by PR 1. Every persisted column in the 504 schema is feature-required; no fields are stored beyond what the workflow uses.
 
+### Universal screener records (FERPA)
+
+The `screener_results` table stores universal screener (benchmark assessment) results — STAR, MAP Growth, DIBELS, DIBELS Spelling, iReady, with STAAR deferred. Reconciled into the repo by Migration 024. Tenant-scoped via `tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE`. Per-tenant backfill and explicit-projection discipline added in PR #47.
+
+**`screener_results`** — Mixed permission tier. Per-row classification:
+
+- **Directly identifying (PII)**: `student_first_name`, `student_last_name`, `external_student_id`. Stored denormalized at upload time so unmatched-name rows (where `student_id IS NULL` because the CSV's name didn't match any TierTrak student) remain queryable in the dashboard. Treat as PII at all times. **Phase 1 implementation rule: `routes/screener.js` per-student GET handler MUST NOT project these columns** — the caller already knows the student (URL carries studentId), so denormalized name fields would be redundant exposure. Dashboard list handler (`GET /:tenantId`) DOES project them, since unmatched-name rows are surfaced specifically so staff can fix the mismatch.
+- **FERPA education records (PII when linked to student)**: `scaled_score`, `percentile_rank`, `benchmark_category`. Each row is a single screener result that, when linked to `student_id`, constitutes a FERPA-protected education record. The screener-result tuple alone (without `student_id`) is not PII; once joined with `students` it is.
+- **Quasi-identifiers (not PII alone, become PII when joined)**: `assessment_type`, `subject`, `screening_period`, `school_year`, `grade`, `screener_name`. Workflow tags and benchmark metadata. None of these alone identify a student. Joined to `student_id` they form part of the FERPA-protected education record above.
+- **System metadata (not PII)**: `id`, `tenant_id`, `student_id` (FK only), `uploaded_by`, `uploaded_at`. Tenant identifier is a system-level scoping value; `uploaded_by` references a staff user_id (FK only — staff name is fetched on display via JOIN, not stored on the screener row).
+
+Cross-cutting notes:
+
+- **Tenant scoping invariant**: every row carries `tenant_id NOT NULL`. Cross-tenant reads are blocked by `requireStudentReadAccess` (per-student route) + `requireTenantStaffAccess` (dashboard list route) + defense-in-depth `JOIN students s ON s.id = sr.student_id AND s.tenant_id = $...` on every query (added in PR #47).
+- **Per-tenant data segregation**: Migration 024 backfilled `assessment_type` per tenant (`tenant_id=4 → STAR`, `tenant_id=9 → STAAR`, `tenant_id=10 → MAP`); each tenant's screener data is logically separate.
+- **CSV upload destruction**: per CLAUDE.md §4B, CSV imports must be deleted from the server immediately after processing. The screener upload is browser-side parsed (Papa Parse) and posted as JSON — the file never reaches the server filesystem, so the destruction rule is satisfied by construction.
+- **Phase 1 implementation rule (PR #47 onward)**: per-student SELECTs MUST use explicit column projection (no `SELECT sr.*`). Dropped from per-student GET projections: `student_first_name`, `student_last_name`, `external_student_id`. Mirrors the §504 routes' explicit-projection discipline above.
+- **Phase 2+ deferred surfaces** (NOT in PR1, will need privacy review when added):
+  - Multi-vendor CSV parser registry (PR2 — per-vendor parser receives raw CSV rows; server-side per-row validation lands as Followup #47)
+  - Replace-mode upload endpoint (PR2 — `DELETE WHERE (...) THEN INSERT` semantics inside a transaction; transaction wrapper lands as Followup #46)
+  - Multi-assessment dashboard tabs (PR3 — per-vendor tabbed view)
+  - Student-profile screener section (PR3 — subject-grouped layout displaying screener history; first frontend caller of the per-student GET handler)
+
 ### Uploaded content
 - Any document uploaded by a staff member that concerns an identified student
 - Any CSV row containing any of the above
