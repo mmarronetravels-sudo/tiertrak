@@ -94,7 +94,7 @@ router.post('/assign', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    const { student_id, intervention_template_id, intervention_name, notes, log_frequency = 'weekly', start_date, end_date } = req.body;
+    const { student_id, intervention_template_id, intervention_name, notes, log_frequency = 'weekly', start_date, end_date, no_progress_monitoring_required } = req.body;
 
     // Tenant verification: student must belong to caller's tenant.
     const studentResult = await pool.query(
@@ -107,12 +107,16 @@ router.post('/assign', requireAuth, async (req, res) => {
 
     const cleanStartDate = start_date || new Date().toISOString().split('T')[0];
     const cleanEndDate = end_date === '' ? null : end_date || null;
+    // Strict-coerce: only literal boolean true sets the flag. Anything else
+    // (undefined, null, "true" string, 1) becomes false. Column is NOT NULL
+    // DEFAULT false in the schema (Migration 023).
+    const noProgressMonitoringRequired = no_progress_monitoring_required === true;
     // assigned_by is server-derived from the JWT-verified caller, not the body.
     const result = await pool.query(
-      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, start_date, end_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO student_interventions (student_id, intervention_template_id, assigned_by, intervention_name, notes, log_frequency, start_date, end_date, no_progress_monitoring_required)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [student_id, intervention_template_id, req.user.id, intervention_name, notes, log_frequency, cleanStartDate, cleanEndDate]
+      [student_id, intervention_template_id, req.user.id, intervention_name, notes, log_frequency, cleanStartDate, cleanEndDate, noProgressMonitoringRequired]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -221,6 +225,38 @@ router.patch('/:interventionId/goal', requireAuth, requireWriteAccessByIntervent
   } catch (err) {
     console.error('Error updating intervention goal:', err);
     res.status(500).json({ error: 'Failed to update goal' });
+  }
+});
+
+// Toggle the "no progress monitoring required" flag on an intervention.
+// Mirrors /progress, /status, /goal: requireAuth + requireWriteAccessByInterventionId,
+// UPDATE bound to req.intervention.id with defense-in-depth tenant guard via
+// the students subquery. Body must be a literal boolean — we strict-validate
+// rather than coerce so a malformed flip (e.g., {flag: "true"}) errors out
+// instead of silently writing the wrong value.
+router.patch('/:interventionId/monitoring-flag', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
+  try {
+    const { no_progress_monitoring_required } = req.body;
+    if (typeof no_progress_monitoring_required !== 'boolean') {
+      return res.status(400).json({ error: 'no_progress_monitoring_required must be a boolean' });
+    }
+
+    const result = await pool.query(`
+      UPDATE student_interventions
+      SET no_progress_monitoring_required = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+        AND student_id IN (SELECT id FROM students WHERE tenant_id = $3)
+      RETURNING *
+    `, [no_progress_monitoring_required, req.intervention.id, req.intervention.tenant_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Intervention not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error updating monitoring flag:', err);
+    res.status(500).json({ error: 'Failed to update monitoring flag' });
   }
 });
 
