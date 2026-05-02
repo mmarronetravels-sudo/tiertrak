@@ -17,9 +17,11 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
   });
   const [loading, setLoading] = useState(true);
   // Live weekly_progress logs per active intervention, keyed by
-  // student_intervention_id. Fed by /weekly-progress/intervention/:id (the
-  // PR #14 auth-gated endpoint, NOT the unauthenticated interventions-summary
-  // route). Used by the per-card sparkline and the expandable card disclosure.
+  // student_intervention_id. Fed by /weekly-progress/intervention/:id, which
+  // returns per-row log data (week_of, rating, status, etc.); the
+  // interventions-summary endpoint only exposes aggregates (avg/total/high/low)
+  // and can't drive the sparkline or disclosure list. Used by the per-card
+  // sparkline and the expandable card disclosure.
   const [interventionLogs, setInterventionLogs] = useState({});
   // Set of student_intervention_id values whose log-detail disclosure is
   // currently expanded. Cards default to collapsed to keep the modal compact.
