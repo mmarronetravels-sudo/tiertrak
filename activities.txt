@@ -4320,7 +4320,7 @@ SESSION: 2026-05-02T06:00:00-07:00 (Session 43)
 BRANCH:  sec/intervention-routes-tenant-scope (PR #43, MERGED d02d721)
          chore/activities-log-session-43 (this entry, self-merge per Session 41/42 canonical convention)
 DISPOSITION: merged:d02d721 (PR #43 — sec/intervention-routes-tenant-scope)
-             pr-opened:<placeholder> (chore/activities-log-session-43, will fill on commit-2)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/44 (chore/activities-log-session-43)
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Single workstream: a security retrofit landed as the required
