@@ -27,8 +27,19 @@ const DEFAULT_ASSESSMENT_TYPE = 'STAR';
 // student's tenant_id disagree.
 router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
+    // Explicit projection per privacy-reviewer WARN (PR #47): drop the
+    // denormalized student_first_name / student_last_name / external_student_id
+    // columns since the caller already knows the student (URL carries
+    // studentId). Mirrors the §504 routes' "parent-scoped reads MUST
+    // explicitly project parent-visible columns and never use SELECT *"
+    // discipline. Dashboard list handler (GET /:tenantId) DOES project
+    // these for unmatched-name surfacing — different consumer, different
+    // need.
     const result = await pool.query(`
-      SELECT sr.*
+      SELECT sr.id, sr.tenant_id, sr.student_id, sr.grade, sr.screener_name,
+             sr.assessment_type, sr.subject, sr.screening_period, sr.school_year,
+             sr.test_date, sr.scaled_score, sr.percentile_rank,
+             sr.benchmark_category, sr.uploaded_by, sr.uploaded_at
       FROM screener_results sr
       JOIN students s ON s.id = sr.student_id AND s.tenant_id = $2
       WHERE sr.student_id = $1
