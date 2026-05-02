@@ -96,6 +96,7 @@ export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, 
 credentials: 'include',
         body: JSON.stringify({
           tenantId: tenantId,
+          assessmentType: 'STAR',
           screeningPeriod: screeningPeriod,
           schoolYear: schoolYear,
           rows: parsedRows
