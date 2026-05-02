@@ -239,7 +239,7 @@ const [screenerLoading, setScreenerLoading] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [showAddLog, setShowAddLog] = useState(false);
   const [interventionAreaFilter, setInterventionAreaFilter] = useState('all');
-  const [newIntervention, setNewIntervention] = useState({ name: '', notes: '' });
+  const [newIntervention, setNewIntervention] = useState({ name: '', notes: '', no_progress_monitoring_required: false });
   const [newNote, setNewNote] = useState('');
   const noteTextareaRef = useRef(null);
   const googleButtonRef = useRef(null); 
@@ -1279,17 +1279,38 @@ setInterventionLogs([]);
           assigned_by: user.id,
           log_frequency: newIntervention.log_frequency || 'weekly',
           start_date: newIntervention.start_date || new Date().toISOString().split('T')[0],
-          end_date: newIntervention.end_date || null
+          end_date: newIntervention.end_date || null,
+          no_progress_monitoring_required: newIntervention.no_progress_monitoring_required === true
         })
       });
       if (res.ok) {
         fetchStudentDetails(selectedStudent.id);
-        setNewIntervention({ name: '', notes: '', log_frequency: 'weekly', start_date: '', end_date: '' });
+        setNewIntervention({ name: '', notes: '', log_frequency: 'weekly', start_date: '', end_date: '', no_progress_monitoring_required: false });
         setShowAddIntervention(false);
         setInterventionAreaFilter('all');
       }
     } catch (error) {
       console.error('Error adding intervention:', error);
+    }
+  };
+
+  // Toggle the "no progress monitoring required" flag on an existing
+  // intervention. Calls PATCH /:interventionId/monitoring-flag (server
+  // mirrors /progress, /status, /goal: requireAuth + tenant guard).
+  const handleToggleMonitoringFlag = async (intervention) => {
+    try {
+      const next = !(intervention.no_progress_monitoring_required === true);
+      const res = await fetch(`${API_URL}/interventions/${intervention.id}/monitoring-flag`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ no_progress_monitoring_required: next })
+      });
+      if (res.ok && selectedStudent) {
+        fetchStudentDetails(selectedStudent.id);
+      }
+    } catch (error) {
+      console.error('Error toggling monitoring flag:', error);
     }
   };
 
@@ -3156,11 +3177,26 @@ if (!user) {
                   </p>
                 </div>
 
+                <div className="mb-3">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newIntervention.no_progress_monitoring_required === true}
+                      onChange={(e) => setNewIntervention({ ...newIntervention, no_progress_monitoring_required: e.target.checked })}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-700">No progress monitoring required</span>
+                      <span className="block text-xs text-slate-500">Documents the intervention without requiring weekly progress logs. Notes can still be added at any time.</span>
+                    </span>
+                  </label>
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <button
-                    onClick={() => { 
-  setShowAddIntervention(false); 
-  setNewIntervention({ name: '', notes: '', log_frequency: 'weekly', start_date: '', end_date: '' });
+                    onClick={() => {
+  setShowAddIntervention(false);
+  setNewIntervention({ name: '', notes: '', log_frequency: 'weekly', start_date: '', end_date: '', no_progress_monitoring_required: false });
   setInterventionAreaFilter('all');
 }}
                     className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg text-sm"
@@ -3185,7 +3221,24 @@ if (!user) {
                     <div>
                       <div className="flex items-center gap-2">
                         <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
-                        {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan', 
+                        {/* Note-only badge — surface 1 of 4. If you change the
+                            badge label/icon/tone here, update the other three
+                            sites in lockstep:
+                              - parent portal active interventions (this file, ~line 6354)
+                              - saved meeting report viewer (this file, ~line 3944)
+                              - MTSSMeetingFormModal live meeting view (components/Modals/MTSSMeetingFormModal.jsx)
+                            Inline-duplicated to match repo style (status pills,
+                            plan-status circles, frequency badges all inline). */}
+                        {intervention.no_progress_monitoring_required && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-700 rounded"
+                            title="Note only — no weekly progress monitoring required"
+                          >
+                            <ClipboardList size={12} />
+                            Note only
+                          </span>
+                        )}
+                        {['Behavior Contract', 'Parent Communication Plan', 'Anxiety Management Plan',
                           'Crisis Safety Plan', 'Daily Behavior Report Card', 'Behavior Intervention Plan',
                           'Token Economy System', 'ABC Behavior Tracker'].includes(intervention.intervention_name) && (
                           <button
@@ -3198,7 +3251,7 @@ if (!user) {
                             <FileText size={12} />
                             Plan
                           </button>
-                            
+
                         )}
                         {intervention.plan_status === 'complete' && (
   <span className="ml-1" title="Plan Complete">🟢</span>
@@ -3284,6 +3337,19 @@ if (!user) {
                       <Users className="w-3 h-3" />
                       Assign
                     </button>}
+                    {/* Toggle note-only — flips no_progress_monitoring_required
+                        on the live student_interventions row via PATCH. Existing
+                        meetings preserve their snapshotted flag value. */}
+                    {canManageInterventions && (
+                      <button
+                        onClick={() => handleToggleMonitoringFlag(intervention)}
+                        className="px-3 py-1.5 border border-sky-300 text-sky-700 text-sm rounded-lg hover:bg-sky-50 flex items-center gap-1"
+                        title={intervention.no_progress_monitoring_required ? 'Restore weekly progress monitoring' : 'Mark as note-only (no weekly progress required)'}
+                      >
+                        <ClipboardList className="w-3 h-3" />
+                        {intervention.no_progress_monitoring_required ? 'Restore Monitoring' : 'Mark Note-Only'}
+                      </button>
+                    )}
                     {/* Archive button - all staff */}
                     {intervention.status === 'active' && (
                       <button
@@ -3941,11 +4007,29 @@ if (!user) {
                 <div key={idx} className="p-4 border rounded-lg print:break-inside-avoid">
                   <div className="flex justify-between items-center mb-3 gap-3">
                     <div>
-                      <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-gray-900">{review.intervention_name}</h3>
+                        {/* Note-only badge — surface 4 of 4 (saved meeting report
+                            viewer). Reads from the snapshotted flag in
+                            mtss_meeting_interventions, NOT live; that's intentional
+                            (Option α — the meeting record stays accurate even if
+                            the live flag flips later). See surface 1 (~line 3186)
+                            for the lockstep update note. */}
+                        {review.no_progress_monitoring_required && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-700 rounded"
+                            title="Note only — no weekly progress monitoring required"
+                          >
+                            <ClipboardList size={12} />
+                            Note only
+                          </span>
+                        )}
+                      </div>
                       <div className="text-sm text-gray-500">
                         Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} |{' '}
-                        Total Logs: {totalLogs}
-                        {hasFullSnapshot && ratedSnapshot.length < totalLogs ? ' (' + ratedSnapshot.length + ' rated)' : ''}
+                        {review.no_progress_monitoring_required
+                          ? 'Total Logs: not required'
+                          : <>Total Logs: {totalLogs}{hasFullSnapshot && ratedSnapshot.length < totalLogs ? ' (' + ratedSnapshot.length + ' rated)' : ''}</>}
                       </div>
                       {isLegacy && (
                         <p className="text-xs text-gray-400 italic mt-1 print:text-gray-500">
@@ -3979,12 +4063,23 @@ if (!user) {
                     )}
                   </div>
 
-                  {isZeroData && (
+                  {isZeroData && !review.no_progress_monitoring_required && (
                     <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded-md flex items-start gap-2 text-amber-800 print:bg-white print:border-amber-300">
                       <AlertCircle size={16} className="mt-0.5 shrink-0" />
                       <p className="text-xs">
                         <span className="font-medium">No weekly progress logs were recorded for this intervention.</span>
                         {' '}Review proceeded without underlying data to support evaluation.
+                      </p>
+                    </div>
+                  )}
+                  {/* Calm slate info note replaces the amber zero-data warning
+                      when the intervention was note-only at meeting save time
+                      (snapshotted flag, not live). */}
+                  {review.no_progress_monitoring_required && (
+                    <div className="mb-3 p-2.5 bg-slate-50 border border-slate-200 rounded-md flex items-start gap-2 text-slate-700 print:bg-white">
+                      <ClipboardList size={16} className="mt-0.5 shrink-0" />
+                      <p className="text-xs">
+                        Progress monitoring not required for this intervention.
                       </p>
                     </div>
                   )}
@@ -6352,7 +6447,20 @@ const handleChildDocumentDelete = async (docId) => {
                     className="w-full p-4 text-left flex items-center justify-between"
                   >
                     <div>
-                      <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-medium text-slate-800">{intervention.intervention_name}</h4>
+                        {/* Note-only badge — surface 2 of 4 (parent portal).
+                            See surface 1 (~line 3186) for the lockstep update note. */}
+                        {intervention.no_progress_monitoring_required && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-700 rounded"
+                            title="Note only — no weekly progress monitoring required"
+                          >
+                            <ClipboardList size={12} />
+                            Note only
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-slate-500">
                         Started {new Date(intervention.start_date).toLocaleDateString()}
                         {intervention.log_frequency && (

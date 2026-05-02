@@ -136,7 +136,8 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
             recommendation: '',
             notes: '',
             avg_rating: inv.avg_rating,
-            total_logs: inv.total_logs
+            total_logs: inv.total_logs,
+            no_progress_monitoring_required: inv.no_progress_monitoring_required === true
           };
         })
       });
@@ -162,7 +163,8 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
             recommendation: '',
             notes: '',
             avg_rating: inv.avg_rating,
-            total_logs: inv.total_logs
+            total_logs: inv.total_logs,
+            no_progress_monitoring_required: inv.no_progress_monitoring_required === true
           };
         })
       });
@@ -338,11 +340,29 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                     <div key={idx} className="bg-white rounded-lg p-4 border">
                       <div className="flex justify-between items-center mb-3 gap-3">
                         <div>
-                          <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-medium text-gray-800">{review.intervention_name}</h4>
+                            {/* Note-only badge — surface 3 of 4 (live MTSS meeting
+                                form). See surface 1 (App.jsx ~line 3186) for the
+                                lockstep update note. The flag here comes from
+                                interventions-summary (live student_interventions
+                                value); it gets snapshotted onto mtss_meeting_interventions
+                                at save time per Option α. */}
+                            {review.no_progress_monitoring_required && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-sky-100 text-sky-700 rounded"
+                                title="Note only — no weekly progress monitoring required"
+                              >
+                                <ClipboardList size={12} />
+                                Note only
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm text-gray-500">
                             Avg Rating: {review.avg_rating ? Number(review.avg_rating).toFixed(1) : 'N/A'} |{' '}
-                            Logs: {totalCount}
-                            {ratedCount < totalCount ? ' (' + ratedCount + ' rated)' : ''}
+                            {review.no_progress_monitoring_required
+                              ? 'Logs: not required'
+                              : <>Logs: {totalCount}{ratedCount < totalCount ? ' (' + ratedCount + ' rated)' : ''}</>}
                           </p>
                           {(function() {
                             // Disclosure toggle: compact "Show / Hide logs (N)" button.
@@ -404,6 +424,10 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                         // surfaces []; the warning is then mildly misleading but
                         // not harmful — refresh the modal if a fetch failure is
                         // suspected.
+                        // Note-only interventions render a calm slate info note
+                        // INSTEAD of this amber warning — same neighborhood,
+                        // different tone. Suppressing here; rendered below.
+                        if (review.no_progress_monitoring_required) return null;
                         const rawLogs = interventionLogs[review.student_intervention_id] || [];
                         if (rawLogs.length > 0) return null;
                         return (
@@ -416,6 +440,15 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
                           </div>
                         );
                       })()}
+
+                      {review.no_progress_monitoring_required && (
+                        <div className="mb-3 p-2.5 bg-slate-50 border border-slate-200 rounded-md flex items-start gap-2 text-slate-700">
+                          <ClipboardList size={16} className="mt-0.5 shrink-0" />
+                          <p className="text-xs">
+                            Progress monitoring not required for this intervention.
+                          </p>
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div>
