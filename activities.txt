@@ -4756,7 +4756,7 @@ BRANCH:  feat/multi-screener-foundation (PR #47, MERGED 20ac1f8)
          chore/activities-log-session-45 (this entry, self-merge per Session
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:20ac1f8 (PR #47 — feat/multi-screener-foundation)
-             pr-opened:<PLACEHOLDER — fill on commit-2> (chore/activities-log-session-45)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/48 (chore/activities-log-session-45)
 --------------------------------------------------------------------------------
 TASK SUMMARY
   PR1 of the multi-screener support effort landed: schema foundation + route
