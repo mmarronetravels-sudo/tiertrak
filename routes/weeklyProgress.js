@@ -161,6 +161,7 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
       WHERE s.tenant_id = $1
         AND si.status = 'active'
         AND s.archived = false
+        AND si.no_progress_monitoring_required IS NOT TRUE
         AND NOT EXISTS (
           SELECT 1 FROM weekly_progress wp
           WHERE wp.student_intervention_id = si.id

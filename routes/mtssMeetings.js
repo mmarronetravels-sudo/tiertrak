@@ -175,6 +175,7 @@ router.get('/student/:studentId/interventions-summary', requireAuth, requireStud
         si.goal_target_date,
         si.goal_target_rating,
         si.notes as intervention_notes,
+        si.no_progress_monitoring_required,
         COALESCE(AVG(wp.rating), 0) as avg_rating,
         COUNT(wp.id) as total_logs,
         MAX(wp.rating) as highest_rating,
@@ -215,6 +216,24 @@ async function computeWeeklyProgressSnapshot(client, studentInterventionId, tena
     ORDER BY wp.week_of ASC
   `, [studentInterventionId, tenantId]);
   return result.rows;
+}
+
+// Server-authoritative read of student_interventions.no_progress_monitoring_required
+// used by meeting POST (always) and meeting PUT (only for newly-added
+// interventions; existing interventions on a meeting edit preserve the
+// prior snapshot value — see PUT preserve-on-edit semantics below).
+// Same tenant-bind defense-in-depth as computeWeeklyProgressSnapshot:
+// catches forgery where body.tenant_id doesn't match the intervention's
+// actual tenant. If the bind fails (0 rows), default to false rather than
+// silently suppress monitoring on a row we couldn't authoritatively read.
+async function readNoProgressMonitoringFlag(client, studentInterventionId, tenantId) {
+  const result = await client.query(`
+    SELECT si.no_progress_monitoring_required
+    FROM student_interventions si
+    JOIN students s ON s.id = si.student_id AND s.tenant_id = $2
+    WHERE si.id = $1
+  `, [studentInterventionId, tenantId]);
+  return result.rows[0]?.no_progress_monitoring_required === true;
 }
 
 // Create new meeting
@@ -275,12 +294,23 @@ router.post('/', async (req, res) => {
           tenant_id
         );
 
+        // Option α snapshot (Migration 023): server-read the live flag
+        // from student_interventions and freeze it onto this meeting row.
+        // Future flag-flips on the live row will not retroactively change
+        // what this meeting recorded.
+        const noProgressMonitoringRequired = await readNoProgressMonitoringFlag(
+          client,
+          review.student_intervention_id,
+          tenant_id
+        );
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs, weekly_progress_snapshot
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            avg_rating, total_logs, weekly_progress_snapshot,
+            no_progress_monitoring_required
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [
           meeting.id,
           review.student_intervention_id,
@@ -290,7 +320,8 @@ router.post('/', async (req, res) => {
           review.notes,
           review.avg_rating,
           review.total_logs,
-          JSON.stringify(snapshot)
+          JSON.stringify(snapshot),
+          noProgressMonitoringRequired
         ]);
       }
     }
@@ -373,12 +404,17 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     // it as a legacy empty snapshot rather than computing fresh — that
     // would conjure data that wasn't captured at original save time).
     const priorRows = await client.query(
-      'SELECT student_intervention_id, weekly_progress_snapshot FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1',
+      'SELECT student_intervention_id, weekly_progress_snapshot, no_progress_monitoring_required FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1',
       [id]
     );
     const priorSnapshots = new Map();
+    // Parallel Map for the Option α flag (Migration 023). Same preserve-on-edit
+    // contract as priorSnapshots: a flag-flip after the meeting was first saved
+    // does NOT silently rewrite the historical record of what the team reviewed.
+    const priorMonitoringFlags = new Map();
     for (const row of priorRows.rows) {
       priorSnapshots.set(row.student_intervention_id, row.weekly_progress_snapshot ?? []);
+      priorMonitoringFlags.set(row.student_intervention_id, row.no_progress_monitoring_required === true);
     }
 
     // Delete existing intervention reviews and re-insert
@@ -399,12 +435,20 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
           ? priorSnapshots.get(review.student_intervention_id)
           : await computeWeeklyProgressSnapshot(client, review.student_intervention_id, tenant_id);
 
+        // Same preserve-on-edit semantics for the Option α monitoring flag:
+        // existing interventions keep their prior snapshot value; newly-added
+        // interventions read fresh from student_interventions.
+        const noProgressMonitoringRequired = priorMonitoringFlags.has(review.student_intervention_id)
+          ? priorMonitoringFlags.get(review.student_intervention_id)
+          : await readNoProgressMonitoringFlag(client, review.student_intervention_id, tenant_id);
+
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
             mtss_meeting_id, student_intervention_id,
             implementation_fidelity, progress_toward_goal, recommendation, notes,
-            avg_rating, total_logs, weekly_progress_snapshot
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            avg_rating, total_logs, weekly_progress_snapshot,
+            no_progress_monitoring_required
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         `, [
           id,
           review.student_intervention_id,
@@ -414,7 +458,8 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
           review.notes,
           review.avg_rating,
           review.total_logs,
-          JSON.stringify(snapshot)
+          JSON.stringify(snapshot),
+          noProgressMonitoringRequired
         ]);
       }
     }
