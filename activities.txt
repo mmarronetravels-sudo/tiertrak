@@ -4556,7 +4556,7 @@ SESSION: 2026-05-02T07:45:00-07:00 (Session 44)
 BRANCH:  feat/note-only-intervention-flag (PR #45, MERGED f654813)
          chore/activities-log-session-44 (this entry, self-merge per Session 41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:f654813 (PR #45 — feat/note-only-intervention-flag)
-             pr-opened:<PLACEHOLDER — will fill on commit-2> (chore/activities-log-session-44)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/46 (chore/activities-log-session-44)
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Single workstream: the Phase-1-planned feat/ work, queued during
