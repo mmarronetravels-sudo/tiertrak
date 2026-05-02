@@ -3784,3 +3784,534 @@ NEXT SESSION SHOULD
   non-Owner human review since it's a schema change, plus
   tenant-isolation-auditor subagent.
 ================================================================================
+================================================================================
+SESSION: 2026-05-01T23:30:00-04:00 (Session 42)
+BRANCH:  fix/seed-roster-validation-hardening (PR #41, parked human-reviewer-pending)
+         chore/activities-log-session-42 (this entry, self-merge per Session 41 canonical convention)
+DISPOSITION: pr-opened:<<TODO_FILL_ON_SECOND_COMMIT>> (chore/activities-log-session-42)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/41 (seed-script bundle, NOT merged this session)
+             merged:fdcb707 (PR #6 — Resource 1.4 calendar-underscores cosmetic fix)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three workstreams in one session:
+
+  (1) PR #6 (carryover from earlier sessions) — cosmetic fix for the
+      Resource 1.4 calendar-section underscore-italics bug in the
+      tier1-resources markdown content. Single-character/whitespace
+      escape changes; no logic, no schema, no API surface. Self-merged
+      via merge commit, --delete-branch.
+
+  (2) Cross-tenant probe in incognito — the runtime verification step
+      deferred from PR #31 pre-merge (see Session 40 master index).
+      Owner logged in to the fourth production tenant as a seeded user
+      from that tenant in a clean incognito window, navigated through
+      student / staff / resources / admin surfaces, inspected one
+      DevTools Network response payload. Goal: convert the SQL-layer
+      tenant scoping evidence already documented in PR #31's body into
+      a runtime in-browser observation. Followup #19 substantively
+      CLOSED.
+
+  (3) PR #41 (seed-script polish bundle, Followups #29–#33) —
+      five-commit bundle hardening the school-agnostic sandbox seeder
+      (scripts/seed-tenant-sandbox-template.js) introduced by PR #36.
+      Three reviewer subagents invoked sequentially (security,
+      privacy, tenant-isolation). PR opened, NOT merged this session
+      per §2A line 79 (non-Owner human review required — banner at
+      top of PR body).
+
+PR #6 — fix/resource-1-4-calendar-underscores → main (MERGED)
+
+  Cosmetic markdown escape: the Resource 1.4 calendar section was
+  rendering paired underscores as italic spans because the upstream
+  Word-doc-export pipeline left bare underscores between calendar
+  date tokens. The fix backslash-escapes the underscores so the
+  markdown renderer treats them as literal characters.
+
+  Disposition: MERGED via merge commit fdcb707 with --delete-branch
+  on both local and remote. Self-merge per the standard convention
+  for cosmetic / docs PRs that don't touch §4B or §5 surfaces (the
+  PR contained a single-file markdown content change, no logic, no
+  data model).
+
+  Followup #35 (introduced earlier as the underscore-italics bug
+  observation) CLOSED with this merge.
+
+CROSS-TENANT PROBE — IN-BROWSER (P5 deferred from PR #31, Session 40 carryover)
+
+  Probe protocol (no PII captured in this entry per §4B):
+
+    - Owner spun up a clean incognito window.
+    - Logged in as a seeded user from a production tenant (the
+      fourth production tenant, not the prospect-provisioning tenant
+      from Session 40).
+    - Navigated through five surfaces in sequence: student list,
+      one student detail page, staff caseload, tier1-resources
+      reading list, admin settings panel.
+    - Inspected one DevTools Network response on a backend API
+      call: confirmed the tenant_id field in the JSON payload
+      matched the logged-in tenant's id and matched no other
+      visible tenant.
+
+  Result: PASS. No cross-tenant data observed across the five
+  surfaces. The tenant_id field in the inspected API payload
+  matched the logged-in tenant exactly. The runtime observation
+  is consistent with the SQL-layer scoping evidence documented in
+  PR #31 and the migration audit history.
+
+  Followup #19 (runtime cross-tenant probe in incognito —
+  originally tracked as P5 deferred from PR #31) substantively
+  CLOSED. Future tenant-isolation work continues to use the
+  tenant-isolation-auditor subagent + this runtime probe pattern
+  on suitable opportunities.
+
+  One adjacent observation surfaced during the probe (banked as
+  candidate Followup #37 below): the active-form-set endpoint
+  introduced by PR #35 (Session 40, Followup #26) returns 404 on
+  tenants with no form_set registered, but the frontend is still
+  polling the endpoint on those tenants. The 504 tab is correctly
+  hidden by the §26 fix; the leftover polling is cosmetic /
+  perf, not a security issue. Captured below.
+
+PR #41 — fix/seed-roster-validation-hardening → main (PARKED, human-reviewer-pending)
+
+  Five-commit bundle of seed-script polish followups identified
+  during PR #36's review (Session 40). All commits scoped to
+  operator-only tooling — no request-path code, no auth
+  middleware, no route handlers touched.
+
+  Per-commit summary:
+
+    - 2ec9245 (#29) fix(seed): reject \r/\n in validator string
+      fields (defense-in-depth). Closes the security-reviewer M1
+      from PR #36 — TENANT.name flowed raw into a "-- " SQL
+      comment header, an embedded \n could terminate the comment
+      and inject SQL ahead of BEGIN. New hasLineBreak() helper
+      on four reviewer-named string fields.
+
+    - 57d600c (#30) fix(seed): truncate validator error JSON
+      output to 80 chars (privacy LOW-1). Bounds accidental PII
+      spill in stderr if an operator paste-mistakes a real
+      record into a roster scalar field. Try/catch handles
+      circular refs + BigInt; String() fallback handles
+      functions/symbols/undefined.
+
+    - 1ae76dc (#32) feat(seed): allow ADMINS roster entries to
+      override role (defaults to district_admin). Recognized at
+      Session 40 prospect-provisioning time as a hardcoded-default
+      artifact: hardcoded district_admin doesn't fit charter /
+      international tenants. Backward-compat verified — existing
+      reference roster (no role on ADMINS) emits byte-identical
+      SQL pre/post change modulo bcrypt salt.
+
+    - 6e49712 (#31) feat(seed): warn on unknown roster keys
+      (validator hygiene). Adds collectRosterWarnings() walking
+      Object.keys against ALLOWED_KEYS table; non-fatal stderr
+      WARN per unknown key. Plus collateral cleanup: stripped
+      per-row campus field from 18 synthetic student rows in the
+      reference sandbox roster — campus was previously the
+      "extra-fields-allowed" pattern, now warned. The campus
+      column was never persisted by the schema, so emitted SQL
+      from the reference roster remains byte-identical to
+      baseline post-strip.
+
+    - 46aa6a2 (#33) fix(seed): resolve student references by
+      external_id via RETURNING (fixes name-collision data
+      integrity bug). Production-incident provenance: Session 40
+      prospect provisioning had two (first_name, last_name)
+      collision pairs in a 270-row synthetic roster. The pre-#33
+      WHERE-by-name pattern matched both colliding rows per
+      INSERT and attached interventions/notes to the wrong tier
+      of student — required surgical post-commit DELETE to clean
+      up. #33 replaces name-lookup with a JS-side
+      varByExternalId map and per-student PL/pgSQL v_student_N
+      variables populated via INSERT ... RETURNING id INTO. The
+      dropped WHERE s.tenant_id = v_tenant_id clauses become
+      defense-in-depth-only because every v_student_N is
+      provably set by an INSERT that explicitly used
+      v_tenant_id. Tenant scoping preserved by provenance.
+
+  Diff stat: 3 files changed, +174 / -50.
+
+  REVIEWER SUBAGENTS (three; reports archived in session
+  transcript, full verbatim text not duplicated here):
+
+    - security-reviewer: APPROVED WITH NOTES. 0 CRITICAL / 1
+      WARN / 5 INFO. The single WARN is a maintainability note
+      about validator/buildSql coupling — if a future code path
+      calls buildSql() without first running validateRoster(),
+      the RAISE NOTICE line at the bottom of the emitted DO
+      block uses single-quote escaping but no \r/\n gate (that
+      gate currently lives only in the validator). Tracked as
+      Followup #36 (out of scope for this PR, but worth closing
+      next pass).
+
+    - privacy-reviewer: APPROVED WITH NOTES. 0 CRITICAL / 0
+      WARN / 4 INFO. All five commits classified as PII-neutral
+      or PII-reducing relative to main. Notable INFO #3:
+      reviewer counted total PII surface (renderings of
+      student names in emitted SQL) and found a net DECREASE
+      on #33 — names are now declared once in a DECLARE
+      comment + once per INSERT VALUES, instead of being
+      repeated in 1 INSERT + N WHERE clauses across the
+      intervention/notes/parent-link blocks. Privacy-positive
+      side effect of a data-integrity refactor.
+
+    - tenant-isolation-auditor: APPROVED. 0 CRITICAL / 0 HIGH
+      / 0 MEDIUM / 0 LOW / 5 INFO. Auditor independently
+      traced the emitted SQL against /tmp/tia-emitted.sql and
+      verified: 36 v_tenant_id references, all reads after the
+      single tenant-creating write at line 77; 18/18 student
+      INSERTs use VALUES (v_tenant_id, ...); 34/34 downstream
+      student_id binding sites reference a v_student_N and
+      only that; zero FROM students s WHERE patterns; zero
+      integer-literal student_ids. No escape hatch found.
+      Auditor went beyond the task brief and constructed an
+      independent 3-way name-collision stress test (three rows
+      with the same first+last but distinct external_ids) to
+      stress-test the fix — interventions / notes routed to the
+      correct v_student_N per external_id, confirming the
+      pre-#33 WHERE-by-name pattern would have miswired all
+      three.
+
+  PR opened on origin: https://github.com/mmarronetravels-sudo/tiertrak/pull/41
+  GitHub state at session end: mergeable=MERGEABLE,
+  mergeStateStatus=CLEAN, statusChecks pass (Vercel preview,
+  Vercel tiertrak deployment), no auto-applied labels, no
+  CODEOWNERS-driven reviewer assignments.
+
+  CRITICAL: PR #41 is NOT eligible for self-merge per §2A line
+  79 ("Do not merge your own PR on any change that touches
+  Section 4B (PII) or Section 5 (multi-tenancy). Request human
+  review."). #33's RETURNING refactor modifies the exact
+  tenant-scoping mechanism in the script's emitted SQL.
+  Precedent: PR #36 (predecessor commit that introduced this
+  same script) was approved by Owner's ed tech specialist as
+  the non-Owner human review. PR #41 inherits the
+  classification. GitHub considering the PR mergeable is
+  necessary but not sufficient — the §2A line 79 requirement
+  is human-enforced, not branch-protection-enforced. Banner
+  at the top of the PR body makes this explicit.
+
+PRODUCTION DB WRITES
+
+  None this session. PR #41 is operator-tooling that emits SQL
+  for paste into Render's psql console — no DB writes occurred
+  during the session itself. PR #6 was a markdown content
+  change. The cross-tenant probe was read-only navigation.
+
+TENANT ISOLATION REVIEW
+
+  PR #6: render-only markdown change; no DB queries, no
+  tenant scoping changes. tenant-isolation-auditor not
+  required.
+
+  PR #41: APPROVED by tenant-isolation-auditor (5 INFO, all
+  positive). Independently traced provenance argument, ran a
+  3-way collision stress test, confirmed no escape hatch in
+  the new INSERT...RETURNING control flow. The dropped
+  WHERE s.tenant_id = v_tenant_id defense-in-depth clauses
+  are eliminated on a pathway that no longer traverses any
+  SELECT from students — the new pattern eliminates the
+  SELECT-from-students entirely.
+
+  Cross-tenant probe (in-browser): PASS. No cross-tenant data
+  observed across five surfaces. tenant_id field in inspected
+  API payload matched logged-in tenant exactly.
+
+PRIVACY REVIEW (Section 4B)
+
+  PR #6: render-only markdown content change; no PII fields,
+  no logging changes. privacy-reviewer not required.
+
+  PR #41: APPROVED WITH NOTES by privacy-reviewer (0 WARN, 4
+  INFO). All five commits PII-neutral or PII-reducing
+  relative to main. The reference sandbox roster's per-row
+  campus field stripped (#31 collateral cleanup) — campus
+  was a previously-decorative attribute the schema never
+  persisted, so removing it is data minimization in the
+  right direction with no SQL behavior change. The new
+  v_student_N variable-declaration comments in the emitted
+  SQL re-render student names that were already being
+  embedded as INSERT VALUES literals — no new PII surface,
+  net volume decrease per privacy-reviewer's INFO #3
+  reasoning.
+
+  Cross-tenant probe: §4B-clean. The seeded user account
+  used for the probe is a synthetic identity attached to a
+  real production DB row — per Cowork-side Session 41 sub-
+  rule, synthetic names attached to real production rows are
+  §4B PII with no carve-out. This entry refers to the user
+  generically ("a seeded user from a production tenant") and
+  to the tenant by ordinal ("the fourth production tenant"),
+  not by name or slug.
+
+  This activities entry: per-entry §4B grep performed on the
+  draft before staging (Session 41 PR #40 precedent). Receipt
+  banked alongside this entry's commit message in the
+  chore/activities-log-session-42 PR description. The §4B
+  STOP rule is applied symmetrically: the entry does not name
+  what was scrubbed even when describing the scrub.
+
+VERIFICATION
+
+  PR #6: local frontend build clean, manual smoke on the
+  tier1-resources page in browser. Resource 1.4 calendar
+  section now renders the date tokens with literal
+  underscores instead of italic-stripped text.
+
+  PR #41:
+    - node -c clean on all 3 modified files at every commit.
+    - #29 smoke: additive else-if clauses on already-
+      validated string paths; verified by structural review.
+    - #30 smoke: 12-case fmt() helper smoke (undefined /
+      short string / empty / number / null / boolean / short
+      obj / 100-char string / large obj / BigInt / function
+      / symbol / circular ref). All outputs ≤ 80 chars on
+      both JSON and String(v) paths; <unstringifiable>
+      sentinel fires for BigInt + circular refs.
+    - #32 backward compat: reference roster emits byte-
+      identical SQL pre/post change modulo bcrypt salt
+      (407 lines, diff empty). Override path verified via
+      synthetic 2-admin roster. Invalid override rejected
+      with exit 3 + clear validator error citing full
+      ALLOWED_ROLES list.
+    - #31 5-test smoke: clean roster (0 WARN), single typo
+      (1 WARN, validation runs, exit 0), multi-typo across
+      all entity types (6 WARN in roster declaration order),
+      reference roster warning-clean post campus strip
+      (0 WARN), reference roster SQL byte-identical to
+      baseline (campus was already silently discarded
+      pre-#31, confirmed empirically).
+    - #33 collision-pair smoke: synthetic 4-student roster
+      with two (first_name, last_name) collision pairs.
+      Verified 4 distinct v_student_N declarations, each
+      student INSERT has its own RETURNING id INTO
+      v_student_N, downstream INSERTs reference the correct
+      v_student_N for each external_id, zero
+      WHERE s.first_name patterns in emitted SQL.
+    - #33 reference-roster structural equivalence: 18 students + 10
+      interventions + 23 progress notes + 1 parent link +
+      1 tenant_intervention_bank — all statement counts
+      match the reference roster's logical row counts.
+      v_student_N maps cleanly to roster declaration
+      order.
+    - #33 tenant-isolation provenance: independently
+      verified by tenant-isolation-auditor via 3-way name-
+      collision stress test (auditor-constructed). Verdict:
+      "no escape hatch found."
+
+  Could not run (limitations surfaced honestly in PR body):
+    - psql parse-only verification against an actual DB —
+      psql 16.11 is on PATH locally, but full PL/pgSQL
+      DO-block syntax checking requires a real connection,
+      and the local dev DB is real per the operator's
+      environment. Execution-level verification will happen
+      at PR-time when the operator pastes the emitted SQL
+      into Render's SQL console for an actual sandbox
+      provisioning run, exactly as PR #36's predecessor SQL
+      was verified.
+    - npm test / npm run lint — no backend lint or test
+      scripts exist for this file (pre-existing project gap
+      surfaced during PR #36's verification too).
+
+  Cross-tenant probe: 5 surfaces (student list, one student
+  detail page, staff caseload, tier1-resources reading list,
+  admin settings panel) + 1 DevTools Network response
+  payload inspection. No cross-tenant data observed.
+
+CATCHES (Cowork-side and Claude Code-side observations worth banking)
+
+  1. Surface-rather-than-silently-execute discipline now
+     documented through ~15 instances across Session 41 and
+     Session 42 combined. Worth treating as a load-bearing
+     CC behavioral pattern, not a session-by-session
+     judgment call. Examples in this session: surfacing the
+     pre-existing settings.json drift before any commit;
+     surfacing the reference-roster failure on Test 4 during the #31
+     smoke run before showing the diff; surfacing the
+     "could not run psql parse-only" verification limitation
+     in the PR body honestly rather than bluffing; surfacing
+     the synthetic-name-on-real-DB-row §4B reasoning during
+     the cross-tenant probe write-up.
+
+  2. Tenant-isolation-auditor stress-test discipline
+     (constructing an independent 3-way name-collision test
+     beyond what the agent was asked to verify) is the
+     canonical example of audit-not-rubber-stamp behavior
+     for subagent reviewers. The auditor went past the
+     stated brief to verify the fix would handle a stress
+     case the original collision-pair smoke (built from a
+     2-pair scenario) didn't cover. Future reviewer-
+     subagent invocations should expect this level of
+     independent verification on substantive changes; if a
+     reviewer just rubber-stamps the PR body claims, treat
+     that as a smell worth flagging.
+
+  3. Privacy-reviewer's PII-volume reasoning on #33 (INFO
+     #3) is the canonical example of substantive PII review.
+     The reviewer counted total PII renderings in the
+     emitted SQL pre and post change, found that the new
+     v_student_N DECLARE comments DO add new comment-
+     header surfaces — but that the dropped WHERE-by-name
+     clauses removed MORE renderings than the new comments
+     introduced, producing a net DECREASE. A surface-level
+     review would have flagged "new PII in comments, bad" and
+     stopped; a substantive review measured the volume both
+     ways and found the change privacy-positive. Bank as the
+     standard-of-care for future privacy-reviewer reads.
+
+  4. GitHub MERGEABLE / mergeStateStatus=CLEAN ≠ policy-
+     approved. The §2A line 79 non-Owner-review requirement
+     is human-enforced, not branch-protection-enforced. PR
+     #41 reports MERGEABLE/CLEAN at session end and is
+     explicitly not authorized for self-merge per the banner
+     at the top of its body. Branch protection rules are not
+     wired to enforce §2A directly. Worth banking for future
+     PRs that touch §4B or §5 surfaces — the discipline must
+     hold even when GitHub says "go."
+
+  5. §4B per-entry standard continues to be load-bearing.
+     Applied this session to PR #6's merge audit (cosmetic-
+     change-on-shared-tenant-resources still gets a §4B
+     per-entry check on the diff vs main, even though the
+     content is markdown text), to PR #41's body audit (the
+     PR body itself was §4B-clean as drafted), and to this
+     session's activities entry (per-entry §4B grep
+     performed on the draft before staging — receipt
+     captured in the chore/activities-log-session-42 PR
+     description). Pre-existing content on main is governed
+     by its own at-the-time audit; this session does not
+     retroactively re-audit prior session entries.
+
+  6. Synthetic-name-on-real-DB-row §4B reasoning (Session
+     41 sub-rule, applied here): a synthetic seed identity
+     attached to a real production tenant's row is §4B PII
+     with no carve-out. The cross-tenant probe entry refers
+     to "a seeded user from a production tenant," not by
+     synthetic name. Likewise, the reference sandbox
+     roster's synthetic student names — even though the
+     roster file itself is committed and the names are
+     fictional — should not be enumerated in operational
+     write-ups when paired with descriptions of real DB
+     behavior. The "stripped per-row campus field from 18
+     synthetic student rows in reference sandbox roster"
+     framing in the #31 description follows this rule:
+     table + row count, not a list of names.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- Net new from Session 42 ---
+
+  - #36 NEW (security-reviewer WARN on PR #41) — Move
+    hasLineBreak() into a shared helper and assert it from
+    BOTH validateRoster() AND buildSql() comment-emitter +
+    RAISE NOTICE sites as defense in depth. Currently the
+    \r/\n gate lives only in the validator; if a future
+    code path calls buildSql() without first running
+    validateRoster(), the RAISE NOTICE line's single-quote
+    escape is not sufficient — embedded \n would terminate
+    the statement. Maintainability fix, not a defect at
+    head; the security-reviewer explicitly classified it as
+    non-blocking.
+
+  - #37 NEW (candidate, surfaced during cross-tenant probe)
+    — The active-form-set endpoint introduced by PR #35 is
+    being polled with 404 responses on tenants that have no
+    form_set registered. Followup #26 (the 504 tab hide)
+    correctly hides the tab in those tenants; the leftover
+    polling is cosmetic / perf, not security. Either gate
+    the polling on the registered-form-set state or
+    suppress the 404 noise in the FE network log. Promote
+    to NEW followup if the noise is observed by other
+    operators; otherwise hold as candidate.
+
+  - #38 NEW (candidate, surfaced multiple times in session)
+    — CC bash-tool collapsed-output ("+N lines (ctrl+o to
+    expand)") in the IDE-extension chat panel can hide
+    content the operator needs to copy. The operator had to
+    expand manually to get the full diff multiple times
+    during this session (during seed-script audit + during
+    PR-body draft review). Adjacent to lazy-render Finding
+    3 from Followup #34's diagnostic — same family of
+    silent-truncation hazard, different surface. Promote to
+    NEW followup if the friction recurs in a future session;
+    otherwise hold as candidate. Workaround already
+    available (manual expand).
+
+  --- Closed by Session 42 ---
+
+  - #19 (runtime cross-tenant probe in incognito) —
+    substantively CLOSED via the in-browser probe this
+    session. Five surfaces + one DevTools Network response
+    payload all consistent with the SQL-layer scoping
+    evidence already in PR #31's body. Future probes
+    continue to use the same pattern on suitable
+    opportunities, but the §19 ticket itself is satisfied.
+
+  - #35 (Resource 1.4 calendar-section underscore-italics
+    bug) — CLOSED via PR #6 merge (commit fdcb707).
+    --delete-branch on local + remote.
+
+  --- Followups carried forward unchanged from prior sessions ---
+
+  - #11 docs(dev): SMOKE_TESTING.md walkthrough. Priority
+    held; not advanced this session.
+
+  - #22 .claude/settings.json drift cleanup. Drift was
+    present in working tree throughout this session and
+    explicitly not committed in any of the 5 PR #41
+    commits or in the activities-log work. Followup #22
+    diagnostic carries forward unchanged.
+
+  - #26 504 tab hide on no-form-set tenants — confirmed
+    working in the cross-tenant probe (the 504 tab was
+    correctly hidden on the inspected tenant). Adjacent
+    follow-up #37 candidate surfaced re: the endpoint
+    polling; #26 itself remains closed as of Session 40.
+
+  - #27, #28, #34 — carried forward unchanged.
+
+  - #29, #30, #31, #32, #33 — addressed in PR #41
+    (parked, human-reviewer-pending). Will close on
+    PR #41 merge.
+
+  --- Stale local + remote refs ---
+
+  - origin/fix/seed-roster-validation-hardening — current
+    branch for PR #41, parked human-reviewer-pending. Do
+    not delete.
+  - chore/activities-log-session-42 — to be opened during
+    this session's landing-the-plane two-commit URL-fill
+    pattern. Self-merge eligible.
+  - All other prior session refs carry forward per Session
+    40's "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Owner-side: ping the non-Owner human
+  reviewer (the ed tech specialist who reviewed PR #36 is
+  the established precedent per the PR #41 body) to read
+  PR #41 and either approve for merge or request changes.
+  PR #41 is parked human-reviewer-pending; the §2A line 79
+  gate is the only thing standing between the bundle and
+  main.
+
+  Priority 2 — After PR #41 merges (whenever that happens):
+  file Followup #36 as a proper followup ticket; evaluate
+  Followup #37 (active-form-set 404 polling) and Followup
+  #38 (CC bash-tool collapsed-output) as candidates and
+  promote to NEW followups if they recur or merit standalone
+  tracking.
+
+  Priority 3 — If PR #41 lands cleanly, the next quiet-
+  morning batch is whatever's next in the followup index.
+  Followup #11 (SMOKE_TESTING.md walkthrough) has been
+  bumped twice and is overdue; consider promoting.
+
+  Priority 4 — Followup #22 (.claude/settings.json drift)
+  remains an open ergonomic gap. The file regenerates on
+  every branch switch; whatever is regenerating it should
+  be tracked down so the working-tree-clean signal stops
+  being noisy. Not blocking, but the noise costs cycles
+  every session.
+================================================================================
