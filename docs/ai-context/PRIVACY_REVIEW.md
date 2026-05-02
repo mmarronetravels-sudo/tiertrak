@@ -90,6 +90,7 @@ Cross-cutting notes:
 - Anonymous survey data with no identifier
 - Curriculum/intervention definitions not tied to a person
 - Reference data like the tier-1 assessment item bank
+- `no_progress_monitoring_required` (BOOLEAN, on `student_interventions` and `mtss_meeting_interventions` per Migration 023) — workflow flag indicating an intervention is documented without requiring weekly progress logs (e.g., preferential seating). Exposed on staff surfaces (intervention list cards, MTSS meeting form, saved meeting report) and parent surfaces (parent portal active interventions); snapshotted onto `mtss_meeting_interventions` at meeting save time per Option α so historical meeting records stay accurate after live flag-flips. Not PII — per-row boolean carrying no student identifier or content.
 
 ## Hard rules (restated for convenience — authoritative copy in CLAUDE.md Section 4B)
 
