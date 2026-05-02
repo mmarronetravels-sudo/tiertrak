@@ -156,6 +156,26 @@ async function requireWriteAccessByLogId(req, res, next) {
   }
 }
 
+// Write middleware for routes shaped PATCH/PUT /resource/:interventionId.
+// Mirrors requireWriteAccessByBody but sources the intervention id from the
+// path param instead of the request body. Sets req.intervention = { id,
+// student_id, tenant_id } for the route handler to use in defense-in-depth
+// tenant-bound SQL.
+async function requireWriteAccessByInterventionId(req, res, next) {
+  try {
+    const { interventionId } = req.params;
+    if (!interventionId) {
+      return res.status(400).json({ error: 'Missing required parameter: interventionId' });
+    }
+    const result = await authorizeByInterventionId(req, res, interventionId);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    return next();
+  } catch (err) {
+    console.error('[requireWriteAccessByInterventionId]', err.message);
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+}
+
 // Read middleware for routes shaped GET /resource/intervention/:interventionId.
 // Wraps authorizeReadByInterventionId; sets req.intervention = { id, student_id,
 // tenant_id } for the route handler to use in defense-in-depth tenant-bound SQL.
@@ -235,6 +255,7 @@ module.exports = {
   requireAuth,
   requireWriteAccessByBody,
   requireWriteAccessByLogId,
+  requireWriteAccessByInterventionId,
   requireStudentReadAccess,
   requireInterventionReadAccess,
   requireTenantStaffAccess

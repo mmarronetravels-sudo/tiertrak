@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const {
+  requireAuth,
+  requireStudentReadAccess
+} = require('../middleware/authorizeInterventionAccess');
 
 let pool;
 
@@ -154,12 +158,15 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get active interventions with progress stats for a student (for pre-populating the form)
-router.get('/student/:studentId/interventions-summary', async (req, res) => {
+router.get('/student/:studentId/interventions-summary', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
+    // Defense-in-depth tenant binding: requireStudentReadAccess already
+    // verified the student belongs to the caller's tenant (staff path) or
+    // that the caller is a linked parent. The SELECT is bound to tenant via
+    // JOIN so any future bypass still fails closed — mirrors the
+    // computeWeeklyProgressSnapshot precedent below.
     const result = await pool.query(`
-      SELECT 
+      SELECT
         si.id,
         si.intervention_name,
         si.start_date,
@@ -173,12 +180,13 @@ router.get('/student/:studentId/interventions-summary', async (req, res) => {
         MAX(wp.rating) as highest_rating,
         MIN(wp.rating) as lowest_rating
       FROM student_interventions si
+      JOIN students s ON s.id = si.student_id AND s.tenant_id = $2
       LEFT JOIN weekly_progress wp ON si.id = wp.student_intervention_id
       WHERE si.student_id = $1 AND si.status = 'active'
       GROUP BY si.id
       ORDER BY si.start_date DESC
-    `, [studentId]);
-    
+    `, [req.student.id, req.student.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching interventions summary:', error);
