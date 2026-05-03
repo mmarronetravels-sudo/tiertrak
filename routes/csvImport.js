@@ -33,6 +33,13 @@ const VALID_TIERS = [1, 2, 3];
 const VALID_AREAS = ['Academic', 'Behavior', 'Social-Emotional', ''];
 const VALID_RISK_LEVELS = ['low', 'moderate', 'high'];
 
+const blockParentRole = (req, res, next) => {
+  if (req.user.role === 'parent') {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  next();
+};
+
 // Get CSV template info
 router.get('/template', requireAuth, (req, res) => {
   res.json({
@@ -65,7 +72,7 @@ router.get('/template/download', requireAuth, (req, res) => {
 });
 
 // Import students from CSV
-router.post('/students/:tenantId', requireAuth, upload.single('file'), async (req, res) => {
+router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('file'), async (req, res) => {
   const { tenantId } = req.params;
   
   if (!req.file) {
