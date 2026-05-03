@@ -5619,3 +5619,96 @@ NEXT SESSION SHOULD
   Session 44 carry-forwards) hold their prior priority order,
   shifted down by the new #66/#67 priorities.
 ================================================================================
+SESSION: 2026-05-03T12:29:58-07:00 (Session 49)
+BRANCH:  sec/students-referral-monitoring (PR #55, MERGED 425fc74)
+         chore/activities-log-session-49 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:425fc74 (PR #55 — sec/students-referral-monitoring)
+             pr-opened:PR-URL-PENDING (chore/activities-log-session-49)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+
+Session 49 (May 3, 2026):
+- PR #55 (sec/students-referral-monitoring) merged at
+  PR-URL-PENDING. Closes Followups #57, #59, and #66 as one
+  atomic unit. 5 commits: migration-025 (capturing 3 out-of-
+  band prod schema changes with corrected UNIQUE shape on
+  referral_monitoring), POST handler patch (requireAuth +
+  parent gate + body silent-drop + student-ownership tenant
+  check + new ON CONFLICT shape), GET handler patch
+  (requireAuth + parent gate + URL parity-assert + JWT-tenant
+  SQL bind), DELETE handler patch (requireAuth + parent gate
+  + tenant clause + silent no-op probe-resistance), notes
+  coerce (defensive String/trim/slice on POST input).
+- All 3 reviewer subagents APPROVED (0 CRITICAL). tenant-
+  isolation-auditor explicitly closed all 3 prior CRITICAL
+  findings from closed PR #53 plus the prior WARN on UNIQUE
+  shape. Non-Owner human reviewed and approved per §2A.
+- 13/13 smoke scenarios verified locally: probe-resistance
+  confirmed across role/tenant/student-ownership failures
+  (identical 403 bodies); cross-tenant DELETE silent no-op
+  confirmed via DB introspection (200 success returned but
+  0 rows deleted on cross-tenant target); migration
+  idempotency verified on re-run.
+- 1 NEW followup filed (#68 CRITICAL, Session 50 P1).
+
+NEW Followup:
+#68 — sec/referral-candidates-tenant-scope (CRITICAL).
+  routes/students.js:160-225 (the candidates handler that
+  returns students NOT yet being monitored) has the same
+  exposure shape as the GET /referral-monitoring/:tenantId
+  handler that PR #55 just closed: no requireAuth, URL-trusted
+  tenantId, returns student PII. Surfaced by tenant-isolation-
+  auditor on PR #55's review and explicitly recommended for
+  a separate CRITICAL-severity PR rather than folding into
+  #67's broader sweep. Same patch shape as #66's GET handler
+  fix should apply: requireAuth + parent gate + parity-assert
+  + JWT-tenant SQL bind + generic 500 string. Three reviewer
+  subagents required. NON-OWNER HUMAN REVIEW per §2A.
+
+Notes from Session 49 review:
+- security-reviewer WARN #1 (notes input validation) was
+  addressed inline in PR #55 commit 5 (notes coerce). Closed.
+- security-reviewer WARN #2 (rate limiting on
+  /referral-monitoring) carries forward under the existing
+  rate-limiter followup; not introduced by this PR.
+- privacy-reviewer WARN (PRIVACY_REVIEW.md docs gap for
+  referral_monitoring.notes) is a pre-existing
+  documentation-posture issue, not introduced by this PR.
+  Folds under #64 (CLAUDE.md migrations section) or as its
+  own tiny doc PR — Owner's call in a future session.
+
+NEXT SESSION SHOULD:
+Priority 1: Followup #68 (CRITICAL) —
+  sec/referral-candidates-tenant-scope. Same shape as #66's
+  GET handler treatment; should be ~30-45 min focused work.
+Priority 2: Followup #67 (HIGH) — sec/students-other-routes-
+  require-auth. Remaining 13 routes in routes/students.js per
+  the #54 router-sweep. Defer until #68 lands so the file
+  doesn't fork.
+Priority 3: Followup #62 — Render env-var fromDatabase
+  conversion (carries from Session 47).
+Priority 4: PR-2 of the #54 router-sweep — next router after
+  students.js fully closes (Owner to specify; candidates per
+  Session 46 master index include tenants.js, users.js,
+  parentLinks.js, prereferralForms.js).
+Priority 5: Followup #50 — tenant_id=3 catch-all + tenant_id=10
+  zero-rows audit (carries from Session 47).
+Priority 6+: #63 (migration system bifurcation), #64 (CLAUDE.md
+  migrations section), #65 (expected_frequency cleanup),
+  #49v2 (Migration 024 documentation), all other prior
+  carry-forwards held in place.
+
+  --- Stale local + remote refs ---
+
+  - sec/students-referral-monitoring — local DELETED on PR #55
+    merge; remote will be deleted via the PR-merged page UI.
+  - migration/local-schema-drift-fix — PRESERVED both local and
+    remote per Session 48 direction (kept as reference for the
+    pg_index defensive pattern; superseded by PR #55 in main).
+  - chore/activities-log-session-49 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface — pure
+    docs).
+  - All other prior session refs carry forward per Session 48's
+    "Stale local + remote refs" entry.
+================================================================================
