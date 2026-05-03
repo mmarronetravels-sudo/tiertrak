@@ -6,6 +6,7 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -33,7 +34,7 @@ const VALID_AREAS = ['Academic', 'Behavior', 'Social-Emotional', ''];
 const VALID_RISK_LEVELS = ['low', 'moderate', 'high'];
 
 // Get CSV template info
-router.get('/template', (req, res) => {
+router.get('/template', requireAuth, (req, res) => {
   res.json({
     columns: ['first_name', 'last_name', 'grade', 'tier', 'area', 'risk_level'],
     required: ['first_name', 'last_name', 'grade'],
@@ -56,7 +57,7 @@ router.get('/template', (req, res) => {
 });
 
 // Download CSV template
-router.get('/template/download', (req, res) => {
+router.get('/template/download', requireAuth, (req, res) => {
   const csvContent = 'first_name,last_name,grade,tier,area,risk_level\nJohn,Smith,3rd,1,Academic,low\nJane,Doe,5th,2,Behavior,moderate';
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=student_import_template.csv');
@@ -64,7 +65,7 @@ router.get('/template/download', (req, res) => {
 });
 
 // Import students from CSV
-router.post('/students/:tenantId', upload.single('file'), async (req, res) => {
+router.post('/students/:tenantId', requireAuth, upload.single('file'), async (req, res) => {
   const { tenantId } = req.params;
   
   if (!req.file) {
