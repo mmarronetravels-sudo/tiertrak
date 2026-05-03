@@ -4967,7 +4967,7 @@ BRANCH:  fix/csvimport-fe-credentials (PR #49, MERGED 78ca257)
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:78ca257 (PR #49 — fix/csvimport-fe-credentials)
              merged:e14a70d (PR #50 — sec/csvimport-require-auth)
-             pr-opened:PR-URL-PENDING (chore/activities-log-session-47)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/51 (chore/activities-log-session-47)
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Closes Followup #53 from the Session 46 master index — PR-1 of the
