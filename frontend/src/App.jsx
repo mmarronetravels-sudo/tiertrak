@@ -1680,6 +1680,7 @@ const handleUnlinkParent = async (linkId) => {
     try {
       const res = await fetch(`${API_URL}/csv/students/${user.tenant_id}`, {
         method: 'POST',
+        credentials: 'include',
         body: formData
       });
       const data = await res.json();
