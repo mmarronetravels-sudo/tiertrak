@@ -5624,14 +5624,14 @@ BRANCH:  sec/students-referral-monitoring (PR #55, MERGED 425fc74)
          chore/activities-log-session-49 (this entry, self-merge per Session
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:425fc74 (PR #55 — sec/students-referral-monitoring)
-             pr-opened:PR-URL-PENDING (chore/activities-log-session-49)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/56 (chore/activities-log-session-49)
 --------------------------------------------------------------------------------
 TASK SUMMARY
 
 Session 49 (May 3, 2026):
 - PR #55 (sec/students-referral-monitoring) merged at
-  PR-URL-PENDING. Closes Followups #57, #59, and #66 as one
-  atomic unit. 5 commits: migration-025 (capturing 3 out-of-
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/55.
+  Closes Followups #57, #59, and #66 as one atomic unit. 5 commits: migration-025 (capturing 3 out-of-
   band prod schema changes with corrected UNIQUE shape on
   referral_monitoring), POST handler patch (requireAuth +
   parent gate + body silent-drop + student-ownership tenant
