@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const {
+  requireAuth,
+  requireTenantStaffAccess,
+  requireStudentReadAccess
+} = require('../middleware/authorizeInterventionAccess');
 
 let pool;
 
@@ -7,8 +12,28 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Load a prereferral_forms row by id and assert it belongs to the caller's
+// tenant. Returns { ok: true, row } or { ok: false, status, body } so the
+// caller can respond with a byte-identical 403 for both "row not found" and
+// "wrong tenant" — preventing existence-disclosure across tenants.
+async function loadFormAndAssertTenant(formId, user) {
+  const result = await pool.query(
+    'SELECT id, tenant_id, status FROM prereferral_forms WHERE id = $1',
+    [formId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  if (result.rows[0].tenant_id !== user.tenant_id) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  return { ok: true, row: result.rows[0] };
+}
+
 // GET /options - Get dropdown options for form
-router.get('/options', async (req, res) => {
+router.get('/options', requireAuth, async (req, res) => {
   try {
     const options = {
       initiatedBy: [
@@ -120,14 +145,13 @@ router.get('/options', async (req, res) => {
 });
 
 // GET /tenant/:tenantId - Get all forms for a tenant
-router.get('/tenant/:tenantId', async (req, res) => {
+router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
     const { status } = req.query;
-    
+
     let query = `
-      SELECT pf.*, 
-             s.first_name as student_first_name, 
+      SELECT pf.*,
+             s.first_name as student_first_name,
              s.last_name as student_last_name,
              s.grade as student_grade,
              u.full_name as referred_by_name
@@ -136,15 +160,15 @@ router.get('/tenant/:tenantId', async (req, res) => {
       LEFT JOIN users u ON pf.referred_by = u.id
       WHERE pf.tenant_id = $1
     `;
-    const params = [tenantId];
-    
+    const params = [req.user.tenant_id];
+
     if (status) {
       query += ` AND pf.status = $2`;
       params.push(status);
     }
-    
+
     query += ` ORDER BY pf.created_at DESC`;
-    
+
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -154,19 +178,17 @@ router.get('/tenant/:tenantId', async (req, res) => {
 });
 
 // GET /pending/:tenantId - Get counts of pending forms
-router.get('/pending/:tenantId', async (req, res) => {
+router.get('/pending/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
-      SELECT 
+      SELECT
         COUNT(*) FILTER (WHERE status = 'draft') as draft_count,
         COUNT(*) FILTER (WHERE status = 'submitted') as submitted_count,
         COUNT(*) FILTER (WHERE status = 'changes_requested') as changes_requested_count
       FROM prereferral_forms
       WHERE tenant_id = $1
-    `, [tenantId]);
-    
+    `, [req.user.tenant_id]);
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error getting pending counts:', error);
