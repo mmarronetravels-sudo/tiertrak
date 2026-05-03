@@ -40,6 +40,14 @@ const blockParentRole = (req, res, next) => {
   next();
 };
 
+const requireMatchingTenant = (req, res, next) => {
+  const urlTenantId = parseInt(req.params.tenantId, 10);
+  if (Number.isNaN(urlTenantId) || urlTenantId !== req.user.tenant_id) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  next();
+};
+
 // Get CSV template info
 router.get('/template', requireAuth, (req, res) => {
   res.json({
@@ -72,9 +80,9 @@ router.get('/template/download', requireAuth, (req, res) => {
 });
 
 // Import students from CSV
-router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('file'), async (req, res) => {
-  const { tenantId } = req.params;
-  
+router.post('/students/:tenantId', requireAuth, blockParentRole, requireMatchingTenant, upload.single('file'), async (req, res) => {
+  const tenantId = req.user.tenant_id;
+
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
