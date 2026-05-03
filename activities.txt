@@ -5316,3 +5316,306 @@ NEXT SESSION SHOULD
   carry-forwards (#48 schema.sql drift, PR-2 of multi-screener,
   Session 44 carry-forwards) hold their prior priority order.
 ================================================================================
+SESSION: 2026-05-03T10:47:26-07:00 (Session 48)
+BRANCH:  chore/fe-dev-env-default-localhost (PR #52, MERGED 183ed53)
+         migration/local-schema-drift-fix (PR #53, CLOSED WITHOUT MERGE
+         — branch preserved both local and remote for reference)
+         chore/activities-log-session-48 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:183ed53 (PR #52 — chore/fe-dev-env-default-localhost)
+             closed-without-merge:https://github.com/mmarronetravels-sudo/tiertrak/pull/53 (PR #53 — migration/local-schema-drift-fix; branch preserved)
+             pr-opened:<PLACEHOLDER PR URL — will fill on commit-2> (chore/activities-log-session-48)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closes Followup #58 (FE env default to local) via PR #52. Investigated
+  Followups #57 (users.password_hash NOT NULL drift) and #59 (rm.notes /
+  si.log_frequency missing locally) per Priority 4 of the Session 47
+  master index — landed a migration in PR #53, then closed it without
+  merge after tenant-isolation-auditor returned 3 CRITICAL findings on
+  the routes/students.js handlers that would consume the new schema.
+  Both #57 and #59 remain OPEN and now bundle with the route fixes
+  under new Followup #66 for Session 49.
+
+  Investigation surfaced systemic migration-system bifurcation — half
+  the migration chain lives in top-level migration-NNN-*.sql files,
+  half lives in-process inside server.js as CREATE TABLE IF NOT EXISTS
+  / ALTER TABLE blocks labeled `console.log('Migration NNN')`. The two
+  systems share a numbering namespace and collide (#013 used twice for
+  unrelated changes — file is password-reset, server.js is archive/
+  delete-interventions; #015 is skipped; #007/#018/#020-022 are
+  duplicated in both places). No migration ledger table exists.
+  Tracked as new Followup #63.
+
+  Also surfaced: CLAUDE.md has no dedicated migrations discipline
+  section — concerns are scattered across §2A (branch naming), §3
+  (raw SQL), §7 (failure conditions), §8 (ask-first triggers). No
+  explicit rule requiring every prod schema change to be captured as
+  a checked-in migration file. Tracked as new Followup #64.
+
+PR #52 — chore/fe-dev-env-default-localhost → main (MERGED 183ed53)
+
+  One-commit additive config-only change closing Followup #58:
+
+    - 3757375 chore(fe-env): add committed dev default + .env.example.
+      Adds frontend/.env.development (committed, single line
+      VITE_API_URL=http://localhost:3000/api) so `npm run dev` defaults
+      to a local backend regardless of any per-machine .env files.
+      Adds frontend/.env.example documenting the Vite env-loading
+      order and the full set of vars devs may need (VITE_API_URL,
+      VITE_GOOGLE_CLIENT_ID).
+
+  Pre-investigation reframed the problem: the original Followup #58
+  framing implied `frontend/.env` was a checked-in file affecting
+  all devs. Audit found it is gitignored at root .gitignore:6 and
+  has never been in git — the prod URL was a per-machine artifact,
+  not repo state. The frontend code already has a localhost fallback
+  (`import.meta.env.VITE_API_URL || 'http://localhost:3000/api'` in
+  AppContext.jsx, App.jsx, TemplateEditorModal.jsx,
+  PlanTemplatePreviewModal.jsx). The fix was therefore to add a
+  committed `.env.development` that wins over `.env` per Vite's
+  documented loading priority (highest-to-lowest: .env.development.local
+  > .env.development > .env.local > .env), giving fresh clones a
+  zero-config localhost default.
+
+  Verification via curl of the Vite dev server's transformed
+  /src/context/AppContext.jsx and /src/App.jsx — both modules show
+  `import.meta.env = {... "VITE_API_URL": "http://localhost:3000/api" ...}`
+  injected at line 1, proving .env.development won the Vite priority
+  race in dev mode despite the user's pre-existing per-machine
+  frontend/.env still pointing at prod. Browser-tab verification was
+  not performed (no browser available in the agent environment); the
+  Vite-injected literal is the same value the browser would request,
+  so the curl-based proof is equivalent.
+
+  Reviewer verdicts: not required. Not a §2A trigger (no PII change,
+  no tenant logic change, no auth/JWT change — pure FE config docs).
+  Owner-approved self-merge.
+
+PR #53 — migration/local-schema-drift-fix (CLOSED WITHOUT MERGE)
+
+  One-commit migration capturing three out-of-band prod schema changes
+  that were never written as repo migrations:
+
+    - 0379d05 migration: capture out-of-band prod schema changes
+      (#57, #59). Adds migration-025-capture-out-of-band-prod-changes.sql
+      with three idempotent sections:
+        1. ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL —
+           prod allows NULL to support token-only parent accounts
+           pre-password-setup; closes the #57 half locally. Idempotent
+           by PG semantics (DROP NOT NULL on a nullable column is a
+           silent no-op).
+        2. ALTER TABLE referral_monitoring ADD COLUMN IF NOT EXISTS
+           notes TEXT, plus a DO $$ block adding CONSTRAINT
+           referral_monitoring_student_id_key UNIQUE (student_id) only
+           if no unique index/constraint on student_id already exists.
+           The DO block uses a column-based pg_index check (not a
+           name-based pg_constraint check) so the no-op works
+           regardless of what name prod's existing constraint may
+           have been given via out-of-band DDL. Closes the rm.notes
+           half of #59 locally.
+        3. ALTER TABLE student_interventions ADD COLUMN IF NOT EXISTS
+           log_frequency VARCHAR(20) DEFAULT 'weekly' — default
+           matches routes/interventions.js:97. Closes the
+           si.log_frequency half of #59 locally.
+
+  Local apply (psql against localhost DB):
+    - 4 statement completions ("ALTER TABLE", "ALTER TABLE", "DO",
+      "ALTER TABLE"), 0 NOTICEs, 0 errors
+    - users.password_hash → is_nullable=YES (no-op state, already
+      nullable from Session 47 ad-hoc patch)
+    - referral_monitoring → 6 columns (notes TEXT, nullable, added)
+      + UNIQUE constraint referral_monitoring_student_id_key on
+      student_id (added; pg_index cross-check confirms two unique
+      indexes on the table, _pkey on id and the new _student_id_key
+      on student_id)
+    - student_interventions → log_frequency VARCHAR(20) DEFAULT
+      'weekly' added (column 25, was 24-column table)
+
+  Reviewer verdicts:
+    - privacy-reviewer: APPROVE WITH NOTES — 0 CRITICAL, 2 WARN, 3
+      INFO. WARNs are pre-existing in routes/students.js
+      (referral-monitoring handlers lack auth + tenant scoping;
+      error responses echo error.message which could leak rm.notes
+      values via pg errors). Both flagged as out-of-scope for the
+      migration but unblocked by it.
+    - security-reviewer: APPROVE WITH NOTES — 0 CRITICAL, 2 WARN, 3
+      INFO. WARNs are pre-existing — input validation/sanitization
+      gap on POST /referral-monitoring (req.body.notes free text,
+      req.body.tenant_id trusted from client); rate-limiter gap on
+      auth.js password endpoints. Verified the password_hash NULL
+      drop is safe for the current auth code: routes/auth.js:117
+      and :595 both short-circuit on `if (!user.password_hash)`
+      before bcrypt.compare; Google login at :243 explicitly rejects
+      role=='parent', so a NULL-hash parent cannot mint a JWT. NULL
+      password_hash cannot bypass auth in the current codebase.
+    - tenant-isolation-auditor: BLOCKED — 3 CRITICAL, 2 WARN, 2 INFO.
+      All 3 CRITICAL are in routes/students.js handlers that consume
+      the new schema:
+        a. POST /referral-monitoring (lines 285-304) trusts
+           req.body.tenant_id; combined with the new UNIQUE(student_id)
+           + ON CONFLICT (student_id) DO UPDATE, an authenticated
+           Tenant A user can overwrite Tenant B's monitoring row by
+           POSTing { student_id: <Tenant B's student>, tenant_id:
+           <Tenant A>, ... } — a cross-tenant write primitive on
+           PII per §4B (rm.notes = staff-authored monitoring notes
+           on a tenant-scoped student table).
+        b. GET /referral-monitoring/:tenantId (lines 226-258) reads
+           tenant from URL param without requireAuth — FERPA
+           exposure path. The new rm.notes column expands what
+           leaks (full PII row including student first/last name,
+           grade, tier, monitoring notes, monitor's full name,
+           ratings).
+        c. DELETE /referral-monitoring/:studentId (lines 307-316)
+           has no tenant clause and no requireAuth — any caller
+           can delete any tenant's row by guessing sequential
+           SERIAL student_ids.
+      WARN #1: constraint shape should be UNIQUE(tenant_id,
+      student_id) to match the rest of the schema's pattern (users
+      at schema.sql:24, screener_results at schema.sql:97) and
+      provide DB-layer defense-in-depth — under that shape, the
+      cross-tenant write primitive in CRITICAL #a fails at the SQL
+      layer (no matching unique constraint for the ON CONFLICT
+      target).
+
+  Owner closed PR #53 without merge per the auditor's structural
+  argument: codifying UNIQUE(student_id) as the official schema
+  shape would lock in a vulnerability that UNIQUE(tenant_id,
+  student_id) prevents at the DB layer. The migration + the three
+  route fixes will be folded into a single sec/ PR
+  (sec/students-referral-monitoring) in Session 49 so the
+  cross-tenant write primitive never exists in any merged state.
+  Tracked as new Followup #66.
+
+  Branch migration/local-schema-drift-fix preserved both local and
+  remote per Owner direction — Session 49 will start fresh from
+  main with the corrected constraint shape, but the existing
+  branch's commit (0379d05) remains as a reference for the
+  verification output and the pg_index defensive idempotency
+  pattern that worked correctly. Migration filename "migration-025-"
+  is also preserved as a slot reference; see "MIGRATION 025 NUMBER
+  SLOT" note below.
+
+MIGRATION 025 NUMBER SLOT — collision warning for Session 49
+
+  PR #53's migration file was named migration-025-... because 024
+  (multi-screener-support.sql) was the highest existing number on
+  main. The file did not land in main (PR closed). Session 47's
+  master index also lists Followup #49 as "Migration 025: dedup +
+  re-add the 6-column UNIQUE with NULLS NOT DISTINCT" for the
+  multi-screener PR2 work — i.e., two distinct planned migrations
+  were both targeting the 025 slot. Whichever lands in main first
+  claims 025; the other will need to renumber to 026. Session 49
+  should pick the order explicitly (Owner judgment) before either
+  PR is opened so the renumber is intentional, not a merge-conflict
+  surprise.
+
+NEW FOLLOWUPS
+
+  #63 — Migration system bifurcation (file-based migration-NNN-*.sql
+        + in-process server.js bootstrap labeled "Migration NNN"
+        share a numbering namespace and collide; #013 used twice
+        for unrelated changes — file is password-reset, server.js
+        is archive/delete-interventions; #015 is skipped;
+        #007/#018/#020-022 are duplicated in both places). No
+        migration ledger table. Pick one system, retire the other.
+        Investigation + restructure PR.
+
+  #64 — CLAUDE.md has no dedicated migrations discipline section.
+        Migration concerns are scattered across §2A (branch naming
+        migration/*), §3 (raw SQL), §7 (failure conditions), §8
+        (ask-first triggers) with no explicit rule requiring every
+        prod schema change to be captured as a checked-in migration
+        file. Tiny doc PR — add a §X "Migrations Discipline" section
+        with the explicit rule.
+
+  #65 — student_interventions.expected_frequency (added by
+        migration-005) appears unreferenced by application code —
+        grep across routes/, middleware/, src/, scripts/ finds zero
+        references. Active column the app uses is log_frequency.
+        Investigate whether the column is dead, plan cleanup.
+        Deferred until after #63 lands so the cleanup migration
+        goes through whatever consolidated system #63 produces.
+
+  #66 — sec/students-referral-monitoring (CRITICAL — Session 49
+        Priority 1). Combined PR folding in:
+          - Patch POST, GET, DELETE /referral-monitoring handlers
+            in routes/students.js for requireAuth + JWT-derived
+            tenant_id (never req.body or req.params for tenant);
+            mirror the existing pattern at routes/interventions.js:
+            100-106; verify supplied student_id belongs to
+            req.user.tenant_id before INSERT/DELETE.
+          - Replace migration-025's Section 2 UNIQUE(student_id)
+            with UNIQUE(tenant_id, student_id) (drop-and-recreate
+            inside the DO $$ block, behind appropriate gating
+            since prod currently has the single-column form).
+          - Update ON CONFLICT (student_id) clause in
+            routes/students.js:292 to ON CONFLICT (tenant_id,
+            student_id) to match the new constraint.
+          - Carry forward the password_hash DROP NOT NULL and
+            log_frequency ADD COLUMN sections from PR #53 unchanged.
+        Closes #57, #59, #66 itself, plus the privacy-reviewer's
+        WARN #1 (referral-monitoring auth) and #2 (error.message
+        echo). All three reviewer subagents required. Non-Owner
+        human review required per §2A.
+
+  #67 — sec/students-other-routes-require-auth (HIGH). The remaining
+        13 routes in routes/students.js beyond the three covered by
+        #66 still need the security campaign treatment per the
+        Session 46 #54 router-sweep. Defer to after #66 lands so the
+        students.js work doesn't fork into two parallel branches.
+
+  --- Stale local + remote refs ---
+
+  - chore/fe-dev-env-default-localhost — local DELETED on PR #52
+    merge; remote DELETED via gh pr merge --delete-branch.
+  - migration/local-schema-drift-fix — PRESERVED both local and
+    remote per Owner direction (do not delete; will be referenced
+    in Session 49 #66 work as a source for verification output and
+    the pg_index defensive pattern).
+  - chore/activities-log-session-48 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface — pure
+    docs).
+  - All other prior session refs carry forward per Session 47's
+    "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Followup #66 (sec/students-referral-monitoring,
+  CRITICAL). Combined PR: route handler patches + corrected
+  migration. Folds in #57 + #59 + parts of the #54 router-sweep
+  for routes/students.js. Three reviewer subagents + non-Owner
+  human review required per §2A. Coordinate Migration 025 vs 026
+  naming with #49 first (see "MIGRATION 025 NUMBER SLOT" note
+  above).
+
+  Priority 2 — Followup #67 (sec/students-other-routes-require-auth,
+  HIGH). Remaining 13 routes in routes/students.js per the #54
+  campaign. Defer until after #66 lands so the students.js work
+  doesn't fork.
+
+  Priority 3 — Followup #62 (Render env-var fromDatabase
+  conversion). Direct non-recurrence prevention for the Session 47
+  prod outage. Carries forward unchanged from Session 47 master
+  index. Render UI workflow, no code change.
+
+  Priority 4 — Followup #49 (Migration 025): dedup + re-add the
+  6-column UNIQUE with NULLS NOT DISTINCT. Carried forward from
+  Session 45/47. Hard blocker for PR2 of multi-screener. NOTE: see
+  "MIGRATION 025 NUMBER SLOT" above — coordinate numbering with
+  #66 before opening either PR.
+
+  Priority 5 — Followup #50 investigation (tenant_id=3 catch-all
+  + tenant_id=10 zero-rows). Read-only audit first; if (b) reveals
+  cross-tenant attribution, escalate to §5 critical and pause PR2.
+  Carries forward from Session 45/47.
+
+  Priority 6 — PR-2 of the #54 router-sweep campaign (next router
+  after routes/students.js — Owner to specify). Apply the same
+  authentication and tenant-from-JWT pattern.
+
+  Priority 7+ — Followup #61 (multer absolute path), rate limiter
+  followup, authorizeDocumentAccess.js dedup, plus all Session 45
+  carry-forwards (#48 schema.sql drift, PR-2 of multi-screener,
+  Session 44 carry-forwards) hold their prior priority order,
+  shifted down by the new #66/#67 priorities.
+================================================================================
