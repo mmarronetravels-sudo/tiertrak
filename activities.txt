@@ -5785,13 +5785,13 @@ BRANCH:  sec/prereferralForms-require-auth (PR #59, MERGED 4251ad0)
          chore/activities-log-session-51 (this entry, self-merge per Session
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:4251ad0 (PR #59 — sec/prereferralForms-require-auth)
-             pr-opened:PR-URL-PENDING (chore/activities-log-session-51)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/60 (chore/activities-log-session-51)
 --------------------------------------------------------------------------------
 TASK SUMMARY
 
 Session 51 (May 3, 2026):
 - PR #59 (sec/prereferralForms-require-auth) merged at
-  PR-URL-PENDING. 5 commits across the largest sec/ scope of
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/59. 5 commits across the largest sec/ scope of
   the campaign so far — 13 routes on routes/prereferralForms.js
   patched in one PR. Closes the medical/mental-health PII
   surface that was the highest-stakes remaining exposure
