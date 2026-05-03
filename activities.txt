@@ -4960,3 +4960,310 @@ NEXT SESSION SHOULD
   interventions.js sweep, #45 audit logging, #41/#42/#44, #22, #11,
   #29–#33 confirmation) hold their prior priority order.
 ================================================================================
+SESSION: 2026-05-03T09:18:00-07:00 (Session 47)
+BRANCH:  fix/csvimport-fe-credentials (PR #49, MERGED 78ca257)
+         sec/csvimport-require-auth (PR #50, MERGED e14a70d)
+         chore/activities-log-session-47 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:78ca257 (PR #49 — fix/csvimport-fe-credentials)
+             merged:e14a70d (PR #50 — sec/csvimport-require-auth)
+             pr-opened:PR-URL-PENDING (chore/activities-log-session-47)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closes Followup #53 from the Session 46 master index — PR-1 of the
+  multi-PR #54 router-sweep campaign. Locks down routes/csvImport.js
+  with authentication, parent-role exclusion, and tenant-from-JWT
+  enforcement. Before this session, any unauthenticated caller could
+  POST a CSV of student records into any tenant via URL parameter.
+
+  Strict two-PR merge order, kept as a bright line for the #54 sweep:
+  PR #49 (fix/csvimport-fe-credentials, FE-only, 1 line) merged first
+  to add `credentials: 'include'` to the upload fetch so the auth
+  cookie travels with the request once the BE gates in. PR #50
+  (sec/csvimport-require-auth, BE-only, 3 commits) merged second to
+  add requireAuth + parent-role gate + tenant-from-JWT parity check
+  on all three routes.
+
+  Mid-session prod accident: while preparing local fixtures for the
+  PR #50 smoke test, a parent-creation form submission was made
+  against the prod URL instead of localhost. One row created in prod
+  tenant 3 (Lincoln demo), cleaned up atomically via psql with
+  row-count safety guard. No FK fallout, no external PII leak.
+  Render DB credential rotated as belt-and-suspenders due to partial
+  password fragment surfacing in error output.
+
+PR #49 — fix/csvimport-fe-credentials → main (MERGED 78ca257)
+
+  One-commit FE prep for PR #50:
+
+    - 6f3085c fix(csv-import): include credentials on FE upload fetch.
+      Adds `credentials: 'include'` to the POST /api/csv/students/:tenantId
+      fetch in handleCsvUpload. Matches the pattern already used by
+      every other authenticated fetch in App.jsx (lines 213, 471,
+      505, 521, 539).
+
+  Reviewer verdicts: not required. Not a §2A trigger (no PII change,
+  no tenant logic change, no auth/JWT change — adds a flag to a
+  fetch). Owner self-merge.
+
+PR #50 — sec/csvimport-require-auth → main (MERGED e14a70d)
+
+  Three-commit bundle, each one logical change, monotonically
+  tighter than the previous, never loosens:
+
+    - 7c27638 sec(csv-import): require auth on all 3 routes. Imports
+      requireAuth from middleware/authorizeInterventionAccess (the
+      shared module already used by parent504, student504,
+      mtssMeetings, weeklyProgress, interventions, screener) and
+      applies it to GET /template, GET /template/download, and
+      POST /students/:tenantId. On the POST, requireAuth is placed
+      BEFORE upload.single('file') so anonymous bytes are never
+      buffered. Same ordering pattern as routes/studentDocuments.js:115.
+
+    - 4d4d6c7 sec(csv-import): block parent role on POST. Adds named
+      guard blockParentRole at module level returning generic 403
+      when req.user.role === 'parent'. Inserted on the POST chain
+      BETWEEN requireAuth and upload.single — parent callers never
+      reach multer.
+
+    - 073828c sec(csv-import): enforce tenant-from-JWT on POST.
+      Adds named guard requireMatchingTenant on the POST chain that
+      403s when parseInt(req.params.tenantId, 10) is NaN OR does
+      not equal req.user.tenant_id. Handler body now binds tenant_id
+      from req.user.tenant_id, not from the URL. Existing INSERT at
+      line 174 unchanged — bind variable name preserved.
+
+      Surfaced and approved deviation from approved plan: parity
+      check landed as middleware running BEFORE upload.single
+      instead of inside the handler body, to prevent orphaned temp
+      files in uploads/ on cross-tenant probes (§4B violation
+      otherwise). Same defense-in-depth posture as blockParentRole.
+
+  Reviewer verdicts (pre-merge):
+    - privacy-reviewer: APPROVED (0 CRITICAL, 0 WARN, 3 INFO).
+    - security-reviewer: APPROVED WITH NOTES (0 CRITICAL, 2 WARN —
+      both pre-existing posture: rate limiting absent + multer
+      relative-path fragility. Not regressions; tracked as
+      followups for next session).
+    - tenant-isolation-auditor: APPROVED (0 CRITICAL, 0 WARN,
+      3 INFO).
+    - Non-Owner human reviewed and approved per §2A (PR touches
+      PII, tenant isolation, and auth — cannot self-merge).
+
+PROD DATA OP (mid-session)
+  Render DB, prod tenant 3 (Lincoln demo). One row deleted from
+  users table (table+count only per §4B; no email, no name, no
+  user_id recorded here):
+
+    Phase A (read-only): BEGIN; SELECT (with parent_student_links
+      link_count enrichment via subquery); ROLLBACK;
+    Phase B (atomic delete): \set ON_ERROR_STOP on; BEGIN; DO block
+      with DELETE + GET DIAGNOSTICS ROW_COUNT + RAISE EXCEPTION if
+      count != 1; COMMIT; post-COMMIT verification SELECT.
+
+  The DO-block pattern guaranteed prod would be unchanged unless
+  exactly 1 row was deleted AND no FK constraint blocked it. Phase
+  A confirmed exactly one matching row with link_count=0 (no
+  parent_student_links to cascade). Phase B succeeded clean —
+  "Deleted 1 row(s)" notice, COMMIT, post-COMMIT SELECT returned
+  0 rows.
+
+  Owner ran the SQL files against prod psql; Claude Code wrote the
+  files (/tmp/cleanup_phaseA.sql, /tmp/cleanup_phaseB.sql) but
+  never touched the prod URL. Render DB credential rotated as
+  belt-and-suspenders due to partial password fragment surfacing
+  in error output.
+
+TENANT ISOLATION REVIEW
+  - PR #50 closes the pre-existing cross-tenant write CRITICAL on
+    POST /api/csv/students/:tenantId. Every guard layer enforces
+    server-derived tenant identity:
+      * requireAuth populates req.user.tenant_id from a re-queried
+        users row on every request (not from the JWT claim alone)
+        — so demoted/disabled users cannot continue to act on a
+        still-valid token.
+      * requireMatchingTenant enforces parity between URL :tenantId
+        and req.user.tenant_id; mismatch returns generic 403 before
+        multer runs.
+      * Handler-body tenant bind sources from req.user.tenant_id,
+        NOT req.params. Defense-in-depth — even if the middleware
+        were dropped in a future refactor, the INSERT would still
+        land in the caller's own tenant.
+  - 403 bodies are byte-identical between blockParentRole and
+    requireMatchingTenant (verified via ETag match in smoke output).
+    No probe info distinguishing wrong-role from wrong-tenant.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: students table accepts CSV-derived rows
+    (first_name, last_name, grade) bound to a server-derived
+    tenant_id on every INSERT. No new PII fields persisted by this
+    PR.
+  Logging audit: 0 new console.* statements added by PR #50. The
+    pre-existing console.error for unlink failures logs only an fs
+    error object. No PII surfaced.
+  Error response audit: All 401/403 responses use generic strings
+    ("Not authenticated" / "Not authorized"). No PII, no probe info.
+  Cross-tenant risk: Pre-existing CRITICAL closed (anonymous CSV
+    write into any tenant). New posture is server-derived tenant
+    binding throughout.
+  Temp-file lifecycle: requireAuth + blockParentRole +
+    requireMatchingTenant all run BEFORE upload.single, so rejected
+    requests never have their CSV bytes written to uploads/.
+    Empirically verified — uploads/ contained only .gitkeep after
+    smoke (b)/(c)/(d) probes with file payloads attached.
+  Prod data op privacy: synthetic test fixture only (.test TLD
+    email, undeliverable). No real student or staff PII involved.
+    Render DB credential rotation noted under PROD DATA OP.
+
+VERIFICATION
+  - npm test — N/A. No test infrastructure exists in the repo
+    (Followup #51 — pre-existing gap). package.json has placeholder
+    test script only; no jest/vitest/mocha/supertest in deps.
+  - npm run lint — no lint script defined in package.json (same
+    gap as testing).
+  - Smoke scenarios — all four passed against PR #50 branch (Owner
+    ran a/c/d, Claude Code ran b on a clean local server). Local
+    Lincoln tenant_id=1, Parkview tenant_id=2:
+      (a) authenticated school_admin upload to own tenant:
+          200 OK, imported: 1 row, summary clean.
+      (b) unauthenticated, all 3 routes: 401 Not authenticated on
+          all 3. uploads/ contained only .gitkeep after the POST
+          attempt with file payload — confirms requireAuth runs
+          before multer.
+      (c) parent role on POST: 403 Not authorized,
+          Content-Length: 26, ETag W/"1a-ntmbzAdnujhc6FE4t70aUCZx0MQ".
+      (d) cross-tenant probe (admin in tenant 1, URL says 2): 403
+          Not authorized, Content-Length: 26, byte-identical body
+          to (c) confirmed via matching ETag.
+  - PR #49 merged 78ca257; PR #50 merged e14a70d; chore PR
+    self-merge eligible (log-only, no §4B / §5 surface).
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- New / re-scoped this session ---
+
+  - Followup #57 (NEW) — Schema drift: local users.password_hash
+    is NOT NULL but prod allows NULL (parent accounts pre-password-
+    setup). A migration should have relaxed this constraint;
+    investigate which migration is missing from the local apply
+    path. Local DB was patched ad-hoc this session via ALTER TABLE
+    to unblock smoke testing. Followup PR should add a proper
+    migration file so future fresh local DBs are consistent with
+    prod.
+
+  - Followup #58 (NEW) — frontend/.env defaults to prod API URL
+    even in dev mode. Caused a multi-step accident this session
+    where the FE pointed at prod while running on localhost:5173.
+    Add frontend/.env.development (or document the pattern of
+    frontend/.env.local override) so dev mode is local-by-default.
+    Currently mitigated locally via .env.local override (not
+    committed).
+
+  - Followup #59 (NEW) — Additional schema drift: routes/students.js
+    queries reference rm.notes (column does not exist locally) and
+    si.log_frequency (column does not exist locally). Surfaced in
+    BE logs during this session's local debugging. Likely same
+    migration-apply gap as #57. Bundle into one investigation
+    followup or split per-table — Owner to decide.
+
+  - Followup #60 (NEW process) — Mid-session prod accident: parent
+    fixture creation intended for local was executed against prod
+    (browser was on tiertrak.scholarpathsystems.org, not
+    localhost:5173). One row accidentally created in prod tenant 3
+    (Lincoln demo). Cleaned up atomically via psql with row-count
+    safety guard, no FK fallout, no PII external leak (synthetic
+    test fixture, undeliverable email). Owner-side process
+    hardening: explicit URL-bar verification before any form
+    submission against "local" UI. Sub-rule banked: Cowork-mode
+    instructions should ask Owner to confirm URL bar reads
+    "localhost:5173" before treating "I'm there" as ground truth.
+    Treat as banked observation in the master index, not as code
+    work.
+
+  - Followup #61 (NEW) — Multer destination uses relative path
+    'uploads/' in routes/csvImport.js:17-29. Currently safe because
+    server.js does not serve uploads/ via static middleware, but
+    relative-cwd footing is fragile (a future change running from
+    a different cwd, or any mount of express.static near project
+    root, would expose stale CSVs). Additional concern: the
+    unlink-on-success and unlink-on-catch paths don't cover process
+    crashes mid-parse — partial files can survive. Fix: pin
+    destination to absolute path via path.join(__dirname, '..',
+    'uploads'), and add a startup sweep for files older than N
+    hours in uploads/ during server boot. Surfaced by
+    security-reviewer on PR #50, not introduced by that PR.
+    Standalone followup PR.
+
+  --- Already-committed deferred follow-ups (no number assigned) ---
+
+  - Add rate limiter to POST /api/csv/students/:tenantId. Reviewer
+    recommendation: express-rate-limit keyed on req.user.id, e.g.
+    10 imports / 15 min / user. Same surface surfaced by
+    security-reviewer on PR #50 as an existing-posture WARN.
+    Could be re-scoped under #61 or numbered separately next
+    session.
+  - Consolidate the duplicate requireAuth in
+    middleware/authorizeDocumentAccess.js (separate from PR #50's
+    scope; the canonical shared requireAuth lives in
+    middleware/authorizeInterventionAccess.js).
+
+  --- Carried forward unchanged ---
+
+  - Followup #48 (RE-SCOPED in Session 45) — schema.sql drift on
+    screener_results. Carry forward.
+  - Followup #49 (NEW in Session 45) — Migration 025: dedup +
+    re-add 6-column UNIQUE with NULLS NOT DISTINCT. Carry forward;
+    unblocks PR2 of multi-screener.
+  - Followup #50 (NEW in Session 45) — tenant_id=3 catch-all +
+    tenant_id=10 zero-rows investigation. Carry forward.
+  - Followup #51 (pre-existing) — no test infrastructure in repo.
+    Re-confirmed during PR #50 verification: package.json has
+    placeholder test script; no jest/vitest/mocha/supertest in
+    deps. Adding a test framework would be a §8 ask-first trigger.
+  - Followup #56 (pre-existing) — duplicate requireAuth in
+    routes/tier1-assessments.js (local copy, predates the canonical
+    shared middleware). Out of scope for PR #50 by design.
+  - All Session 45 carry-forwards (#67+#40 mtssMeetings sweep,
+    interventions.js sweep covering #43, #45 audit logging,
+    #41/#42/#44, #22, #11, #29–#33 transitive-close confirmation)
+    carry forward unchanged.
+
+  --- Stale local + remote refs ---
+
+  - sec/csvimport-require-auth — local DELETED on PR #50 merge.
+    Remote will be deleted via the PR-merged page UI.
+  - fix/csvimport-fe-credentials — merged via PR #49 (78ca257);
+    local branch retained.
+  - chore/activities-log-session-47 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface).
+  - All other prior session refs carry forward per Session 45's
+    "Stale local + remote refs" entry.
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Followup #49 (Migration 025): dedup + re-add the
+  6-column UNIQUE with NULLS NOT DISTINCT. Carried forward from
+  Session 45. Hard blocker for PR2 of multi-screener.
+
+  Priority 2 — Followup #50 investigation (tenant_id=3 catch-all
+  + tenant_id=10 zero-rows). Read-only audit first; if (b) reveals
+  cross-tenant attribution, escalate to §5 critical and pause PR2.
+  Carried forward from Session 45.
+
+  Priority 3 — Followups #57 + #59 (schema drift investigation).
+  password_hash NOT NULL on local but NULL allowed on prod, plus
+  rm.notes / si.log_frequency missing locally. Likely same
+  migration-apply gap. Bundle into one investigation pass.
+
+  Priority 4 — Followup #58 (FE env default to local). Quick win;
+  unblocks future fixture-creation work without prod-accident risk.
+
+  Priority 5 — PR-2 of the #54 router-sweep campaign (next router
+  in the sweep — Owner to specify). Apply the same authentication
+  and tenant-from-JWT pattern to the next high-risk route file.
+
+  Priority 6+ — Followup #61 (multer absolute path), rate limiter
+  followup, authorizeDocumentAccess.js dedup, plus all Session 45
+  carry-forwards (#48 schema.sql drift, PR-2 of multi-screener,
+  Session 44 carry-forwards) hold their prior priority order.
+================================================================================
