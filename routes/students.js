@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -223,10 +224,14 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
   }
 });
 // GET monitored referral students with live stats
-router.get('/referral-monitoring/:tenantId', async (req, res) => {
+router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (parseInt(req.params.tenantId, 10) !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const result = await pool.query(`
       SELECT 
         s.id,
@@ -255,7 +260,7 @@ router.get('/referral-monitoring/:tenantId', async (req, res) => {
       GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, 
                rm.id, rm.notes, rm.created_at, u.full_name
       ORDER BY COALESCE(AVG(wp.rating), 0) ASC
-    `, [tenantId]);
+    `, [req.user.tenant_id]);
 
     res.json({
       count: result.rows.length,
@@ -277,41 +282,69 @@ router.get('/referral-monitoring/:tenantId', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching monitored students:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch monitored students' });
   }
 });
 
 // POST mark student as monitoring
-router.post('/referral-monitoring', async (req, res) => {
+router.post('/referral-monitoring', requireAuth, async (req, res) => {
   try {
-    const { student_id, tenant_id, monitored_by, notes } = req.body;
-    
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const { student_id, notes } = req.body;
+    // Tenant verification: student must belong to caller's tenant.
+    const studentResult = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentResult.rows.length === 0
+        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    // Coerce notes to a safe shape: string, trimmed, length-limited.
+    // staff-authored field but defensive coerce protects against
+    // unexpected client payloads.
+    const safeNotes = (notes != null)
+      ? String(notes).trim().slice(0, 2000)
+      : null;
     const result = await pool.query(`
       INSERT INTO referral_monitoring (student_id, tenant_id, monitored_by, notes)
       VALUES ($1, $2, $3, $4)
-      ON CONFLICT (student_id) DO UPDATE SET 
-        notes = $4, 
+      ON CONFLICT (tenant_id, student_id) DO UPDATE SET
+        notes = $4,
         monitored_by = $3,
         created_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [student_id, tenant_id, monitored_by, notes || null]);
-
+    `, [student_id, req.user.tenant_id, req.user.id, safeNotes]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error marking as monitoring:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to mark student for monitoring' });
   }
 });
 
 // DELETE remove from monitoring (to start referral or dismiss)
-router.delete('/referral-monitoring/:studentId', async (req, res) => {
+router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) => {
   try {
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { studentId } = req.params;
-    await pool.query('DELETE FROM referral_monitoring WHERE student_id = $1', [studentId]);
+    // Tenant clause makes cross-tenant DELETEs silent no-ops:
+    // 0 rows affected, generic success response regardless. This
+    // is more probe-resistant than a 403 because attackers cannot
+    // enumerate student_ids by trying random ones and observing
+    // different responses for "exists in another tenant" vs
+    // "does not exist."
+    await pool.query(
+      'DELETE FROM referral_monitoring WHERE student_id = $1 AND tenant_id = $2',
+      [studentId, req.user.tenant_id]
+    );
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing monitoring:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to remove monitoring' });
   }
 });
 // Get a single student with their interventions and notes
