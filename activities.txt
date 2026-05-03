@@ -4992,6 +4992,18 @@ TASK SUMMARY
   Render DB credential rotated as belt-and-suspenders due to partial
   password fragment surfacing in error output.
 
+  Followed by a mid-session prod OUTAGE: deletion of the rotated-out
+  `tiertrak` credential — misjudged as unused based on a "0 open
+  connections" snapshot — took down tiertrak-api because that
+  service's DATABASE_URL env var was a hardcoded string pointing at
+  the deleted credential, not a Render `fromDatabase` reference.
+  Resolved by Owner pasting the new Internal Database URL into the
+  env var; Render auto-redeployed; SSO verified working post-fix.
+  No data loss, no writes attempted during the outage window.
+  Tracked as Followup #62 to convert the hardcoded DATABASE_URL on
+  tiertrak-api to a `fromDatabase` reference so future credential
+  rotations auto-propagate.
+
 PR #49 — fix/csvimport-fe-credentials → main (MERGED 78ca257)
 
   One-commit FE prep for PR #50:
@@ -5073,6 +5085,26 @@ PROD DATA OP (mid-session)
   never touched the prod URL. Render DB credential rotated as
   belt-and-suspenders due to partial password fragment surfacing
   in error output.
+
+PROD OUTAGE (mid-session, must-read for next session)
+  - Mid-session prod outage: tiertrak-api web service began failing
+    all requests after we deleted an old `tiertrak` credential we
+    misjudged as unused (it was the credential the deployed app's
+    hardcoded DATABASE_URL was using). Outage bounded by deletion
+    timestamp through Owner's manual env-var update on tiertrak-api.
+    Resolved by pasting the new Internal Database URL into the
+    DATABASE_URL env var and letting Render auto-redeploy. SSO
+    verified working post-fix. No data loss, no writes attempted
+    during outage window.
+  - Sunday morning Pacific — likely zero or near-zero active users
+    affected. Service was completely unavailable during the window
+    (every request returned the role-cannot-login error from Render's
+    Postgres layer).
+  - Root cause: tiertrak-api had its DATABASE_URL hardcoded as a
+    string env var pointing at the deleted credential. Render's
+    auto-redeploy didn't fire because the env var wasn't a
+    `fromDatabase` reference. Followup #62 converts this to the
+    canonical `fromDatabase` form so future rotations auto-propagate.
 
 TENANT ISOLATION REVIEW
   - PR #50 closes the pre-existing cross-tenant write CRITICAL on
@@ -5194,6 +5226,17 @@ OPEN ITEMS / FOLLOW-UPS
     security-reviewer on PR #50, not introduced by that PR.
     Standalone followup PR.
 
+  - Followup #62 (NEW) — Convert tiertrak-api's DATABASE_URL env
+    var from a hardcoded string to a Render `fromDatabase`
+    reference linked to tiertrak-db. Currently the URL is hardcoded,
+    so credential rotations don't auto-propagate to the deployed
+    service — exactly the failure mode that caused the Session 47
+    prod outage. Use Render's "Add from Database" workflow on
+    tiertrak-api → Environment → DATABASE_URL. After the switch,
+    future credential rotations on tiertrak-db will trigger
+    automatic redeploys with the correct URL. Verify by triggering
+    a no-op rotation in a maintenance window after the switch.
+
   --- Already-committed deferred follow-ups (no number assigned) ---
 
   - Add rate limiter to POST /api/csv/students/:tenantId. Reviewer
@@ -5250,19 +5293,25 @@ NEXT SESSION SHOULD
   cross-tenant attribution, escalate to §5 critical and pause PR2.
   Carried forward from Session 45.
 
-  Priority 3 — Followups #57 + #59 (schema drift investigation).
+  Priority 3 — Followup #62 (Render env-var fromDatabase conversion).
+  Direct non-recurrence prevention for the Session 47 prod outage.
+  Render UI workflow, no code change. Verify by triggering a no-op
+  rotation in a maintenance window after the switch. Land before
+  any future credential rotation.
+
+  Priority 4 — Followups #57 + #59 (schema drift investigation).
   password_hash NOT NULL on local but NULL allowed on prod, plus
   rm.notes / si.log_frequency missing locally. Likely same
   migration-apply gap. Bundle into one investigation pass.
 
-  Priority 4 — Followup #58 (FE env default to local). Quick win;
+  Priority 5 — Followup #58 (FE env default to local). Quick win;
   unblocks future fixture-creation work without prod-accident risk.
 
-  Priority 5 — PR-2 of the #54 router-sweep campaign (next router
+  Priority 6 — PR-2 of the #54 router-sweep campaign (next router
   in the sweep — Owner to specify). Apply the same authentication
   and tenant-from-JWT pattern to the next high-risk route file.
 
-  Priority 6+ — Followup #61 (multer absolute path), rate limiter
+  Priority 7+ — Followup #61 (multer absolute path), rate limiter
   followup, authorizeDocumentAccess.js dedup, plus all Session 45
   carry-forwards (#48 schema.sql drift, PR-2 of multi-screener,
   Session 44 carry-forwards) hold their prior priority order.
