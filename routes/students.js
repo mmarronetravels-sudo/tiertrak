@@ -319,14 +319,26 @@ router.post('/referral-monitoring', requireAuth, async (req, res) => {
 });
 
 // DELETE remove from monitoring (to start referral or dismiss)
-router.delete('/referral-monitoring/:studentId', async (req, res) => {
+router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) => {
   try {
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { studentId } = req.params;
-    await pool.query('DELETE FROM referral_monitoring WHERE student_id = $1', [studentId]);
+    // Tenant clause makes cross-tenant DELETEs silent no-ops:
+    // 0 rows affected, generic success response regardless. This
+    // is more probe-resistant than a 403 because attackers cannot
+    // enumerate student_ids by trying random ones and observing
+    // different responses for "exists in another tenant" vs
+    // "does not exist."
+    await pool.query(
+      'DELETE FROM referral_monitoring WHERE student_id = $1 AND tenant_id = $2',
+      [studentId, req.user.tenant_id]
+    );
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing monitoring:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to remove monitoring' });
   }
 });
 // Get a single student with their interventions and notes
