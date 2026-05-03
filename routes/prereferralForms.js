@@ -14,6 +14,15 @@ const initializePool = (dbPool) => {
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
+// Role sets for transition/delete endpoints. Parent is implicitly excluded
+// (not in either set) — no separate parent-block line needed where these
+// are used. Narrower-then-loosen design call: schema's counselor_* column
+// naming signals the original intent for approve/request-changes; admin-
+// only on archive/delete reflects the destructive nature of the latter
+// and the recoverable-but-cleanup nature of the former.
+const APPROVE_ROLES = ['counselor', 'school_admin', 'district_admin'];
+const ADMIN_ROLES = ['school_admin', 'district_admin'];
+
 // Load a prereferral_forms row by id and assert it belongs to the caller's
 // tenant. Returns { ok: true, row } or { ok: false, status, body } so the
 // caller can respond with a byte-identical 403 for both "row not found" and
@@ -464,26 +473,40 @@ router.patch('/:id/submit', requireAuth, async (req, res) => {
 });
 
 // PATCH /:id/approve - Counselor approves form
-router.patch('/:id/approve', async (req, res) => {
+// counselor_id and counselor_name are derived from req.user — body values
+// are ignored. Same actor-spoofing fix as commit 4 row 9.
+router.patch('/:id/approve', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { counselor_name, counselor_id } = req.body;
-    
+    if (!APPROVE_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const userResult = await pool.query(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const counselorName = userResult.rows[0]?.full_name || null;
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'approved',
-          counselor_name = $2,
-          counselor_id = $3,
+          counselor_name = $3,
+          counselor_id = $4,
           counselor_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status = 'submitted'
+      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
       RETURNING *
-    `, [id, counselor_name, counselor_id]);
-    
+    `, [req.params.id, req.user.tenant_id, counselorName, req.user.id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be approved' });
+      // See commit 4 row 9 comment: tenant assert passed, so this is
+      // operational state (form is not in 'submitted' status), not authz.
+      return res.status(400).json({ error: 'Form is not in an approvable state' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error approving form:', error);
@@ -492,25 +515,32 @@ router.patch('/:id/approve', async (req, res) => {
 });
 
 // PATCH /:id/request-changes - Counselor requests changes
-router.patch('/:id/request-changes', async (req, res) => {
+// counselor_id is derived from req.user.id — body value is ignored.
+router.patch('/:id/request-changes', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { comments, counselor_id } = req.body;
-    
-    const result = await pool.query(`
-      UPDATE prereferral_forms 
-      SET status = 'changes_requested',
-          change_request_comments = $2,
-          counselor_id = $3,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status = 'submitted'
-      RETURNING *
-    `, [id, comments, counselor_id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot request changes' });
+    if (!APPROVE_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const { comments } = req.body;
+
+    const result = await pool.query(`
+      UPDATE prereferral_forms
+      SET status = 'changes_requested',
+          change_request_comments = $3,
+          counselor_id = $4,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
+      RETURNING *
+    `, [req.params.id, req.user.tenant_id, comments, req.user.id]);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Form is not in a state to request changes' });
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error requesting changes:', error);
@@ -519,22 +549,29 @@ router.patch('/:id/request-changes', async (req, res) => {
 });
 
 // PATCH /:id/archive - Archive form
-router.patch('/:id/archive', async (req, res) => {
+// Admin-only: orphan endpoint with no FE pressure; status flip is
+// recoverable so admin-only is reversible if product reality needs wider.
+router.patch('/:id/archive', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'archived',
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
+      WHERE id = $1 AND tenant_id = $2
       RETURNING *
-    `, [id]);
-    
+    `, [req.params.id, req.user.tenant_id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error archiving form:', error);
@@ -543,20 +580,30 @@ router.patch('/:id/archive', async (req, res) => {
 });
 
 // DELETE /:id - Delete draft form
-router.delete('/:id', async (req, res) => {
+// Admin-only: permanent destruction of medical/mental-health PII row.
+// status='draft' guard retained — only drafts deletable, protects against
+// losing approved/submitted forms.
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const result = await pool.query(`
-      DELETE FROM prereferral_forms 
-      WHERE id = $1 AND status = 'draft'
-      RETURNING id
-    `, [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be deleted (only drafts can be deleted)' });
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(`
+      DELETE FROM prereferral_forms
+      WHERE id = $1 AND tenant_id = $2 AND status = 'draft'
+      RETURNING id
+    `, [req.params.id, req.user.tenant_id]);
+
+    if (result.rows.length === 0) {
+      // Tenant assert passed, so this is operational state (form is not
+      // in 'draft' status). Same pattern as rows 9, 10, 11.
+      return res.status(400).json({ error: 'Only draft forms can be deleted' });
+    }
+
     res.json({ message: 'Form deleted successfully' });
   } catch (error) {
     console.error('Error deleting form:', error);
