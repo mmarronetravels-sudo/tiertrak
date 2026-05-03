@@ -224,10 +224,14 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
   }
 });
 // GET monitored referral students with live stats
-router.get('/referral-monitoring/:tenantId', async (req, res) => {
+router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (parseInt(req.params.tenantId, 10) !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const result = await pool.query(`
       SELECT 
         s.id,
@@ -256,7 +260,7 @@ router.get('/referral-monitoring/:tenantId', async (req, res) => {
       GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, 
                rm.id, rm.notes, rm.created_at, u.full_name
       ORDER BY COALESCE(AVG(wp.rating), 0) ASC
-    `, [tenantId]);
+    `, [req.user.tenant_id]);
 
     res.json({
       count: result.rows.length,
@@ -278,7 +282,7 @@ router.get('/referral-monitoring/:tenantId', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching monitored students:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch monitored students' });
   }
 });
 
