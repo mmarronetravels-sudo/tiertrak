@@ -1,5 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const {
+  requireAuth,
+  requireTenantStaffAccess,
+  requireStudentReadAccess
+} = require('../middleware/authorizeInterventionAccess');
 
 let pool;
 
@@ -7,8 +12,37 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Role sets for transition/delete endpoints. Parent is implicitly excluded
+// (not in either set) — no separate parent-block line needed where these
+// are used. Narrower-then-loosen design call: schema's counselor_* column
+// naming signals the original intent for approve/request-changes; admin-
+// only on archive/delete reflects the destructive nature of the latter
+// and the recoverable-but-cleanup nature of the former.
+const APPROVE_ROLES = ['counselor', 'school_admin', 'district_admin'];
+const ADMIN_ROLES = ['school_admin', 'district_admin'];
+
+// Load a prereferral_forms row by id and assert it belongs to the caller's
+// tenant. Returns { ok: true, row } or { ok: false, status, body } so the
+// caller can respond with a byte-identical 403 for both "row not found" and
+// "wrong tenant" — preventing existence-disclosure across tenants.
+async function loadFormAndAssertTenant(formId, user) {
+  const result = await pool.query(
+    'SELECT id, tenant_id, status FROM prereferral_forms WHERE id = $1',
+    [formId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  if (result.rows[0].tenant_id !== user.tenant_id) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  return { ok: true, row: result.rows[0] };
+}
+
 // GET /options - Get dropdown options for form
-router.get('/options', async (req, res) => {
+router.get('/options', requireAuth, async (req, res) => {
   try {
     const options = {
       initiatedBy: [
@@ -120,14 +154,13 @@ router.get('/options', async (req, res) => {
 });
 
 // GET /tenant/:tenantId - Get all forms for a tenant
-router.get('/tenant/:tenantId', async (req, res) => {
+router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
     const { status } = req.query;
-    
+
     let query = `
-      SELECT pf.*, 
-             s.first_name as student_first_name, 
+      SELECT pf.*,
+             s.first_name as student_first_name,
              s.last_name as student_last_name,
              s.grade as student_grade,
              u.full_name as referred_by_name
@@ -136,15 +169,15 @@ router.get('/tenant/:tenantId', async (req, res) => {
       LEFT JOIN users u ON pf.referred_by = u.id
       WHERE pf.tenant_id = $1
     `;
-    const params = [tenantId];
-    
+    const params = [req.user.tenant_id];
+
     if (status) {
       query += ` AND pf.status = $2`;
       params.push(status);
     }
-    
+
     query += ` ORDER BY pf.created_at DESC`;
-    
+
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -154,19 +187,17 @@ router.get('/tenant/:tenantId', async (req, res) => {
 });
 
 // GET /pending/:tenantId - Get counts of pending forms
-router.get('/pending/:tenantId', async (req, res) => {
+router.get('/pending/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
-      SELECT 
+      SELECT
         COUNT(*) FILTER (WHERE status = 'draft') as draft_count,
         COUNT(*) FILTER (WHERE status = 'submitted') as submitted_count,
         COUNT(*) FILTER (WHERE status = 'changes_requested') as changes_requested_count
       FROM prereferral_forms
       WHERE tenant_id = $1
-    `, [tenantId]);
-    
+    `, [req.user.tenant_id]);
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error getting pending counts:', error);
@@ -175,18 +206,20 @@ router.get('/pending/:tenantId', async (req, res) => {
 });
 
 // GET /student/:studentId - Get forms for a student
-router.get('/student/:studentId', async (req, res) => {
+// Parents are blocked even if linked to the student: pre-referral forms hold
+// medical/mental-health PII not appropriate for parent disclosure via this surface.
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
     const result = await pool.query(`
       SELECT pf.*, u.full_name as referred_by_name
       FROM prereferral_forms pf
       LEFT JOIN users u ON pf.referred_by = u.id
-      WHERE pf.student_id = $1
+      WHERE pf.student_id = $1 AND pf.tenant_id = $2
       ORDER BY pf.created_at DESC
-    `, [studentId]);
-    
+    `, [req.params.studentId, req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error getting student forms:', error);
@@ -195,17 +228,19 @@ router.get('/student/:studentId', async (req, res) => {
 });
 
 // GET /check-approved/:studentId - Check if student has approved form
-router.get('/check-approved/:studentId', async (req, res) => {
+// Parents are blocked even if linked: existence-of-form is itself sensitive
+// (implies a referral has been initiated, which is a FERPA-protected fact).
+router.get('/check-approved/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
     const result = await pool.query(`
       SELECT id, status FROM prereferral_forms
-      WHERE student_id = $1 AND status = 'approved'
+      WHERE student_id = $1 AND tenant_id = $2 AND status = 'approved'
       ORDER BY created_at DESC
       LIMIT 1
-    `, [studentId]);
-    
+    `, [req.params.studentId, req.user.tenant_id]);
+
     res.json({
       hasApprovedForm: result.rows.length > 0,
       formId: result.rows[0]?.id || null
@@ -217,13 +252,21 @@ router.get('/check-approved/:studentId', async (req, res) => {
 });
 
 // GET /:id - Get single form with full details
-router.get('/:id', async (req, res) => {
+// Most PII-rich endpoint in this file: returns medical_diagnoses,
+// mental_health_diagnoses, medications, parent contact, and the full
+// intervention narrative. Parents are blocked even if linked to the
+// student. Cross-tenant probes resolve to a byte-identical 403 — the
+// previous 404 was an existence-disclosure vector.
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const result = await pool.query(`
-      SELECT pf.*, 
-             s.first_name as student_first_name, 
+      SELECT pf.*,
+             s.first_name as student_first_name,
              s.last_name as student_last_name,
              s.grade as student_grade,
              s.tier as student_tier,
@@ -234,13 +277,13 @@ router.get('/:id', async (req, res) => {
       JOIN students s ON pf.student_id = s.id
       LEFT JOIN users u ON pf.referred_by = u.id
       LEFT JOIN users c ON pf.counselor_id = c.id
-      WHERE pf.id = $1
-    `, [id]);
-    
+      WHERE pf.id = $1 AND pf.tenant_id = $2
+    `, [req.params.id, req.user.tenant_id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error getting form:', error);
@@ -249,18 +292,39 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST / - Create new form
-router.post('/', async (req, res) => {
+// tenant_id and referred_by are derived from req.user (server-side actor
+// identity) — body values for these are ignored. Mirrors the
+// student-ownership check pattern from PR #55's POST /referral-monitoring
+// (routes/students.js:295). initiated_by stays body-driven per design call:
+// it's metadata about how the referral was initiated (staff/parent/student/
+// other), not the actor identity of the request.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { student_id, tenant_id, referred_by, initiated_by } = req.body;
-    
-    // Get existing interventions for this student to auto-populate
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const { student_id, initiated_by } = req.body;
+    if (!student_id) {
+      return res.status(400).json({ error: 'Missing required field: student_id' });
+    }
+
+    // Tenant verification: student must belong to caller's tenant.
+    const studentResult = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentResult.rows.length === 0
+        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    // Auto-populate prior interventions for this (now tenant-verified) student
     const interventionsResult = await pool.query(`
       SELECT intervention_name, start_date, status, notes
       FROM student_interventions
       WHERE student_id = $1
       ORDER BY start_date DESC
     `, [student_id]);
-    
+
     const priorInterventions = interventionsResult.rows.map(i => ({
       name: i.intervention_name,
       start_date: i.start_date,
@@ -269,14 +333,14 @@ router.post('/', async (req, res) => {
       frequency: '',
       outcome: ''
     }));
-    
+
     const result = await pool.query(`
       INSERT INTO prereferral_forms (
         student_id, tenant_id, referred_by, initiated_by, prior_interventions, status
       ) VALUES ($1, $2, $3, $4, $5, 'draft')
       RETURNING *
-    `, [student_id, tenant_id, referred_by, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
-    
+    `, [student_id, req.user.tenant_id, req.user.id, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating form:', error);
@@ -285,11 +349,21 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /:id - Update/save form draft
-router.put('/:id', async (req, res) => {
+// tenant_id, student_id, referred_by, status, and the *_signed_at /
+// counselor_id / referring_staff_name actor-identity columns are NOT in
+// allowedFields — those transitions go through their dedicated endpoints
+// (POST, /submit, /approve, /request-changes) which derive actor identity
+// from req.user.
+router.put('/:id', requireAuth, async (req, res) => {
   try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const { id } = req.params;
     const updates = req.body;
-    
+
     // Build dynamic update query
     const allowedFields = [
       'initiated_by', 'initiated_by_other', 'concern_areas', 'specific_concerns',
@@ -334,20 +408,21 @@ router.put('/:id', async (req, res) => {
     
     setClauses.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
-    
+    values.push(req.user.tenant_id);
+
     const query = `
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET ${setClauses.join(', ')}
-      WHERE id = $${paramCount}
+      WHERE id = $${paramCount} AND tenant_id = $${paramCount + 1}
       RETURNING *
     `;
-    
+
     const result = await pool.query(query, values);
-    
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating form:', error);
@@ -356,25 +431,40 @@ router.put('/:id', async (req, res) => {
 });
 
 // PATCH /:id/submit - Submit form for approval
-router.patch('/:id/submit', async (req, res) => {
+// referring_staff_name is derived from users.full_name via req.user.id —
+// body's referring_staff_name is ignored. Previous behavior trusted body,
+// allowing any authenticated caller to sign as anyone.
+router.patch('/:id/submit', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { referring_staff_name } = req.body;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const userResult = await pool.query(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const referringStaffName = userResult.rows[0]?.full_name || null;
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'submitted',
-          referring_staff_name = $2,
+          referring_staff_name = $3,
           referring_staff_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status IN ('draft', 'changes_requested')
+      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'changes_requested')
       RETURNING *
-    `, [id, referring_staff_name]);
-    
+    `, [req.params.id, req.user.tenant_id, referringStaffName]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be submitted' });
+      // Form exists in caller's tenant (helper verified) but is in a non-
+      // submittable status (already submitted/approved/archived). Return 400
+      // to distinguish from cross-tenant 403; existence is not leaked
+      // because the helper already confirmed the form exists for this caller.
+      return res.status(400).json({ error: 'Form is not in a submittable state' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error submitting form:', error);
@@ -383,26 +473,40 @@ router.patch('/:id/submit', async (req, res) => {
 });
 
 // PATCH /:id/approve - Counselor approves form
-router.patch('/:id/approve', async (req, res) => {
+// counselor_id and counselor_name are derived from req.user — body values
+// are ignored. Same actor-spoofing fix as commit 4 row 9.
+router.patch('/:id/approve', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { counselor_name, counselor_id } = req.body;
-    
+    if (!APPROVE_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const userResult = await pool.query(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const counselorName = userResult.rows[0]?.full_name || null;
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'approved',
-          counselor_name = $2,
-          counselor_id = $3,
+          counselor_name = $3,
+          counselor_id = $4,
           counselor_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status = 'submitted'
+      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
       RETURNING *
-    `, [id, counselor_name, counselor_id]);
-    
+    `, [req.params.id, req.user.tenant_id, counselorName, req.user.id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be approved' });
+      // See commit 4 row 9 comment: tenant assert passed, so this is
+      // operational state (form is not in 'submitted' status), not authz.
+      return res.status(400).json({ error: 'Form is not in an approvable state' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error approving form:', error);
@@ -411,25 +515,32 @@ router.patch('/:id/approve', async (req, res) => {
 });
 
 // PATCH /:id/request-changes - Counselor requests changes
-router.patch('/:id/request-changes', async (req, res) => {
+// counselor_id is derived from req.user.id — body value is ignored.
+router.patch('/:id/request-changes', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { comments, counselor_id } = req.body;
-    
-    const result = await pool.query(`
-      UPDATE prereferral_forms 
-      SET status = 'changes_requested',
-          change_request_comments = $2,
-          counselor_id = $3,
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status = 'submitted'
-      RETURNING *
-    `, [id, comments, counselor_id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot request changes' });
+    if (!APPROVE_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const { comments } = req.body;
+
+    const result = await pool.query(`
+      UPDATE prereferral_forms
+      SET status = 'changes_requested',
+          change_request_comments = $3,
+          counselor_id = $4,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
+      RETURNING *
+    `, [req.params.id, req.user.tenant_id, comments, req.user.id]);
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Form is not in a state to request changes' });
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error requesting changes:', error);
@@ -438,22 +549,29 @@ router.patch('/:id/request-changes', async (req, res) => {
 });
 
 // PATCH /:id/archive - Archive form
-router.patch('/:id/archive', async (req, res) => {
+// Admin-only: orphan endpoint with no FE pressure; status flip is
+// recoverable so admin-only is reversible if product reality needs wider.
+router.patch('/:id/archive', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'archived',
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1
+      WHERE id = $1 AND tenant_id = $2
       RETURNING *
-    `, [id]);
-    
+    `, [req.params.id, req.user.tenant_id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error archiving form:', error);
@@ -462,20 +580,30 @@ router.patch('/:id/archive', async (req, res) => {
 });
 
 // DELETE /:id - Delete draft form
-router.delete('/:id', async (req, res) => {
+// Admin-only: permanent destruction of medical/mental-health PII row.
+// status='draft' guard retained — only drafts deletable, protects against
+// losing approved/submitted forms.
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const result = await pool.query(`
-      DELETE FROM prereferral_forms 
-      WHERE id = $1 AND status = 'draft'
-      RETURNING id
-    `, [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be deleted (only drafts can be deleted)' });
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(`
+      DELETE FROM prereferral_forms
+      WHERE id = $1 AND tenant_id = $2 AND status = 'draft'
+      RETURNING id
+    `, [req.params.id, req.user.tenant_id]);
+
+    if (result.rows.length === 0) {
+      // Tenant assert passed, so this is operational state (form is not
+      // in 'draft' status). Same pattern as rows 9, 10, 11.
+      return res.status(400).json({ error: 'Only draft forms can be deleted' });
+    }
+
     res.json({ message: 'Form deleted successfully' });
   } catch (error) {
     console.error('Error deleting form:', error);
