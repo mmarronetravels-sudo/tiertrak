@@ -197,18 +197,20 @@ router.get('/pending/:tenantId', requireAuth, requireTenantStaffAccess, async (r
 });
 
 // GET /student/:studentId - Get forms for a student
-router.get('/student/:studentId', async (req, res) => {
+// Parents are blocked even if linked to the student: pre-referral forms hold
+// medical/mental-health PII not appropriate for parent disclosure via this surface.
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
     const result = await pool.query(`
       SELECT pf.*, u.full_name as referred_by_name
       FROM prereferral_forms pf
       LEFT JOIN users u ON pf.referred_by = u.id
-      WHERE pf.student_id = $1
+      WHERE pf.student_id = $1 AND pf.tenant_id = $2
       ORDER BY pf.created_at DESC
-    `, [studentId]);
-    
+    `, [req.params.studentId, req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error getting student forms:', error);
@@ -217,17 +219,19 @@ router.get('/student/:studentId', async (req, res) => {
 });
 
 // GET /check-approved/:studentId - Check if student has approved form
-router.get('/check-approved/:studentId', async (req, res) => {
+// Parents are blocked even if linked: existence-of-form is itself sensitive
+// (implies a referral has been initiated, which is a FERPA-protected fact).
+router.get('/check-approved/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
     const result = await pool.query(`
       SELECT id, status FROM prereferral_forms
-      WHERE student_id = $1 AND status = 'approved'
+      WHERE student_id = $1 AND tenant_id = $2 AND status = 'approved'
       ORDER BY created_at DESC
       LIMIT 1
-    `, [studentId]);
-    
+    `, [req.params.studentId, req.user.tenant_id]);
+
     res.json({
       hasApprovedForm: result.rows.length > 0,
       formId: result.rows[0]?.id || null
