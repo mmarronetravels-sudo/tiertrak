@@ -243,13 +243,21 @@ router.get('/check-approved/:studentId', requireAuth, requireStudentReadAccess, 
 });
 
 // GET /:id - Get single form with full details
-router.get('/:id', async (req, res) => {
+// Most PII-rich endpoint in this file: returns medical_diagnoses,
+// mental_health_diagnoses, medications, parent contact, and the full
+// intervention narrative. Parents are blocked even if linked to the
+// student. Cross-tenant probes resolve to a byte-identical 403 — the
+// previous 404 was an existence-disclosure vector.
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const result = await pool.query(`
-      SELECT pf.*, 
-             s.first_name as student_first_name, 
+      SELECT pf.*,
+             s.first_name as student_first_name,
              s.last_name as student_last_name,
              s.grade as student_grade,
              s.tier as student_tier,
@@ -260,13 +268,13 @@ router.get('/:id', async (req, res) => {
       JOIN students s ON pf.student_id = s.id
       LEFT JOIN users u ON pf.referred_by = u.id
       LEFT JOIN users c ON pf.counselor_id = c.id
-      WHERE pf.id = $1
-    `, [id]);
-    
+      WHERE pf.id = $1 AND pf.tenant_id = $2
+    `, [req.params.id, req.user.tenant_id]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error getting form:', error);
