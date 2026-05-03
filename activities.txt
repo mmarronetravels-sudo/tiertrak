@@ -5780,3 +5780,102 @@ Priority 5+: #63 (migration system bifurcation), #64 (CLAUDE.md
   - All other prior session refs carry forward per Session 49's
     "Stale local + remote refs" entry.
 ================================================================================
+SESSION: 2026-05-03T15:31:08-07:00 (Session 51)
+BRANCH:  sec/prereferralForms-require-auth (PR #59, MERGED 4251ad0)
+         chore/activities-log-session-51 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:4251ad0 (PR #59 — sec/prereferralForms-require-auth)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/60 (chore/activities-log-session-51)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+
+Session 51 (May 3, 2026):
+- PR #59 (sec/prereferralForms-require-auth) merged at
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/59. 5 commits across the largest sec/ scope of
+  the campaign so far — 13 routes on routes/prereferralForms.js
+  patched in one PR. Closes the medical/mental-health PII
+  surface that was the highest-stakes remaining exposure
+  category in the system.
+- Patch shape: requireAuth + role gates + load-then-check
+  tenant binding via local helper (loadFormAndAssertTenant) +
+  actor-identity derivation from req.user instead of body
+  (server-derived referred_by, referring_staff_name,
+  counselor_id, counselor_name).
+- Schema clean: prereferral_forms table required no migration
+  (unlike PR #55 which bundled migration-025 for referral_
+  monitoring). Pure route work.
+- Role gates: parent blocked on every route except /options
+  (static config). Approve/request-changes restricted to
+  {counselor, school_admin, district_admin}. Archive/delete
+  restricted to {school_admin, district_admin}. Narrower-then-
+  loosen reasoning documented in commit 5 message — if product
+  reality needs wider sets, widen via followup after
+  discovering it.
+- All 3 reviewer subagents APPROVED. 0 CRITICAL across the
+  board. security-reviewer 0 WARN, tenant-isolation-auditor
+  0 WARN, privacy-reviewer 2 WARN both flagged as repo-wide
+  pre-existing patterns and explicitly "do not block" —
+  captured as new followups #70 and #71.
+- 56-scenario smoke matrix passed clean across six sections:
+  6 read happy paths, 13 unauth probes, 13 parent probes
+  (1 happy on /options + 12 blocked), 9 cross-tenant probes
+  with byte-identical 403, 6 wrong-role probes, 9 actor-
+  identity + write happy/status-mismatch verifications. Section
+  F actor-identity scenarios proved end-to-end body silent-drop:
+  POST claims of tenant_id:99 / referred_by:999 / counselor_id:
+  fake landed in DB with caller's actual JWT-derived values.
+- Local-only artifact: 5 test-user passwords on local DB reset
+  to a known-shared smoke value via direct bcrypt UPDATE for
+  cookie acquisition during smoke testing. Local-only, never
+  written to prod, documented in the PR Verification section.
+- Non-Owner human reviewed and approved per §2A.
+- 2 NEW followups filed (#70, #71).
+
+NEW Followups:
+#70 — Repo-wide console.error(prefix, error) pattern leaks
+  pg error.detail in server logs. pg error.detail can carry
+  row values from FK or UNIQUE violations — including columns
+  like parent_email, medical_diagnoses, mental_health_diagnoses.
+  Add a safeLogPgError(prefix, err) helper that strips
+  err.detail, err.where, err.table before logging. Affects
+  every route with try/catch on a pg query — broad refactor PR.
+  HIGH severity (log-side PII leakage is one of the easier
+  paths for medical PII to escape into log aggregation tools).
+  Surfaced by privacy-reviewer on PR #59.
+#71 — SELECT pf.* on prereferralForms rows 2, 4, 6 returns
+  more columns than the FE actually consumes. Replace with
+  explicit column lists. Defense-in-depth: prevents accidental
+  future PII column adds from leaking. MEDIUM severity, narrow
+  scope, tiny PR. Surfaced by privacy-reviewer on PR #59.
+
+NEXT SESSION SHOULD:
+Priority 1: parentLinks.js sweep (CRITICAL — parent PII /
+  FERPA-critical surface). 5 routes, ~30-45 min focused work,
+  same canonical pattern as PR #59 (no schema work since the
+  table is simpler). After today's prereferralForms close,
+  parentLinks is the next CRITICAL exposure remaining.
+Priority 2: Followup #67 — sec/students-other-routes-require-
+  auth (HIGH). Remaining 13 routes in routes/students.js. With
+  parent and medical PII surfaces closed, this is HIGH but not
+  CRITICAL.
+Priority 3: Followup #62 — Render env-var fromDatabase
+  conversion. ~15 min operational quick-win; prevents Session
+  47 outage recurrence.
+Priority 4: Followup #70 — repo-wide pg error.detail logging
+  fix. Broad scope refactor; could fold the work into a
+  dedicated session.
+Priority 5: HIGH-severity routers — users.js, tenants.js,
+  staffManagement.js — continue #54 sweep.
+Priority 6+: Followup #71 (over-fetch narrowing), #50 (tenant
+  audit), #63/#64/#65/#49v2 (migration system + docs), all
+  prior carry-forwards.
+
+  --- Stale local + remote refs ---
+
+  - sec/prereferralForms-require-auth — local DELETED on PR #59
+    merge; remote will be deleted via the PR-merged page UI.
+  - chore/activities-log-session-51 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface — pure
+    docs).
+  - All other prior session refs carry forward per Session 50's
+    "Stale local + remote refs" entry.
