@@ -5324,7 +5324,7 @@ BRANCH:  chore/fe-dev-env-default-localhost (PR #52, MERGED 183ed53)
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:183ed53 (PR #52 — chore/fe-dev-env-default-localhost)
              closed-without-merge:https://github.com/mmarronetravels-sudo/tiertrak/pull/53 (PR #53 — migration/local-schema-drift-fix; branch preserved)
-             pr-opened:<PLACEHOLDER PR URL — will fill on commit-2> (chore/activities-log-session-48)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/54 (chore/activities-log-session-48)
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Closes Followup #58 (FE env default to local) via PR #52. Investigated
