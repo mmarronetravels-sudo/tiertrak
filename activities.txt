@@ -5717,13 +5717,13 @@ BRANCH:  sec/referral-candidates-tenant-scope (PR #57, MERGED 63fee80)
          chore/activities-log-session-50 (this entry, self-merge per Session
          41/42 canonical convention; no §4B / §5 surface)
 DISPOSITION: merged:63fee80 (PR #57 — sec/referral-candidates-tenant-scope)
-             pr-opened:PR-URL-PENDING (chore/activities-log-session-50)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/58 (chore/activities-log-session-50)
 --------------------------------------------------------------------------------
 TASK SUMMARY
 
 Session 50 (May 3, 2026):
 - PR #57 (sec/referral-candidates-tenant-scope) merged at
-  PR-URL-PENDING. Closes Followup #68 (CRITICAL). Single
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/57. Closes Followup #68 (CRITICAL). Single
   commit mirroring PR #55 commit 0b918b9 (the GET
   /referral-monitoring/:tenantId patch from Session 49) —
   same threat shape, same canonical patch shape.
