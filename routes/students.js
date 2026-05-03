@@ -157,10 +157,15 @@ function getFlagReasons(student) {
 }
 
 // GET referral candidates - Tier 1 students who may need MTSS referral
-router.get('/referral-candidates/:tenantId', async (req, res) => {
+router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    if (parseInt(req.params.tenantId, 10) !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
     const result = await pool.query(`
       SELECT 
         s.id,
@@ -194,7 +199,7 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
       ORDER BY 
         COALESCE(AVG(wp.rating), 0) ASC,
         COUNT(DISTINCT si.id) DESC
-    `, [tenantId]);
+    `, [req.user.tenant_id]);
 
     // Filter out students who already have submitted/approved pre-referral forms
     const candidates = result.rows.filter(s => 
@@ -220,7 +225,7 @@ router.get('/referral-candidates/:tenantId', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching referral candidates:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 // GET monitored referral students with live stats
