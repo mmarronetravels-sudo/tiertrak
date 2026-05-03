@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -282,24 +283,34 @@ router.get('/referral-monitoring/:tenantId', async (req, res) => {
 });
 
 // POST mark student as monitoring
-router.post('/referral-monitoring', async (req, res) => {
+router.post('/referral-monitoring', requireAuth, async (req, res) => {
   try {
-    const { student_id, tenant_id, monitored_by, notes } = req.body;
-    
+    if (req.user.role === 'parent') {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const { student_id, notes } = req.body;
+    // Tenant verification: student must belong to caller's tenant.
+    const studentResult = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentResult.rows.length === 0
+        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const result = await pool.query(`
       INSERT INTO referral_monitoring (student_id, tenant_id, monitored_by, notes)
       VALUES ($1, $2, $3, $4)
-      ON CONFLICT (student_id) DO UPDATE SET 
-        notes = $4, 
+      ON CONFLICT (tenant_id, student_id) DO UPDATE SET
+        notes = $4,
         monitored_by = $3,
         created_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [student_id, tenant_id, monitored_by, notes || null]);
-
+    `, [student_id, req.user.tenant_id, req.user.id, notes || null]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error marking as monitoring:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to mark student for monitoring' });
   }
 });
 
