@@ -302,6 +302,12 @@ router.post('/referral-monitoring', requireAuth, async (req, res) => {
         || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
       return res.status(403).json({ error: 'Not authorized' });
     }
+    // Coerce notes to a safe shape: string, trimmed, length-limited.
+    // staff-authored field but defensive coerce protects against
+    // unexpected client payloads.
+    const safeNotes = (notes != null)
+      ? String(notes).trim().slice(0, 2000)
+      : null;
     const result = await pool.query(`
       INSERT INTO referral_monitoring (student_id, tenant_id, monitored_by, notes)
       VALUES ($1, $2, $3, $4)
@@ -310,7 +316,7 @@ router.post('/referral-monitoring', requireAuth, async (req, res) => {
         monitored_by = $3,
         created_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [student_id, req.user.tenant_id, req.user.id, notes || null]);
+    `, [student_id, req.user.tenant_id, req.user.id, safeNotes]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error marking as monitoring:', error);
