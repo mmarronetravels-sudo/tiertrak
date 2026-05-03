@@ -283,18 +283,39 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // POST / - Create new form
-router.post('/', async (req, res) => {
+// tenant_id and referred_by are derived from req.user (server-side actor
+// identity) — body values for these are ignored. Mirrors the
+// student-ownership check pattern from PR #55's POST /referral-monitoring
+// (routes/students.js:295). initiated_by stays body-driven per design call:
+// it's metadata about how the referral was initiated (staff/parent/student/
+// other), not the actor identity of the request.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { student_id, tenant_id, referred_by, initiated_by } = req.body;
-    
-    // Get existing interventions for this student to auto-populate
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const { student_id, initiated_by } = req.body;
+    if (!student_id) {
+      return res.status(400).json({ error: 'Missing required field: student_id' });
+    }
+
+    // Tenant verification: student must belong to caller's tenant.
+    const studentResult = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentResult.rows.length === 0
+        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    // Auto-populate prior interventions for this (now tenant-verified) student
     const interventionsResult = await pool.query(`
       SELECT intervention_name, start_date, status, notes
       FROM student_interventions
       WHERE student_id = $1
       ORDER BY start_date DESC
     `, [student_id]);
-    
+
     const priorInterventions = interventionsResult.rows.map(i => ({
       name: i.intervention_name,
       start_date: i.start_date,
@@ -303,14 +324,14 @@ router.post('/', async (req, res) => {
       frequency: '',
       outcome: ''
     }));
-    
+
     const result = await pool.query(`
       INSERT INTO prereferral_forms (
         student_id, tenant_id, referred_by, initiated_by, prior_interventions, status
       ) VALUES ($1, $2, $3, $4, $5, 'draft')
       RETURNING *
-    `, [student_id, tenant_id, referred_by, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
-    
+    `, [student_id, req.user.tenant_id, req.user.id, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error creating form:', error);
@@ -319,11 +340,21 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /:id - Update/save form draft
-router.put('/:id', async (req, res) => {
+// tenant_id, student_id, referred_by, status, and the *_signed_at /
+// counselor_id / referring_staff_name actor-identity columns are NOT in
+// allowedFields — those transitions go through their dedicated endpoints
+// (POST, /submit, /approve, /request-changes) which derive actor identity
+// from req.user.
+router.put('/:id', requireAuth, async (req, res) => {
   try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
     const { id } = req.params;
     const updates = req.body;
-    
+
     // Build dynamic update query
     const allowedFields = [
       'initiated_by', 'initiated_by_other', 'concern_areas', 'specific_concerns',
@@ -368,20 +399,21 @@ router.put('/:id', async (req, res) => {
     
     setClauses.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
-    
+    values.push(req.user.tenant_id);
+
     const query = `
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET ${setClauses.join(', ')}
-      WHERE id = $${paramCount}
+      WHERE id = $${paramCount} AND tenant_id = $${paramCount + 1}
       RETURNING *
     `;
-    
+
     const result = await pool.query(query, values);
-    
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating form:', error);
@@ -390,25 +422,40 @@ router.put('/:id', async (req, res) => {
 });
 
 // PATCH /:id/submit - Submit form for approval
-router.patch('/:id/submit', async (req, res) => {
+// referring_staff_name is derived from users.full_name via req.user.id —
+// body's referring_staff_name is ignored. Previous behavior trusted body,
+// allowing any authenticated caller to sign as anyone.
+router.patch('/:id/submit', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { referring_staff_name } = req.body;
-    
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const auth = await loadFormAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const userResult = await pool.query(
+      'SELECT full_name FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const referringStaffName = userResult.rows[0]?.full_name || null;
+
     const result = await pool.query(`
-      UPDATE prereferral_forms 
+      UPDATE prereferral_forms
       SET status = 'submitted',
-          referring_staff_name = $2,
+          referring_staff_name = $3,
           referring_staff_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND status IN ('draft', 'changes_requested')
+      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'changes_requested')
       RETURNING *
-    `, [id, referring_staff_name]);
-    
+    `, [req.params.id, req.user.tenant_id, referringStaffName]);
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Form not found or cannot be submitted' });
+      // Form exists in caller's tenant (helper verified) but is in a non-
+      // submittable status (already submitted/approved/archived). Return 400
+      // to distinguish from cross-tenant 403; existence is not leaked
+      // because the helper already confirmed the form exists for this caller.
+      return res.status(400).json({ error: 'Form is not in a submittable state' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error submitting form:', error);
