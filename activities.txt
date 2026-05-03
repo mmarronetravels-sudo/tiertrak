@@ -5712,3 +5712,71 @@ Priority 6+: #63 (migration system bifurcation), #64 (CLAUDE.md
   - All other prior session refs carry forward per Session 48's
     "Stale local + remote refs" entry.
 ================================================================================
+SESSION: 2026-05-03T12:52:52-07:00 (Session 50)
+BRANCH:  sec/referral-candidates-tenant-scope (PR #57, MERGED 63fee80)
+         chore/activities-log-session-50 (this entry, self-merge per Session
+         41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:63fee80 (PR #57 — sec/referral-candidates-tenant-scope)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/58 (chore/activities-log-session-50)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+
+Session 50 (May 3, 2026):
+- PR #57 (sec/referral-candidates-tenant-scope) merged at
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/57. Closes Followup #68 (CRITICAL). Single
+  commit mirroring PR #55 commit 0b918b9 (the GET
+  /referral-monitoring/:tenantId patch from Session 49) —
+  same threat shape, same canonical patch shape.
+- Patch: requireAuth + parent role 403 + URL/JWT parity-assert
+  + JWT-tenant SQL bind + generic 500 string. Inner SELECT
+  statement and response shape unchanged.
+- All 3 reviewer subagents APPROVED with 0 CRITICAL and 0 WARN
+  (cleanest reviewer outcome of the weekend; reviewers now
+  treat this pattern as established after PR #50, PR #55, and
+  PR #57 applying it consistently). Non-Owner human reviewed
+  and approved per §2A.
+- 4/4 smoke scenarios verified locally: probe-resistance
+  confirmed via byte-identical ETag match between (c) parent-403
+  and (d) cross-tenant-403 — same ETag returned by PR #50 and
+  PR #55, evidence the canonical {"error":"Not authorized"}
+  body is consistent across all probe-resistant 403s in the
+  codebase.
+- Subquery on line 193 (referral_monitoring lookup, unscoped
+  by tenant) deferred to #67's broader students.js sweep per
+  both reviewer concurrence — not exploitable as-is since
+  students.id is FK-bound to a single tenant; defense-in-depth
+  hardening only.
+- 0 NEW followups filed.
+
+NEXT SESSION SHOULD:
+Priority 1: Followup #67 (HIGH) — sec/students-other-routes-
+  require-auth. The remaining 13 routes in routes/students.js
+  per the #54 router-sweep. With #66 and #68 closed, routes/
+  students.js's CRITICAL exposure is closed; remaining routes
+  are HIGH but not CRITICAL. We've built deep context on this
+  file across Sessions 49/50, so #67 is the natural next step
+  to fully close the file before moving to other routers.
+Priority 2: Followup #62 — Render env-var fromDatabase
+  conversion (carries from Session 47). Prevents a recurrence
+  of Session 47's prod outage.
+Priority 3: PR-2 of the #54 router-sweep — first router after
+  students.js fully closes (Owner to specify; candidates per
+  Session 46 master index include tenants.js, users.js,
+  parentLinks.js, prereferralForms.js).
+Priority 4: Followup #50 — tenant_id=3 catch-all + tenant_id=10
+  zero-rows audit (carries from Session 47).
+Priority 5+: #63 (migration system bifurcation), #64 (CLAUDE.md
+  migrations section), #65 (expected_frequency cleanup),
+  #49v2 (Migration 024 documentation), all other prior
+  carry-forwards held in place.
+
+  --- Stale local + remote refs ---
+
+  - sec/referral-candidates-tenant-scope — local DELETED on PR #57
+    merge; remote will be deleted via the PR-merged page UI.
+  - chore/activities-log-session-50 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface — pure
+    docs).
+  - All other prior session refs carry forward per Session 49's
+    "Stale local + remote refs" entry.
+================================================================================
