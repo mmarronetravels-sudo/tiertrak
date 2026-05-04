@@ -5879,3 +5879,222 @@ Priority 6+: Followup #71 (over-fetch narrowing), #50 (tenant
     docs).
   - All other prior session refs carry forward per Session 50's
     "Stale local + remote refs" entry.
+
+
+================================================================================
+SESSION: 2026-05-04T12:30:00-07:00 (Session 52)
+BRANCH:  sec/parentLinks-require-auth (PR #61, OPEN — §2A waiting state)
+         chore/activities-log-session-52 (this entry, self-merge eligible —
+         pure docs, no §4B / §5 surface)
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/61 (sec/parentLinks-require-auth — awaiting non-owner human reviewer)
+             pr-opened:<this-pr-url> (chore/activities-log-session-52 — to be filled in two-commit URL-fill pattern)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+
+Session 52 (May 4, 2026):
+- PR #61 (sec/parentLinks-require-auth) opened at
+  https://github.com/mmarronetravels-sudo/tiertrak/pull/61, awaiting
+  non-owner human reviewer per §2A. 5 commits closing the last
+  remaining CRITICAL exposure from the Session 46 audit on
+  routes/parentLinks.js.
+- Patch shape: mirrors PR #59's canonical sec/ pattern with two
+  structural deviations driven by parent_student_links lacking a
+  tenant_id column — JOIN-based tenant derivation in helper +
+  dropped status column from the helper's SELECT shape.
+- Net-new mechanisms:
+  * loadLinkAndAssertTenant helper (commit b515f4d) — mirrors
+    PR #59's loadFormAndAssertTenant pattern with JOIN-adapted
+    tenant assertion. Two failure branches collapse to byte-
+    identical 403.
+  * Two-tenant EXISTS-form cross-check on POST (commit db29f80) —
+    single atomic SELECT with role='parent' clause to prevent
+    linking teacher/admin/counselor users as "parents." 5 failure
+    modes collapse to one byte-identical 403.
+  * DELETE uses USING form for atomic defense-in-depth independent
+    of helper. PG MVCC snapshot guarantees TOCTOU safety even on
+    concurrent tenant moves.
+- Order of operations on POST is load-bearing and documented inline:
+  requireAuth -> ADMIN_ROLES -> body validation -> cross-check ->
+  cap query -> INSERT. The cap-before-INSERT order collapses cap-
+  saturation and ON CONFLICT 409 paths for a saturated student —
+  desirable probe-resistance discovered during smoke G.1b reframe;
+  banked as feedback_cap_before_insert_collapses_error_paths memory.
+- Smoke matrix: 56 scenarios + 9 byte-diff probe-resistance
+  assertions, all pass, 0 net DB mutations across local-only
+  synthetic test data. No production tenants probed at any point;
+  3 synthetic users seeded + cleaned post-matrix; 1 link row
+  remained in pre-matrix-pre-seed state on the local dev DB at
+  close. Two local tenants used — both synthetic local-DB fixture
+  names, neither maps to a real-staff-onboarded production tenant
+  per master index roster.
+- Reviewer phase: 3x APPROVED.
+  * tenant-isolation-auditor: 0 CRITICAL / 0 WARN — every SQL
+    query tenant-bound through req.user.tenant_id; both net-new
+    mechanisms hold under hypothetical bypass scenarios.
+  * privacy-reviewer: 0 CRITICAL / 2 WARN — both pre-existing on
+    main, not regressions introduced by this PR. 5xx response
+    bodies generified per commit 5; no PII in error responses.
+  * security-reviewer: 0 CRITICAL / 3 WARN — all pre-existing
+    repo-wide (no rate-limiter, no CSRF, parity-check guard
+    inconsistency). None introduced by this PR.
+  Total 5 WARN — all pre-existing repo-wide gaps, all filed as
+  followups; no regressions introduced.
+- Memory banking during session:
+  * feedback_cap_before_insert_collapses_error_paths (probe-
+    resistance pattern surfaced during smoke G.1b reframe — when
+    POST has both row-count cap + uniqueness constraint, cap MUST
+    fire before INSERT/ON CONFLICT for probe-resistance).
+  * feedback_answer_all_confirmations (process discipline — when
+    prompt asks for confirmations + additional work, answer every
+    confirmation explicitly even if brief).
+  * feedback_deviation_first_line_diff_summary (process discipline
+    — in-flight implementation deviations: deviation goes in line 1
+    of diff summary, not buried in body).
+
+FILES TOUCHED
+  routes/parentLinks.js — 5-commit hardening pass (auth floor,
+    tenant-bind reads, admin gate + EXISTS cross-check on POST,
+    admin gate + load-then-check helper on DELETE, 500-body
+    generification). Final state: 268 lines, all 5 routes gated.
+  activities.txt — this entry (on chore/activities-log-session-52)
+
+MIGRATIONS RUN
+  none (no schema changes; parent_student_links table shape
+  preserved; UNIQUE constraint pre-existing in server.js bootstrap)
+
+TENANT ISOLATION REVIEW
+  Audited by tenant-isolation-auditor subagent: APPROVED 0/0.
+  Every SQL query in post-PR routes/parentLinks.js binds tenant
+  through server-derived req.user.tenant_id (or req.user.id for
+  parent self-read on Route 2). No req.body / req.query /
+  req.params value reaches tenant-scoping WHERE/USING clauses.
+  Two structural deviations from PR #59 pattern correctly adapt
+  to parent_student_links lacking a tenant_id column. DELETE's
+  USING form provides atomic defense-in-depth independent of
+  helper. 7 queries audited, all tenant-scoped, 0 unscoped.
+
+PRIVACY REVIEW (Section 4B)
+  Audited by privacy-reviewer subagent: APPROVED WITH NOTES
+  (0 CRITICAL / 2 WARN, both pre-existing on main not regressions
+  from this PR). PII fields touched: parent_user_id linkage to
+  student_id, parent contact (full_name + email via JOINs to
+  users), within-tenant authorized reads only. Cross-tenant
+  disclosure pathway: eliminated — byte-identical 403 across all
+  4 mechanism classes (formally verified by smoke Section H 9/9
+  byte-diff PASS). Logging audit: 5 changed log statements use
+  console.error('Error <verb>:', error) pattern; no PII
+  interpolated into format strings. No new console.error path
+  introduced. Followup #70 (repo-wide pg error.detail leak in
+  logs) explicitly out of branch scope. Error response audit:
+  commit db4f93f replaced error.message with route-specific
+  static strings on all 5 catch handlers; no PII in 5xx response
+  bodies. 4xx response bodies reviewed: FORBIDDEN_BODY constant
+  for all 403s (byte-identical), informative messages on 400/409
+  reach only authorized admins (post-auth, post-role-gate) so no
+  leakage surface.
+
+VERIFICATION
+  Backend tests: skipped — none exist (Followup #73 captures
+    repo-wide gap; sec/ PRs rely on cookie-jar curl smoke).
+  Backend lint: skipped — none configured (Followup #74 captures
+    repo-wide gap; only node --check available).
+  CI: PR #61 Vercel Preview SUCCESS + Vercel deployment SUCCESS,
+    confirmed via gh pr view 61 statusCheckRollup.
+  Smoke matrix: 56 scenarios + 9 byte-diff probe-resistance
+    assertions, all pass, 0 net DB mutations. Sections A
+    (4/4), B (3/3), C (5/5), D (9/9), E (11/11), F (5/5), G
+    (5/5 logical pass + 1 reframed via G.3.3 ON CONFLICT verify
+    after cap-before-INSERT discovery), H (9/9 byte-diff PASS).
+  Reviewer subagents: tenant-isolation-auditor APPROVED,
+    privacy-reviewer APPROVED WITH NOTES, security-reviewer
+    APPROVED WITH NOTES. All 3 reports posted to PR thread via
+    summary comment.
+
+OPEN ITEMS / FOLLOW-UPS
+
+11 NEW Followups filed during branch (cluster):
+
+#72 — FE credentials inconsistency. No global fetch wrapper; 37
+  callers credentialed, dozens not; production correctness depends
+  on Vercel same-origin rewrite as implicit contract. HIGH-not-
+  CRITICAL.
+#73 — No backend test suite. Verification on every sec/ PR has
+  been cookie-jar curl smoke. MEDIUM.
+#74 — Backend lint not configured. No script, no config; only
+  node --check available. HIGH-not-CRITICAL.
+#75 — relationship column whitelist enforcement. parent_student_
+  links.relationship is unenforced VARCHAR(50). LOW (data hygiene,
+  not security).
+#76 — Non-integer URL params bubble to 500 via pg invalid-input-
+  syntax. Pre-existing across all routers including PR #59.
+  Recommend parseIntParam middleware fix once. LOW.
+#77 — routes/auth.js:341 references non-existent tenant_id column
+  on parent_student_links. INSERT will fail at runtime with pg
+  error. MEDIUM. Pre-existing latent bug, surfaced by tenant-
+  isolation-auditor as incidental finding outside PR diff.
+#78 — Route 1 over-fetch (psl.* surfaces created_at on FERPA-
+  protected linkage record). LOW. Admin-only surface; pure SQL
+  fix. Bundle with #71 for sec/-routes data-min sweep.
+#79 — Route 2 over-fetch with parent-visibility flag (s.* surfaces
+  tier/area/risk_level/teacher_id to parents via parent-portal).
+  MEDIUM. Requires product/legal coordination, not code-only.
+  Don't bundle with #71/#78.
+#80 — Rate-limiting absent across the application. No express-
+  rate-limit; auth DB lookup vulnerable to credential stuffing;
+  PII-mutation routes uncovered. HIGH. Surfaced by security-
+  reviewer.
+#81 — CSRF protection absent on state-changing routes. sameSite:
+  'none' cookie defeats SameSite-CSRF; no token round-trip. HIGH.
+  Surfaced by security-reviewer.
+#82 — Parity-check guard inconsistency between Route 2 and POST
+  body validation. Footgun for future maintainers, not exposure
+  today. LOW. Reviewer explicit "not a blocker"; deferred to
+  preserve PR #61 review state.
+
+Cluster note: #72/#73/#74/#75/#76/#77/#78/#80/#81/#82 form a
+coherent repo-hygiene cluster for batch cleanup post-sec/-campaign.
+#79 is the only one in the cluster that requires non-engineering
+coordination (product/legal review of parent-portal field surface).
+
+NEXT SESSION SHOULD
+
+Priority 1: PR #61 hand-off coordination if not yet merged. Owner
+  identifies non-owner human reviewer; reviewer reads PR
+  description + reviewer-phase summary comment + diff; submits
+  APPROVED review on GitHub. After reviewDecision shows APPROVED,
+  Owner merges via PR-merged page. With parent and medical PII
+  surfaces both closed (PR #59 + this PR), the campaign's two
+  highest-stakes targets are done.
+Priority 2: Followup #67 — sec/students-other-routes-require-
+  auth (HIGH). Remaining 13 routes in routes/students.js. Now
+  the highest CRITICAL/HIGH-tier remaining sec/ work since
+  parentLinks closed.
+Priority 3: Followups #80 + #81 (rate-limiting + CSRF) — HIGH-
+  tier repo-wide infrastructure hardening. Should land before the
+  next PII-mutation PR if possible — every additional sec/ branch
+  adds to the surface that's CSRF-vulnerable. Could land as a
+  single hardening-pass PR or as adjacent PRs.
+Priority 4: Followup #62 — Render env-var fromDatabase conversion.
+  ~15 min operational quick-win; prevents Session 47 outage
+  recurrence.
+Priority 5: Followup #70 — repo-wide pg error.detail logging fix.
+  Broad scope refactor; could fold into a dedicated session.
+Priority 6+: HIGH-severity routers — users.js, tenants.js,
+  staffManagement.js — continue #54 sweep. Repo-hygiene cluster
+  cleanup (#72/#73/#74/#75/#76/#77/#78/#82). #79 separate due to
+  product/legal coordination requirement.
+
+  --- Stale local + remote refs ---
+
+  - sec/parentLinks-require-auth — pushed to origin; PR #61 OPEN
+    in §2A waiting state. Local branch retained until PR merges
+    (or closes). Do not delete locally yet.
+  - chore/activities-log-session-52 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface — pure
+    docs).
+  - chore/activities-log-session-51 — should have been deleted
+    on PR #60 merge per convention. If still present locally,
+    prune.
+  - All other prior session refs carry forward per Session 51's
+    "Stale local + remote refs" entry.
+================================================================================
