@@ -73,7 +73,7 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching parent links:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch parent links' });
   }
 });
 
@@ -108,7 +108,7 @@ router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching parent students:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch parent students' });
   }
 });
 
@@ -188,7 +188,7 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error linking parent:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to link parent' });
   }
 });
 
@@ -232,7 +232,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing parent link:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to remove parent link' });
   }
 });
 // GET all parent-student links for a tenant (for Admin panel)
@@ -261,7 +261,7 @@ router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (re
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching tenant parent links:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to fetch tenant parent links' });
   }
 });module.exports = router;
 module.exports.initializePool = initializePool;
