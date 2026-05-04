@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   requireAuth,
-  requireTenantStaffAccess
+  requireTenantStaffAccess,
+  requireStudentReadAccess
 } = require('../middleware/authorizeInterventionAccess');
 
 let pool;
@@ -14,20 +15,26 @@ const initializePool = (p) => {
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
 // GET parents for a student
-router.get('/student/:studentId', requireAuth, async (req, res) => {
+// requireStudentReadAccess permits parents-of-linked-students through (per
+// its general use across read routes), but parent-link metadata — i.e. the
+// list of which parents are attached to a student — is FERPA-protected and
+// not appropriate for the parent surface even when the parent is one of
+// those linked. Handler-level parent-block overrides the middleware's
+// parent permission for this specific route. Mirrors PR #59 prereferral
+// /student/:studentId framing.
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
 
-    const { studentId } = req.params;
-    
     const result = await pool.query(`
       SELECT psl.*, u.full_name as parent_name, u.email as parent_email
       FROM parent_student_links psl
       JOIN users u ON psl.parent_user_id = u.id
-      WHERE psl.student_id = $1
+      JOIN students s ON psl.student_id = s.id
+      WHERE psl.student_id = $1 AND s.tenant_id = $2
       ORDER BY psl.relationship
-    `, [studentId]);
-    
+    `, [req.params.studentId, req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching parent links:', error);
@@ -40,6 +47,14 @@ router.get('/student/:studentId', requireAuth, async (req, res) => {
 // linked students. Staff have no current FE caller for this surface
 // (frontend/src/App.jsx:6135 is the parent-portal caller). Narrower-then-
 // loosen — widen later if a staff use case appears.
+//
+// SQL sources parent_user_id from req.user.id (server-derived, not the URL
+// param) so a future regression that loosens the parity assert above cannot
+// leak another parent's children. The s.tenant_id = $2 clause is defense-
+// in-depth against the edge case of a parent_student_links row whose
+// student belongs to a different tenant than the parent's own users.tenant_id
+// — should not happen by construction, but the clause makes it impossible
+// to leak through this read.
 router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
   try {
     if (req.user.role !== 'parent'
@@ -47,16 +62,14 @@ router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
-    const { parentUserId } = req.params;
-    
     const result = await pool.query(`
       SELECT s.*, psl.relationship
       FROM students s
       JOIN parent_student_links psl ON s.id = psl.student_id
-      WHERE psl.parent_user_id = $1
+      WHERE psl.parent_user_id = $1 AND s.tenant_id = $2
       ORDER BY s.last_name, s.first_name
-    `, [parentUserId]);
-    
+    `, [req.user.id, req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching parent students:', error);
@@ -110,12 +123,14 @@ router.delete('/:id', async (req, res) => {
   }
 });
 // GET all parent-student links for a tenant (for Admin panel)
+// requireTenantStaffAccess parity-asserts the URL :tenantId against
+// req.user.tenant_id and excludes parent role. SQL sources tenant_id from
+// req.user.tenant_id (server-derived) — the URL param is decorative and
+// trusted only after the middleware's equality check.
 router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
-      SELECT 
+      SELECT
         psl.id,
         psl.parent_user_id,
         psl.student_id,
@@ -128,8 +143,8 @@ router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (re
       JOIN students s ON psl.student_id = s.id
       WHERE s.tenant_id = $1
       ORDER BY u.full_name, s.last_name
-    `, [tenantId]);
-    
+    `, [req.user.tenant_id]);
+
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching tenant parent links:', error);
