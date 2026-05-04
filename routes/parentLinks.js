@@ -14,6 +14,15 @@ const initializePool = (p) => {
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
+// Admin-only allowlist for write routes (POST, DELETE). Counselors are
+// excluded — current FE callers (frontend/src/App.jsx:1345
+// handleAddParent, frontend/src/App.jsx:1376 handleLinkParent,
+// frontend/src/App.jsx:1402 handleUnlinkParent) are admin-panel actions.
+// Parent role is implicitly excluded by virtue of the allowlist (no
+// separate parent-block needed where this is used). Narrower-then-loosen
+// — widen if a counselor use case for parent-roster management appears.
+const ADMIN_ROLES = ['school_admin', 'district_admin'];
+
 // GET parents for a student
 // requireStudentReadAccess permits parents-of-linked-students through (per
 // its general use across read routes), but parent-link metadata — i.e. the
@@ -78,31 +87,78 @@ router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
 });
 
 // POST link parent to student
-router.post('/', async (req, res) => {
+// Order of operations is load-bearing for probe-resistance:
+//   1. requireAuth (middleware) — 401 if not authenticated
+//   2. ADMIN_ROLES gate — 403 if not school_admin/district_admin
+//   3. body validation — 400 if student_id/parent_user_id malformed
+//   4. two-tenant cross-check (single EXISTS query) — byte-identical 403
+//      collapsing five failure modes: student missing, student wrong
+//      tenant, parent missing, parent wrong tenant, parent role != 'parent'
+//   5. 2-parent cap — 400 if already at 2 (operates on a tenant-verified
+//      student, so the message no longer leaks foreign-tenant existence)
+//   6. INSERT with ON CONFLICT — 409 if exact pair already linked
+// Pre-commit-3 ordering had the cap query running BEFORE any tenant
+// verification, which leaked the existence of foreign-tenant students
+// to a Parkview admin probing Lincoln student IDs and could have created
+// cross-tenant parent_student_links rows. Reorder is the security fix.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { parent_user_id, student_id, relationship } = req.body;
-    
-    // Check if student already has 2 parents
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const studentId = Number(req.body.student_id);
+    if (!Number.isInteger(studentId) || studentId <= 0) {
+      return res.status(400).json({ error: 'Missing or invalid required field: student_id' });
+    }
+    const parentUserId = Number(req.body.parent_user_id);
+    if (!Number.isInteger(parentUserId) || parentUserId <= 0) {
+      return res.status(400).json({ error: 'Missing or invalid required field: parent_user_id' });
+    }
+    const relationship = req.body.relationship || 'parent';
+
+    // Two-tenant cross-check: student must belong to caller's tenant AND
+    // parent_user_id must belong to caller's tenant with role='parent'.
+    // Five failure modes collapse to one byte-identical 403 — a probe
+    // gives no information beyond "request denied."
+    const crossCheck = await pool.query(`
+      SELECT 1
+      WHERE EXISTS (
+              SELECT 1 FROM students
+              WHERE id = $1 AND tenant_id = $3
+            )
+        AND EXISTS (
+              SELECT 1 FROM users
+              WHERE id = $2 AND tenant_id = $3 AND role = 'parent'
+            )
+    `, [studentId, parentUserId, req.user.tenant_id]);
+
+    if (crossCheck.rows.length === 0) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    // 2-parent cap. Operates on a tenant-verified student post-cross-check,
+    // so the 400 message is informative without leaking foreign-tenant
+    // existence (no caller can reach this line for a non-own-tenant student).
     const countResult = await pool.query(
       'SELECT COUNT(*) FROM parent_student_links WHERE student_id = $1',
-      [student_id]
+      [studentId]
     );
-    
-    if (parseInt(countResult.rows[0].count) >= 2) {
+    if (parseInt(countResult.rows[0].count, 10) >= 2) {
       return res.status(400).json({ error: 'Student already has 2 parent accounts linked' });
     }
-    
+
     const result = await pool.query(`
       INSERT INTO parent_student_links (parent_user_id, student_id, relationship)
       VALUES ($1, $2, $3)
       ON CONFLICT (parent_user_id, student_id) DO NOTHING
       RETURNING *
-    `, [parent_user_id, student_id, relationship || 'parent']);
-    
+    `, [parentUserId, studentId, relationship]);
+
     if (result.rows.length === 0) {
       return res.status(409).json({ error: 'This parent is already linked to this student' });
     }
-    
+
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error linking parent:', error);
