@@ -5887,7 +5887,7 @@ BRANCH:  sec/parentLinks-require-auth (PR #61, OPEN — §2A waiting state)
          chore/activities-log-session-52 (this entry, self-merge eligible —
          pure docs, no §4B / §5 surface)
 DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/61 (sec/parentLinks-require-auth — awaiting non-owner human reviewer)
-             pr-opened:<this-pr-url> (chore/activities-log-session-52 — to be filled in two-commit URL-fill pattern)
+             pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/62 (chore/activities-log-session-52)
 --------------------------------------------------------------------------------
 TASK SUMMARY
 
