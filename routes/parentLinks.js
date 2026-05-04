@@ -23,6 +23,32 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // — widen if a counselor use case for parent-roster management appears.
 const ADMIN_ROLES = ['school_admin', 'district_admin'];
 
+// Load a parent_student_links row by id and assert it belongs to the
+// caller's tenant. parent_student_links has no tenant_id column so we
+// JOIN to students to derive the tenant. Returns { ok: true, row } or
+// { ok: false, status, body } so the caller can respond with a byte-
+// identical 403 for both "row not found" and "wrong tenant" — preventing
+// existence-disclosure across tenants. Mirrors loadFormAndAssertTenant
+// from PR #59 (routes/prereferralForms.js:30-42); the only deviation is
+// the JOIN and the dropped status column (parent_student_links has no
+// status-guard concept).
+async function loadLinkAndAssertTenant(linkId, user) {
+  const result = await pool.query(
+    `SELECT psl.id, s.tenant_id
+     FROM parent_student_links psl
+     JOIN students s ON psl.student_id = s.id
+     WHERE psl.id = $1`,
+    [linkId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  if (result.rows[0].tenant_id !== user.tenant_id) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  return { ok: true, row: result.rows[0] };
+}
+
 // GET parents for a student
 // requireStudentReadAccess permits parents-of-linked-students through (per
 // its general use across read routes), but parent-link metadata — i.e. the
@@ -167,11 +193,42 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // DELETE remove parent link
-router.delete('/:id', async (req, res) => {
+// Order of operations:
+//   1. requireAuth (middleware) — 401 if not authenticated
+//   2. ADMIN_ROLES gate — 403 if not school_admin/district_admin
+//   3. loadLinkAndAssertTenant helper — byte-identical 403 for both
+//      "link does not exist" and "link belongs to another tenant"
+//   4. DELETE with USING + s.tenant_id = $2 — atomic defense-in-depth.
+//      Even if a TOCTOU race between helper and DELETE moved the linked
+//      student to another tenant in the interim, the USING JOIN refuses
+//      the cross-tenant mutation.
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    await pool.query('DELETE FROM parent_student_links WHERE id = $1', [id]);
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const auth = await loadLinkAndAssertTenant(req.params.id, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(`
+      DELETE FROM parent_student_links psl
+      USING students s
+      WHERE psl.id = $1
+        AND psl.student_id = s.id
+        AND s.tenant_id = $2
+      RETURNING psl.id
+    `, [req.params.id, req.user.tenant_id]);
+
+    if (result.rows.length === 0) {
+      // Helper assert passed but the DELETE returned no rows. Only
+      // reachable via a TOCTOU race (row deleted by a concurrent
+      // request, or student moved to another tenant between helper
+      // and DELETE). Idempotent post-state: the row is gone either
+      // way, so we report success rather than surface the race.
+      return res.json({ success: true });
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error removing parent link:', error);
