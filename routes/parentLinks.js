@@ -1,5 +1,9 @@
 const express = require('express');
 const router = express.Router();
+const {
+  requireAuth,
+  requireTenantStaffAccess
+} = require('../middleware/authorizeInterventionAccess');
 
 let pool;
 
@@ -7,9 +11,13 @@ const initializePool = (p) => {
   pool = p;
 };
 
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
 // GET parents for a student
-router.get('/student/:studentId', async (req, res) => {
+router.get('/student/:studentId', requireAuth, async (req, res) => {
   try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
     const { studentId } = req.params;
     
     const result = await pool.query(`
@@ -28,8 +36,17 @@ router.get('/student/:studentId', async (req, res) => {
 });
 
 // GET students for a parent (used by parent portal)
-router.get('/parent/:parentUserId', async (req, res) => {
+// Parents-only self-parity: only the parent themselves can list their own
+// linked students. Staff have no current FE caller for this surface
+// (frontend/src/App.jsx:6135 is the parent-portal caller). Narrower-then-
+// loosen — widen later if a staff use case appears.
+router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
   try {
+    if (req.user.role !== 'parent'
+        || Number(req.params.parentUserId) !== req.user.id) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const { parentUserId } = req.params;
     
     const result = await pool.query(`
@@ -93,7 +110,7 @@ router.delete('/:id', async (req, res) => {
   }
 });
 // GET all parent-student links for a tenant (for Admin panel)
-router.get('/tenant/:tenantId', async (req, res) => {
+router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const { tenantId } = req.params;
     
