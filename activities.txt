@@ -6110,7 +6110,9 @@ Session 53 (May 5, 2026):
   capture three followups while context is fresh — #83 and #84
   from the Render dashboard "Datastore URL" UI investigation, plus
   #85 (a Section 504 tab 404 surfaced during diagnostic clicks
-  today).
+  today). Vandercook sandbox tenant provisioning (tenant 11) was
+  completed mid-session and is documented below; landed on
+  chore/seed-vandercook-sandbox.
 - Other Session 53 work — PR #61 merge to main (commit 6a98b35),
   the Followup #62 Path A audit + Render UI attempt — will be
   documented in the chore/activities-log-session-53 PR, which
@@ -6170,5 +6172,90 @@ NEW Followups:
   (any touched route), security-reviewer if the route definition
   changes. MEDIUM (functional bug, no user-visible crash; document
   upload on same page works).
+
+PRODUCTION DB WRITES (Render psql one-shots, BEGIN/COMMIT, DO blocks)
+
+  Vandercook sandbox tenant provisioning (tenant_id=11):
+    - Date: 2026-05-05.
+    - Mechanism: scripts/seed-tenant-sandbox-template.js, second
+      production use after Mazapan (PR #36 / Session 40). No code
+      change to repo; the script is general-purpose by design.
+    - Roster file: ~/tiertrak-sandbox-rosters/vandercook-roster.js
+      — kept outside the repo per the privacy banner discipline.
+      Not committed; lives in the operator's home directory.
+    - tenants: 1 row created. name='Vandercook Demo',
+      type='district', subdomain='vandercook-demo'.
+    - users: 4 rows created. 1 district_admin (admin@) + 3 staff
+      (counselor@, teacher@, parent@) — all under
+      vandercook.invalid (RFC 6761-reserved fictional TLD).
+    - students: 36 rows. K-8, 4 per grade. Tier distribution
+      6 / 14 / 16 (T3 / T2 / T1). Area mix per tier (Tier 3:
+      4 Academic / 1 Behavior / 1 Social-Emotional; Tier 2:
+      9 Academic / 3 Behavior / 2 Social-Emotional; Tier 1:
+      16 Academic). Synthetic literary compound surnames; no real-
+      Michigan-cluster surnames.
+    - student_interventions: 20 rows (one per Tier-2/3 student;
+      Tier 1 stays clean). Templates drawn from 6 distinct
+      system-default intervention_templates: Phonics Intervention,
+      Small Group Instruction, Check-in/Check-out, Social Skills
+      Group, Self-Monitoring Checklist, Mentor Program. Author
+      split: counselor handles behavior + SE + CICO (7); teacher
+      handles academic instruction (13).
+    - progress_notes: 46 rows. 2 per Tier 2 student (28) + 3 per
+      Tier 3 student (18). Authored by the staff member who
+      assigned the relevant intervention.
+    - parent_student_links: 1 row (parent@vandercook.invalid →
+      one Grade 4 Tier 3 Academic student).
+    - tenant_intervention_bank: 61 rows auto-seeded (matching
+      the system-default is_starter=TRUE template count; same
+      shape as Mazapan's 61).
+
+    Single atomic DO block, three preflight RAISE EXCEPTIONs all
+    passed on first attempt — subdomain available, all 4 seed
+    emails not in use, all 6 system-default intervention template
+    names matched exactly one row each. No Preflight raises
+    (contrast with Mazapan's first-attempt Preflight 3 mismatch).
+    Final RAISE NOTICE confirmed tenant id=11 post-commit.
+
+    Mid-flight refinement: teacher account initially had empty
+    student-list view despite intervention authorship. Root cause:
+    TierTrak's visibility model requires either school_wide_access
+    = TRUE or explicit roster assignment for non-school-wide
+    teachers; intervention authorship alone does not grant student
+    visibility. Resolved with a tenant-scoped UPDATE:
+      UPDATE users SET school_wide_access = TRUE
+       WHERE email = 'teacher@vandercook.invalid'
+         AND tenant_id = 11;
+    Single-row update verified post-COMMIT. Sandbox-seed enhancement
+    candidate: default the teacher account's school_wide_access to
+    TRUE for sandbox tenants (or surface a per-account flag in the
+    roster template) so future sandbox demos don't repeat this
+    hand-fix. Worth considering as a seed-tenant-sandbox-template.js
+    enhancement followup at session close.
+
+    Verification:
+      - Pre-seed (script preflights): subdomain availability + 4
+        seed emails not in use + all 6 system-default intervention
+        template names present — all confirmed clean before COMMIT.
+      - Post-seed counts: users=4 / students=36 / interventions=20
+        / progress_notes=46 / parent_student_links=1 /
+        tenant_intervention_bank=61 — all matched expected.
+      - Tenant-isolation cross-check: SELECT DISTINCT tenant_id
+        FROM users WHERE email LIKE '%@vandercook.invalid'
+        returned single row [11]. No cross-tenant leakage.
+      - Live login (fresh incognito window): all 4 accounts
+        verified — admin, counselor, teacher (post-fix), parent.
+        Tenant view confirmed scoped to tenant_id=11 only.
+
+  No §4B PII in this entry. Tenant id (integer 11) is an internal
+  database identifier per established convention
+  (activities.txt:2737). All student names are synthetic
+  (deliberately literary compound surnames, not real-person-
+  mapping). "Vandercook" school name is operational metadata at
+  the Mazapan / Molalla / Summit level. The roster file containing
+  the synthetic student data lives uncommitted at
+  ~/tiertrak-sandbox-rosters/vandercook-roster.js per the privacy
+  banner discipline; it is not in the repo and is not reproduced
+  in this entry beyond the table+counts summary above.
 
 ================================================================================
