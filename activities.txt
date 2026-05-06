@@ -6107,8 +6107,10 @@ Priority 6+: HIGH-severity routers — users.js, tenants.js,
 Session 53 (May 5, 2026):
 - Mid-session followup filing on chore/session-53-followups branch,
   ahead of the eventual chore/activities-log-session-53 PR. Reason:
-  capture two followups while the Session 47 / Session 53 learnings
-  about the Render dashboard's "Datastore URL" UI control are fresh.
+  capture three followups while context is fresh — #83 and #84
+  from the Render dashboard "Datastore URL" UI investigation, plus
+  #85 (a Section 504 tab 404 surfaced during diagnostic clicks
+  today).
 - Other Session 53 work — PR #61 merge to main (commit 6a98b35),
   the Followup #62 Path A audit + Render UI attempt — will be
   documented in the chore/activities-log-session-53 PR, which
@@ -6144,5 +6146,29 @@ NEW Followups:
   STACK_ARCHITECTURE.md lines 16-34 from Vercel-hosted-backend
   language to Render-hosted-backend language. Doc-only PR, no
   code changes, self-mergeable. LOW (doc hygiene).
+#85 — Section 504 tab 404 on /api/student-504/active-form-set.
+  Frontend Section 504 tab fires GET /api/student-504/active-
+  form-set on page load and receives HTTP 404 (three times per
+  load); console error labeled '[Section504Tab active form set]'.
+  Document upload on the same page works correctly — only the
+  active-form-set fetch fails. 404 is HTTP-level from the backend,
+  not a CORS or auth-layer reject; backend is reachable. Diagnostic
+  narrowing 2026-05-05: reproduced on a Tier 3 / Social-Emotional
+  student with an existing 504 plan document on tenant 3 (Lincoln);
+  non-504-flagged students on the same tenant load clean, so the
+  404 is Section-504-tab-specific, not systemic. Other 504-flagged
+  students not yet tested. Open question for Phase 1 audit: is the
+  404 (a) "no active form set assigned to this student" with the
+  frontend treating empty state as a hard error → frontend UX bug,
+  or (b) route or query broken on the 504 active-form-set lookup →
+  backend bug? Audit should start by reading the route definition
+  (or confirming its absence) plus the frontend handler in the
+  Section 504 tab component. Test a 504-flagged student that DOES
+  have a form set assigned — if it loads clean, scenario (a); if
+  it also 404s, scenario (b). Reviewers when fixed: privacy-
+  reviewer (§4B 504-record sensitivity), tenant-isolation-auditor
+  (any touched route), security-reviewer if the route definition
+  changes. MEDIUM (functional bug, no user-visible crash; document
+  upload on same page works).
 
 ================================================================================
