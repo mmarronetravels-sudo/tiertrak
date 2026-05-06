@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireTenantStaffAccess } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -99,10 +99,8 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
 });
 
 // Get student statistics including archive counts
-router.get('/tenant/:tenantId/stats', async (req, res) => {
+router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
       SELECT 
         COUNT(*) FILTER (WHERE archived = FALSE OR archived IS NULL) as active_count,
@@ -113,7 +111,7 @@ router.get('/tenant/:tenantId/stats', async (req, res) => {
         COUNT(*) as total_count
       FROM students
       WHERE tenant_id = $1
-    `, [tenantId]);
+    `, [req.user.tenant_id]);
     
     res.json(result.rows[0]);
   } catch (error) {
