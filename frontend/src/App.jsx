@@ -634,11 +634,7 @@ const fetchAllParentLinks = async () => {
   if (!effectiveUser) return;
   try {
     const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
-      headers: {
-        'x-user-id': effectiveUser.id.toString(),
-        'x-user-role': effectiveUser.role,
-        'x-school-wide-access': (effectiveUser.school_wide_access || false).toString()
-      }
+      credentials: 'include'
     });
     if (res.ok) {
       const data = await res.json();
@@ -720,7 +716,7 @@ const handleDeleteStaff = async (staffId, staffName) => {
 };};  // Fetch archived students
   const fetchArchivedStudents = async (tenantId) => {
     try {
-      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?onlyArchived=true`);
+      const res = await fetch(`${API_URL}/students/tenant/${tenantId}?onlyArchived=true`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setArchivedStudents(data);

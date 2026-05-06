@@ -73,11 +73,7 @@ export function AppProvider({ children }) {
   if (!effectiveUser) return;
   try {
     const res = await fetch(`${API_URL}/students/tenant/${tenantId}?includeArchived=${includeArchived}`, {
-      headers: {
-        'x-user-id': effectiveUser.id.toString(),
-        'x-user-role': effectiveUser.role,
-        'x-school-wide-access': (effectiveUser.school_wide_access || false).toString()
-      }
+      credentials: 'include'
     });
       if (res.ok) {
         const data = await res.json();
