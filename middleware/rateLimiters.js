@@ -209,6 +209,7 @@ const mutationUserLimiter = rateLimit({
   store: initializeRateLimitStore(),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  // '' fallback fires only on an upstream bug — req.user is populated by requireAuth.
   keyGenerator: (req) => String(req.user?.id ?? ''),
   handler: makeRateLimitHandler('mutation-user')
 });
