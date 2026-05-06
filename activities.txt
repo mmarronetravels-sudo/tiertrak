@@ -5228,14 +5228,19 @@ OPEN ITEMS / FOLLOW-UPS
 
   - Followup #62 (NEW) — Convert tiertrak-api's DATABASE_URL env
     var from a hardcoded string to a Render `fromDatabase`
-    reference linked to tiertrak-db. Currently the URL is hardcoded,
-    so credential rotations don't auto-propagate to the deployed
-    service — exactly the failure mode that caused the Session 47
-    prod outage. Use Render's "Add from Database" workflow on
-    tiertrak-api → Environment → DATABASE_URL. After the switch,
-    future credential rotations on tiertrak-db will trigger
-    automatic redeploys with the correct URL. Verify by triggering
-    a no-op rotation in a maintenance window after the switch.
+    reference linked to tiertrak-db.
+    SUPERSEDED by #83 (Session 53, 2026-05-05) — the "Add from
+    Database" UI control is a one-shot literal copy at click time,
+    not a live datastore reference. See #83 for Path B (render.yaml
+    IaC bootstrap), the only mechanism that creates a true live link.
+    Currently the URL is hardcoded, so credential rotations don't
+    auto-propagate to the deployed service — exactly the failure
+    mode that caused the Session 47 prod outage. Use Render's
+    "Add from Database" workflow on tiertrak-api → Environment →
+    DATABASE_URL. After the switch, future credential rotations
+    on tiertrak-db will trigger automatic redeploys with the
+    correct URL. Verify by triggering a no-op rotation in a
+    maintenance window after the switch.
 
   --- Already-committed deferred follow-ups (no number assigned) ---
 
@@ -6097,4 +6102,47 @@ Priority 6+: HIGH-severity routers — users.js, tenants.js,
     prune.
   - All other prior session refs carry forward per Session 51's
     "Stale local + remote refs" entry.
+================================================================================
+
+Session 53 (May 5, 2026):
+- Mid-session followup filing on chore/session-53-followups branch,
+  ahead of the eventual chore/activities-log-session-53 PR. Reason:
+  capture two followups while the Session 47 / Session 53 learnings
+  about the Render dashboard's "Datastore URL" UI control are fresh.
+- Other Session 53 work — PR #61 merge to main (commit 6a98b35),
+  the Followup #62 Path A audit + Render UI attempt — will be
+  documented in the chore/activities-log-session-53 PR, which
+  AUGMENTS this Session 53 entry rather than replacing it.
+
+NEW Followups:
+#83 — render.yaml IaC bootstrap (supersedes #62 Path A). Path A
+  was attempted 2026-05-05 via Render dashboard's "Datastore URL"
+  control; discovery: that UI feature is a one-shot literal copy
+  at click time, NOT a live datastore reference. Visually
+  identical to a plain env var in both edit and view modes — no
+  chip, no badge, no link indicator. Auto-propagation goal NOT
+  achieved by Path A; literal value matches the original, so no
+  functional regression but no progress on the original goal
+  either. Path B — render.yaml blueprint at repo root with
+  fromDatabase: { name: tiertrak-db, property: connectionString }
+  — is the only mechanism that creates a true live link. Scope
+  includes full Render dashboard inventory (every env var, build
+  command, instance type, region, resource name) + blueprint
+  draft + sync verification, since the first blueprint sync
+  overwrites dashboard reality with blueprint reality. §8
+  ask-first per Session 35 deferral (activities.txt:2013-2023);
+  §7 hosting/deployment-assumption change. Not picked up
+  speculatively. HIGH.
+#84 — Vercel→Render doc drift cleanup. CLAUDE.md §2 line 31 and
+  STACK_ARCHITECTURE.md lines 16-34 still describe the backend as
+  Vercel-hosted; reality (per memory user_db_workflow.md and
+  activities.txt) is that tiertrak-api runs on Render. Drift
+  first named in Session 35 (activities.txt:1758-1765,
+  2013-2023) but never formally filed as a numbered followup.
+  Resurfaced in Session 53 §0.4 doc-conflict flag on 2026-05-05
+  during the #62 audit. Scope: update CLAUDE.md §2 line 31 and
+  STACK_ARCHITECTURE.md lines 16-34 from Vercel-hosted-backend
+  language to Render-hosted-backend language. Doc-only PR, no
+  code changes, self-mergeable. LOW (doc hygiene).
+
 ================================================================================
