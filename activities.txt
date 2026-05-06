@@ -6258,4 +6258,345 @@ PRODUCTION DB WRITES (Render psql one-shots, BEGIN/COMMIT, DO blocks)
   banner discipline; it is not in the repo and is not reproduced
   in this entry beyond the table+counts summary above.
 
+PR #61 — sec/parentLinks-require-auth → main (MERGED 6a98b35)
+
+  Campaign capstone. Closes the LAST CRITICAL exposure surfaced
+  by the Session 46 audit on routes/parentLinks.js. With this PR
+  merged, ALL CRITICAL exposures from the Session 46 audit are
+  now addressed on main. 5 commits, mirroring PR #59's canonical
+  sec/ pattern with two structural deviations driven by
+  parent_student_links lacking a tenant_id column:
+    - JOIN-based tenant derivation in helper
+    - Dropped status column from the helper's SELECT shape
+
+  Net-new mechanisms (per PR #61 description, recorded in
+  Session 52's partial entry):
+    - loadLinkAndAssertTenant helper (mirrors PR #59's
+      loadFormAndAssertTenant pattern with JOIN-adapted tenant
+      assertion; two failure branches collapse to byte-identical
+      403)
+    - Two-tenant EXISTS-form cross-check on POST (single atomic
+      SELECT with role='parent' clause to prevent cross-tenant
+      probe attempts)
+    - Admin gate + load-then-check helper on DELETE
+    - Generic 500 response bodies across all 5 routes
+
+  Reviewer verdicts (pre-merge, per PR #61 description):
+    - tenant-isolation-auditor: APPROVED (0 CRITICAL)
+    - security-reviewer: APPROVED WITH NOTES (0 CRITICAL — items
+      tracked under the cluster filed on PR #61's branch as
+      Followups #80 + #81 + #82)
+    - privacy-reviewer: APPROVED (0 CRITICAL)
+    - Non-Owner human reviewed and approved per §2A.
+
+  Merged 2026-05-05 13:58Z by Owner. The 11-followup cluster
+  (#72-#82) had been filed on the PR branch pre-merge and is
+  documented in Session 52's OPEN ITEMS / FOLLOW-UPS block on
+  main (lines 6013+).
+
+PR #63 — chore/session-53-followups → main (MERGED 1fe7908)
+
+  Mid-session followup-filing PR. 2 commits (61de52e + 828c303).
+  Filed Followups #83 (render.yaml IaC bootstrap, supersedes #62
+  Path A; HIGH), #84 (Vercel→Render doc drift cleanup; LOW), #85
+  (Section 504 tab 404 on /api/student-504/active-form-set;
+  MEDIUM); prepended SUPERSEDED note on the existing #62 entry.
+  Followup bodies are on main; not duplicated here.
+
+  Reviewer verdicts: not required (doc-only chore per playbook
+  reviewer-mapping table; no PII or tenant surface). Owner
+  self-merge per §2A.
+
+PR #64 — chore/seed-vandercook-sandbox → main (MERGED b8de230)
+
+  Late-session activities-record PR for the Vandercook sandbox
+  tenant provisioning. 1 commit (eaeddd5). Added a "PRODUCTION
+  DB WRITES" section to the Session 53 partial entry covering
+  the operational record (tenant_id=11, counts, verification,
+  mid-flight refinement). Provisioning details are on main; not
+  duplicated here.
+
+  Reviewer verdicts: not required (doc-only chore per playbook
+  reviewer-mapping table; entry contains §4B-scrubbed table+
+  count only). Owner self-merge per §2A.
+
+FOLLOWUP #62 PATH A AUDIT (the discovery that drove #83)
+
+  Goal of #62: convert tiertrak-api's DATABASE_URL env var on
+  Render from a hardcoded string to a fromDatabase reference
+  linked to tiertrak-db, so future credential rotations auto-
+  propagate (preventing recurrence of the Session 47 prod
+  outage).
+
+  Path A as scoped in the original #62 entry: "Render UI
+  workflow, no code change" — use Render's "Add from Database"
+  affordance in the env-var editor on the tiertrak-api service.
+
+  Discovery during attempt: Render's "Datastore URL" UI control
+  is a one-shot literal copy at click time, NOT a live datastore
+  reference. After the click, the env var contained the same
+  string as the Internal Database URL — but as plain text, with
+  no auto-refresh on credential rotation. Visually identical to
+  a plain env var in both edit and view modes — no chip, no
+  badge, no link indicator distinguishing it from a literal
+  value.
+
+  Net result: no functional regression (literal value matches
+  the original); but the auto-propagation goal was NOT achieved.
+  Path A as originally scoped does not exist in Render's UI;
+  the affordance that LOOKED like it would create a live link
+  is actually a one-shot copy.
+
+  Path B (render.yaml IaC blueprint with fromDatabase: { name:
+  tiertrak-db, property: connectionString }) is the only
+  mechanism that creates a true live link. Filed as Followup
+  #83 with the SUPERSEDED note prepended on #62 (both on main
+  from PR #63). §8 ask-first per Session 35 deferral; not
+  picked up speculatively this session.
+
+VANDERCOOK WELCOME LETTER (operator-side artifact, not committed)
+
+  Drafted in the operator's planning workspace alongside the
+  provisioning. Customer-facing communication for the prospect
+  contact. Lives outside the repo (operator-only directory).
+  Has placeholders for the four account passwords (operator
+  hand-fills from the secure channel they were captured to
+  during PR #64's seed-script run) and for prospect-specific
+  evaluation dates. Not committed; not reproduced in this
+  entry. Operator hand-fills before sending via secure channel.
+
+TENANT ISOLATION REVIEW
+
+  PR #61: tenant-isolation-auditor APPROVED (0 CRITICAL) per
+  pre-merge review. All read paths now derive tenant scope from
+  req.user.tenant_id (JWT-derived); URL-param tenantId trust
+  removed. The two-tenant EXISTS-form cross-check on POST
+  prevents the cross-tenant probe attempts that motivated the
+  PR. With parent_student_links lacking a tenant_id column, the
+  helper's JOIN-based tenant derivation is the load-bearing
+  control; the existing parent_student_links no-tenant_id-column
+  gap is acknowledged as a known followup (not introduced by
+  PR #61).
+
+  PR #63 + PR #64: doc-only chores; no SQL queries or route
+  handlers modified. N/A for tenant-isolation review.
+
+  Vandercook provisioning: every emitted DML scoped to
+  v_tenant_id captured from RETURNING id at tenants INSERT.
+  Post-seed cross-check confirmed single tenant_id on all rows
+  (recorded on main from PR #64).
+
+PRIVACY REVIEW (Section 4B)
+
+  PR #61: privacy-reviewer APPROVED (0 CRITICAL) per pre-merge
+  review. Generic 500 response bodies across all 5 routes; no
+  PII in error envelopes returned to the frontend.
+
+  PR #63 + PR #64: both doc-only, both subject to in-chat pre-
+  commit §4B scrubbing rather than subagent review (per
+  playbook reviewer-mapping table for doc-only chores). Two
+  §4B near-misses surfaced and corrected this session, one per
+  PR review pass:
+    - PR #63 review pass: original prompt referenced a specific
+      student by name when describing the Followup #85
+      diagnostic-reproduction case; abstracted to attribute-
+      only ("Tier 3 / Social-Emotional student with an
+      existing 504 plan document on tenant 3 (Lincoln)") per
+      the §4B precedent at activities.txt:5066 ("table+count
+      only; no email, no name") before commit.
+    - PR #64 review pass: three §4B-relevant draft contents
+      caught and corrected pre-commit:
+        * parent_student_links bullet originally identified the
+          linked student by roster external_id + first/last
+          name; abstracted to "one Grade 4 Tier 3 Academic
+          student".
+        * students bullet originally listed example synthetic
+          surnames; rewritten to describe the surname pattern
+          property without sampling data.
+        * Live-login bullet originally claimed a Section 504
+          tab visibility verification that was not actually
+          performed during the live-login round; dropped
+          entirely (don't claim verification for things we
+          didn't check).
+
+  Established convention (table+count only; no names; verified
+  claims only) is load-bearing and should remain the default
+  review posture for any session that touches operational
+  records or sandbox rosters.
+
+VERIFICATION
+
+  PR #61: 5-commit sec/ branch; reviewer subagents already
+  reviewed pre-merge; non-Owner human review approved per §2A;
+  Owner merged via PR-merged page. No post-merge regressions
+  surfaced through session close.
+
+  PR #63 + PR #64: doc-only chores; no test suite to run
+  (Followup #73 — backend has no tests); no lint relevant
+  (Followup #74 — backend has no lint configured).
+
+  Vandercook provisioning verification: pre-seed preflights all
+  clean on first attempt; post-seed counts matched expected;
+  tenant-isolation cross-check returned single row [11]; live
+  login verified for all 4 accounts (recorded on main from
+  PR #64).
+
+  Followup #62 Path A audit verification: post-click diff
+  inspection in Render dashboard's env-var view mode confirmed
+  the resulting env var displays as a plain string with no UI
+  affordance distinguishing it from a literal value.
+
+CATCHES (Cowork-side and Claude Code-side observations worth banking)
+
+  1. Render UI feature affordance gap. The "Datastore URL"
+     control in Render's env-var editor presents an action verb
+     ("Add from Database") that suggests a live reference but
+     produces a one-shot literal copy. There is no UI affordance
+     (chip / badge / link indicator) distinguishing the result
+     from a plain env var. Worth banking as a Render-platform
+     gotcha for future operators: clicking the affordance does
+     not produce what the wording implies.
+
+  2. Sandbox seed teacher visibility. The seed script creates
+     teacher accounts with school_wide_access=false (mirroring
+     production posture for real teacher accounts). For sandbox
+     demos, this produces an empty student-list view on first
+     login — intervention authorship alone does not grant
+     student visibility under TierTrak's model. Resolved inline
+     this session via tenant-scoped UPDATE (recorded on main
+     from PR #64). Implicit enhancement candidate flagged in
+     PR #64 body but NOT yet filed as a numbered followup —
+     candidate to file early in Session 54 if confirmed worth
+     pursuing.
+
+  3. Multi-PR Session 53 entry pattern. Three PRs landed on
+     main mid-session (PR #61 + PR #63 + PR #64) plus this
+     close PR. PR #63's framing established the convention
+     ("AUGMENTS this Session 53 entry rather than replacing
+     it"); each subsequent activities-touching PR extends the
+     same Session 53 entry in place rather than opening a new
+     entry per PR. Worth banking as the working convention for
+     activity-heavy sessions where multiple branches land
+     between session start and session close.
+
+  4. Empty WIP branch deletion at session start. sec/safe-log-
+     pg-error-sweep was carried into the session local-only
+     with zero commits ahead of main and a tip date predating
+     the Session 53 PR #61 merge. Audit confirmed the branch
+     was strictly behind main; safe-deleted with `git branch
+     -d` after switching to main. No work lost. Worth banking
+     as the safe-by-default cleanup pattern: audit (zero ahead
+     vs main + tip-date check) BEFORE deletion; never escalate
+     to `-D` to mask a surprise.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  --- New / re-scoped this session (already filed on main per
+      PR #63) ---
+
+  - #83 — render.yaml IaC bootstrap (supersedes #62 Path A).
+    HIGH. §8 ask-first per Session 35 deferral. Body on main.
+  - #84 — Vercel→Render doc drift cleanup. LOW. Body on main.
+  - #85 — Section 504 tab 404 on
+    /api/student-504/active-form-set. MEDIUM. Body on main.
+
+  --- New this session, NOT yet filed as numbered followup ---
+
+  - Sandbox seed teacher.school_wide_access default. Implicit
+    enhancement candidate from PR #64's mid-flight refinement
+    (recorded on main, in PR #64's "Mid-flight refinement"
+    paragraph). Consider defaulting sandbox-tenant teacher
+    school_wide_access=TRUE in seed-tenant-sandbox-template.js,
+    OR surfacing a per-account flag in the roster template, so
+    future sandbox demos don't repeat the hand-fix UPDATE.
+    Candidate to file as a numbered followup early in
+    Session 54 if confirmed worth pursuing.
+
+  --- Outstanding state at session close (record-keeping; no
+      fixes proposed in this entry) ---
+
+  - .claude/settings.json drift in working tree. Followup #22
+    territory; carried since session 38b. Stash list now has 3
+    entries:
+      stash@{0} — settings.json drift, Followup #22; pushed on
+        sec/safe-log-pg-error-sweep at session start (pre-
+        delete) with detailed re-apply notes (Bash(env) auto-
+        allow that should be demoted to ask, plus a redundant
+        absolute-path npm rule and a double-slash Read rule
+        that's likely dead config).
+      stash@{1} — settings.json drift, Followup #22 carryover
+        from chore/activities-log-session-38b.
+      stash@{2} — older WIP on main at 75aecd8 ("Fix missing
+        logs data transformation"). Pre-existing.
+  - /tmp/vandercook-seed.sql still on disk locally. Generated
+    during the dry-generate step; pasted into Render psql
+    console; no longer needed. Operator cleanup item.
+  - Vandercook welcome letter has placeholders for passwords
+    + evaluation dates. Operator hand-fills before sending.
+  - Vandercook 4-account passwords pending hand-delivery via
+    secure channel to operator's Vandercook contact.
+
+  --- Carried forward unchanged ---
+
+  - All Session 47-52 carry-forwards (Followup #62 SUPERSEDED
+    by #83 with forward-pointer; #67 sec/students-other-routes
+    sweep; #70 pg error.detail repo-wide fix; the #72-#82
+    cluster filed on PR #61's branch pre-merge; etc.). See
+    Session 52's OPEN ITEMS / FOLLOW-UPS block on main
+    (lines 6013+).
+
+NEXT SESSION SHOULD
+
+  Priority 1 — Followup #67 (sec/students-other-routes-require-
+  auth, HIGH). Now the highest CRITICAL/HIGH-tier remaining sec/
+  work since parentLinks closed via PR #61. 13 routes in
+  routes/students.js. Carried forward from Session 52.
+
+  Priority 2 — Followups #80 + #81 (rate-limiting + CSRF, both
+  HIGH). Repo-wide infrastructure hardening. Should land before
+  the next PII-mutation PR if possible — every additional sec/
+  branch adds to the surface that's CSRF-vulnerable. Could land
+  as a single hardening-pass PR or as adjacent PRs. Carried
+  forward from Session 52.
+
+  Priority 3 — Confirm whether to file the sandbox seed
+  teacher.school_wide_access default as a numbered followup,
+  or pursue it directly as a small chore PR. Either way low
+  effort (~30 min); unblocks future sandbox provisioning from
+  repeating the post-seed hand-fix UPDATE.
+
+  Priority 4 — Followup #70 (repo-wide pg error.detail logging
+  fix). Broad scope refactor; could fold into a dedicated
+  session. Carried forward from Session 52.
+
+  Priority 5+ — Repo-hygiene cluster cleanup
+  (#72/#73/#74/#75/#76/#77/#78/#82). Suitable for batch as a
+  single chore session. #79 separate due to product/legal
+  coordination requirement.
+
+  Outstanding-state housekeeping (low priority, can fold into
+  any session):
+  - Resolve .claude/settings.json drift (Followup #22 review).
+  - Delete /tmp/vandercook-seed.sql.
+  - Operator hand-deliver Vandercook passwords + complete
+    welcome letter placeholders.
+
+  --- Stale local + remote refs ---
+
+  - chore/activities-log-session-53 — current branch for this
+    entry's PR. Self-merge eligible (no §4B / §5 surface —
+    pure docs). Local + remote will be deleted post-merge.
+  - chore/seed-vandercook-sandbox — local + remote DELETED at
+    PR #64 merge.
+  - chore/session-53-followups — local + remote DELETED at
+    PR #63 merge.
+  - sec/parentLinks-require-auth — local + remote DELETED at
+    PR #61 merge.
+  - sec/safe-log-pg-error-sweep — local empty WIP branch
+    deleted at session start (was at b9ab11c, behind main with
+    zero commits ahead; safe `git branch -d` after audit
+    confirmed nothing to lose). Never had a remote.
+  - All other prior session refs carry forward per Session 52's
+    "Stale local + remote refs" entry on main (lines 6087+).
+
 ================================================================================
