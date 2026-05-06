@@ -10,7 +10,7 @@ const pool = new Pool({
 });
 
 // Get archive reason options
-router.get('/archive-reasons', async (req, res) => {
+router.get('/archive-reasons', requireAuth, async (req, res) => {
   const reasons = [
     'Completed Interventions',
     'End of School Year',
