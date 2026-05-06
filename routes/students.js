@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -10,7 +10,7 @@ const pool = new Pool({
 });
 
 // Get archive reason options
-router.get('/archive-reasons', async (req, res) => {
+router.get('/archive-reasons', requireAuth, async (req, res) => {
   const reasons = [
     'Completed Interventions',
     'End of School Year',
@@ -22,13 +22,15 @@ router.get('/archive-reasons', async (req, res) => {
 });
 
 // Get all students for a tenant (with archive filter and role-based access)
-router.get('/tenant/:tenantId', async (req, res) => {
+router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (Number(req.params.tenantId) !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { includeArchived, onlyArchived, search } = req.query;
-    const userId = req.headers['x-user-id'];
-    const userRole = req.headers['x-user-role'];
-    const schoolWideAccess = req.headers['x-school-wide-access'] === 'true';
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const schoolWideAccess = req.user.school_wide_access === true;
     
     let query;
     let params;
@@ -41,7 +43,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
       `;
-      params = [tenantId];
+      params = [req.user.tenant_id];
     }
     // Parents see only their linked children
     else if (userRole === 'parent') {
@@ -52,7 +54,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
         INNER JOIN parent_student_links psl ON s.id = psl.student_id
         WHERE s.tenant_id = $1 AND psl.parent_user_id = $2
       `;
-      params = [tenantId, userId];
+      params = [req.user.tenant_id, userId];
     }
     // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
@@ -71,7 +73,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
             )
           )
       `;
-      params = [tenantId, userId];
+      params = [req.user.tenant_id, userId];
     }
     
     // Archive filters
@@ -97,10 +99,8 @@ router.get('/tenant/:tenantId', async (req, res) => {
 });
 
 // Get student statistics including archive counts
-router.get('/tenant/:tenantId/stats', async (req, res) => {
+router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    
     const result = await pool.query(`
       SELECT 
         COUNT(*) FILTER (WHERE archived = FALSE OR archived IS NULL) as active_count,
@@ -111,7 +111,7 @@ router.get('/tenant/:tenantId/stats', async (req, res) => {
         COUNT(*) as total_count
       FROM students
       WHERE tenant_id = $1
-    `, [tenantId]);
+    `, [req.user.tenant_id]);
     
     res.json(result.rows[0]);
   } catch (error) {
@@ -120,16 +120,16 @@ router.get('/tenant/:tenantId/stats', async (req, res) => {
 });
 
 // Get students by tier
-router.get('/tenant/:tenantId/tier/:tier', async (req, res) => {
+router.get('/tenant/:tenantId/tier/:tier', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId, tier } = req.params;
+    const { tier } = req.params;
     const result = await pool.query(
       `SELECT s.*, u.full_name as teacher_name 
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.tenant_id = $1 AND s.tier = $2 AND (s.archived = FALSE OR s.archived IS NULL)
        ORDER BY s.last_name, s.first_name`,
-      [tenantId, tier]
+      [req.user.tenant_id, tier]
     );
     res.json(result.rows);
   } catch (error) {
@@ -353,16 +353,14 @@ router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) =
   }
 });
 // Get a single student with their interventions and notes
-router.get('/:id', async (req, res) => {
+router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    
     const studentResult = await pool.query(
       `SELECT s.*, u.full_name as teacher_name 
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.id = $1`,
-      [id]
+      [req.student.id]
     );
     
     if (studentResult.rows.length === 0) {
@@ -375,7 +373,7 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN users u ON si.assigned_by = u.id
        WHERE si.student_id = $1
        ORDER BY si.start_date DESC`,
-      [id]
+      [req.student.id]
     );
     
     const notesResult = await pool.query(
@@ -384,7 +382,7 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN users u ON pn.author_id = u.id
        WHERE pn.student_id = $1
        ORDER BY pn.created_at DESC`,
-      [id]
+      [req.student.id]
     );
     
     res.json({
