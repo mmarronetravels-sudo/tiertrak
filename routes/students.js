@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
-const { requireAuth, requireTenantStaffAccess } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -353,16 +353,14 @@ router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) =
   }
 });
 // Get a single student with their interventions and notes
-router.get('/:id', async (req, res) => {
+router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    
     const studentResult = await pool.query(
       `SELECT s.*, u.full_name as teacher_name 
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.id = $1`,
-      [id]
+      [req.student.id]
     );
     
     if (studentResult.rows.length === 0) {
@@ -375,7 +373,7 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN users u ON si.assigned_by = u.id
        WHERE si.student_id = $1
        ORDER BY si.start_date DESC`,
-      [id]
+      [req.student.id]
     );
     
     const notesResult = await pool.query(
@@ -384,7 +382,7 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN users u ON pn.author_id = u.id
        WHERE pn.student_id = $1
        ORDER BY pn.created_at DESC`,
-      [id]
+      [req.student.id]
     );
     
     res.json({
