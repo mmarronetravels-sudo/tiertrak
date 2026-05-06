@@ -120,16 +120,16 @@ router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, asy
 });
 
 // Get students by tier
-router.get('/tenant/:tenantId/tier/:tier', async (req, res) => {
+router.get('/tenant/:tenantId/tier/:tier', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const { tenantId, tier } = req.params;
+    const { tier } = req.params;
     const result = await pool.query(
       `SELECT s.*, u.full_name as teacher_name 
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.tenant_id = $1 AND s.tier = $2 AND (s.archived = FALSE OR s.archived IS NULL)
        ORDER BY s.last_name, s.first_name`,
-      [tenantId, tier]
+      [req.user.tenant_id, tier]
     );
     res.json(result.rows);
   } catch (error) {
