@@ -6600,3 +6600,124 @@ NEXT SESSION SHOULD
     "Stale local + remote refs" entry on main (lines 6087+).
 
 ================================================================================
+SESSION: 2026-05-06T10:38:37-07:00 (Session 54)
+BRANCH:  sec/students-reads-require-auth (PR #66, MERGED 8a61b8f)
+DISPOSITION: merged:8a61b8f (PR #66 — sec/students-reads-require-auth)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closed Followup #67 partially: added requireAuth and tenant scoping to
+  5 of 11 unauthenticated read routes in routes/students.js. The 6
+  remaining unauthenticated mutation routes (POST /, PUT /:id, PATCH x3,
+  DELETE /:id) deferred to sec/students-mutations-require-auth, blocked
+  on Followups #80 (rate-limit) and #81 (CSRF) landing first.
+
+FILES TOUCHED
+  middleware/authorizeInterventionAccess.js — added school_wide_access
+    column to requireAuth's users SELECT (additive; new field on
+    req.user available to every authed route)
+  routes/students.js — hardened 5 read routes (signatures + middleware
+    chains + SQL $1 sourced from req.user.tenant_id or req.student.id);
+    path param renamed :id → :studentId on Route #9 (URL shape
+    unchanged)
+  frontend/src/App.jsx — 3 fetch call-site updates (auth cookie added,
+    forged identity headers x-user-id / x-user-role /
+    x-school-wide-access removed)
+  frontend/src/context/AppContext.jsx — 1 fetch call-site update
+    (auth cookie added, forged identity headers removed)
+
+MIGRATIONS RUN
+  none (no schema changes)
+
+TENANT ISOLATION REVIEW
+  All 7 modified/added queries reviewed by tenant-isolation-auditor
+  subagent (verdict APPROVED, 0 CRITICAL / 0 WARN, 5 INFO). Every
+  query's $1 sources from req.user.tenant_id (server-derived from JWT)
+  or req.student.id (helper-attached after tenant validation by
+  requireStudentReadAccess). No params from req.params/body/query/
+  headers. parent_student_links allow-through verified on Routes #2
+  and #9; cross-tenant access returns 403.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none added/removed/surfaced. PR controls access
+    to existing PII (student rows, interventions, progress notes)
+    without changing response shapes.
+  Logging audit: privacy-reviewer subagent verified zero new console
+    log/error/warn lines in diff; pre-existing log lines unchanged.
+  Cross-tenant risk: 5 unauthenticated read paths previously allowed
+    cross-tenant data return; all 5 now closed. Route #9 was a
+    textbook IDOR (three queries with no tenant_id filter) — now
+    gated by requireStudentReadAccess. No new exposure introduced.
+
+VERIFICATION
+  git status — only pre-session .claude/settings.json modification
+    (unrelated, deliberately excluded from all 8 commits)
+  git log --oneline main..HEAD — 8 commits, each diff approved before
+    commit per §2A (no destructive ops, no force-push history)
+  npm test (backend) — n/a, placeholder script (Followup #73)
+  npm run lint (backend) — n/a, no lint script defined (Followup #74)
+  npm run lint (frontend) — repo baseline 89 problems (73E/16W) per
+    Followup #51; file-scoped main-vs-HEAD comparison on the 2
+    touched frontend files = identical 58 problems (46E/12W) on
+    both branches = zero new violations introduced
+  npm run build (frontend) — clean (2766 modules, 2.81s)
+  Reviewer subagents — 3 of 3 APPROVED (privacy / tenant-isolation /
+    security), 0 CRITICAL / 0 WARN combined. Invoked via
+    general-purpose with role-prompt baked in (project agents not
+    in SDK registry — Followup G tracks investigating). Read-only
+    directive held in practice on all three runs (each agent self-
+    reported compliance; no write/modify tool calls observed).
+  PR #66 — opened as draft, body updated with reviewer fidelity
+    disclosure + 3 inline reviewer reports, flipped to ready-for-
+    review, then merged at 2026-05-06T17:43:24Z (commit 8a61b8f)
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followups filed externally during this session (not in repo):
+    A — S46 audit count reconciliation (13 → 11)
+    B — teacher-role permission audit on POST /students (decision
+        needed before mutation branch)
+    C — repo-wide 403 vs 404 anti-enumeration policy
+    D — /archive-reasons is dead code (no FE caller; hardcoded list
+        in modals)
+    E — fetchStudentDetails duplicated between App.jsx and
+        AppContext.jsx
+    F — stray };}; artifact at App.jsx:720
+    G — investigate whether project-defined .claude/agents/ should
+        auto-load in this Claude Code harness's SDK agent registry
+    H — SELECT * / SELECT s.* over-fetch on Routes #2/#3/#4/#9
+        (sibling to existing Followup #71 on prereferralForms);
+        contained to legitimate same-tenant readers post-PR
+    I — document Route #2 teacher subquery transitive correctness
+        (intervention_assignments / student_interventions don't
+        carry tenant_id; tenant correctness depends on outer
+        students.tenant_id filter)
+    J/#95 — clarify whether merge commit body alone suffices, or
+        whether a `gh pr review --approve` record is required
+        before merge on §4B/§5 PRs (see PR #66 audit-trail bullet
+        below)
+  - Existing followups preserved unchanged: #41 (500 handler
+    error.message leak), #51 (frontend lint baseline), #67 (this
+    PR closes 5 of 11 — partial), #73 (no backend test runner),
+    #74 (no backend lint), #80 (rate-limit, blocks mutation
+    branch), #81 (CSRF, blocks mutation branch)
+  - PR #66 merged at 2026-05-06T17:43:24Z by mmarronetravels-sudo
+    (same identity that opened the PR). reviewDecision="" and
+    reviews=[] on the GitHub record — no formal review API entry.
+    Merge commit body reads "reviewed and approved". Branch
+    touched §4B (PII access control) and §5 (multi-tenancy);
+    §2A explicitly forbids self-merge on these surfaces and §7
+    flags it as a failure condition. Surfacing for audit trail —
+    no remediation possible (merge has landed; revert would be
+    more destructive than the gap it would close). Followup
+    J/#95 tracks deciding whether merge commit body alone
+    suffices, or whether a `gh pr review --approve` record is
+    required before merge on §4B/§5 PRs.
+
+NEXT SESSION SHOULD
+  Pick up from a clean main (PR #66 merged into 8a61b8f). The 6
+  unauthenticated mutation routes (#10-#15 in routes/students.js)
+  are still open and remain blocked on Followups #80 (rate-limit)
+  and #81 (CSRF) landing first. Either work on #80 or #81 to
+  unblock the mutation-route follow-up branch, or pick up
+  unrelated work. Do NOT start sec/students-mutations-require-auth
+  before #80 and #81 are merged.
+================================================================================
