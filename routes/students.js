@@ -22,13 +22,15 @@ router.get('/archive-reasons', requireAuth, async (req, res) => {
 });
 
 // Get all students for a tenant (with archive filter and role-based access)
-router.get('/tenant/:tenantId', async (req, res) => {
+router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (Number(req.params.tenantId) !== req.user.tenant_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { includeArchived, onlyArchived, search } = req.query;
-    const userId = req.headers['x-user-id'];
-    const userRole = req.headers['x-user-role'];
-    const schoolWideAccess = req.headers['x-school-wide-access'] === 'true';
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    const schoolWideAccess = req.user.school_wide_access === true;
     
     let query;
     let params;
@@ -41,7 +43,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
       `;
-      params = [tenantId];
+      params = [req.user.tenant_id];
     }
     // Parents see only their linked children
     else if (userRole === 'parent') {
@@ -52,7 +54,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
         INNER JOIN parent_student_links psl ON s.id = psl.student_id
         WHERE s.tenant_id = $1 AND psl.parent_user_id = $2
       `;
-      params = [tenantId, userId];
+      params = [req.user.tenant_id, userId];
     }
     // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
@@ -71,7 +73,7 @@ router.get('/tenant/:tenantId', async (req, res) => {
             )
           )
       `;
-      params = [tenantId, userId];
+      params = [req.user.tenant_id, userId];
     }
     
     // Archive filters
