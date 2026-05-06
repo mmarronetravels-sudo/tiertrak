@@ -118,6 +118,89 @@ Every PR description MUST include the following sections, in this order. Claude 
 - <paste or link, if UI or observable behavior changed>
 ```
 
+### What counts as a review
+
+For PRs touching §4B (PII) or §5 (tenant isolation), "review" means
+a formal GitHub PR review submitted via the GitHub API and recorded
+as an entry in the PR's `reviews` array with `state: "APPROVED"`.
+
+The mechanical test:
+
+    gh pr view <PR> --json reviewDecision
+
+must return `"APPROVED"` before the PR can be merged.
+
+The following are NOT reviews and do not satisfy §2A:
+
+- Text in the merge commit body (e.g., "reviewed and approved") —
+  that's a commit message, not a review API entry
+- Verbal approval, Slack messages, email confirmation, or any
+  out-of-band sign-off
+- General PR comments, including ones saying "LGTM"
+- Reviewer subagent reports (privacy / tenant-isolation / security)
+  — these are useful pre-review signals and belong in the PR body
+  for transparency, but they do not substitute for human review
+
+The reviewer must submit approval via `gh pr review <PR> --approve`
+or the GitHub UI's "Approve" button. The author cannot review their
+own PR.
+
+### Enforcement: branch protection on `main`
+
+`main` is configured with a GitHub Ruleset:
+
+- Pull request required before merging
+- 1 approving review required
+- Stale approvals dismissed on new commits
+- Block force pushes; restrict deletions
+- Repository admin role allowed in the bypass list "for pull
+  requests" (admin-override path remains available for
+  emergencies — see below)
+
+This means the merge button is mechanically disabled until
+`reviewDecision` is `APPROVED`. Self-merge of a §4B/§5 PR is no
+longer possible without an explicit override.
+
+### Emergency override
+
+The GitHub Ruleset allows admins to bypass the review requirement
+via the "for pull requests" bypass mode. This is "break glass," not
+"convenience."
+
+Acceptable use:
+
+- Time-critical security fix where waiting for the reviewer would
+  extend live exposure
+- Reviewer unreachable for an extended period and the merge
+  genuinely cannot wait
+
+Required when using the override:
+
+1. Post a comment on the PR before clicking merge stating: (a) why
+   the override is being used, and (b) why waiting for normal
+   review wasn't viable
+2. The override is logged by GitHub in the repo audit log; the PR
+   comment plus the audit log entry form the audit trail
+
+Do not normalize the override. If it's needed more than rarely,
+the issue is the review process, not the override.
+
+### Documented failure modes (per Followup J/#95)
+
+The following are failure modes that have occurred (PR #66,
+Session 54) and must not recur:
+
+- **Owner self-merge of a §4B/§5 PR with no formal review
+  record.** Branch protection now mechanically prevents this.
+  Pre-PR-#66 the rule was procedural-only and the merge happened.
+- **Reviewer reads diff substantively but does not submit
+  `gh pr review --approve`.** The substantive review is valuable;
+  the missing API entry leaves the PR with no audit trail.
+  Reviewers must use the formal mechanism, not just convey
+  approval.
+- **Reviewer subagent reports treated as substitutes for human
+  review.** They are pre-review signals, not the review itself.
+
 ### What Claude Code must do at the start of every coding task
 
 - Run the Session Handshake (Section 0). This now includes the branch check.
