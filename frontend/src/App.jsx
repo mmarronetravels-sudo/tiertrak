@@ -930,7 +930,7 @@ const openMTSSMeetingForm = (meeting = null) => {
   // Fetch single student with details
   const fetchStudentDetails = async (studentId) => {
     try {
-      const res = await fetch(`${API_URL}/students/${studentId}`);
+      const res = await fetch(`${API_URL}/students/${studentId}`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setSelectedStudent(data);
