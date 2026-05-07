@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { mutationUserLimiter } = require('./rateLimiters');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -7,6 +8,7 @@ const pool = new Pool({
 });
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 // Role string is lowercase 'parent' per the users.role CHECK constraint
 // (server.js bootstrap) and every comparison in the codebase. No normalization.
@@ -33,6 +35,9 @@ const requireAuth = async (req, res, next) => {
     if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });
 
     req.user = rows[0];
+    if (!SAFE_METHODS.has(req.method)) {
+      return mutationUserLimiter(req, res, next);
+    }
     next();
   } catch (err) {
     console.error('[requireAuth]', err.message);

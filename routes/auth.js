@@ -7,6 +7,8 @@ const { OAuth2Client } = require('google-auth-library');
 const { Resend } = require('resend');
 const crypto = require('crypto');
 require('dotenv').config();
+const { setCsrfCookie, clearCsrfCookie } = require('../middleware/csrfProtection');
+const { authLoginCompoundLimiter } = require('../middleware/rateLimiters');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -89,7 +91,7 @@ router.post('/register', async (req, res) => {
 });
 
 // Login
-router.post('/login', async (req, res) => {
+router.post('/login', authLoginCompoundLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -135,6 +137,7 @@ router.post('/login', async (req, res) => {
     );
     
     res.cookie('auth_token', token, getAuthCookieOptions());
+    setCsrfCookie(req, res);
 
 res.json({
   message: 'Login successful',
@@ -177,6 +180,7 @@ router.get('/me', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
+    setCsrfCookie(req, res);
     res.json(result.rows[0]);
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -260,6 +264,7 @@ router.post('/google', async (req, res) => {
     );
     
     res.cookie('auth_token', token, getAuthCookieOptions());
+    setCsrfCookie(req, res);
 
 res.json({
   message: 'Login successful',
@@ -624,6 +629,7 @@ router.post('/change-password', async (req, res) => {
 // Logout
 router.post('/logout', (req, res) => {
   res.clearCookie('auth_token', getAuthClearCookieOptions());
+  clearCsrfCookie(res);
   res.json({ message: 'Logged out successfully' });
 });
 

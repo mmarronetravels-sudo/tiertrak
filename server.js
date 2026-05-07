@@ -4,9 +4,22 @@ const cors = require('cors');
 const { Pool } = require('pg');
 require('dotenv').config();
 const { Resend } = require('resend');
+const { initializeRateLimitStore, getLogIpPepper, authIpLimiter, contactLimiter, csvImportLimiter } = require('./middleware/rateLimiters');
+const { csrfProtection, getCsrfSecret } = require('./middleware/csrfProtection');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Boot-time eager validation. Each call exits(1) on missing prod config
+// (RATE_LIMIT_REDIS_URL, LOG_IP_PEPPER, CSRF_SECRET) so the process
+// refuses to start with a misconfigured deploy.
+initializeRateLimitStore();
+getLogIpPepper();
+getCsrfSecret();
+
 const app = express();
+// Render single-LB topology = trust the most-recent
+// X-Forwarded-For entry. If Cloudflare/another CDN is
+// added in front of Render, raise to 2.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // Middleware to parse JSON
@@ -23,6 +36,7 @@ app.use(cors({
   ],
   credentials: true
 }));
+app.use('/api', csrfProtection({ mode: 'monitor' }));
 
 // Database connection
 const pool = new Pool({
@@ -708,10 +722,10 @@ app.use('/api/students', studentsRoutes);
 app.use('/api/interventions', interventionsRoutes);
 app.use('/api/progress-notes', progressNotesRoutes);
 app.use('/api/users', usersRoutes);
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authIpLimiter, authRoutes);
 app.use('/api/intervention-logs', interventionLogsRoutes);
 app.use('/api/prereferral-forms', prereferralFormsRoutes);
-app.use('/api/csv', csvImportRoutes);
+app.use('/api/csv', csvImportLimiter, csvImportRoutes);
 app.use('/api/weekly-progress', weeklyProgressRoutes);
 app.use('/api/mtss-meetings', mtssMeetingsRoutes);
 app.use('/api/intervention-assignments', interventionAssignmentsRoutes);
@@ -750,7 +764,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Contact form endpoint (ScholarPath website demo requests)
-app.post('/api/contact', async (req, res) => {
+app.post('/api/contact', contactLimiter, async (req, res) => {
   try {
     const { firstName, lastName, email, school, website, students, role, products, needs } = req.body;
     
