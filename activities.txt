@@ -6721,3 +6721,230 @@ NEXT SESSION SHOULD
   unrelated work. Do NOT start sec/students-mutations-require-auth
   before #80 and #81 are merged.
 ================================================================================
+SESSION: 2026-05-06T17:45:35-07:00 (Session 55)
+BRANCH:  chore/section-2a-merge-discipline (PR #68, MERGED 952c7f2)
+         sec/rate-limit-csrf-hardening (9 commits, pushed; PR opens Session 56)
+         chore/activities-log-session-55 (this entry, self-merge per
+         Session 41/42 canonical convention; no §4B / §5 surface)
+DISPOSITION: merged:952c7f2 (PR #68 — chore/section-2a-merge-discipline)
+             pushed:sec/rate-limit-csrf-hardening (9 commits ahead of
+             origin/main; PR opens Session 56)
+             pr-opened: (chore/activities-log-session-55 — URL filled
+             post-create in this session's final output)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three substantive arcs, plus this log entry:
+
+  (1) Followup J/#95 fully resolved. Documented §2A merge-record
+      mechanics in CLAUDE.md (PR #68: chore/section-2a-merge-
+      discipline). Branch protection on main configured via GitHub
+      Ruleset prior to PR open (1 approving review required, stale
+      approvals dismissed on new commits, force-push blocked, admin
+      bypass for pull requests retained as break-glass). PR #68 was
+      the live test of the new mechanism — owner self-reviews
+      recorded as state=COMMENTED did NOT flip reviewDecision;
+      non-author collaborator's state=APPROVED review was the entry
+      that satisfied the gate. Mechanism working as designed.
+
+  (2) sec/rate-limit-csrf-hardening built. 9 commits ahead of
+      origin/main covering Followups #80 (rate-limit) and #81
+      (CSRF). All five layered limiters in place (auth-IP,
+      auth-login compound, contact, mutation-user, csv-import);
+      CSRF middleware mounted in MONITOR MODE; trust proxy set to
+      1 for Render single-LB topology with explicit Cloudflare
+      caveat in code; eager boot validation for three env vars
+      (RATE_LIMIT_REDIS_URL, LOG_IP_PEPPER, CSRF_SECRET) with
+      prod-fail / dev-fallback shape. CSRF enforce-flip and FE
+      X-CSRF-Token wiring deferred to next branch
+      (sec/csrf-fe-wiring) per the agreed PR-1 / PR-2 split.
+      Branch pushed; PR opens Session 56.
+
+  (3) Local smoke test verified the wiring is active: server
+      boots in 2s with all three eager-validation warnings, no
+      FATAL, POST /api/auth/login returns 401 (NOT 429, NOT 403),
+      RateLimit-Policy + RateLimit headers visible in the response
+      confirming authLoginCompoundLimiter live at 10/15min/(IP,
+      email). The smoke test also caught one missed export
+      (getLogIpPepper) on the first run — fixed via prep commit
+      59a4651 before the wiring commit could land. Smoke test
+      catching exactly what it was designed to catch.
+
+FILES TOUCHED
+  CLAUDE.md — 4 §2A subsections added (What counts as a review,
+    Enforcement, Emergency override, Documented failure modes);
+    PR #68
+  middleware/rateLimiters.js — NEW; Redis store skeleton +
+    5 limiter instances + logging helpers (hashIp,
+    safePathForLog) + getLogIpPepper export
+    (sec/rate-limit-csrf-hardening)
+  middleware/csrfProtection.js — NEW; csrf-csrf wrapper with
+    monitor/enforce mode switch, skip-list, double-submit cookie
+    pattern, getCsrfSecret export
+    (sec/rate-limit-csrf-hardening)
+  middleware/authorizeInterventionAccess.js — 5-line touch
+    (mutationUserLimiter integration into requireAuth on
+    non-safe-method requests, plus SAFE_METHODS file-scope
+    constant) (sec/rate-limit-csrf-hardening)
+  routes/auth.js — CSRF cookie issuance at POST /login, POST
+    /google, GET /me; clear at POST /logout;
+    authLoginCompoundLimiter applied at /login route level
+    (sec/rate-limit-csrf-hardening)
+  server.js — wiring commit: imports, eager validation, trust
+    proxy, CSRF mount at /api, prefix-level limiters on /api/auth
+    and /api/csv, contactLimiter on inline /api/contact
+    (sec/rate-limit-csrf-hardening)
+  package.json — 4 new prod deps (csrf-csrf, express-rate-limit,
+    ioredis, rate-limit-redis) (sec/rate-limit-csrf-hardening)
+  package-lock.json — synced via npm install during the wiring
+    commit's pre-flight (sec/rate-limit-csrf-hardening, separate
+    chore commit 56afef0)
+  activities.txt — Session 55 entry (this commit)
+
+MIGRATIONS RUN
+  none (no schema changes this session)
+
+TENANT ISOLATION REVIEW
+  no DB query changes. The new middleware is orthogonal to
+  tenant-scoping concerns; rate limiters key on IP / user.id
+  (per-route variant), never on tenant_id (deliberate per the
+  agreed config — tenant-scoping is not a useful key for K-12
+  quotas at our scale). CSRF middleware does not query the
+  database. All §5 invariants preserved.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. The new middleware controls request
+    pipeline behavior (rate-limit + CSRF gate); does not read,
+    write, or surface any student/staff fields.
+  Logging audit: all rate-limit and CSRF log lines use the
+    safePathForLog() helper (returns route templates, NOT
+    resolved URLs with path-param values), hashIp() (sha256 +
+    LOG_IP_PEPPER, never raw IPs), and never echo token values,
+    request bodies, or headers. Same family as Followup #70's
+    lesson on pg error.detail leak. 429 + 403 response bodies
+    are constants ({"error":"Too many requests"} and
+    {"error":"Invalid CSRF token"}); no method/url/body echo.
+  Cross-tenant risk: none introduced.
+
+VERIFICATION
+  git log --oneline main..HEAD on sec/rate-limit-csrf-hardening
+    — 9 commits, each diff approved per-commit before stage per
+    §2A discipline (no batch staging, no skipped review)
+  npm install — 12 packages added, 4 target deps confirmed at
+    expected versions (csrf-csrf 3.2.2, express-rate-limit
+    7.5.1, ioredis 5.10.1, rate-limit-redis 4.3.1, all matching
+    package.json floors)
+  npm audit — 10 vulns surfaced (1 critical, 4 high, 2 moderate,
+    3 low). All pre-date this branch; none introduced by the
+    four new deps. Most concerning are §4B-adjacent: fast-xml-
+    parser (critical, via @aws-sdk for S3 student-doc uploads)
+    and multer (high, 4 CVEs on the CSV import path we just
+    rate-limited). Followup P filed externally — HIGH priority,
+    should be next branch before further sec/ router work
+  csrf-csrf v3.2.2 API verification (pre-staging) — confirmed
+    via the package's CHANGELOG that v4 renamed `generateToken`
+    → `generateCsrfToken` and `getTokenFromRequest` →
+    `getCsrfTokenFromRequest`; this branch uses the v3 names
+    correctly with an inline comment for future v4 upgrade
+  Local smoke test on the working tree before staging the
+    server.js wiring commit — server booted in 2s, three
+    eager-validation warnings present, no FATAL, /login probe
+    with non-existent test email returned HTTP 401 (NOT 429,
+    NOT 403), RateLimit-Policy + RateLimit headers visible in
+    response confirming authLoginCompoundLimiter wired
+  PR #68 — opened as draft, body included reviewer-fidelity
+    disclosure + verbatim §2A subsections, flipped to ready-
+    for-review. Non-author collaborator submitted formal
+    state=APPROVED review, reviewDecision flipped to APPROVED,
+    owner merged at 952c7f2. Branch protection mechanism
+    live-tested and confirmed working.
+
+PROCESS NOTES
+  - Trailing-whitespace strip on routes/auth.js:182 during the
+    setCsrfCookie insertion (commit 470c556). Caught at pre-
+    commit git diff verify, restored via awk before staging.
+    Same family as the Session 54 Route #3 incident; surfacing
+    in real time per that session's discipline reinforcement.
+  - Trailing-newline addition to routes/auth.js by the awk
+    pipeline above. Caught in the same verify step, stripped
+    via `perl -i -pe 'chomp if eof'`, re-verified clean.
+  - Backtick over-escaping in commit 470c556's body (literal
+    \` rendered in saved message; cosmetic typo from over-
+    escaping inside a single-quoted heredoc where shell
+    expansion was already suppressed). Commit NOT amended
+    per CLAUDE.md no-amend rule. Tooling rule captured for
+    future commits: in <<'EOF' heredocs, plain backticks
+    render as plain backticks; no escaping needed.
+  - getLogIpPepper missed export from commit 968c404. Caught
+    by smoke test crash at server.js:15 (TypeError:
+    getLogIpPepper is not a function). Fixed via prep commit
+    59a4651 (1-line addition to module.exports) before the
+    wiring commit could land. Smoke test caught exactly what
+    it was designed to catch.
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followups filed externally during this session (not in repo):
+    J/#95 — RESOLVED. Branch protection configured + live-
+        tested via PR #68. CLAUDE.md §2A documentation landed
+        in same PR.
+    N — middleware/authorizeInterventionAccess.js filename
+        smell (contains requireAuth despite being scoped to
+        intervention authorization). Pre-existing structural
+        oddity. Out of scope for any commit on
+        sec/rate-limit-csrf-hardening; do NOT rename in any
+        current branch.
+    O — Active Redis connectivity validation at boot. Sibling
+        to env-var-only check shipped in this branch's commit
+        c05e5a2. Currently the Redis URL env var is validated
+        but not the connection. Add a ping-and-verify at boot
+        to fail fast on "URL set but Redis unreachable."
+    P — Repo-wide npm audit fix remediation. 10 vulns surfaced
+        during the lockfile sync (1 critical, 4 high, 2
+        moderate, 3 low). All pre-existing; none from the four
+        new deps in this branch. May require breaking version
+        bumps on multer / aws-sdk. Should be its own dedicated
+        branch with own boot-test + smoke-test surface. HIGH
+        priority. Should land before any further sec/ router
+        work.
+  - Existing followups preserved unchanged: #41 (500 handler
+    error.message leak), #51 (frontend lint baseline), #67
+    (5/11 read routes closed via Session 54's PR #66; 6
+    mutation routes still open), #70 (pg error.detail leak in
+    logs), #71 (over-fetch narrowing), #73 (no backend test
+    runner), #74 (no backend lint config), #80 (this session's
+    sec/rate-limit-csrf-hardening branch awaits PR review and
+    merge), #81 (this session's branch addresses; CSRF in
+    MONITOR MODE only; FE wiring + flip to ENFORCE in
+    sec/csrf-fe-wiring next), K (Helmet doc-drift), L (rate-
+    limit doc-drift in SECURITY_REVIEW.md), M (/api/contact
+    lives outside routes/ tree)
+  - Pre-existing followups acknowledged but not actionable
+    this session: A (S46 audit count), B-I (lettered Session
+    54 followups, all still in tracker)
+  - sec/rate-limit-csrf-hardening pushed to origin; PR
+    opening + reviewer subagent runs + non-author review +
+    merge are Session 56 work.
+
+NEXT SESSION SHOULD
+  Pick up the chore PR for this entry first — review and merge
+  via the §2A non-author-APPROVED-review mechanism (same gate
+  PR #68 successfully traversed this session). Then open the
+  PR for sec/rate-limit-csrf-hardening (already pushed; needs
+  reviewer subagent runs in the PR body, ready-for-review
+  flip, non-author approval, merge). After that PR merges,
+  decision point on the next branch:
+
+    Option A: Followup P (npm audit fix) — HIGH priority,
+      security-meaningful, blocks nothing else. Recommended
+      first.
+    Option B: sec/csrf-fe-wiring — FE apiFetch wrapper +
+      migrate 68 state-changing fetch sites + flip CSRF
+      monitor → enforce. Unblocks Followup #67's remaining
+      6 mutation routes.
+    Option C: sec/students-mutations-require-auth — the
+      original mutation-route branch from #67. STILL blocked
+      on #81 enforcement, which means waiting for
+      sec/csrf-fe-wiring first.
+
+  Recommended order: A (P) first → B (sec/csrf-fe-wiring) →
+  C (mutation routes). Owner's call.
+================================================================================
