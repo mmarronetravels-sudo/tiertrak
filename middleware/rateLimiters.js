@@ -16,6 +16,16 @@ const rateLimit = require('express-rate-limit');
 const Redis = require('ioredis');
 const RedisStore = require('rate-limit-redis').default;
 
+// isProdLike — treats any NODE_ENV that isn't literally 'development'
+// or 'test' as prod-like. Catches the typo class ('prod', 'PRODUCTION',
+// 'staging', empty, unset) by routing them to the prod-strict branch
+// (hard-fail on missing env var) instead of silently falling back to
+// dev defaults. Address security-reviewer WARN W2 on PR #71.
+function isProdLike() {
+  const env = process.env.NODE_ENV;
+  return env !== 'development' && env !== 'test';
+}
+
 let cachedStore;
 let cachedClient;
 let initialized = false;
@@ -25,7 +35,7 @@ function initializeRateLimitStore() {
   initialized = true;
 
   const url = process.env.RATE_LIMIT_REDIS_URL;
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProdLike();
 
   if (!url) {
     if (isProd) {
@@ -81,7 +91,7 @@ function getLogIpPepper() {
   pepperValidated = true;
 
   const pepper = process.env.LOG_IP_PEPPER;
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProdLike();
 
   if (!pepper) {
     if (isProd) {
@@ -231,6 +241,7 @@ const csvImportLimiter = rateLimit({
 module.exports = {
   initializeRateLimitStore,
   getLogIpPepper,
+  isProdLike,
   hashIp,
   safePathForLog,
   authIpLimiter,

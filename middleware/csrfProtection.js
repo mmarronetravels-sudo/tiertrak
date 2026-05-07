@@ -28,7 +28,7 @@
 // anonymous form — protected by a tight rate-limiter instead.
 
 const { doubleCsrf } = require('csrf-csrf');
-const { hashIp, safePathForLog } = require('./rateLimiters');
+const { hashIp, safePathForLog, isProdLike } = require('./rateLimiters');
 
 // CSRF token signing secret. Required in prod; dev falls back to a
 // constant string with a startup warning. Validated once at first
@@ -43,7 +43,7 @@ function getCsrfSecret() {
   csrfSecretValidated = true;
 
   const secret = process.env.CSRF_SECRET;
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProdLike();
 
   if (!secret) {
     if (isProd) {
@@ -70,7 +70,7 @@ function getCsrfSecret() {
 // — the FE must read the value to echo it in X-CSRF-Token. maxAge
 // matches auth_token's 8h.
 function getCookieOptions() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProdLike();
   return {
     httpOnly: false,
     secure: isProd,
@@ -174,7 +174,7 @@ function setCsrfCookie(req, res) {
 // (minus maxAge) or browsers may silently refuse to clear, mirroring
 // the auth.js getAuthClearCookieOptions() pattern.
 function clearCsrfCookie(res) {
-  const isProd = process.env.NODE_ENV === 'production';
+  const isProd = isProdLike();
   res.clearCookie('csrf_token', {
     httpOnly: false,
     secure: isProd,
