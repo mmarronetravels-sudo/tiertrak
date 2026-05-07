@@ -87,6 +87,9 @@ function getCookieOptions() {
 // resolves to 3.2.2). v4 renamed `generateToken` → `generateCsrfToken`
 // and `getTokenFromRequest` → `getCsrfTokenFromRequest`. If we upgrade
 // to v4, both names change here.
+//
+// IMPORTANT: getCookieOptions() reads process.env.NODE_ENV at module
+// load (via doubleCsrf below) — must be required AFTER dotenv.config().
 const {
   doubleCsrfProtection,
   generateToken
