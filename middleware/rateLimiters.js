@@ -230,6 +230,7 @@ const csvImportLimiter = rateLimit({
 
 module.exports = {
   initializeRateLimitStore,
+  getLogIpPepper,
   hashIp,
   safePathForLog,
   authIpLimiter,
