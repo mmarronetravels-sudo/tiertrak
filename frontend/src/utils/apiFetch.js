@@ -14,14 +14,17 @@
 //      X-CSRF-Token header. If no cookie is present (logged-out flows,
 //      pre-/me bootstrap) the header is omitted; the request still goes
 //      through and the backend handles missing-token via its skip-list
+//      (canonical source: SKIP_PATH_PREFIXES in
+//      middleware/csrfProtection.js, currently lines 109-118 — keep
+//      that list as the single source of truth; do not mirror it here)
 //      or by returning 403 once enforce mode is on.
 //
-//   3. FormData branch: when body is FormData, the wrapper does NOT touch
-//      Content-Type so the browser can set
-//      'multipart/form-data; boundary=...' itself. Setting Content-Type
-//      manually for FormData strips the boundary and the multer parser
-//      on the server fails. JSON callers continue to set their own
-//      Content-Type, same as before.
+//   3. FormData enforcement: when body is FormData, the wrapper actively
+//      deletes any caller-set Content-Type before fetch so the browser
+//      sets 'multipart/form-data; boundary=...' itself. Setting
+//      Content-Type manually for FormData strips the boundary and the
+//      multer parser on the server fails. JSON callers continue to set
+//      their own Content-Type, same as before.
 //
 // Callers receive the raw Response — they continue to call .ok, .json(),
 // and handle errors themselves. The wrapper never reads the body.
@@ -55,6 +58,10 @@ export function apiFetch(url, init = {}) {
     if (csrfToken) {
       headers.set('X-CSRF-Token', csrfToken);
     }
+  }
+
+  if (init.body instanceof FormData) {
+    headers.delete('Content-Type');
   }
 
   return fetch(url, {
