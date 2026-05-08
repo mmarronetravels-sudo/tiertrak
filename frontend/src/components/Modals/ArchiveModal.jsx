@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Archive, RotateCcw } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 
 const archiveReasons = [
@@ -22,7 +23,7 @@ export const ArchiveStudentModal = ({ onClose, user, selectedStudent, API_URL, f
   const handleArchiveStudent = async () => {
     if (!archiveReason || !selectedStudent) return;
     try {
-      const res = await fetch(`${API_URL}/students/${selectedStudent.id}/archive`, {
+      const res = await apiFetch(`${API_URL}/students/${selectedStudent.id}/archive`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

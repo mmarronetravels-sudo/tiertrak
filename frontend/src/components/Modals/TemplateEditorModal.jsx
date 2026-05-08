@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -46,7 +47,7 @@ const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefres
 
   const saveTemplateEditor = async () => {
     try {
-      const response = await fetch(`${API_URL}/admin/templates/${template.id}/plan`, {
+      const response = await apiFetch(`${API_URL}/admin/templates/${template.id}/plan`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -76,7 +77,7 @@ const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefres
     }
 
     try {
-      const response = await fetch(`${API_URL}/admin/templates/${template.id}/plan`, {
+      const response = await apiFetch(`${API_URL}/admin/templates/${template.id}/plan`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tenant_id: user.tenant_id })
@@ -100,7 +101,7 @@ const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefres
     if (!duplicateSourceId) return;
 
     try {
-      const response = await fetch(`${API_URL}/admin/templates/${template.id}/duplicate`, {
+      const response = await apiFetch(`${API_URL}/admin/templates/${template.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

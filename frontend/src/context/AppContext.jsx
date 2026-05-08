@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { logError } from '../utils/logError';
+import { apiFetch } from '../utils/apiFetch';
 
 const AppContext = createContext();
 
@@ -301,7 +302,7 @@ credentials: 'include'
 
   const handleTierChange = async (studentId, newTier) => {
     try {
-      const res = await fetch(`${API_URL}/students/${studentId}/tier`, {
+      const res = await apiFetch(`${API_URL}/students/${studentId}/tier`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: newTier })
@@ -320,16 +321,16 @@ credentials: 'include'
   const handleReferralMonitoring = async (studentId, action) => {
     try {
       if (action === 'monitor') {
-        await fetch(`${API_URL}/students/referral-monitoring`, {
+        await apiFetch(`${API_URL}/students/referral-monitoring`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
         });
       } else if (action === 'remove') {
-        await fetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
+        await apiFetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
           method: 'DELETE',
-          
+
 credentials: 'include'
         });
       }
@@ -342,7 +343,7 @@ credentials: 'include'
 
   const handleLogout = async () => {
   try {
-    await fetch(`${API_URL}/auth/logout`, {
+    await apiFetch(`${API_URL}/auth/logout`, {
       method: 'POST',
       credentials: 'include'
     });

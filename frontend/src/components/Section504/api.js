@@ -24,10 +24,12 @@
 // found" to the user should NOT distinguish between "doesn't exist" and
 // "wrong tenant" in the rendered message.
 
+import { apiFetch } from '../../utils/apiFetch';
+
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 async function send(API_URL, path, init) {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await apiFetch(`${API_URL}${path}`, {
     ...init,
     credentials: 'include',
   });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Key } from 'lucide-react';
+import { apiFetch } from '../../utils/apiFetch';
 
 export const ChangePasswordModal = ({ onClose, API_URL }) => {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -30,7 +31,7 @@ export const ChangePasswordModal = ({ onClose, API_URL }) => {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_URL}/auth/change-password`, {
+      const res = await apiFetch(`${API_URL}/auth/change-password`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

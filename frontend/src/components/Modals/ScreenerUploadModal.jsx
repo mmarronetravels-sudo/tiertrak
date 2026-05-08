@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import Papa from 'papaparse';
+import { apiFetch } from '../../utils/apiFetch';
 
 const BENCHMARK_COLORS = {
   'At/Above Benchmark':  { bg: '#DCFCE7', text: '#166534', border: '#86EFAC' },
@@ -88,7 +89,7 @@ export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, 
   async function handleConfirm() {
     setStep('uploading');
     try {
-      var res = await fetch(API_URL + '/screener-results/upload', {
+      var res = await apiFetch(API_URL + '/screener-results/upload', {
   method: 'POST',
   headers: {
   'Content-Type': 'application/json',

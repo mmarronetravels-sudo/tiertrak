@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Edit, CheckCircle } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, API_URL }) => {
   // All plan state is local to this modal
@@ -44,7 +45,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
     
     try {
       setPlanSaving(true);
-      await fetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan', {
+      await apiFetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan_data: updatedData })
@@ -80,7 +81,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
     
     try {
       setPlanSaving(true);
-      const response = await fetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan/complete', {
+      const response = await apiFetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan_data: planData, user_id: user.id })
@@ -105,7 +106,7 @@ const InterventionPlanModal = ({ intervention, onClose, user, selectedStudent, A
     if (!confirm('This will reopen the plan for editing. Continue?')) return;
     
     try {
-      const response = await fetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan/reopen', {
+      const response = await apiFetch(API_URL + '/intervention-plans/student-interventions/' + intervention.id + '/plan/reopen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

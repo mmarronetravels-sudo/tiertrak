@@ -13,6 +13,7 @@ import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
 import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
+import { apiFetch } from './utils/apiFetch';
 import TemplateEditorModal from './components/Modals/TemplateEditorModal';
 import ProgressFormModal from './components/Modals/ProgressFormModal';
 import GoalFormModal from './components/Modals/GoalFormModal';
@@ -533,14 +534,14 @@ const fetchMonitoredStudents = async () => {
 const handleReferralMonitoring = async (studentId, action) => {
   try {
     if (action === 'monitor') {
-      await fetch(`${API_URL}/students/referral-monitoring`, {
+      await apiFetch(`${API_URL}/students/referral-monitoring`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ student_id: studentId, tenant_id: user.tenant_id, monitored_by: user.id })
       });
     } else if (action === 'remove') {
-      await fetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
+      await apiFetch(`${API_URL}/students/referral-monitoring/${studentId}`, {
         method: 'DELETE',
         credentials: 'include'
   });
@@ -671,7 +672,7 @@ const fetchInterventionAssignments = async (studentInterventionId) => {
 
 const addInterventionAssignment = async (studentInterventionId, userId, assignmentType) => {
   try {
-    const response = await fetch(`${API_URL}/intervention-assignments`, {
+    const response = await apiFetch(`${API_URL}/intervention-assignments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -691,7 +692,7 @@ const addInterventionAssignment = async (studentInterventionId, userId, assignme
 
 const removeInterventionAssignment = async (assignmentId) => {
   try {
-    await fetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
+    await apiFetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
       method: 'DELETE'
     });
   } catch (error) {
@@ -703,7 +704,7 @@ const removeInterventionAssignment = async (assignmentId) => {
 const handleDeleteStaff = async (staffId, staffName) => {
   if (!confirm(`Remove ${staffName}? This will revoke their access to ScholarPath Intervention Management.`)) return;
   try {
-    const response = await fetch(`${API_URL}/staff/${staffId}`, {
+    const response = await apiFetch(`${API_URL}/staff/${staffId}`, {
   method: 'DELETE',
   credentials: 'include'
 });
@@ -844,7 +845,7 @@ const openMTSSMeetingForm = (meeting = null) => {
     if (!confirm('Delete this meeting? This cannot be undone.')) return;
     
     try {
-      const response = await fetch(`${API_URL}/mtss-meetings/${meetingId}`, {
+      const response = await apiFetch(`${API_URL}/mtss-meetings/${meetingId}`, {
         method: 'DELETE'
       });
       
@@ -860,7 +861,7 @@ const openMTSSMeetingForm = (meeting = null) => {
   const deleteWeeklyProgress = async (logId) => {
     if (!confirm('Are you sure you want to delete this progress log?')) return;
     try {
-      const response = await fetch(`${API_URL}/weekly-progress/${logId}`, {
+      const response = await apiFetch(`${API_URL}/weekly-progress/${logId}`, {
     method: 'DELETE',
     credentials: 'include'
       });
@@ -960,7 +961,7 @@ const handleDocumentUpload = async (e) => {
   setDocumentUploadLoading(true);
   
   try {
-    const response = await fetch(`${API_URL}/student-documents/upload`, {
+    const response = await apiFetch(`${API_URL}/student-documents/upload`, {
   method: 'POST',
   credentials: 'include',
   body: formData
@@ -1008,7 +1009,7 @@ const handleDocumentDelete = async (documentId) => {
   }
   
   try {
-    const response = await fetch(`${API_URL}/student-documents/${documentId}`, {
+    const response = await apiFetch(`${API_URL}/student-documents/${documentId}`, {
   method: 'DELETE',
   credentials: 'include'
 });
@@ -1065,7 +1066,7 @@ const fetchStudentDocuments = async (studentId) => {
     const id = studentId || selectedStudent?.id;
     if (!id) return;
     try {
-      const res = await fetch(`${API_URL}/students/${id}/unarchive`, {
+      const res = await apiFetch(`${API_URL}/students/${id}/unarchive`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -1089,7 +1090,7 @@ const fetchStudentDocuments = async (studentId) => {
 const handleGoogleSignIn = async (response) => {
   try {
     setLoginError('');
-    const res = await fetch(`${API_URL}/auth/google`, {
+    const res = await apiFetch(`${API_URL}/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -1127,7 +1128,7 @@ const handlesetPassword = async (e) => {
   }
   
   try {
-    const res = await fetch(`${API_URL}/auth/set-password`, {
+    const res = await apiFetch(`${API_URL}/auth/set-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: passwordToken, password: newPassword })
@@ -1151,7 +1152,7 @@ const handlesetPassword = async (e) => {
 const handleForgotPassword = async (e) => {
   e.preventDefault();
   try {
-    const res = await fetch(`${API_URL}/auth/forgot-password`, {
+    const res = await apiFetch(`${API_URL}/auth/forgot-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: loginForm.email })
@@ -1226,7 +1227,7 @@ useEffect(() => {
     e.preventDefault();
     setLoginError('');
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await apiFetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -1251,7 +1252,7 @@ useEffect(() => {
   // Logout
   const handleLogout = async () => {
 try {
-await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+await apiFetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
 } catch (_) {}
 localStorage.clear(); 
 setToken(null);
@@ -1265,7 +1266,7 @@ setInterventionLogs([]);
   const handleAddIntervention = async () => {
     if (!newIntervention.name || !selectedStudent) return;
     try {
-      const res = await fetch(`${API_URL}/interventions/assign`, {
+      const res = await apiFetch(`${API_URL}/interventions/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1296,7 +1297,7 @@ setInterventionLogs([]);
   const handleToggleMonitoringFlag = async (intervention) => {
     try {
       const next = !(intervention.no_progress_monitoring_required === true);
-      const res = await fetch(`${API_URL}/interventions/${intervention.id}/monitoring-flag`, {
+      const res = await apiFetch(`${API_URL}/interventions/${intervention.id}/monitoring-flag`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -1315,7 +1316,7 @@ const handleCreateParent = async (e) => {
   e.preventDefault();
   try {
     // Create user account
-    const userRes = await fetch(`${API_URL}/users`, {
+    const userRes = await apiFetch(`${API_URL}/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1338,7 +1339,7 @@ const handleCreateParent = async (e) => {
     
     // If student selected, create link
     if (newParent.student_id) {
-      await fetch(`${API_URL}/parent-links`, {
+      await apiFetch(`${API_URL}/parent-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1369,7 +1370,7 @@ const handleCreateParent = async (e) => {
 // Link existing parent to student
 const handleLinkParent = async (parentId, studentId, relationship) => {
   try {
-    const res = await fetch(`${API_URL}/parent-links`, {
+    const res = await apiFetch(`${API_URL}/parent-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1395,7 +1396,7 @@ const handleUnlinkParent = async (linkId) => {
   if (!confirm('Remove this parent-student link?')) return;
   
   try {
-    await fetch(`${API_URL}/parent-links/${linkId}`, { method: 'DELETE' });
+    await apiFetch(`${API_URL}/parent-links/${linkId}`, { method: 'DELETE' });
     fetchAllParentLinks();
   } catch (error) {
     console.error('Error unlinking parent:', error);
@@ -1407,7 +1408,7 @@ const handleUnlinkParent = async (linkId) => {
     console.log('Archive clicked, intervention:', selectedInterventionForAction);
     if (!selectedInterventionForAction) return;
     try {
-      const res = await fetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}/archive`, {
+      const res = await apiFetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}/archive`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1433,7 +1434,7 @@ const handleUnlinkParent = async (linkId) => {
   // Unarchive intervention
   const handleUnarchiveIntervention = async (interventionId) => {
     try {
-      const res = await fetch(`${API_URL}/interventions/student-interventions/${interventionId}/unarchive`, {
+      const res = await apiFetch(`${API_URL}/interventions/student-interventions/${interventionId}/unarchive`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -1449,7 +1450,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleDeleteIntervention = async () => {
     if (!selectedInterventionForAction) return;
     try {
-      const res = await fetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}`, {
+      const res = await apiFetch(`${API_URL}/interventions/student-interventions/${selectedInterventionForAction.id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -1470,7 +1471,7 @@ const handleUnlinkParent = async (linkId) => {
     const noteText = noteTextareaRef.current?.value || '';
     if (!noteText || !selectedStudent) return;
     try {
-      const res = await fetch(`${API_URL}/progress-notes`, {
+      const res = await apiFetch(`${API_URL}/progress-notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1495,7 +1496,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleAddLog = async () => {
     if (!newLog.time_of_day || !newLog.location || !selectedStudent) return;
     try {
-      const res = await fetch(`${API_URL}/intervention-logs`, {
+      const res = await apiFetch(`${API_URL}/intervention-logs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1528,7 +1529,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleAddTemplate = async () => {
     if (!newTemplate.name || !newTemplate.area) return;
     try {
-      const res = await fetch(`${API_URL}/interventions/templates`, {
+      const res = await apiFetch(`${API_URL}/interventions/templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1553,7 +1554,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleDeleteTemplate = async (templateId) => {
     if (!confirm('Are you sure you want to delete this intervention? This cannot be undone.')) return;
     try {
-      const res = await fetch(`${API_URL}/interventions/templates/${templateId}`, {
+      const res = await apiFetch(`${API_URL}/interventions/templates/${templateId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -1571,7 +1572,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleAddStudent = async () => {
     if (!studentForm.first_name || !studentForm.last_name || !studentForm.grade) return;
     try {
-      const res = await fetch(`${API_URL}/students`, {
+      const res = await apiFetch(`${API_URL}/students`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1598,7 +1599,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleUpdateStudent = async () => {
     if (!editingStudent || !studentForm.first_name || !studentForm.last_name || !studentForm.grade) return;
     try {
-      const res = await fetch(`${API_URL}/students/${editingStudent.id}`, {
+      const res = await apiFetch(`${API_URL}/students/${editingStudent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1625,7 +1626,7 @@ const handleUnlinkParent = async (linkId) => {
   const handleDeleteStudent = async (studentId) => {
     if (!confirm('Are you sure you want to delete this student? All their interventions and notes will also be deleted. This cannot be undone.')) return;
     try {
-      const res = await fetch(`${API_URL}/students/${studentId}`, {
+      const res = await apiFetch(`${API_URL}/students/${studentId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -1674,7 +1675,7 @@ const handleUnlinkParent = async (linkId) => {
     formData.append('file', csvFile);
     
     try {
-      const res = await fetch(`${API_URL}/csv/students/${user.tenant_id}`, {
+      const res = await apiFetch(`${API_URL}/csv/students/${user.tenant_id}`, {
         method: 'POST',
         credentials: 'include',
         body: formData
@@ -1705,7 +1706,7 @@ const handleUnlinkParent = async (linkId) => {
   // Update student tier
   const handleTierChange = async (studentId, newTier) => {
     try {
-      const res = await fetch(`${API_URL}/students/${studentId}/tier`, {
+      const res = await apiFetch(`${API_URL}/students/${studentId}/tier`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier: newTier })
@@ -1925,7 +1926,7 @@ if (passwordResetMode) {
       }
       
       try {
-        const res = await fetch(`${API_URL}/auth/set-password`, {
+        const res = await apiFetch(`${API_URL}/auth/set-password`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: setupToken, password: newPassword })
@@ -4443,7 +4444,7 @@ const CreateParentForm = ({ students, tenantId, onParentCreated }) => {
     setMessage({ type: '', text: '' });
     
     try {
-  const res = await fetch(`${API_URL}/auth/create-parent`, {
+  const res = await apiFetch(`${API_URL}/auth/create-parent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -4971,7 +4972,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
               gradeOptions={gradeOptions}
               onSave={async (formData) => {
                 try {
-                  const res = await fetch(`${API_URL}/students`, {
+                  const res = await apiFetch(`${API_URL}/students`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -5401,7 +5402,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                             onClick={async () => {
                               if (!confirm('Remove ' + member.full_name + '? They will no longer be able to log in.')) return;
                               try {
-                                const res = await fetch(API_URL + '/staff/' + member.id, {
+                                const res = await apiFetch(API_URL + '/staff/' + member.id, {
                               method: 'DELETE',
                               credentials: 'include'
                             });
@@ -5533,7 +5534,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                               onClick={async () => {
                                 if (!confirm('Remove "' + item.name + '" from your active interventions?')) return;
                                 try {
-                                  const res = await fetch(API_URL + '/intervention-bank/deactivate', {
+                                  const res = await apiFetch(API_URL + '/intervention-bank/deactivate', {
                                 method: 'DELETE',
                                 headers: { 'Content-Type': 'application/json' },
                                 credentials: 'include',
@@ -5555,7 +5556,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                             <button
                               onClick={async () => {
                                 try {
-                                  const res = await fetch(API_URL + '/intervention-bank/activate', {
+                                  const res = await apiFetch(API_URL + '/intervention-bank/activate', {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
                               credentials: 'include',
@@ -6177,7 +6178,7 @@ const parentDocumentCategories = ['Medical Record', 'Parent Communication', 'Oth
     if (!selectedInterventionForParentProgress) return;
 
     try {
-      const res = await fetch(`${API_URL}/weekly-progress`, {
+      const res = await apiFetch(`${API_URL}/weekly-progress`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -6249,7 +6250,7 @@ const handleParentDocumentUpload = async (e) => {
   // user, so the client no longer sends them.
 
   try {
-    const res = await fetch(`${API_URL}/student-documents/upload`, {
+    const res = await apiFetch(`${API_URL}/student-documents/upload`, {
   method: 'POST',
   credentials: 'include',
   body: formData
@@ -6295,7 +6296,7 @@ const handleChildDocumentDelete = async (docId) => {
     return;
   }
   try {
-    const res = await fetch(`${API_URL}/student-documents/${docId}`, {
+    const res = await apiFetch(`${API_URL}/student-documents/${docId}`, {
       method: 'DELETE',
       credentials: 'include'
     });
