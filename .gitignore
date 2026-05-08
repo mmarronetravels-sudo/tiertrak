@@ -18,3 +18,6 @@ Thumbs.db
 
 # Build output
 frontend/dist/
+
+# Operational credentials (CLI tools, never commit)
+.render/
