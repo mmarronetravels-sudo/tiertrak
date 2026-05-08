@@ -1,15 +1,26 @@
-// Rate-limit store initialization.
+// Rate-limit store factory.
 //
-// Reads RATE_LIMIT_REDIS_URL and returns either a rate-limit-redis-backed
-// store (URL set) or undefined (signaling express-rate-limit to fall back
-// to its built-in in-memory MemoryStore). Hard-fails the process at boot
-// in production when the URL is unset — in-memory state is bypass-prone
-// on multi-instance deployments and we'd rather refuse to start than
-// silently degrade.
+// Reads RATE_LIMIT_REDIS_URL and either returns a fresh per-prefix
+// rate-limit-redis-backed store (URL set, prefix supplied) or undefined
+// (signaling express-rate-limit to fall back to its built-in in-memory
+// MemoryStore). Hard-fails the process at boot in production when the
+// URL is unset — in-memory state is bypass-prone on multi-instance
+// deployments and we'd rather refuse to start than silently degrade.
 //
-// Intended call site: invoked once from server.js at boot, before any
-// rate-limit middleware is mounted. Idempotent — repeat calls return the
-// cached store.
+// Two call shapes:
+//   - No-arg eager-validation hook: server.js:14 calls this at boot
+//     specifically to surface the RATE_LIMIT_REDIS_URL FATAL before any
+//     route handler loads. Returns undefined; side effect is the env
+//     check plus a single cached ioredis client.
+//   - Per-prefix factory: each limiter calls with its own prefix and
+//     receives a fresh RedisStore wrapping the shared cached client.
+//     express-rate-limit ^7 rejects passing the same Store instance to
+//     more than one rateLimit() call — sharing throws on first request.
+//
+// The ioredis client is cached and reused across all factory calls, so
+// the connection count to Redis stays at 1 regardless of limiter count.
+// Env validation + client init are idempotent: repeat calls skip past
+// the init block via the 'initialized' guard.
 
 const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
@@ -26,53 +37,61 @@ function isProdLike() {
   return env !== 'development' && env !== 'test';
 }
 
-let cachedStore;
 let cachedClient;
 let initialized = false;
 
-function initializeRateLimitStore() {
-  if (initialized) return cachedStore;
-  initialized = true;
+function initializeRateLimitStore(prefix) {
+  if (!initialized) {
+    initialized = true;
 
-  const url = process.env.RATE_LIMIT_REDIS_URL;
-  const isProd = isProdLike();
+    const url = process.env.RATE_LIMIT_REDIS_URL;
+    const isProd = isProdLike();
 
-  if (!url) {
-    if (isProd) {
-      console.error(
-        'FATAL: RATE_LIMIT_REDIS_URL must be set in production. ' +
-        'In-memory rate-limit state is bypass-prone on multi-instance ' +
-        'deployments. Aborting startup.'
+    if (!url) {
+      if (isProd) {
+        console.error(
+          'FATAL: RATE_LIMIT_REDIS_URL must be set in production. ' +
+          'In-memory rate-limit state is bypass-prone on multi-instance ' +
+          'deployments. Aborting startup.'
+        );
+        process.exit(1);
+      }
+      console.warn(
+        '[rate-limit] RATE_LIMIT_REDIS_URL not set; falling back to ' +
+        'in-memory MemoryStore. dev-only — do not use in prod. ' +
+        'Multi-instance deployments will get bypass-prone limiting.'
       );
-      process.exit(1);
+      // cachedClient stays undefined; dev fallback path below.
+    } else {
+      cachedClient = new Redis(url, {
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1
+      });
+      cachedClient.on('error', (err) => {
+        // Message-only — never log the full error object (may carry
+        // connection-string fragments). On runtime Redis failure,
+        // express-rate-limit falls open per its default behavior;
+        // legitimate requests proceed rather than being blocked on
+        // infra issues.
+        console.error('[rate-limit] redis error:', err.message);
+      });
     }
-    console.warn(
-      '[rate-limit] RATE_LIMIT_REDIS_URL not set; falling back to ' +
-      'in-memory MemoryStore. dev-only — do not use in prod. ' +
-      'Multi-instance deployments will get bypass-prone limiting.'
-    );
-    cachedStore = undefined;
-    return undefined;
   }
 
-  cachedClient = new Redis(url, {
-    enableOfflineQueue: false,
-    maxRetriesPerRequest: 1
-  });
-  cachedClient.on('error', (err) => {
-    // Message-only — never log the full error object (may carry
-    // connection-string fragments). On runtime Redis failure,
-    // express-rate-limit falls open per its default behavior;
-    // legitimate requests proceed rather than being blocked on
-    // infra issues.
-    console.error('[rate-limit] redis error:', err.message);
-  });
+  // No prefix: eager-validation hook (server.js:14). Side effect was
+  // the env check above; no store needed.
+  if (!prefix) return undefined;
 
-  cachedStore = new RedisStore({
+  // Dev fallback (no Redis URL → no client): return undefined so each
+  // limiter falls back to its own internal MemoryStore. v7 doesn't
+  // trip the store-uniqueness check on undefined.
+  if (!cachedClient) return undefined;
+
+  // Per-prefix factory: fresh RedisStore wrapping the shared client.
+  return new RedisStore({
     sendCommand: (...args) => cachedClient.call(...args),
-    prefix: 'rl:'
+    prefix
   });
-  return cachedStore;
 }
 
 // ===================================================================
@@ -155,10 +174,17 @@ function makeRateLimitHandler(limiterName) {
 // Limiter instances
 // ===================================================================
 //
-// All five share the Redis-backed store (or in-memory in dev). Custom
-// handler logs PII-stripped detail and returns a constant 429 body.
-// standardHeaders 'draft-7' enables RFC RateLimit-* response headers;
-// legacyHeaders disabled to avoid X-RateLimit-* clutter.
+// Each limiter owns its own RedisStore wrapper with a unique prefix
+// ('rl:auth-ip:', 'rl:auth-login:', etc) — express-rate-limit ^7
+// rejects passing the same Store instance to more than one rateLimit()
+// call. The ioredis client is shared across limiters by the factory,
+// so the connection count to Redis stays at 1. In dev with
+// RATE_LIMIT_REDIS_URL unset, the factory returns undefined for every
+// limiter and each gets its own internal MemoryStore (per-instance by
+// construction in v7). Custom handler logs PII-stripped detail and
+// returns a constant 429 body. standardHeaders 'draft-7' enables RFC
+// RateLimit-* response headers; legacyHeaders disabled to avoid
+// X-RateLimit-* clutter.
 //
 // Defined here but NOT mounted yet — the server.js wiring commit
 // imports and mounts them. Per-IP limiters omit keyGenerator so that
@@ -175,7 +201,7 @@ function makeRateLimitHandler(limiterName) {
 const authIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  store: initializeRateLimitStore(),
+  store: initializeRateLimitStore('rl:auth-ip:'),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   handler: makeRateLimitHandler('auth-ip')
@@ -188,7 +214,7 @@ const authIpLimiter = rateLimit({
 const authLoginCompoundLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  store: initializeRateLimitStore(),
+  store: initializeRateLimitStore('rl:auth-login:'),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req) => {
@@ -203,7 +229,7 @@ const authLoginCompoundLimiter = rateLimit({
 const contactLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  store: initializeRateLimitStore(),
+  store: initializeRateLimitStore('rl:contact:'),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   handler: makeRateLimitHandler('contact')
@@ -216,7 +242,7 @@ const contactLimiter = rateLimit({
 const mutationUserLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 300,
-  store: initializeRateLimitStore(),
+  store: initializeRateLimitStore('rl:mutation-user:'),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   // '' fallback fires only on an upstream bug — req.user is populated by requireAuth.
@@ -231,7 +257,7 @@ const mutationUserLimiter = rateLimit({
 const csvImportLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 5,
-  store: initializeRateLimitStore(),
+  store: initializeRateLimitStore('rl:csv-import:'),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req) => String(req.user?.id ?? req.ip),
