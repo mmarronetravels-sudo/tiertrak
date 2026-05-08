@@ -961,7 +961,7 @@ const handleDocumentUpload = async (e) => {
   setDocumentUploadLoading(true);
   
   try {
-    const response = await fetch(`${API_URL}/student-documents/upload`, {
+    const response = await apiFetch(`${API_URL}/student-documents/upload`, {
   method: 'POST',
   credentials: 'include',
   body: formData
@@ -1675,7 +1675,7 @@ const handleUnlinkParent = async (linkId) => {
     formData.append('file', csvFile);
     
     try {
-      const res = await fetch(`${API_URL}/csv/students/${user.tenant_id}`, {
+      const res = await apiFetch(`${API_URL}/csv/students/${user.tenant_id}`, {
         method: 'POST',
         credentials: 'include',
         body: formData
@@ -6250,7 +6250,7 @@ const handleParentDocumentUpload = async (e) => {
   // user, so the client no longer sends them.
 
   try {
-    const res = await fetch(`${API_URL}/student-documents/upload`, {
+    const res = await apiFetch(`${API_URL}/student-documents/upload`, {
   method: 'POST',
   credentials: 'include',
   body: formData
