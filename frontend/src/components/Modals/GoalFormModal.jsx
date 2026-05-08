@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, Target } from 'lucide-react';
+import { apiFetch } from '../../utils/apiFetch';
 
 
 // Rating label helper (import from utils/constants.js if already extracted)
@@ -30,7 +31,7 @@ const GoalFormModal = ({ intervention, onClose, token, selectedStudent, API_URL,
   const updateInterventionGoal = async (e) => {
   e.preventDefault();
   try {
-    const response = await fetch(`${API_URL}/interventions/${intervention.id}/goal`, {
+    const response = await apiFetch(`${API_URL}/interventions/${intervention.id}/goal`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',

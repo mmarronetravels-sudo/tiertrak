@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, ArrowLeft, ArrowRight, CheckCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { detectPII } from '../../utils/piiDetection';
+import { apiFetch } from '../../utils/apiFetch';
 
 // The three score-radio labels come verbatim from the Tier 1 v5 spec.
 const RADIO_LABELS = { 0: 'Not in place', 1: 'Partially in place', 2: 'Fully in place' };
@@ -87,7 +88,7 @@ const Tier1AssessmentModal = ({ user, API_URL, mode, assessmentId: initialAssess
           }
           // 'start' mode (or fallback). POST to create. If 409, the backend
           // tells us the existing in_progress_id in the body and we GET it.
-          const r = await fetch(`${API_URL}/tier1-assessments`, {
+          const r = await apiFetch(`${API_URL}/tier1-assessments`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' }
@@ -169,7 +170,7 @@ const Tier1AssessmentModal = ({ user, API_URL, mode, assessmentId: initialAssess
     noteSaving();
     clearError(itemId, field);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/tier1-assessments/${assessment.id}/responses/${itemId}`,
         {
           method: 'PATCH',
@@ -327,7 +328,7 @@ const Tier1AssessmentModal = ({ user, API_URL, mode, assessmentId: initialAssess
     setCompleting(true);
     setCompleteError(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${API_URL}/tier1-assessments/${assessment.id}/complete`,
         { method: 'POST', credentials: 'include' }
       );

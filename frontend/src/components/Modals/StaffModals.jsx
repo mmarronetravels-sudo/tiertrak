@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 
 // ============================================
@@ -19,7 +20,7 @@ export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList }) 
       return;
     }
     try {
-      const response = await fetch(`${API_URL}/staff`, {
+      const response = await apiFetch(`${API_URL}/staff`, {
         method: 'POST',
        headers: { 'Content-Type': 'application/json' },
 credentials: 'include',
@@ -101,7 +102,7 @@ export const EditStaffModal = ({ staffMember, onClose, user, token, API_URL, loa
 
   const handleUpdateStaff = async () => {
     try {
-      const response = await fetch(`${API_URL}/staff/${staffMember.id}`, {
+      const response = await apiFetch(`${API_URL}/staff/${staffMember.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
 credentials: 'include',

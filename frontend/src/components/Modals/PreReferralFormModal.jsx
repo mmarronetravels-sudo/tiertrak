@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, ArrowLeft, ArrowRight, CheckCircle } from 'lucide-react';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 var formatWeekOf = function(dateStr) {
   if (!dateStr) return 'No date';
@@ -62,7 +63,7 @@ var PreReferralFormModal = function(props) {
 
   var createPreReferralForm = async function(studentId) {
     try {
-      var res = await fetch(API_URL + '/prereferral-forms', {
+      var res = await apiFetch(API_URL + '/prereferral-forms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,7 +84,7 @@ var PreReferralFormModal = function(props) {
 
   var savePreReferralField = async function(formId, updates) {
     try {
-      var res = await fetch(API_URL + '/prereferral-forms/' + formId, {
+      var res = await apiFetch(API_URL + '/prereferral-forms/' + formId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
@@ -101,7 +102,7 @@ var PreReferralFormModal = function(props) {
 
   var submitPreReferralForm = async function(formId, staffName) {
     try {
-      var res = await fetch(API_URL + '/prereferral-forms/' + formId + '/submit', {
+      var res = await apiFetch(API_URL + '/prereferral-forms/' + formId + '/submit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referring_staff_name: staffName })
