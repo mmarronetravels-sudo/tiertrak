@@ -63,8 +63,23 @@ function initializeRateLimitStore(prefix) {
       );
       // cachedClient stays undefined; dev fallback path below.
     } else {
+      // enableOfflineQueue: true (ioredis default, set explicitly for
+      // visibility) lets ioredis buffer commands during the brief
+      // initial-connection window — typically <100ms post-boot for
+      // DNS + TCP + AUTH. Without queueing, rate-limit-redis's
+      // RedisStore constructor — which fires SCRIPT LOAD synchronously
+      // at module-load time to preload the increment script — gets a
+      // rejection that becomes an unhandled promise rejection and
+      // crashes the process after app.listen prints.
+      // maxRetriesPerRequest: 1 keeps the runtime-failure
+      // posture tight: a Redis outage during normal operation
+      // surfaces as command errors (caught by the on-error handler
+      // below) rather than an unbounded queue against dead Redis.
+      // express-rate-limit's default fall-open on store errors still
+      // applies — rate limiting degrades "enforced → permissive" on
+      // outage, never "enforced → blocked."
       cachedClient = new Redis(url, {
-        enableOfflineQueue: false,
+        enableOfflineQueue: true,
         maxRetriesPerRequest: 1
       });
       cachedClient.on('error', (err) => {
