@@ -63,16 +63,36 @@ function initializeRateLimitStore(prefix) {
       );
       // cachedClient stays undefined; dev fallback path below.
     } else {
+      // enableOfflineQueue: true (ioredis default, set explicitly for
+      // visibility) lets ioredis buffer commands during the brief
+      // initial-connection window — typically <100ms post-boot for
+      // DNS + TCP + AUTH. Without queueing, rate-limit-redis's
+      // RedisStore constructor — which fires SCRIPT LOAD synchronously
+      // at module-load time to preload the increment script — gets a
+      // rejection that becomes an unhandled promise rejection and
+      // crashes the process after app.listen prints.
+      // maxRetriesPerRequest: 1 bounds per-command retries against
+      // a connected-but-failing Redis; offline-queue accumulation
+      // is bounded by ioredis's flushQueue-on-disconnect.
+      // On runtime Redis failure, express-rate-limit's default
+      // passOnStoreError: false propagates store errors via
+      // next(error); requests surface as 5xx through Express's
+      // error middleware. This is fail-closed posture, not the
+      // fail-open described in PR #71's original comment.
+      // Revisiting whether to flip passOnStoreError: true on each
+      // limiter for fail-open during outages is a separate product
+      // decision (Followup X).
       cachedClient = new Redis(url, {
-        enableOfflineQueue: false,
+        enableOfflineQueue: true,
         maxRetriesPerRequest: 1
       });
       cachedClient.on('error', (err) => {
         // Message-only — never log the full error object (may carry
-        // connection-string fragments). On runtime Redis failure,
-        // express-rate-limit falls open per its default behavior;
-        // legitimate requests proceed rather than being blocked on
-        // infra issues.
+        // connection-string fragments). Runtime Redis-failure
+        // semantics are detailed in the comment block above (lines
+        // 74-84): express-rate-limit's default passOnStoreError:
+        // false propagates store errors via next(error), surfacing
+        // as 5xx — fail-closed posture.
         console.error('[rate-limit] redis error:', err.message);
       });
     }
