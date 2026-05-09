@@ -68,6 +68,26 @@ CREATE TABLE student_interventions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Universal screener types lookup. Canonical list of screener vendors
+-- TierTrak supports. Added by Migration 026. Adding a new type is a SQL
+-- change (insert a row); v1 does not expose tenant-configurable type
+-- registration. No FK from screener_results.assessment_type → name in v1
+-- — membership is enforced in the route handler at upload time. See
+-- migration-026-screener-types-lookup.sql for the design rationale.
+CREATE TABLE screener_types (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    expected_columns JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- v1 seeds STAR only. MAP, DIBELS, DIBELS Spelling, iReady are deferred
+-- to a follow-up migration pending real CSV samples for column-spec
+-- accuracy.
+INSERT INTO screener_types (name, display_name, expected_columns) VALUES
+('STAR', 'STAR (Renaissance)', '{"required": ["Student", "Benchmark Category Level"], "optional": ["Grade", "Test Date", "SS (Star Unified)", "PR"]}'::jsonb);
+
 -- Universal screener results — STAR, MAP, DIBELS, DIBELS Spelling, iReady.
 -- assessment_type identifies the vendor; (tenant_id, student_id,
 -- assessment_type, subject, screening_period, school_year) is unique per
