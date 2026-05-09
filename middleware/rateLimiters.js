@@ -71,13 +71,17 @@ function initializeRateLimitStore(prefix) {
       // at module-load time to preload the increment script — gets a
       // rejection that becomes an unhandled promise rejection and
       // crashes the process after app.listen prints.
-      // maxRetriesPerRequest: 1 keeps the runtime-failure
-      // posture tight: a Redis outage during normal operation
-      // surfaces as command errors (caught by the on-error handler
-      // below) rather than an unbounded queue against dead Redis.
-      // express-rate-limit's default fall-open on store errors still
-      // applies — rate limiting degrades "enforced → permissive" on
-      // outage, never "enforced → blocked."
+      // maxRetriesPerRequest: 1 bounds per-command retries against
+      // a connected-but-failing Redis; offline-queue accumulation
+      // is bounded by ioredis's flushQueue-on-disconnect.
+      // On runtime Redis failure, express-rate-limit's default
+      // passOnStoreError: false propagates store errors via
+      // next(error); requests surface as 5xx through Express's
+      // error middleware. This is fail-closed posture, not the
+      // fail-open described in PR #71's original comment.
+      // Revisiting whether to flip passOnStoreError: true on each
+      // limiter for fail-open during outages is a separate product
+      // decision (Followup X).
       cachedClient = new Redis(url, {
         enableOfflineQueue: true,
         maxRetriesPerRequest: 1
