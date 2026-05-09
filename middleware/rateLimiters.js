@@ -88,10 +88,11 @@ function initializeRateLimitStore(prefix) {
       });
       cachedClient.on('error', (err) => {
         // Message-only — never log the full error object (may carry
-        // connection-string fragments). On runtime Redis failure,
-        // express-rate-limit falls open per its default behavior;
-        // legitimate requests proceed rather than being blocked on
-        // infra issues.
+        // connection-string fragments). Runtime Redis-failure
+        // semantics are detailed in the comment block above (lines
+        // 74-84): express-rate-limit's default passOnStoreError:
+        // false propagates store errors via next(error), surfacing
+        // as 5xx — fail-closed posture.
         console.error('[rate-limit] redis error:', err.message);
       });
     }
