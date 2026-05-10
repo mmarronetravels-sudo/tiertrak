@@ -11,6 +11,21 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
+// Roles authorized to mutate MTSS meetings (POST / PUT / DELETE). Defined
+// route-local; closest semantic peer is ROLES_WHO_CAN_EDIT in
+// routes/tier1-assessments.js. Teachers and parents are intentionally
+// excluded — meetings are an MTSS team action, not a teacher-led one.
+const MEETING_WRITE_ROLES = [
+  'district_admin',
+  'school_admin',
+  'counselor',
+  'student_support_specialist',
+  'behavior_specialist',
+  'mtss_support'
+];
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
 // Get dropdown options for the form
 router.get('/options', async (req, res) => {
   try {
@@ -197,11 +212,13 @@ router.get('/student/:studentId/interventions-summary', requireAuth, requireStud
 
 // Compute the immutable weekly_progress snapshot for a single intervention
 // at meeting save time. Joined to students with a tenant_id bind for
-// defense-in-depth — this catches sloppy forgery of student_intervention_id
-// where the interventions's actual tenant differs from the body's tenant_id.
-// It does NOT close the broader IDOR on this route (POST/PUT lack
-// requireAuth — that's master-index Followup 67's territory). A targeted
-// attacker who matches the tenant_id correctly can still bypass this JOIN.
+// defense-in-depth. The body-trust IDOR is now closed upstream: POST/PUT/
+// DELETE on this router enforce requireAuth + MEETING_WRITE_ROLES + a
+// server-resolved tenant gate before any transaction begins. The tenant_id
+// passed here is server-derived (req.user.tenant_id for POST, the meeting's
+// own tenant_id from a tenant-bound SELECT-by-id for PUT) — body.tenant_id
+// is never trusted. This JOIN is now belt-and-suspenders, not the only line
+// of defense.
 async function computeWeeklyProgressSnapshot(client, studentInterventionId, tenantId) {
   const result = await client.query(`
     SELECT wp.week_of, wp.status, wp.rating, wp.response, wp.notes,
@@ -237,44 +254,87 @@ async function readNoProgressMonitoringFlag(client, studentInterventionId, tenan
 }
 
 // Create new meeting
-router.post('/', async (req, res) => {
-  const client = await pool.connect();
+// Auth model: requireAuth + MEETING_WRITE_ROLES + a server-resolved tenant
+// gate (body.student_id verified against req.user.tenant_id) all run BEFORE
+// any transaction BEGIN — a 403 cannot leave a half-written row. body.tenant_id
+// and body.created_by are intentionally ignored; both are server-derived
+// from req.user. Per-row intervention_reviews[].student_intervention_id is
+// also pre-verified to belong to the same student + tenant. Uniform 403
+// { error: 'Not authorized' } for not-found-or-mismatch (mirrors
+// authorizeByInterventionId).
+router.post('/', requireAuth, async (req, res) => {
+  if (!MEETING_WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
 
+  const {
+    student_id,
+    meeting_date,
+    meeting_number,
+    meeting_type,
+    attendees,
+    parent_attended,
+    progress_summary,
+    tier_decision,
+    next_steps,
+    next_meeting_date,
+    intervention_reviews
+  } = req.body;
+
+  if (!student_id) {
+    return res.status(400).json({ error: 'Missing required field: student_id' });
+  }
+
+  const tenantId = req.user.tenant_id;
+  const createdBy = req.user.id;
+
+  // Tenant gate on the student. Tenant-bound SELECT — not-found and
+  // wrong-tenant are indistinguishable to the caller.
+  const studentLookup = await pool.query(
+    'SELECT id FROM students WHERE id = $1 AND tenant_id = $2',
+    [student_id, tenantId]
+  );
+  if (studentLookup.rows.length === 0) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+
+  // Per-row intervention gate: each student_intervention_id must belong to
+  // this student AND this tenant. Pre-flight so a 403 never opens a
+  // transaction.
+  if (intervention_reviews && intervention_reviews.length > 0) {
+    for (const review of intervention_reviews) {
+      const interventionCheck = await pool.query(
+        `SELECT 1 FROM student_interventions si
+         JOIN students s ON s.id = si.student_id
+         WHERE si.id = $1 AND si.student_id = $2 AND s.tenant_id = $3`,
+        [review.student_intervention_id, student_id, tenantId]
+      );
+      if (interventionCheck.rows.length === 0) {
+        return res.status(403).json(FORBIDDEN_BODY);
+      }
+    }
+  }
+
+  // All authorization checks passed — open the transaction.
+  const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const {
-      student_id,
-      tenant_id,
-      meeting_date,
-      meeting_number,
-      meeting_type,
-      attendees,
-      parent_attended,
-      progress_summary,
-      tier_decision,
-      next_steps,
-      next_meeting_date,
-      created_by,
-      intervention_reviews // Array of intervention evaluations
-    } = req.body;
-// Convert empty strings to null for date fields
     const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
     const cleanTierDecision = tier_decision === '' ? null : tier_decision;
 
-    // Insert meeting
     const meetingResult = await client.query(`
-  INSERT INTO mtss_meetings (
-    student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-    attendees, parent_attended, progress_summary, tier_decision,
-    next_steps, next_meeting_date, created_by
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-  RETURNING *
-`, [
-  student_id, tenant_id, meeting_date, meeting_number, meeting_type,
-  JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
-  next_steps, cleanNextMeetingDate, created_by
-]);
+      INSERT INTO mtss_meetings (
+        student_id, tenant_id, meeting_date, meeting_number, meeting_type,
+        attendees, parent_attended, progress_summary, tier_decision,
+        next_steps, next_meeting_date, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING *
+    `, [
+      student_id, tenantId, meeting_date, meeting_number, meeting_type,
+      JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
+      next_steps, cleanNextMeetingDate, createdBy
+    ]);
 
     const meeting = meetingResult.rows[0];
 
@@ -283,7 +343,6 @@ router.post('/', async (req, res) => {
     // computed inside the same transaction.
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
-        // Convert empty strings to null for fields with constraints
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
@@ -291,7 +350,7 @@ router.post('/', async (req, res) => {
         const snapshot = await computeWeeklyProgressSnapshot(
           client,
           review.student_intervention_id,
-          tenant_id
+          tenantId
         );
 
         // Option α snapshot (Migration 023): server-read the live flag
@@ -301,7 +360,7 @@ router.post('/', async (req, res) => {
         const noProgressMonitoringRequired = await readNoProgressMonitoringFlag(
           client,
           review.student_intervention_id,
-          tenant_id
+          tenantId
         );
 
         await client.query(`
@@ -331,7 +390,7 @@ router.post('/', async (req, res) => {
     res.status(201).json(meeting);
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error creating meeting:', error);
+    console.error('Error creating meeting:', error.message);
     res.status(500).json({ error: 'Failed to create meeting' });
   } finally {
     client.release();
@@ -339,6 +398,13 @@ router.post('/', async (req, res) => {
 });
 
 // Update meeting
+// Auth model: requireAuth + MEETING_WRITE_ROLES + a server-resolved tenant
+// gate (tenant-bound SELECT-by-id on mtss_meetings) all run BEFORE any
+// transaction BEGIN. body.tenant_id is intentionally ignored; the snapshot
+// helpers receive the meeting's own tenant_id from the SELECT. Per-row
+// intervention_reviews[].student_intervention_id is pre-verified to belong
+// to the meeting's student + tenant. Uniform 403 for not-found-or-mismatch.
+//
 // Preserve-on-edit snapshot semantics (per Q1 (b)): interventions already
 // present in the saved meeting keep their existing weekly_progress_snapshot
 // as-is — even an empty-array legacy snapshot stays empty rather than
@@ -347,31 +413,66 @@ router.post('/', async (req, res) => {
 // the "frozen at first save" contract: editing a meeting (typo fix, late
 // recommendation, attendee correction) does NOT silently rewrite the audit
 // trail of what data the team reviewed.
-router.put('/:id', async (req, res) => {
-  const client = await pool.connect();
+router.put('/:id', requireAuth, async (req, res) => {
+  if (!MEETING_WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
 
+  const { id } = req.params;
+
+  // Tenant gate. Tenant-bound SELECT — not-found and wrong-tenant are
+  // indistinguishable to the caller (mirrors authorizeByInterventionId).
+  const meetingLookup = await pool.query(
+    'SELECT id, tenant_id, student_id FROM mtss_meetings WHERE id = $1 AND tenant_id = $2',
+    [id, req.user.tenant_id]
+  );
+  if (meetingLookup.rows.length === 0) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+  const meetingTenantId = meetingLookup.rows[0].tenant_id;
+  const meetingStudentId = meetingLookup.rows[0].student_id;
+
+  const {
+    meeting_date,
+    meeting_number,
+    meeting_type,
+    attendees,
+    parent_attended,
+    progress_summary,
+    tier_decision,
+    next_steps,
+    next_meeting_date,
+    intervention_reviews
+  } = req.body;
+
+  // Per-row intervention gate: each student_intervention_id must belong to
+  // this meeting's student AND tenant. Pre-flight so a 403 never opens a
+  // transaction.
+  if (intervention_reviews && intervention_reviews.length > 0) {
+    for (const review of intervention_reviews) {
+      const interventionCheck = await pool.query(
+        `SELECT 1 FROM student_interventions si
+         JOIN students s ON s.id = si.student_id
+         WHERE si.id = $1 AND si.student_id = $2 AND s.tenant_id = $3`,
+        [review.student_intervention_id, meetingStudentId, meetingTenantId]
+      );
+      if (interventionCheck.rows.length === 0) {
+        return res.status(403).json(FORBIDDEN_BODY);
+      }
+    }
+  }
+
+  // All authorization checks passed — open the transaction.
+  const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const { id } = req.params;
-    const {
-      meeting_date,
-      meeting_number,
-      meeting_type,
-      attendees,
-      parent_attended,
-      progress_summary,
-      tier_decision,
-      next_steps,
-      next_meeting_date,
-      tenant_id,
-      intervention_reviews
-    } = req.body;
-    // Convert empty strings to null for fields with constraints
-const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
-const cleanTierDecision = tier_decision === '' ? null : tier_decision;
+    const cleanNextMeetingDate = next_meeting_date === '' ? null : next_meeting_date;
+    const cleanTierDecision = tier_decision === '' ? null : tier_decision;
 
-    // Update meeting
+    // Tenant-bound UPDATE for belt-and-suspenders. The pre-flight already
+    // verified ownership; this catches the (vanishingly rare) race where
+    // the meeting was deleted or re-tenanted between pre-flight and here.
     const meetingResult = await client.query(`
       UPDATE mtss_meetings SET
         meeting_date = $1,
@@ -384,17 +485,17 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
         next_steps = $8,
         next_meeting_date = $9,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $10
+      WHERE id = $10 AND tenant_id = $11
       RETURNING *
     `, [
       meeting_date, meeting_number, meeting_type,
       JSON.stringify(attendees), parent_attended, progress_summary, cleanTierDecision,
-      next_steps, cleanNextMeetingDate, id
+      next_steps, cleanNextMeetingDate, id, meetingTenantId
     ]);
 
     if (meetingResult.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     // Capture existing snapshots BEFORE the DELETE so we can preserve
@@ -420,27 +521,26 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     // Delete existing intervention reviews and re-insert
     await client.query('DELETE FROM mtss_meeting_interventions WHERE mtss_meeting_id = $1', [id]);
 
-
-          // Insert intervention reviews
     if (intervention_reviews && intervention_reviews.length > 0) {
       for (const review of intervention_reviews) {
-        // Convert empty strings to null for fields with constraints
         const cleanFidelity = review.implementation_fidelity === '' ? null : review.implementation_fidelity;
         const cleanProgress = review.progress_toward_goal === '' ? null : review.progress_toward_goal;
         const cleanRecommendation = review.recommendation === '' ? null : review.recommendation;
 
         // Q1 (b): preserve prior snapshot if this intervention was already
         // in the meeting; compute fresh only for newly-added interventions.
+        // Snapshot helpers receive the meeting's server-resolved tenant_id
+        // — body.tenant_id is never trusted.
         const snapshot = priorSnapshots.has(review.student_intervention_id)
           ? priorSnapshots.get(review.student_intervention_id)
-          : await computeWeeklyProgressSnapshot(client, review.student_intervention_id, tenant_id);
+          : await computeWeeklyProgressSnapshot(client, review.student_intervention_id, meetingTenantId);
 
         // Same preserve-on-edit semantics for the Option α monitoring flag:
         // existing interventions keep their prior snapshot value; newly-added
         // interventions read fresh from student_interventions.
         const noProgressMonitoringRequired = priorMonitoringFlags.has(review.student_intervention_id)
           ? priorMonitoringFlags.get(review.student_intervention_id)
-          : await readNoProgressMonitoringFlag(client, review.student_intervention_id, tenant_id);
+          : await readNoProgressMonitoringFlag(client, review.student_intervention_id, meetingTenantId);
 
         await client.query(`
           INSERT INTO mtss_meeting_interventions (
@@ -469,7 +569,7 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
     res.json(meetingResult.rows[0]);
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error updating meeting:', error);
+    console.error('Error updating meeting:', error.message);
     res.status(500).json({ error: 'Failed to update meeting' });
   } finally {
     client.release();
@@ -477,22 +577,29 @@ const cleanTierDecision = tier_decision === '' ? null : tier_decision;
 });
 
 // Delete meeting
-router.delete('/:id', async (req, res) => {
+// Auth model: requireAuth + MEETING_WRITE_ROLES + tenant-bound DELETE. The
+// tenant gate is folded into the DELETE WHERE clause — atomic auth check
+// and delete, no TOCTOU window. Uniform 403 for not-found-or-mismatch.
+router.delete('/:id', requireAuth, async (req, res) => {
+  if (!MEETING_WRITE_ROLES.includes(req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+
+  const { id } = req.params;
+
   try {
-    const { id } = req.params;
-    
     const result = await pool.query(
-      'DELETE FROM mtss_meetings WHERE id = $1 RETURNING *',
-      [id]
+      'DELETE FROM mtss_meetings WHERE id = $1 AND tenant_id = $2 RETURNING id',
+      [id, req.user.tenant_id]
     );
-    
+
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
-    
+
     res.json({ message: 'Meeting deleted successfully' });
   } catch (error) {
-    console.error('Error deleting meeting:', error);
+    console.error('Error deleting meeting:', error.message);
     res.status(500).json({ error: 'Failed to delete meeting' });
   }
 });
