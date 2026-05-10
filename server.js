@@ -36,7 +36,7 @@ app.use(cors({
   ],
   credentials: true
 }));
-app.use('/api', csrfProtection({ mode: 'monitor' }));
+app.use('/api', csrfProtection({ mode: 'enforce' }));
 
 // Database connection
 const pool = new Pool({
