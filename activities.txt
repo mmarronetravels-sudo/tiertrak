@@ -8019,3 +8019,269 @@ NEXT SESSION SHOULD
     the same surface PR #81 just closed; B unblocks future
     debug velocity; C closes the last mtssMeetings gap.
 ================================================================================
+================================================================================
+SESSION: 2026-05-10T22:30:00-07:00 (Session 61)
+BRANCHES: chore/activities-log-session-60 (PR #83) — MERGED
+          sec/mtss-meetings-intervention-reviews-cap (PR #84) — MERGED
+================================================================================
+
+## Summary
+
+Two PRs merged in one session. P1 (chore/activities-log-session-60) cleared the
+S60 entry off main in the standard doc-only chore pattern. P2 (sec/mtss-meetings-
+intervention-reviews-cap) shipped the MEDIUM-severity DoS amplifier mitigation
+filed at S60 close from PR #81 security-reviewer M1 — capped intervention_reviews
+length at 50 on POST/PUT /api/mtss-meetings with an Array.isArray() guard folded
+in to close a string-amplifier side channel beyond the original M1 framing.
+
+One major new discipline observation banked: the mechanical reviewDecision halt
+fired correctly on PR #84's first merge attempt, catching a Cowork-side gate-
+verified assertion that hadn't yet matched GitHub API state. First time the S60-
+banked mechanical-halt discipline has fired post-banking; ran the right direction.
+
+Positive smoke test confirmed P2 cap is live in prod without breaking legitimate
+traffic.
+
+## PR #83 — chore/activities-log-session-60
+
+Doc-only chore PR; standard activities-log batch pattern (precedent PR #82,
+e229f69). Single commit, single file, +347/-0 on activities.txt — the S60 close
+entry that had been parked unstaged on main per chore-PR convention.
+
+- Branch: chore/activities-log-session-60 off main@e229f69
+- Commit: b646765 — "chore(activities): append session 60 close entry"
+- PR opened, full §2A template body composed
+- Reviewer triad: none required (docs only)
+- Collaborator approval: gh pr review --approve, formal
+- Gate verification: reviewDecision APPROVED, mergeStateStatus CLEAN
+- Merge: squash sha e138a22 at 2026-05-10T21:53:50Z
+- Render auto-deploy: dep-d80fss68bjmc73ee6840, LIVE at
+  2026-05-10T21:54:31Z (~41s end-to-end, consistent with PR #82 baseline)
+- Post-merge state: working tree baseline restored; .claude/settings.json
+  drift carries (Followup #22); GR_SampleClass.pdf untracked; all 4 stashes
+  intact; branch deleted both local and origin
+
+Settings.json sweep-risk pre-flagged at checkpoint (b); git diff --cached
+confirmed activities.txt staged in isolation. No sweep occurred.
+
+## PR #84 — sec/mtss-meetings-intervention-reviews-cap
+
+MEDIUM-severity DoS amplifier mitigation, closes the followup filed at S60
+close from PR #81 security-reviewer M1.
+
+### Background
+
+PR #81 (S60) closed the backend IDOR on /api/mtss-meetings POST/PUT/DELETE
+with requireAuth + role gate + server-resolved tenant binding + per-row
+authorization check. The per-row check introduced a DB-roundtrip amplifier:
+~4N+3 roundtrips per POST (1 pre-flight + ~3 intra-transaction per entry)
+and ~N+(0..2)N+4 per PUT. Bounded by mutationUserLimiter (300/60s per user)
+and write-role gate (authenticated only), so not anonymous-reachable, but
+unbounded per-request without a length cap.
+
+### Implementation
+
+- Branch: sec/mtss-meetings-intervention-reviews-cap off main@e138a22
+- Commit: f263f69 — "sec(mtss-meetings): cap intervention_reviews.length at
+  50 (PR #81 M1)"
+- Diff: +22 lines in routes/mtssMeetings.js
+  - 1 const MAX_INTERVENTION_REVIEWS = 50 with 2-line comment citing PR #81
+    M1 origin
+  - 7-line validation block inserted in POST handler (after missing-field
+    400, before tenant gate)
+  - 7-line validation block inserted in PUT handler (after body destructure,
+    before per-row pre-flight)
+- Validation guard order: !== undefined && !== null (allows field omission)
+  → Array.isArray (catches type-confusion) → length > MAX (catches DoS
+  amplifier). Each layer fires before the layer it protects.
+- Error responses match in-file convention { error: <string> }; cap value
+  baked into message via template literal (non-security-sensitive).
+- Cap fires pre-BEGIN by construction on both handlers — a 400 cannot leave
+  a half-written row.
+
+### Array.isArray() scope expansion
+
+Beyond original M1 framing. The existing per-row loop guard
+(`if (intervention_reviews && intervention_reviews.length > 0)`) is true on
+a string body, which then iterates `for...of` over characters and calls
+`review.student_intervention_id` (undefined) on each → N junk pre-flight
+roundtrips bounded only by string length. The isArray check closes this
+type-confusion side channel that a pure numeric cap would have missed.
+
+Mid-flight scope expansion flagged in PR body for review transparency.
+Obviously correct expansion; banked.
+
+### Review and merge
+
+- Reviewer triad: none required per master-index categorization (security-
+  only follow-up, no PII surface change, no SQL/auth/tenant logic touched)
+- Collaborator approval: gh pr review --approve
+- Gate verification: see Discipline observation below
+- Merge: squash sha ac54c3d at 2026-05-10T22:09:12Z
+- Render auto-deploy: dep-d80g42hoagis73ek4o3g, LIVE 2026-05-10T~22:09:42Z
+  (deploy event timestamp 3:09 PM PT; ~30s post-merge per PR #82/#83
+  baseline; operator-captured from Render Events)
+- Post-merge state: working tree clean (same drift as session start —
+  .claude/settings.json modified-unstaged, GR_SampleClass.pdf untracked,
+  all 4 stashes intact); branch deleted both local and origin
+
+### Smoke test
+
+Operator-side verification post-deploy. DevTools Network panel approach
+(per S58 PR #74 CSRF FE wiring; FE handles cookie + CSRF token transparently
+through normal form submission).
+
+Positive allow path:
+- POST /api/mtss-meetings via the New MTSS Progress Review Meeting form
+- Logged in as school_admin in Lincoln tenant (1 test student row,
+  legitimate intervention_reviews envelope ~2 entries)
+- Response: 201 Created, Content-Length 230, application/json
+- Full path traversed: auth + role + cap validation + tenant gate + per-row
+  intervention check + BEGIN → INSERT → COMMIT → 201
+
+Deny-path tests (string body → 400 isArray; length=51 → 400 cap; length=50
+junk → 403 off-by-one check) were deferred — paths are simple enough in
+code that review caught them, and triggering them via DevTools Edit-and-
+replay or curl was disproportionate to the change size. Positive smoke
+confirms the validation block doesn't reject legitimate traffic, which is
+the actual regression risk.
+
+Discipline preserved per S60 banked: 201 verified at the response-body
+bytes level via DevTools, not inferred from absence of errors.
+
+## Discipline observations banked
+
+### Mechanical reviewDecision halt fired correctly (S61 — major, first post-S60-banking activation)
+
+PR #84 first merge attempt: Cowork issued a merge prompt prefixed "Gate
+verified — proceed" based on operator-supplied GitHub UI screenshot showing
+"Changes approved + 1 approval." Claude Code's belt-and-suspenders mechanical
+check at execution time (`gh pr view 84 --json reviewDecision`) returned
+REVIEW_REQUIRED, not APPROVED. Claude Code halted at the boundary, surfaced
+the empty reviews: [] array, and waited for formal approval. Second attempt
+cleared (reviewDecision: APPROVED, mergeStateStatus: CLEAN).
+
+Why it matters: this is the inverse failure-shape of the S60 PR #81 slip.
+In S60, Cowork accepted a verbal "Reviewer has approved" relay and the
+operator caught it. In S61, Cowork issued a UI-screenshot-based "gate
+verified" framing in the prompt, and Claude Code's mechanical check caught
+the gap. UI rendering and reviewDecision JSON can diverge — by stale state,
+formal-vs-comment ambiguity, or timing. The mechanical check at execution
+time is the canonical state.
+
+Discipline working as designed. First confirmed activation of the S60
+banked discipline by Claude Code holding to the mechanical gate against a
+re-issued "proceed" instruction. Important data point — confirms the
+playbook's gate enforcement is bidirectional (Cowork→Claude Code as well
+as operator→Cowork).
+
+### Smoke-test scope-right-sizing for small-PR security follow-ups (S61 — minor)
+
+For a 22-line input-validation cap with code review approving the operator,
+positive-allow smoke alone (case iii) is acceptable evidence. The deny paths
+are simple in code and code-review-covered. Operator burden of running
+deny-path tests via DevTools Edit-and-replay or curl was disproportionate
+to the change size. Distinguishes from auth/tenant gates (PR #81) where
+S60-banked discipline requires both deny + allow paths positively verified.
+
+### §2A merge-flow ran without slip on PR #83 (S61 — baseline observation)
+
+PR #83 walked the full §2A merge-gate flow cleanly: collaborator approval
+via gh pr review --approve → mechanical reviewDecision check → merge.
+No verbal-claim shortcut, no UI-screenshot-vs-JSON divergence. Baseline
+discipline shape working.
+
+### Render deploy id capture gap on PR #83 (S61 — minor housekeeping)
+
+PR #83's Render deploy id was not captured at merge time; LIVE timestamp
+captured (21:54:31Z). Discipline note: when grabbing deploy LIVE timestamp
+from Render Events, also capture the deploy id (format dep-<rand>) in the
+same pass. Avoids the "go back and find it later" friction. Applied
+correctly for PR #84 (dep-d80g42hoagis73ek4o3g + timestamp captured
+together).
+
+## Followups
+
+### CLOSED this session
+
+- mtss-meetings-intervention-reviews-length-cap (NEW MEDIUM from S60)
+  — closed by PR #84. Cap + isArray expansion deployed.
+
+### NEW this session
+
+None.
+
+### UNCHANGED (carry to S62)
+
+- Followup #22: .claude/settings.json drift — still carries. Not triaged
+  this session.
+- Followup #39: mtssMeetings.js read routes (4 unauthed reads + catch-block
+  error.message narrowing) — still carries.
+- csrf-mismatch-log-fidelity (S59 NEW HIGH) — still carries.
+- Followup #49: migration/screener-results-prod-dedup — still carries.
+- Followup #70: pg error.detail repo-wide — still carries.
+- All other carry-forward followups from S60 close unchanged.
+
+### Notes folded from PR #84 reviewer/audit observations
+
+- Per-row INSERT loop inside transaction on POST (intra-transaction
+  amplifier site #2) remains. Cap bounds it at 50; round-trip-collapse via
+  ANY($1) or batched INSERT is the future optimization tracked alongside
+  the cap. Not blocking.
+- Existing truthy guards (intervention_reviews && intervention_reviews.length
+  > 0) remain useful as canonical "skip the loop when empty/absent" check.
+  Cap is additive, not replacing.
+
+## Working-tree and stash state at session close
+
+git status (on main):
+- modified: .claude/settings.json (drift, Followup #22, no change from
+  session start)
+- untracked: docs/references/GR_SampleClass.pdf (no change)
+
+git stash list: all 4 slots intact, unchanged from session start:
+- stash@{0}: feat/multi-screener-upload settings-and-activities carryover
+- stash@{1}: sec/safe-log-pg-error-sweep settings drift (Followup #22)
+- stash@{2}: chore/activities-log-session-38b settings drift carryover
+- stash@{3}: WIP on main, fix missing logs data transformation
+
+main HEAD at session close: ac54c3d.
+
+activities.txt S61 entry (this entry) will be unstaged on main at close
+per chore-PR convention — lands on a future chore/activities-log-session-61
+(or batch) PR in S62.
+
+## NEXT SESSION SHOULD (P-queue for S62)
+
+P1: chore/activities-log-session-61 (or batch with S62 close entry).
+Doc-only chore for this entry. Standard pattern.
+
+P2 (elevated from P3): csrf-mismatch-log-fidelity (S59 NEW HIGH). Enrich
+safePathForLog + cookie-peeked userId for correlation. Would have saved a
+day in S59's PR #79 debug arc. Reviewer triad: privacy + security.
+
+P3 (elevated from P4): Followup #39 — mtssMeetings.js read routes (scope
+expanded S60). 4 unauthed reads + narrow the 4 read-route catch-block
+error logs to error.message. Closes the last gap on the mtssMeetings
+surface. Reviewer triad needed.
+
+P4 (elevated from P5): migration/screener-results-prod-dedup (Followup
+#49). Phase 1 design conversation needed first. Touches real prod PII;
+full reviewer triad.
+
+P5 (gated on P4): feat/multi-screener-upload. Wishlist item #1.
+
+P6: External tracker namespace decision (carries from S56-S60).
+
+P7+: S58 resumption queue carry items (Followup #70, sec/students-
+mutations-require-auth, sec/ router sweep, Followup V/W/X cleanup).
+
+Outstanding state housekeeping (low priority, fold into any session):
+- .claude/settings.json drift triage (Followup #22)
+- Stash triage (4 parked at slots 0-3)
+- CLAUDE.md §2 doc drift (still says Vercel; backend on Render — Vercel
+  is FE-only per PR #84 smoke test response headers showing Server: Vercel
+  + X-Render-Origin-Server: Render)
+- Vandercook welcome letter / passwords pending hand-delivery (Session 53)
+
+================================================================================
