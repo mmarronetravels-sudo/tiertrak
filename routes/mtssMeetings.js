@@ -26,6 +26,10 @@ const MEETING_WRITE_ROLES = [
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
+// Caps intervention_reviews.length on POST/PUT /api/mtss-meetings to
+// bound the per-row authorization loop. See PR #81 security-reviewer M1.
+const MAX_INTERVENTION_REVIEWS = 50;
+
 // Get dropdown options for the form
 router.get('/options', async (req, res) => {
   try {
@@ -285,6 +289,15 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing required field: student_id' });
   }
 
+  if (intervention_reviews !== undefined && intervention_reviews !== null) {
+    if (!Array.isArray(intervention_reviews)) {
+      return res.status(400).json({ error: 'intervention_reviews must be an array' });
+    }
+    if (intervention_reviews.length > MAX_INTERVENTION_REVIEWS) {
+      return res.status(400).json({ error: `Too many intervention reviews (max ${MAX_INTERVENTION_REVIEWS})` });
+    }
+  }
+
   const tenantId = req.user.tenant_id;
   const createdBy = req.user.id;
 
@@ -444,6 +457,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     next_meeting_date,
     intervention_reviews
   } = req.body;
+
+  if (intervention_reviews !== undefined && intervention_reviews !== null) {
+    if (!Array.isArray(intervention_reviews)) {
+      return res.status(400).json({ error: 'intervention_reviews must be an array' });
+    }
+    if (intervention_reviews.length > MAX_INTERVENTION_REVIEWS) {
+      return res.status(400).json({ error: `Too many intervention reviews (max ${MAX_INTERVENTION_REVIEWS})` });
+    }
+  }
 
   // Per-row intervention gate: each student_intervention_id must belong to
   // this meeting's student AND tenant. Pre-flight so a 403 never opens a
