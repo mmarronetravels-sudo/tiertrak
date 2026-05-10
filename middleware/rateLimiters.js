@@ -165,12 +165,83 @@ function hashIp(ip) {
     .slice(0, 8);
 }
 
-// safePathForLog — best-effort path-template extraction. Returns
-// req.route.path if Express has resolved the route, else req.baseUrl,
-// else a placeholder. Never returns the resolved URL — that can carry
-// student IDs in path params (Followup #70 family).
+// Server-side pepper for user-id hashing in log lines. Required in
+// prod; dev falls back to a constant string with a startup warning.
+// Validated once at first call to getLogUserPepper(). Mirrors the
+// LOG_IP_PEPPER pattern above exactly.
+//
+// Used by csrfProtection.logCsrfMismatch to hash the cookie-peeked
+// userId so the log can correlate "same user, multiple CSRF failures"
+// without ever emitting a raw user id to the log surface.
+const DEV_USER_PEPPER = 'dev-user-pepper-not-for-prod';
+let cachedUserPepper;
+let userPepperValidated = false;
+
+function getLogUserPepper() {
+  if (userPepperValidated) return cachedUserPepper;
+  userPepperValidated = true;
+
+  const pepper = process.env.LOG_USER_PEPPER;
+  const isProd = isProdLike();
+
+  if (!pepper) {
+    if (isProd) {
+      console.error(
+        'FATAL: LOG_USER_PEPPER must be set in production. ' +
+        'Aborting startup.'
+      );
+      process.exit(1);
+    }
+    console.warn(
+      '[log-user-pepper] LOG_USER_PEPPER not set; using constant fallback. ' +
+      'dev-only — do not use in prod.'
+    );
+    cachedUserPepper = DEV_USER_PEPPER;
+    return cachedUserPepper;
+  }
+
+  cachedUserPepper = pepper;
+  return cachedUserPepper;
+}
+
+// hashUserId — SHA-256 of (userId + server-side pepper), truncated
+// to 8 hex chars. Stable, non-reversible userId identifier for log
+// lines. Returns 'none' on null/undefined input so the log field is
+// always populated. Pepper rotation breaks correlation across
+// rotations — that's fine.
+function hashUserId(userId) {
+  if (userId == null) return 'none';
+  return crypto
+    .createHash('sha256')
+    .update(String(userId) + getLogUserPepper())
+    .digest('hex')
+    .slice(0, 8);
+}
+
+// safePathForLog — best-effort path identifier for log lines.
+// Resolution order:
+//   1. req.route.path (matched route template, e.g. /students/:id) —
+//      populated only when Express has resolved the request to a
+//      specific handler inside a sub-router.
+//   2. Reconstructed (req.baseUrl + req.path) with numeric segments
+//      redacted to ':id' (e.g. /api/students/12345/notes →
+//      /api/students/:id/notes). This is the primary path for callers
+//      mounted at a prefix BEFORE sub-router route resolution — most
+//      importantly csrfProtection, which fires at the '/api' prefix.
+//   3. '<unmatched>' placeholder.
+//
+// The redaction regex matches PURE-DIGIT segments only — /\d+/ between
+// slashes or at the end of the path. UUID-shaped or slug-shaped IDs
+// are NOT redacted; if path params of those shapes are introduced in
+// future routes, file a follow-up to extend this pattern.
+//
+// Never returns the resolved URL with query string — that can carry
+// student IDs in query params (Followup #70 family).
 function safePathForLog(req) {
-  return req.route?.path || req.baseUrl || '<unmatched>';
+  if (req.route?.path) return req.route.path;
+  const reconstructed = (req.baseUrl || '') + (req.path || '');
+  if (!reconstructed) return '<unmatched>';
+  return reconstructed.replace(/\/\d+(?=\/|$)/g, '/:id');
 }
 
 // makeRateLimitHandler — shared 429 handler factory. Logs limiter name
@@ -287,8 +358,10 @@ const csvImportLimiter = rateLimit({
 module.exports = {
   initializeRateLimitStore,
   getLogIpPepper,
+  getLogUserPepper,
   isProdLike,
   hashIp,
+  hashUserId,
   safePathForLog,
   authIpLimiter,
   authLoginCompoundLimiter,

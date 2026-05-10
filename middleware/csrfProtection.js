@@ -28,7 +28,8 @@
 // anonymous form — protected by a tight rate-limiter instead.
 
 const { doubleCsrf } = require('csrf-csrf');
-const { hashIp, safePathForLog, isProdLike } = require('./rateLimiters');
+const jwt = require('jsonwebtoken');
+const { hashIp, hashUserId, safePathForLog, isProdLike } = require('./rateLimiters');
 
 // CSRF token signing secret. Required in prod; dev falls back to a
 // constant string with a startup warning. Validated once at first
@@ -124,16 +125,46 @@ function shouldSkip(req) {
   );
 }
 
-// Shared mismatch logger. PII-stripped: route template (not URL),
-// hashed IP (not raw), user id (not email). Never logs the token
-// values themselves.
+// peekUserIdFromCookie — decoded-but-not-verified peek of the
+// auth_token cookie. Used ONLY for diagnostic log enrichment on
+// CSRF-mismatch events, which are by definition pre-auth: the
+// mismatch fires before requireAuth runs, so req.user is not yet
+// populated. The userId extracted here is diagnostic signal only —
+// never used for authorization. It is pepper-hashed downstream so a
+// forged or stale token's id never appears in cleartext.
+//
+// jwt.decode (not jwt.verify) is intentional. Signature verification
+// does not apply on a pre-auth log path, and verifying would throw
+// on expired/tampered tokens — exactly the cases we still want to
+// correlate.
+//
+// Destructure-and-discard: ONLY the `id` field is bound to a local
+// variable. The JWT payload also contains `email` (PII) and
+// `tenant_id` — those are never read into a variable and never reach
+// the log surface, even transiently.
+//
+// All decode failure modes (missing cookie, malformed token, decode
+// throw) are silently caught and return null — the log line then
+// shows hashedUserId=none.
+function peekUserIdFromCookie(req) {
+  try {
+    const { id } = jwt.decode(req.cookies?.auth_token) || {};
+    return id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Shared mismatch logger. PII-stripped: redacted path (not URL),
+// hashed IP (not raw), pepper-hashed cookie-peeked userId (not raw,
+// not email). Never logs the token values themselves.
 function logCsrfMismatch(req, mode) {
   console.warn(
     '[csrf:' + mode + '] mismatch',
     'method=' + req.method,
     'path=' + safePathForLog(req),
     'hashedIp=' + hashIp(req.ip),
-    'userId=' + (req.user?.id ?? null)
+    'hashedUserId=' + hashUserId(peekUserIdFromCookie(req))
   );
 }
 
