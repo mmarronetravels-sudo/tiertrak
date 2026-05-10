@@ -6948,3 +6948,727 @@ NEXT SESSION SHOULD
   Recommended order: A (P) first → B (sec/csrf-fe-wiring) →
   C (mutation routes). Owner's call.
 ================================================================================
+SESSION: 2026-05-08T09:15:00-07:00
+BRANCH:  sec/csrf-fe-wiring
+DISPOSITION: kept
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Wire CSRF tokens through the frontend (Followup #81) so the
+  middleware can be flipped from monitor → enforce. Built apiFetch
+  global wrapper at frontend/src/utils/apiFetch.js. Migrated every
+  state-changing fetch site in frontend/src/ to route through it.
+  The flip itself (server.js:39 'monitor' → 'enforce') is a
+  separate follow-up branch (sec/csrf-flip-enforce), gated on a
+  24h main-deploy monitor window after this branch merges.
+
+  Row-count framing: 65 fetch swaps across 11 files migrated +
+  1 new wrapper file. 0 PRs merged this session (main HEAD
+  unchanged at 1e4a669; PR opens Session 58).
+
+FILES TOUCHED
+  frontend/src/utils/apiFetch.js (new, 65 lines) — global fetch
+    wrapper. CSRF header on POST/PUT/PATCH/DELETE only.
+    credentials: 'include' hardcoded. FormData branch leaves
+    Content-Type unset so the browser can set the multipart
+    boundary itself.
+  frontend/src/context/AppContext.jsx — 4 swaps.
+  frontend/src/components/Section504/api.js — 1 swap (send()
+    helper covers 4 named exports).
+  frontend/src/components/Modals/ArchiveModal.jsx — 1 swap.
+  frontend/src/components/Modals/ChangePasswordModal.jsx — 1 swap.
+  frontend/src/components/Modals/GoalFormModal.jsx — 1 swap.
+  frontend/src/components/Modals/InterventionPlanModal.jsx — 3 swaps.
+  frontend/src/components/Modals/PreReferralFormModal.jsx — 3 swaps.
+  frontend/src/components/Modals/StaffModals.jsx — 2 swaps.
+  frontend/src/components/Modals/TemplateEditorModal.jsx — 3 swaps.
+  frontend/src/components/Modals/Tier1AssessmentModal.jsx — 3 swaps.
+  frontend/src/components/Modals/ScreenerUploadModal.jsx — 1 swap
+    (commit 5060b96, audit-miss correction).
+  frontend/src/App.jsx — 42 swaps (39 non-upload + 3 FormData).
+
+  Branch commit ladder (all pushed to origin/sec/csrf-fe-wiring):
+    b523447  add apiFetch wrapper
+    45d1957  AppContext + Section504 helpers (5 sites)
+    16b763c  JSON-body modals (8 files, 17 sites)
+    f7652d7  App.jsx non-upload (39 sites)
+    5060b96  ScreenerUploadModal (commit-3 oversight, 1 site)
+    f1ff374  FormData upload sites in App.jsx (3 sites)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB changes. No SQL touched. Tenant scoping (server-side
+  from req.user.tenant_id JWT claim) is unchanged. CSRF is a
+  layered origin-binding mechanism, not a tenant-isolation
+  mechanism. tenant-isolation-auditor subagent NOT required
+  for the PR.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. apiFetch never reads or logs
+    request bodies, headers, or token values.
+  Logging audit: monitor-mode mismatch logger in
+    middleware/csrfProtection.js (untouched this session) is
+    already PII-stripped — route template, hashed IP, user id
+    only; never the token values.
+  Cross-tenant risk: none identified — FE-only mechanism
+    change with no data-flow modifications.
+
+VERIFICATION
+  - Pinned local ESLint 9.39.1 (./node_modules/.bin/eslint from
+    frontend/) ran on every migrated file at every commit
+    boundary. Zero new lint issues introduced. All reported
+    issues are pre-existing Followup #51 baseline noise,
+    reproduced unchanged in the migrated files.
+  - npm test — not run. Followup #73: no backend test runner;
+    frontend has no test script in package.json.
+  - Smoke testing of migrated routes is deferred to the 24h
+    post-merge main-deploy monitor window.
+  - CSRF cookie name 'csrf_token' confirmed via grep — matches
+    CSRF_COOKIE_NAME constant in apiFetch.js.
+  - csrfProtection.js getCookieOptions() confirmed
+    httpOnly: false at line 75, so the wrapper's
+    document.cookie read will work.
+  - Pre-commit-1, the cookie + flip mapping was verified
+    against routes/auth.js + middleware/csrfProtection.js
+    via grep. Confirmed: the flip is a one-line diff at
+    server.js:39, NOT in csrfProtection.js (the comment
+    in csrfProtection.js:142 explicitly says so).
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR for sec/csrf-fe-wiring is Session 58 work. PR body
+    draft pre-saved by operator at /Users/melaniemarrone/
+    Documents/Claude/Projects/RTI Student Tracker/
+    pr-csrf-fe-wiring-body-draft.md. Reviewer subagent runs
+    (privacy-reviewer + security-reviewer) + non-author
+    APPROVED review per §2A required before merge.
+    tenant-isolation-auditor NOT required (see Tenant
+    Isolation Review block above).
+  - 24h main-deploy monitor window after PR merges: Render
+    runtime logs filtered on '[csrf:monitor] mismatch'.
+    Goal: zero mismatches from logged-in legitimate users.
+  - sec/csrf-flip-enforce follow-up: single one-line change
+    at server.js:39 ('monitor' → 'enforce'). Opens after the
+    monitor window confirms clean.
+  - Followup B/#87 — DESIGN DECISION BANKED this session:
+    POST /students restricted to admin + counselor +
+    specialist roles (no teacher) when P5 lands.
+  - Followup U (NEW — RESOLVED via PR #73 in this same session):
+    add .render/ to .gitignore.
+    .render/cli.yaml in working tree contains a live Render
+    API key — currently untracked but at risk from
+    `git add .`. One-line edit on chore/gitignore-render-cli;
+    out of scope for this branch.
+  - Followup V (NEW): App.jsx pre-existing duplicate handlers
+    observed during commit-4 audit; deliberately not fixed
+    on this branch to keep CSRF wiring scoped:
+      handleTierChange — App.jsx + AppContext.jsx
+      POST /auth/set-password — App.jsx (×2, two handlers)
+      POST /parent-links — App.jsx (×2, two handlers)
+      POST /students — App.jsx (named handler + inline JSX
+        onSave callback)
+    Cleanup branch is its own scope.
+  - Followup #22 (carry-over): .claude/settings.json drift
+    in working tree throughout this session; not staged,
+    not committed. Carries to Session 58.
+  - Audit-miss caught at commit-5 boundary: ScreenerUploadModal
+    miscategorized as a FormData upload in the commit-3 audit
+    (path contains /upload; file is named with "Upload"; but
+    the actual body is JSON.stringify, not FormData).
+    Corrected via discrete commit 5060b96 per CLAUDE.md
+    no-amend discipline. Commit 16b763c body permanently
+    states the wrong categorization in history; 5060b96
+    documents the arc honestly. Lesson: read the call site
+    body before categorizing by name/path.
+  - 4th cwd-drift occurrence banked: shell cwd reset between
+    Bash calls caused `npx eslint` to download stranger
+    ESLint 10.3.0 from the registry instead of using the
+    project's pinned 9.39.1. Resolved with absolute
+    `cd <project-root>` + `./node_modules/.bin/eslint`.
+    Pattern: avoid bare `npx` in this repo; always invoke
+    pinned binaries via the local node_modules path. Sister
+    pattern: each Bash invocation should re-anchor cwd
+    explicitly when the working directory matters.
+  - /tmp scratch from this session: csrf_audit_lines.txt and
+    App.jsx.bak (sed pre-image). Operator cleanup item;
+    macOS reboot clears /tmp anyway.
+  - Carry-over from Session 56: activities entries for PR #69,
+    #71, #72 NOT YET LANDED. Plan is to batch with this
+    Session 57 entry on a future
+    chore/activities-log-sessions-56-57 PR. Session 56 entry
+    text still owed.
+  - Existing followups preserved unchanged: A (S46 audit
+    count), C-I (Session 54 lettered), J/#95 (RESOLVED
+    Session 55), K/L/M (doc-drift), N
+    (authorizeInterventionAccess.js filename), O (Redis
+    ping-and-verify at boot), P (RESOLVED Session 56 in
+    commit 945f53b — npm audit fix), Q (the no-self-merge
+    phrasing rule, applied to this entry's BRANCH block),
+    R/S/T (carry as named), #41, #51 (FE lint baseline —
+    touched but not broken by this branch), #67 (6 mutation
+    routes pending; this branch unblocks via flip),
+    #70, #71 (over-fetch narrowing), #73 (no backend test
+    runner), #74 (no backend lint config), #80 (RESOLVED
+    Session 56 PR merge), #81 (this branch addresses
+    once flip lands).
+
+NEXT SESSION SHOULD
+  Open the PR for sec/csrf-fe-wiring using the pre-saved body
+  draft at the workspace path noted above. Run
+  privacy-reviewer + security-reviewer subagents and paste
+  their reports into the PR body as pre-review signals.
+  Request non-author APPROVED review per §2A. After merge,
+  watch Render runtime logs filtered on '[csrf:monitor]
+  mismatch' for 24h before opening sec/csrf-flip-enforce.
+  Followup V (App.jsx duplicate handlers) is its own
+  dedicated cleanup branch when there's bandwidth.
+================================================================================
+SESSION: 2026-05-09T07:15:00-07:00 (Session 58)
+BRANCH:  sec/csrf-fe-wiring, sec/rate-limiter-store-uniqueness, sec/rate-limit-enable-offline-queue
+DISPOSITION: merged (PR #74, PR #75, PR #76)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three back-to-back security/availability PRs shipped this
+  session. Started by opening the PR for Session 57's pre-built
+  CSRF frontend wiring; the merge of that exposed two latent
+  bugs in the rate-limit middleware (introduced in PR #71,
+  Session 56) which had been masked for two days by Render's
+  old-instance keep-alive behavior on failed deploys. Worked
+  the full recovery sequence through to a clean production
+  deploy on ded78fe.
+
+  Row-count framing: 3 PRs merged, 6 reviewer-subagent rounds
+  executed (PR #74: 2 rounds with 1 fixup; PR #75: 1 round
+  clean; PR #76: 3 rounds with 2 fixups). 3 production env
+  vars set in Render this session (RATE_LIMIT_REDIS_URL,
+  CSRF_SECRET, LOG_IP_PEPPER). 1 Redis instance provisioned
+  (Valkey 8.1.4 Starter, internal-only, Oregon).
+
+FILES TOUCHED
+  PR #74 (sec/csrf-fe-wiring) — 13 files, +151/-66:
+    frontend/src/utils/apiFetch.js (new, ~75 lines after
+      fixup) — global apiFetch wrapper. CSRF header on POST/
+      PUT/PATCH/DELETE. credentials: 'include' uniform.
+      FormData enforcement (active Content-Type strip).
+      Skip-list cross-reference comment to canonical server
+      list at middleware/csrfProtection.js:109-118.
+    frontend/src/components/Modals/* — 8 modals migrated
+      (ArchiveModal, ChangePasswordModal, GoalFormModal,
+      InterventionPlanModal, PreReferralFormModal,
+      ScreenerUploadModal, StaffModals, TemplateEditorModal,
+      Tier1AssessmentModal — 17 swaps).
+    frontend/src/components/Section504/api.js — 1 swap.
+    frontend/src/context/AppContext.jsx — 4 swaps.
+    frontend/src/App.jsx — 42 swaps (39 non-upload + 3
+      FormData upload sites).
+    Plus the merge commit pulled in .gitignore from PR #73's
+      one-line render-cli ignore add.
+
+  PR #75 (sec/rate-limiter-store-uniqueness) — 1 file,
+  +80/-54:
+    middleware/rateLimiters.js — initializeRateLimitStore
+      becomes a dual-mode factory. No-arg call: env
+      validation + cached ioredis client init (eager-
+      validation hook from server.js:14). With-prefix call:
+      returns a fresh RedisStore wrapping the shared client.
+      Each of the 5 limiters gets its own RedisStore with a
+      unique prefix matching the existing
+      makeRateLimitHandler name string: rl:auth-ip:,
+      rl:auth-login:, rl:contact:, rl:mutation-user:,
+      rl:csv-import:. Connection count to Redis stays at 1.
+
+  PR #76 (sec/rate-limit-enable-offline-queue) — 1 file,
+  +25/-5 cumulative across 3 commits:
+    middleware/rateLimiters.js — ioredis
+      enableOfflineQueue: false → true (initial-connection-
+      window fix; default was killing rate-limit-redis's
+      synchronous SCRIPT LOAD against the not-yet-ready
+      client). Two follow-up commits corrected misleading
+      comment-block claims about fail-open posture and
+      maxRetriesPerRequest scope; aligned both the new
+      comment block and the legacy on('error') handler
+      comment with the actual fail-closed reality
+      (express-rate-limit ^7 default passOnStoreError:
+      false; runtime store errors propagate via next(error)
+      and surface as 5xx through Express's error
+      middleware).
+
+  Production now running: ded78fe on origin/main. This is
+  the FIRST successful Render deploy of post-PR-71 code.
+  PRs #71 through #76 went live together in the deploy that
+  followed PR #76's merge — see Master-index drift
+  correction in OPEN ITEMS below.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB changes across all three PRs. No SQL touched. No
+  tenant scoping modified. No JWT verification or claim-
+  extraction logic touched. Server-side tenant context
+  continues to flow from req.user.tenant_id (a JWT claim
+  populated by requireAuth on auth-protected routes).
+  tenant-isolation-auditor explicitly NOT invoked for any
+  of the three PRs per body justifications; no reviewer
+  requested it after seeing the justification.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none across all three PRs.
+
+  PR #74: frontend wrapper + call-site migration. The
+  wrapper reads csrf_token cookie value (CSRF nonce, not
+  PII), sets one request header, never reads response
+  bodies. No new logging at the wrapper layer or any call
+  site.
+
+  PR #75: rate-limit middleware factory refactor. No new
+  logging. Existing PII-stripping logging path (hashIp +
+  safePathForLog in makeRateLimitHandler) unchanged.
+  Connection-string fragment guard on ioredis on-error
+  handler preserved verbatim.
+
+  PR #76: ioredis config flip + comment corrections.
+  Comment-only changes for the two fixup commits. The
+  on('error') handler still logs err.message only —
+  preserved invariant; never logs the full error object.
+
+  Privacy-reviewer subagent verdict: APPROVED clean across
+  all rounds and all three PRs (PR #74 r1 + r2, PR #75 r1,
+  PR #76 r1 + r2 + r3). Cross-tenant risk: none identified.
+
+VERIFICATION
+  PR-merge ladder on origin/main:
+    9b3af7b  Merge PR #74 sec/csrf-fe-wiring (2026-05-08T19:28:48Z)
+    d6d7b97  Merge PR #75 sec/rate-limiter-store-uniqueness (2026-05-08T21:41:40Z)
+    ded78fe  Merge PR #76 sec/rate-limit-enable-offline-queue (2026-05-09T14:01:21Z)
+
+  Reviewer subagent flow via general-purpose workaround per
+  Followup G/#92, both reviewers in parallel each round:
+    PR #74 round 1: privacy APPROVED clean; security
+      APPROVED WITH NOTES (2 WARN: FormData enforcement,
+      skip-list parity). Fix-on-branch in commit 7372230.
+      Round 2 APPROVED clean — both WARNs RESOLVED.
+    PR #75 round 1: privacy APPROVED clean; security
+      APPROVED clean (0/0/3 INFO). Round 2 not required.
+    PR #76 round 1: privacy APPROVED clean; security
+      APPROVED WITH NOTES (2 WARN: comment block claimed
+      fall-open posture but installed library defaults to
+      fail-closed; maxRetriesPerRequest framing conflated
+      command-queue with offline-queue). Fix-on-branch in
+      50205e4. Round 2 APPROVED WITH NOTES (3 INFO; one
+      surfaced a stale on('error') sibling comment outside
+      the diff that contradicted the corrected block).
+      Fix-on-branch in baf0ece. Round 3 APPROVED clean —
+      INFO-3 RESOLVED, file fully internally consistent.
+
+  §2A non-author APPROVED reviews via human collaborator on
+  all three PRs. Continued clean exercise of the §2A
+  mechanism since it stood up.
+
+  Three production env vars set in Render via dashboard
+  this session (operator-side, walked through via Cowork
+  guidance):
+    RATE_LIMIT_REDIS_URL — internal Redis connection URL
+      to the newly-provisioned 'intervention-monitoring-
+      redis' instance (Valkey 8.1.4 Starter, Oregon,
+      internal-only).
+    CSRF_SECRET — 64-char high-entropy random.
+    LOG_IP_PEPPER — 64-char high-entropy random.
+
+  Production deploy verification (operator-side, Render
+  dashboard Events page):
+    PR #74 merge → auto-deploy → FAILED on
+      RATE_LIMIT_REDIS_URL not set FATAL. Set env var,
+      manual redeploy.
+    Manual redeploy → FAILED on Store-uniqueness
+      ValidationError (express-rate-limit ^7 ERR_ERL_
+      STORE_REUSE). Filed as PR #75 work.
+    PR #75 merge → auto-deploy → FAILED on
+      LOG_IP_PEPPER not set FATAL (PR #75 fix unblocked
+      the prior gate, exposed the next eager-validation
+      check). Set env var.
+    Manual redeploy → FAILED on CSRF_SECRET not set FATAL
+      (next eager-validation in load order). Set env var.
+    Manual redeploy → FAILED on connection-window
+      unhandled-rejection from RedisStore SCRIPT LOAD
+      against not-yet-ready ioredis client (root cause:
+      enableOfflineQueue: false). Filed as PR #76 work.
+    PR #76 merge → auto-deploy → SUCCEEDED first try.
+      Boot log shows clean rateLimiters.js load →
+      csrfProtection.js load → eager-validation hooks pass
+      → app.listen → port bind → health check live.
+
+  This deploy sequence revealed the master-index drift
+  correction documented in OPEN ITEMS below.
+
+OPEN ITEMS / FOLLOW-UPS
+  - 24h Render '[csrf:monitor] mismatch' watch in progress;
+    began at ded78fe deploy-success time (~07:00 PT
+    2026-05-09). Clears ~07:00 PT 2026-05-10. If clean,
+    Session 59 P1 opens sec/csrf-flip-enforce (one-line
+    server.js:39 'monitor' → 'enforce'). Operator-side
+    watch; nothing for Claude Code to do until next
+    session checks Render Events.
+  - P5 / sec/students-mutations-require-auth: 6 routes;
+    design gate cleared in Session 57 (admin / counselor /
+    specialist for POST /students, no teacher). Unblocked
+    by PR #74's merge.
+  - Multi-intervention-per-goal design conversation open
+    Cowork-side anytime (no code; ~30-45 min).
+  - chore/activities-log-sessions-56-57-58 PR: batches
+    Session 56 (PRs #69/#71/#72) + Session 57 (PR #73) +
+    Session 58 (PRs #74/#75/#76) entries. Doc-only; can
+    fold into any session close.
+  - Followup #22 (carries forward): .claude/settings.json
+    drift unstaged on main at session close.
+  - activities.txt with Session 57 + Session 58 entries
+    unstaged at close; lands on the chore PR.
+  - Three pre-existing stashes parked at slots {0}-{2};
+    do not drop casually. The slot-{0} stash contains
+    substantive Followup #22 audit notes.
+  - /tmp scratch from this session: pr-75-handoff.md,
+    pr-76-handoff.md, multiple commit-msg files. Operator
+    cleanup item; macOS reboot clears /tmp anyway.
+  - CLAUDE.md §2 Stack Constraints names Vercel for
+    backend; backend in fact runs on Render. Low-pri doc
+    drift; correct on next CLAUDE.md edit.
+  - Welcome-letter / passwords pending hand-delivery for
+    one school (carry from Session 53).
+
+  Master-index drift correction (most consequential
+  observation banked this session):
+    Prior sessions' "rate limiters live in prod" / "CSRF
+    middleware live in prod (monitor mode)" framing was
+    wrong from PR #71 (Session 56) through this session.
+    Production was running pre-rate-limit code throughout,
+    masked by Render's "old healthy instance keeps serving
+    on new-deploy port-bind failure" zero-downtime
+    behavior. ded78fe is the first successful Render
+    deploy of post-PR-71 code; PRs #71 through #76 went
+    live together as one cumulative delta. Discipline:
+    verify "X live in prod" claims against deploy logs /
+    Render Events page, not just "PR merged."
+
+  Library-behavior facts banked:
+    - express-rate-limit ^7 default is fail-CLOSED via
+      passOnStoreError: false (NOT fall-open; the comment
+      in PR #71 and propagated through PR #75 was
+      materially wrong; corrected in PR #76 commits
+      50205e4 + baf0ece).
+    - rate-limit-redis ^4 RedisStore constructor calls
+      SCRIPT LOAD synchronously at module-load time,
+      requires ioredis enableOfflineQueue: true to
+      survive the brief initial-connection window
+      (typically <100ms post-boot for DNS + TCP + AUTH).
+    - ioredis maxRetriesPerRequest scope: bounds retries
+      inside the command queue (sent commands awaiting a
+      reply), NOT the offline queue. Offline-queue
+      accumulation is bounded separately by ioredis's
+      flushQueue-on-disconnect.
+
+  Process / harness observations banked:
+    - Recovery sequence cascade: peeling layers reveals
+      more bugs. Don't claim victory on a fix until a
+      single full clean boot is verified end-to-end.
+    - Render keeps old healthy instance alive on deploy
+      failure (zero-downtime feature, but masks silent
+      failures if Events page isn't watched after each
+      merge).
+    - Audit-before-commit gate slip pattern recurred once
+      this session (PR #74 commit 7372230). CC-side
+      feedback memory written. Cowork-side pair-bank:
+      split STOP gates into separate prompts rather than
+      relying on internal halt language inside multi-step
+      prompts.
+    - Subagent-output delivery format risk: one
+      truncation/omission incident on PR #76 round-1
+      reports. CC-side feedback memory written about
+      defensive delivery format.
+    - Post-push GitHub PR-state indexing lag observed
+      at ~2-3 seconds; verify steps right after git push
+      should tolerate one re-query before reporting a
+      discrepancy.
+    - cwd-drift recurrence (5+ banked total). Discipline:
+      chain `cd /path && ...` in every bash invocation
+      regardless of confidence; bash's working-dir
+      persistence between calls is unreliable in this
+      harness.
+    - §0.4 conflict-flag mechanism (Code-side correcting
+      Cowork-side mental model) fired multiple times this
+      session: LOG_IP_PEPPER eager-vs-lazy validation,
+      fall-open vs fail-closed posture, Store-uniqueness
+      vs single-store-still-works.
+
+  Two new followups filed:
+    - Followup W: server.js:14 eager-validation hook
+      redundancy (server.js explicitly calls
+      initializeRateLimitStore() at boot for env
+      validation; the same call also fires when the first
+      limiter constructor runs at module load — one of
+      the two calls is redundant once the cached-init
+      guard is in place).
+    - Followup X: rate-limit fail-closed vs fail-open
+      product decision. Current behavior is fail-closed
+      via express-rate-limit's default passOnStoreError:
+      false. Whether to flip each limiter to
+      passOnStoreError: true for fail-open during Redis
+      outages is a deliberate product decision —
+      tradeoff between availability (fail-open) and
+      bypass-prevention (fail-closed) under Redis
+      failure.
+
+  Existing followups preserved unchanged: A, C-I,
+  J/#95 (RESOLVED), K/L/M, N, O, P (RESOLVED), Q,
+  R/S/T, U (RESOLVED Session 57 via PR #73), V (App.jsx
+  duplicate handlers, own cleanup branch when there's
+  bandwidth), #22, #41, #51, #67 (P5 unblocked by PR
+  #74 merge; awaits its own branch), #70, #71, #73,
+  #74, #80 (RESOLVED), #81 (RESOLVED Session 58 via PR
+  #74 + PR #76 deploy success; CSRF FE wiring complete
+  and CSRF middleware now actually live in monitor mode;
+  flip-enforce remains for Session 59).
+
+NEXT SESSION SHOULD
+  Wait for the 24h Render '[csrf:monitor] mismatch' watch
+  to confirm clean (~07:00 PT 2026-05-10). Then open
+  sec/csrf-flip-enforce — single one-line change at
+  server.js:39 'monitor' → 'enforce', tiny PR with fast
+  review. Then move to P5
+  (sec/students-mutations-require-auth, 6 routes; design
+  gate cleared — admin/counselor/specialist for POST
+  /students, no teacher). The chore/activities-log batch
+  PR for Sessions 56/57/58 entries can fold into any
+  session close.
+================================================================================
+SESSION: 2026-05-10T20:30:00-07:00 (Session 59)
+BRANCH:  migration/screener-types-lookup (PR #77, MERGED 0dcc97f)
+         sec/csrf-migrate-progress-mtss-modals (PR #78, MERGED cd36272)
+         sec/csrf-extract-bare-token (PR #79, MERGED 6efafcf)
+         sec/csrf-flip-enforce (PR #80, MERGED d791249)
+DISPOSITION: 4 PRs merged, all feature branches deleted (local + remote).
+         This entry stays in working tree on main per chore-PR convention;
+         will be batched into chore/activities-log-sessions-56-57-58-59
+         (S60 P1 candidate) alongside parked S56-S58 entries.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two arcs in one session. (A) Multi-screener arc precursor: PR #77
+  added a screener_types lookup table seeded with STAR only (other
+  vendors deferred to migration-028 pending real CSV samples).
+  Migration-026 applied to prod via Render psql. (B) Original
+  Session 59 P2 = CSRF flip-enforce. Required three cascading sub-
+  PRs because the post-PR-#76 monitor watch was deceptively quiet
+  and the smoke test surfaced both wrapper-migration gaps AND a
+  deeper protocol contract bug. PR #78 closed two unwrapped FE
+  state-changing fetch sites (Progress + MTSS modals). PR #79 fixed
+  an apiFetch / csrf-csrf v3.2.2 protocol contract bug (FE was
+  sending whole cookie value as X-CSRF-Token; library expects only
+  bare token before the '|' delimiter). PR #80 was finally the
+  one-line monitor → enforce flip in server.js:39.
+
+FILES TOUCHED
+  PR #77 (migration-026 precursor):
+    migration-026-screener-types-lookup.sql — new file at repo root,
+      idempotent CREATE TABLE + STAR seed
+    schema.sql — added screener_types table near other lookups,
+      kept in lockstep with the migration script
+  PR #78 (modal wrapper migration):
+    frontend/src/components/Modals/ProgressFormModal.jsx — added
+      apiFetch import; fetch → apiFetch on POST/PUT to /weekly-progress
+    frontend/src/components/Modals/MTSSMeetingFormModal.jsx — same
+      shape; fetch → apiFetch on POST/PUT to /mtss-meetings
+  PR #79 (protocol contract fix):
+    frontend/src/utils/apiFetch.js — readCsrfTokenFromCookie() now
+      extracts bare token (left of '|' delimiter); fail-closed null
+      on missing delimiter
+  PR #80 (CSRF flip):
+    server.js — line 39, csrfProtection({ mode }) flips 'monitor'
+      → 'enforce'
+
+MIGRATIONS RUN
+  migration-026-screener-types-lookup.sql — created screener_types
+    lookup table + seeded 1 vendor row (STAR). Applied to prod via
+    Render external psql + \i command (same routine as Migration
+    024). Schema-wide vendor metadata table; no tenant_id column
+    by design.
+
+TENANT ISOLATION REVIEW
+  PR #77: screener_types is intentionally global (vendor metadata,
+    not student/staff data); no tenant_id column. Documented in the
+    migration script header as a design choice. Routes that consume
+    the table (future feat/multi-screener-upload work) will still
+    scope by tenant on screener_results, which is the tenant-bound
+    table.
+  PRs #78/#79/#80: FE wrapper + middleware mode flag only. No new
+    SQL, no new ID-accepting handlers, no scoping surface modified.
+    tenant-isolation-auditor explicitly NOT invoked per the playbook
+    reviewer-selection table for all four PRs.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none across all 4 PRs.
+  Logging audit:
+    - PR #77: no new log statements.
+    - PR #78/#79: no new log statements; existing console.error
+      paths in target modals untouched.
+    - PR #80: pre-existing logCsrfMismatch unchanged in fields;
+      bracketed prefix flips '[csrf:monitor]' → '[csrf:enforce]'.
+      Captured fields remain PII-free (HTTP method, sanitized route
+      template via safePathForLog, peppered+truncated SHA-256 of
+      req.ip via hashIp, integer req.user?.id ?? null).
+    - PR #80 enforce-mode error response: constant
+      '{ error: "Invalid CSRF token" }' — no request echo, no DB
+      error, no stack, no PII leakage.
+  Cross-tenant risk:
+    - None introduced. PR #80's enforce mode acts as a de-facto
+      gate for the pre-existing MTSS backend IDOR (Followup #69 —
+      POST/PUT/DELETE on /api/mtss-meetings lack requireAuth):
+      anonymous attacker traffic without a CSRF cookie cannot
+      reach those routes. Documented in PR #80 body as TEMPORARY
+      narrowing, explicitly NOT a substitute for
+      sec/mtss-meetings-require-auth.
+  Smoke testing data:
+    - Operator smoke tests (PR #79 verification, PR #80
+      verification) used 1 test student row in 1 test tenant; rows
+      deleted post-test.
+
+VERIFICATION
+  Backend test runner — not configured (Followup #73); skipped per
+    existing tracker.
+  Backend lint — not configured (Followup #74); skipped per
+    existing tracker.
+  Frontend ESLint (npm run lint in frontend/) — 89 problems
+    baseline (73 errors, 16 warnings), matches Followup #51. 4
+    findings in S59-touched files: 2 in ProgressFormModal.jsx
+    (lines 26, 73 — unused token destructure, unused errorData), 2
+    in MTSSMeetingFormModal.jsx (lines 44-45 — useEffect
+    initializeForm-before-declaration). All 4 pre-existing on lines
+    THIS session did not modify (S59 edits were at lines 4-5 and
+    50, 191 of the modal files). apiFetch.js: 0 findings (PR #79
+    lint-clean). Zero new lint failures introduced.
+  PR #77 prod-apply verification: psql \d screener_types after
+    migration showed expected schema; SELECT COUNT(*) returned 1
+    (STAR). Same routine as Migration 024.
+  PR #79 post-deploy smoke: operator confirmed cookie format in
+    DevTools as ${128-hex-token}%7C${64-hex-hash}, then re-ran the
+    upload+delete flow; zero new [csrf:monitor] mismatch entries.
+  PR #80 post-deploy smoke: pending operator hard-refresh + smoke
+    flow re-run (login + create test student + upload doc + delete
+    doc); expected zero [csrf:enforce] mismatch entries from
+    legitimate actions.
+  Subagent reviewer rounds: 4 PRs × 2 reviewers each (security +
+    privacy, both via Followup G/#92 general-purpose workaround) =
+    8 reviews, all APPROVED with at most INFO-level notes. No
+    CRITICAL or WARN findings against any of the 4 PRs.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  CLOSED THIS SESSION:
+    Followup #81 (CSRF protection absent on state-changing routes)
+      — closed end-to-end by PR #80. CSRF wiring is now real on
+      /api/* for the first time.
+
+  NEW (surfaced this session):
+    csrf-mismatch-log-fidelity (slug-only, namespace TBD): the CSRF
+      mismatch logger captures path=req.baseUrl ('/api') and
+      userId=null because the middleware runs before route
+      resolution and before requireAuth. This made the PR #79
+      protocol contract bug take a day longer to find than
+      necessary. Recommend enriching safePathForLog to return
+      req.originalUrl minus query string + path-template
+      substitution, and peeking at req.cookies.auth_token to
+      capture a pre-auth userId for correlation. Surfaced in PR
+      #79 body. Recommend HIGH priority.
+    migration-028 (slug-only): collect MAP / DIBELS / DIBELS
+      Spelling / iReady column specs and seed screener_types. v1
+      (migration-026) seeded STAR only because no other vendor's
+      column specs exist in repo. Needs real sample CSV exports
+      for column-spec accuracy. MAP is highest priority (one
+      production tenant uses it). MAP Reading Fluency is a
+      separate product from MAP Growth and must not be folded in.
+      NWEA reference PDF sits untracked in working tree at
+      docs/references/.
+    sec/mtss-meetings-require-auth (recommend elevating to HIGH):
+      routes/mtssMeetings.js POST/PUT/DELETE still lack
+      requireAuth. PR #80's enforce-mode flip is a temporary
+      de-facto narrowing, not the proper fix. Body-supplied
+      tenant_id/student_id/created_by IDOR is unchanged. Tracked
+      in master-index as Followup #69 / in-code as "Followup 67".
+
+  IN-FLIGHT WORKING-TREE STATE AT SESSION CLOSE (intentionally not
+    cleaned up; activities entry stays in working tree on main per
+    chore-PR convention):
+    .claude/settings.json — modified, TWO sources of drift:
+      (a) carryover from start of S59 (parked at session start as
+          stash{0}: S59-carryover-settings-and-activities-pre-
+          migration-branch)
+      (b) NEW mid-session drift that appeared between PR #78 and
+          PR #79 open. Likely harness auto-mutation (not an
+          intentional change in this session's work). Followup #22
+          territory. Triage when opening chore/activities-log-
+          sessions-56-57-58-59.
+    docs/references/GR_SampleClass.pdf — untracked, NWEA reference
+      PDF for migration-028 deferred-vendor work. Don't stage in
+      the chore PR; address with migration-028.
+
+  PRE-EXISTING FOLLOWUPS UNCHANGED THIS SESSION:
+    Followup G/#92 (named subagents not registered in CC sessions —
+      general-purpose workaround continues to work; 8 reviewer
+      rounds this session used it cleanly)
+    #22 (settings.json drift — see in-flight state above)
+    #41 (500 handler error.message leak)
+    #49 (screener_results prod dedup, multi-screener arc)
+    #51 (frontend lint baseline — see Verification)
+    #67 (mutation routes still open, partially narrowed by PR #80
+      enforce mode for the MTSS subset)
+    #69 (MTSS backend IDOR — see "sec/mtss-meetings-require-auth"
+      above)
+    #70 (pg error.detail leak in logs)
+    #71 (over-fetch narrowing)
+    #72 (FE credentials inconsistency)
+    #73 (no backend test runner)
+    #74 (no backend lint config)
+    #75 (relationship column whitelist)
+    #76 (non-integer URL params bubble to 500)
+    #77 (auth.js:341 phantom tenant_id column)
+    #78 (Route 1 over-fetch — psl.* surfaces created_at)
+    #79 (Route 2 over-fetch with parent-visibility — needs
+      product/legal coordination)
+    #80 (rate-limiting absent across application)
+    #82 (parity-check guard inconsistency)
+    K (Helmet doc-drift), L (rate-limit doc-drift in
+      SECURITY_REVIEW.md), M (/api/contact lives outside routes/
+      tree), A (S46 audit count), B-I (lettered S54 followups)
+
+NEXT SESSION SHOULD
+  P1: Open chore/activities-log-sessions-56-57-58-59. This S59
+    entry plus the parked S56-S58 entries (which live in stash{0}:
+    S59-carryover-settings-and-activities-pre-migration-branch
+    alongside .claude/settings.json drift) get committed in a
+    single chore PR. The PR also needs to triage the settings.json
+    drift: the stashed (a) drift contains a Bash(env) auto-allow
+    that should be demoted to ask (per stash{1}'s description from
+    Session 38b — same Followup #22 pattern); the NEW (b)
+    mid-S59 drift needs its own diff inspection before any of it
+    is kept.
+  P2: Verify PR #80's post-deploy smoke is clean. Operator hard-
+    refreshes browser; re-runs login + create test student + upload
+    doc + delete doc; checks Render logs for [csrf:enforce]
+    mismatch entries. Zero expected. If any appear, those are
+    403'd requests — investigate which UI surface triggered them
+    before they affect real users.
+  P3: Decision point on next branch. Options:
+    A. sec/mtss-meetings-require-auth — closes Followup #69
+       properly. PR #80's de-facto gate is partial; backend still
+       trusts body-supplied tenant_id/student_id/created_by.
+       Recommend HIGH priority elevation. Full reviewer triad
+       needed.
+    B. csrf-mismatch-log-fidelity — enrich safePathForLog +
+       cookie-peeked userId for mismatch correlation. Would have
+       saved a day of investigation in this session. HIGH-priority
+       slug-only followup.
+    C. migration-028 (multi-screener arc continuation) — blocked
+       until real CSV exports for MAP / DIBELS / iReady are
+       available. NWEA reference PDF sits untracked in working
+       tree.
+    Recommended order: A → B → C, but A and B can both lead with
+    no dependency. Owner's call.
+================================================================================
