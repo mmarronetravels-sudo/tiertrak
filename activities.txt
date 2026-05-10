@@ -7672,3 +7672,350 @@ NEXT SESSION SHOULD
     Recommended order: A → B → C, but A and B can both lead with
     no dependency. Owner's call.
 ================================================================================
+SESSION: 2026-05-10T22:00:00-07:00 (Session 60)
+BRANCH:  sec/mtss-meetings-require-auth (PR #81, MERGED 3e5d1b3)
+         chore/activities-log-sessions-57-58-59 (PR #82, MERGED e229f69)
+DISPOSITION: 2 PRs merged, both feature branches deleted (local + remote).
+         This entry stays in working tree on main per chore-PR convention;
+         will be batched into a future S60+ chore PR alongside the next
+         session-close entry.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two arcs in one session. (A) Backend IDOR closure on /api/mtss-meetings
+  POST/PUT/DELETE per Followup #69 (PR #81). PR #80's CSRF flip-enforce was
+  a temporary de-facto narrowing; this PR delivered the proper backend fix.
+  Full §2A reviewer triad arc — privacy-reviewer + security-reviewer +
+  tenant-isolation-auditor — all APPROVED with at most MEDIUM-level
+  non-blocking notes. Operator smoke test confirmed both negative path
+  (teacher role → 403 with uniform body) and positive path (school_admin
+  role → 201 with server-derived tenant_id and created_by). (B)
+  Activities-log accumulated chore PR (PR #82). Batched 3 stranded entries
+  (S57/S58/S59) into a single chore commit. During audit, S56 entry was
+  discovered to have never been written (per S56 close master-index line
+  223); scope was honestly narrowed and branch renamed mid-session from
+  chore/activities-log-sessions-56-57-58-59 to
+  chore/activities-log-sessions-57-58-59. S56 backfill deferred permanently
+  with documented citation in PR body.
+
+  Row-count framing: 2 PRs merged, 3 reviewer-subagent rounds executed
+  on PR #81 (privacy + security + tenant-isolation, all single-round
+  APPROVED). PR #82 was doc-only with no reviewer subagents per
+  reviewer-selection table. 0 production migrations, 0 production env
+  vars set. Both PRs deployed clean to prod via Render auto-deploy on
+  first try.
+
+FILES TOUCHED
+  PR #81 (sec/mtss-meetings-require-auth) — 1 file, +185/-78:
+    routes/mtssMeetings.js — added requireAuth + MEETING_WRITE_ROLES gate
+      + server-resolved tenant binding on POST/PUT/DELETE. Removed
+      tenant_id and created_by from body destructure on POST (server-
+      derived from req.user). Removed tenant_id from body destructure on
+      PUT (server-derived from meeting's own tenant via tenant-bound
+      SELECT-by-id). DELETE folded the tenant gate into the WHERE clause
+      atomically. Uniform 403 { error: 'Not authorized' } across all
+      not-found-or-mismatch paths (mirrors authorizeByInterventionId).
+      All auth/role/tenant checks run pre-BEGIN. Per-row
+      intervention_reviews[].student_intervention_id verified to belong
+      to the meeting's student + tenant pre-BEGIN. Three console.error
+      catch-block logs narrowed from `error` to `error.message` to
+      reduce §4B exposure (pg-driver error fields can echo parameter
+      values). Stale block-comment above computeWeeklyProgressSnapshot
+      rewritten — it referenced the now-closed IDOR.
+
+    MEETING_WRITE_ROLES route-local constant: district_admin,
+      school_admin, counselor, student_support_specialist,
+      behavior_specialist, mtss_support. Precedent: ROLES_WHO_CAN_EDIT
+      in routes/tier1-assessments.js. Teacher and parent intentionally
+      excluded.
+
+  PR #82 (chore/activities-log-sessions-57-58-59) — 1 file, +724/-0:
+    activities.txt — appended 3 session entries (S57/S58/S59) extracted
+      from stash{0} (S57/S58) + working tree (S59). Path-filtered
+      checkout left stash{0}'s settings.json portion parked.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  PR #81: full tenant-isolation-auditor pass. APPROVED with 1 INFO,
+    2 LOW — no CRITICAL, no HIGH, no MEDIUM. All 9 audited queries
+    scoped to a server-resolved tenant identifier; no request-input
+    tenant value reaches any WHERE clause or INSERT column. POST,
+    PUT, and DELETE all close the prior IDOR. Per-row intervention
+    check closes the cross-tenant smuggling vector on
+    intervention_reviews[]. body.tenant_id and body.created_by are
+    no longer destructured. Read routes (GET /options, /:id,
+    /student/:studentId, /student/:studentId/count) remain unauthed
+    per Followup #39 (explicit scope deferral, called out in PR body).
+  PR #82: no SQL touched, no tenant scoping modified. No auditor
+    pass required per reviewer-selection playbook.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none across both PRs.
+
+  PR #81 privacy-reviewer pass: APPROVED WITH NOTES (0 CRITICAL /
+    0 HIGH / 0 MEDIUM / 0 LOW / 5 INFO). The console.error narrowing
+    from `error` to `error.message` removes the pg-driver leak path
+    where error.detail / error.where / error.internalQuery /
+    error.parameters can carry parameter values (including PII fields
+    like attendees JSONB, progress_summary, next_steps, review.notes).
+    Uniform 403 body across all auth/tenant failure paths; no
+    not-found-vs-mismatch information leak. 201 response is
+    meetingResult.rows[0] — caller's own tenant by construction.
+    Read-route catch blocks on the same file still log full `error`
+    (lines 82, 123, 170, 208, 620); folded into Followup #39 scope
+    expansion (see BANKED below).
+
+  PR #82 §4B per-entry pre-check: 5 targeted PII greps on the diff
+    (lowercase school slugs, proper-case school slugs, emails, PII
+    field names, smoke-test first names) — all clean. The 2 grep-4
+    hits on `tenant_id/student_id/created_by` were narrative
+    field-name references in the IDOR description, not PII values.
+    Operator §4B review on the workspace additions file confirmed
+    clean before authorize-to-stage.
+
+  Smoke testing data (PR #81 verification): used 1 test student row
+    in 1 test tenant on prod, with both teacher-role and
+    school_admin-role accounts. No PII captured in this entry; only
+    abstract role names and pass/fail outcomes.
+
+  Cross-tenant risk: closed for all three mutation paths on
+    /api/mtss-meetings. Read-route exposure remains a known gap
+    (Followup #39).
+
+VERIFICATION
+  PR-merge ladder on origin/main this session:
+    3e5d1b3  Merge PR #81 sec/mtss-meetings-require-auth (2026-05-10T20:30:33Z)
+    e229f69  Merge PR #82 chore/activities-log-sessions-57-58-59 (2026-05-10T21:24:10Z)
+
+  Production deploy verification (Render Events page):
+    PR #81 merge → auto-deploy dep-d80elqa8qa3s73b2ma6g → SUCCEEDED
+      first try. Created 2026-05-10T20:30:33Z, finished
+      2026-05-10T20:31:05Z (~32s end-to-end). Status: live, then
+      deactivated when PR #82's deploy took over.
+    PR #82 merge → auto-deploy dep-d80feuho3t8c73ehuacg → SUCCEEDED
+      first try. Created 2026-05-10T21:24:10Z, finished
+      2026-05-10T21:24:42Z (~32s). Status: live. Auto-deploy fires
+      on doc-only commits in this Render config.
+
+  Reviewer subagent flow (PR #81):
+    All three named subagents (privacy-reviewer, security-reviewer,
+    tenant-isolation-auditor) auto-loaded directly this session —
+    the Followup G/#92 general-purpose workaround was not needed.
+    First confirmed end-to-end success of named subagents on a
+    §4B/§5 PR. Single round each, all APPROVED with non-blocking
+    notes.
+
+  Backend tests: not configured (Followup #73); n/a.
+  Backend lint: not configured (Followup #74); n/a.
+  Frontend lint: not exercised this session (no FE files touched).
+  Syntax check: node --check routes/mtssMeetings.js — passed.
+
+  §2A non-author APPROVED review on PR #81 via human collaborator.
+    PR #82 also passed the 1-approving-review gate per branch
+    protection ruleset even though §2A doesn't require formal
+    review for doc-only PRs.
+
+  Positive smoke test discipline (PR #81 post-deploy):
+    Negative path: cookie-bearing teacher account → POST
+      /api/mtss-meetings → 403 with uniform { error: 'Not authorized' }
+      body. Confirms role gate fires before tenant gate.
+    Positive path: cookie-bearing school_admin account → POST
+      /api/mtss-meetings with valid in-tenant student_id → 201
+      with meeting row returned. Server-derived tenant_id and
+      created_by both populated correctly from req.user (body did
+      not supply them). Confirms server-authoritative trust model
+      works end-to-end.
+    Discipline preserved: 200/201 verified, not inferred from
+      absence of errors. Continuing the S59 pattern.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  CLOSED THIS SESSION:
+    Followup #69 (MTSS backend IDOR — body-supplied tenant_id /
+      student_id / created_by trusted; no requireAuth on POST/PUT/
+      DELETE) — closed end-to-end by PR #81. The in-code "Followup
+      67" reference also resolves here. CSRF flip-enforce (PR #80,
+      S59) was the temporary de-facto narrowing; this is the
+      proper backend fix.
+
+  NEW (surfaced this session):
+    mtss-meetings-intervention-reviews-length-cap (MEDIUM): per
+      security-reviewer M1 on PR #81. POST/PUT pre-flight loops
+      iterate over body.intervention_reviews with one DB roundtrip
+      per entry, plus up to two more roundtrips per entry inside
+      the transaction (snapshot helper + flag helper). express.json
+      default limit is 100kb, which fits ~2500-3500 entries;
+      combined with mutationUserLimiter at 300/min, a malicious
+      in-tenant counselor can drive ~750k-1M DB roundtrips/min
+      from one cookie before the rate limit hits. Cap at
+      MAX_INTERVENTION_REVIEWS = 50 (~10× legitimate envelope)
+      before the pre-flight loops run, or collapse to a single
+      `SELECT … WHERE si.id = ANY($1) AND …` query. Bounded by
+      requireAuth + role gate so not anonymous-reachable; strictly
+      less exposed after PR #81 than before.
+
+  BANKED FROM PR #81 REVIEWER NOTES (folded into existing followups):
+    security-reviewer L1 + tenant-isolation-auditor L1 (RETURNING *
+      on POST/PUT 201/200 response echoes tenant_id + created_by;
+      no cross-tenant leak since caller is row owner by construction,
+      but data-min hygiene) — banked into existing data-min cluster
+      (#71 / #78 / #79).
+    privacy-reviewer INFO 1 (four unchanged read-route catch blocks
+      on mtssMeetings.js at lines 82, 123, 170, 208, 620 still log
+      full `error` rather than `error.message`) — folded into
+      Followup #39 scope expansion. When read-routes get requireAuth
+      + tenant gating in that PR, also narrow these catches to
+      `error.message` for uniformity with the mutation handlers.
+    tenant-isolation-auditor L2 (composite FK on
+      mtss_meetings.(student_id, tenant_id) would close the
+      theoretical POST pre-flight/INSERT TOCTOU on student
+      re-tenanting) — appended to schema-tightening followup
+      (alongside the existing mtss_meetings.tenant_id NOT NULL
+      tightening already tracked).
+
+  MASTER-INDEX DRIFT CATCHES (this session):
+    S59 close framed P1 as "10 PRs across 4 sessions" for the
+      chore/activities-log-sessions-56-57-58-59 plan. Reality
+      audited at S60 P1 open: 7 entries across 3 sessions — S56
+      entry was never written (per S56 close master-index line 223,
+      "deferred to next session" — never resolved across S57/S58/
+      S59). Branch renamed mid-session to
+      chore/activities-log-sessions-57-58-59 to reflect honest
+      scope. Lesson banked: "PR count" and "session-entry count"
+      are different metrics; treat them as such.
+    S59 close framing implied all accumulated activities entries
+      were "on main in working tree" awaiting batch. Reality: 1
+      entry (S59) in working tree, 2 entries (S57+S58) inside
+      stash{0} bundled with .claude/settings.json drift. Required
+      path-filtered checkout (`git checkout stash@{0} --
+      activities.txt`) to extract activities content without
+      pulling settings drift into the chore PR. Lesson banked:
+      "in flight" means different things across working tree,
+      index, and stashes — audit each surface explicitly before
+      composing scope.
+
+  DISCIPLINE OBSERVATIONS BANKED (this session):
+    Cowork-side §2A slip on PR #81: Cowork (this Claude.ai
+      project) acknowledged operator's verbal "Reviewer has
+      approved" relay and walked through the merge step
+      without first verifying reviewDecision == APPROVED via
+      gh pr view. Operator caught the slip mid-instruction,
+      citing CLAUDE.md §2A's mechanical test, and halted the
+      merge. Cowork owned the mistake; operator then formally
+      verified reviewDecision == APPROVED via GitHub UI
+      screenshot (Changes approved + 1 approving review by
+      reviewers with write access) before authorizing the
+      actual merge. Same failure-mode-shape as PR #66 /
+      Session 54, caught this time by the operator before
+      the merge instead of after. Lesson banked Cowork-side:
+      the GitHub field is the gate; verbal claim is not,
+      even from the operator the project trusts. The
+      playbook's "push back on shortcuts" discipline ran the
+      right direction this time.
+    Stash-checkout clobber risk caught pre-execution: the literal
+      instruction `git checkout stash@{0} -- activities.txt` was
+      what the operator requested for Step A of the chore PR. CC
+      surfaced that `git checkout <ref> -- <path>` is a path-
+      replacement (not a merge or append) and would have destroyed
+      the working tree's S59 entry. Corrected approach (save →
+      checkout → append) preserved S59 cleanly. Lesson banked:
+      `git checkout <ref> -- <path>` semantics are easy to misread
+      as additive; always verify the target file's current content
+      before running.
+    Option-naming mismatch between Cowork's (a)/(b) framing and
+      CC's (a)/(b)/(c) framing for the S56 question. CC offered
+      three options including a "fish out of operator scratch"
+      path that Cowork hadn't framed. Resolved by Cowork
+      clarifying which letter mapped to which path on each side.
+      Lesson banked: when surfacing options to the operator,
+      label them in a way that's unambiguous across both sides;
+      never assume (a)/(b) on one side maps to (a)/(b) on the
+      other.
+    Positive smoke test discipline continued: PR #81 verified
+      end-to-end with both negative (teacher → 403 with uniform
+      body) and positive (school_admin → 201 with server-derived
+      fields) paths, not inferred from absence of errors.
+      Continuing the S59 "is it actually validating" pattern.
+    Named-subagent auto-load worked end-to-end this session.
+      First S60-era confirmation that Followup G/#92 may have
+      stabilized; will continue to monitor across S61+.
+
+  IN-FLIGHT WORKING-TREE STATE AT SESSION CLOSE (intentionally not
+    cleaned up; this S60 entry stays in working tree on main per
+    chore-PR convention):
+    .claude/settings.json — still modified, drift continues to
+      carry. Followup #22 territory. Same drift as carried
+      through S57/S58/S59; not triaged this session.
+    docs/references/GR_SampleClass.pdf — still untracked. NWEA
+      reference PDF for migration-028 deferred-vendor work; don't
+      stage in any chore PR; address with migration-028.
+    Stashes: stash{0} (its activities.txt portion was extracted
+      via path-filtered checkout this session; the
+      .claude/settings.json portion remains parked in the stash),
+      plus stash{1}, stash{2}, stash{3} unchanged. Do not drop
+      casually.
+    This S60 entry will batch into a future S60+ chore PR
+      alongside the next session-close entry (per chore-PR
+      convention).
+
+  PRE-EXISTING FOLLOWUPS UNCHANGED THIS SESSION:
+    Followup G/#92 (named subagents) — appears to be working
+      end-to-end now; keep watching across S61+.
+    #22 (settings.json drift — see in-flight state above)
+    #39 (read routes on /api/mtss-meetings still unauthed; scope
+      expanded this session per banked reviewer note)
+    #41 (500 handler error.message leak)
+    #49 (screener_results prod dedup, multi-screener arc)
+    #51 (frontend lint baseline)
+    #67 (mutation routes broadly — MTSS subset closed by PR #81;
+      other mutation routes still in scope)
+    #70 (pg error.detail leak in logs)
+    #71 / #78 / #79 (over-fetch / data-min cluster — expanded
+      this session per banked reviewer note re RETURNING *)
+    #72 (FE credentials inconsistency)
+    #73 (no backend test runner)
+    #74 (no backend lint config)
+    #75 (relationship column whitelist)
+    #76 (non-integer URL params bubble to 500)
+    #77 (auth.js:341 phantom tenant_id column)
+    #80 (rate-limiting absent across application — MTSS mutation
+      routes now covered via requireAuth's mutationUserLimiter
+      passthrough)
+    #82 (parity-check guard inconsistency)
+    csrf-mismatch-log-fidelity (S59 NEW — HIGH priority slug-only)
+    migration-028 (S59 NEW — multi-screener arc continuation)
+    schema-tightening (expanded this session per banked tenant
+      L2 note re composite FK on mtss_meetings)
+    K (Helmet doc-drift), L (rate-limit doc-drift in
+      SECURITY_REVIEW.md), M (/api/contact lives outside routes/
+      tree), A (S46 audit count), B-I (lettered S54 followups
+      where unresolved)
+
+NEXT SESSION SHOULD
+  P1: Open chore/activities-log-session-60 (or batch with next
+    session-close entry) once timing fits. Same chore-PR
+    convention. Consider triaging the .claude/settings.json
+    drift in the same PR as part of Followup #22.
+  P2: Pick from priority queue:
+    A. mtss-meetings-intervention-reviews-length-cap (this
+       session NEW MEDIUM). Smallest safe change is the cap-at-50
+       option; round-trip-collapse (= ANY($1)) is more invasive
+       but eliminates the amplifier entirely. ~5-10 line change
+       in routes/mtssMeetings.js. No reviewer triad needed
+       (security-only follow-up, no PII surface change).
+    B. csrf-mismatch-log-fidelity (S59 NEW — HIGH). Enrich
+       safePathForLog + cookie-peeked userId for mismatch
+       correlation. Would have saved a day in S59's PR #79
+       debug arc.
+    C. Followup #39 (read routes on /api/mtss-meetings still
+       unauthed; scope expanded this session to include
+       narrowing the four read-route catch-block error logs to
+       error.message). Reviewer triad needed (§4B/§5
+       territory). Closes the last gap on the mtssMeetings
+       surface — after this lands, both read and write paths
+       are tenant-gated and PII-clean in logs.
+    Recommended order: A → B → C. A is mechanical and tightens
+    the same surface PR #81 just closed; B unblocks future
+    debug velocity; C closes the last mtssMeetings gap.
+================================================================================
