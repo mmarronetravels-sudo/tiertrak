@@ -43,7 +43,15 @@ function readCsrfTokenFromCookie() {
     const eq = part.indexOf('=');
     if (eq === -1) continue;
     if (part.slice(0, eq) === CSRF_COOKIE_NAME) {
-      return decodeURIComponent(part.slice(eq + 1));
+      const fullValue = decodeURIComponent(part.slice(eq + 1));
+      // csrf-csrf v3 stores `${token}|${hash}` in the cookie. The
+      // X-CSRF-Token header must contain only the bare token portion —
+      // the library splits the cookie on '|' server-side and compares
+      // the header to the cookie's left half. Returning the full value
+      // would defeat the contract on every state-changing request.
+      const delimiterIdx = fullValue.indexOf('|');
+      if (delimiterIdx === -1) return null;
+      return fullValue.slice(0, delimiterIdx);
     }
   }
   return null;
