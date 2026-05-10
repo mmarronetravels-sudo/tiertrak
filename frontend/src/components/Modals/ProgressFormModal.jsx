@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { logError } from '../../utils/logError';
+import { apiFetch } from '../../utils/apiFetch';
 
 // Rating helpers (import from utils/constants.js if already extracted)
 const getRatingLabel = (rating) => {
@@ -46,7 +47,7 @@ const ProgressFormModal = ({ intervention, editingLog, onClose, user, fetchWeekl
         ? `${API_URL}/weekly-progress/${editingLog.id}`
         : `${API_URL}/weekly-progress`;
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method: editingLog ? 'PUT' : 'POST',
         headers: {
   'Content-Type': 'application/json',

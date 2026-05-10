@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, ClipboardList, CheckCircle, Save, ChevronRight, ChevronDown, AlertCircle } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
+import { apiFetch } from '../../utils/apiFetch';
 
 const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL, fetchMTSSMeetings }) => {
   const [mtssMeetingForm, setMTSSMeetingForm] = useState({
@@ -187,7 +188,7 @@ const MTSSMeetingFormModal = ({ meeting, onClose, user, selectedStudent, API_URL
         ? API_URL + '/mtss-meetings/' + meeting.id
         : API_URL + '/mtss-meetings';
 
-      const response = await fetch(url, {
+      const response = await apiFetch(url, {
         method: meeting ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
