@@ -4,15 +4,16 @@ const cors = require('cors');
 const { Pool } = require('pg');
 require('dotenv').config();
 const { Resend } = require('resend');
-const { initializeRateLimitStore, getLogIpPepper, authIpLimiter, contactLimiter, csvImportLimiter } = require('./middleware/rateLimiters');
+const { initializeRateLimitStore, getLogIpPepper, getLogUserPepper, authIpLimiter, contactLimiter, csvImportLimiter } = require('./middleware/rateLimiters');
 const { csrfProtection, getCsrfSecret } = require('./middleware/csrfProtection');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Boot-time eager validation. Each call exits(1) on missing prod config
-// (RATE_LIMIT_REDIS_URL, LOG_IP_PEPPER, CSRF_SECRET) so the process
-// refuses to start with a misconfigured deploy.
+// (RATE_LIMIT_REDIS_URL, LOG_IP_PEPPER, LOG_USER_PEPPER, CSRF_SECRET)
+// so the process refuses to start with a misconfigured deploy.
 initializeRateLimitStore();
 getLogIpPepper();
+getLogUserPepper();
 getCsrfSecret();
 
 const app = express();
