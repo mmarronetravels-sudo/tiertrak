@@ -28,11 +28,12 @@ Success means:
 
 ### Actual project stack (verified against repository)
 - **Frontend:** React (Vite) — hosted on **Vercel**
-- **Backend:** Express.js 5 + Node.js — hosted on **Vercel** (serverless functions or Express server)
-- **Database:** PostgreSQL via **Supabase** — accessed directly using the `pg` driver (no ORM)
+- **Backend:** Express.js 5 + Node.js — hosted on **Render** (long-lived Express server)
+- **Database:** PostgreSQL — hosted on **Render**, accessed directly using the `pg` driver (no ORM)
 - **Authentication:** JWT (`jsonwebtoken`) + Google OAuth (`google-auth-library`)
 - **File storage:** AWS S3 (`@aws-sdk/client-s3`) with presigned URLs (`@aws-sdk/s3-request-presigner`)
 - **Email:** Resend
+- **Caching / rate-limit store:** Render Key Value (Valkey 8.1.4)
 - **File uploads:** Multer
 - **CSV import:** csv-parser
 - **Password hashing:** bcrypt
@@ -41,7 +42,6 @@ Success means:
 ### What is NOT in the current stack
 Do not introduce or assume the following without explicit approval:
 - NestJS, TypeORM, Prisma, or any ORM — raw `pg` queries are used directly
-- Redis or any caching layer
 - Any UI component library (Material UI, Chakra, Shadcn, etc.)
 - Any additional auth provider beyond JWT + Google
 - Any additional file storage provider beyond AWS S3
@@ -393,4 +393,5 @@ These files provide additional context for specific tasks. Claude Code loads the
   - `.claude/agents/privacy-reviewer.md`
   - `.claude/agents/security-reviewer.md`
   - `.claude/agents/tenant-isolation-auditor.md`
+  - Invoke these subagents directly via the Task tool with `subagent_type=privacy-reviewer`, `subagent_type=security-reviewer`, or `subagent_type=tenant-isolation-auditor`. Do not dispatch reviewer work via `subagent_type=general-purpose`.
 - Recommended plugin: Superpowers from the official Anthropic marketplace (`/plugin install superpowers@claude-plugins-official`) — supplies `brainstorming`, `writing-plans`, `executing-plans`, `test-driven-development`, `systematic-debugging`, `requesting-code-review`, `verification-before-completion`, `using-git-worktrees`, and `finishing-a-development-branch`. The project `/landing-the-plane` skill wraps `finishing-a-development-branch` and adds the `activities.txt` log.
