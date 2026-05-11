@@ -206,11 +206,11 @@ function getLogUserPepper() {
 
 // hashUserId — SHA-256 of (userId + server-side pepper), truncated
 // to 8 hex chars. Stable, non-reversible userId identifier for log
-// lines. Returns 'none' on null/undefined input so the log field is
-// always populated. Pepper rotation breaks correlation across
-// rotations — that's fine.
+// lines. Returns 'unknown' on falsy input so the log field is always
+// populated, matching hashIp's null-handling and sentinel for parity.
+// Pepper rotation breaks correlation across rotations — that's fine.
 function hashUserId(userId) {
-  if (userId == null) return 'none';
+  if (!userId) return 'unknown';
   return crypto
     .createHash('sha256')
     .update(String(userId) + getLogUserPepper())
@@ -255,7 +255,7 @@ function makeRateLimitHandler(limiterName) {
       'method=' + req.method,
       'path=' + safePathForLog(req),
       'hashedIp=' + hashIp(req.ip),
-      'userId=' + (req.user?.id ?? null)
+      'hashedUserId=' + hashUserId(req.user?.id)
     );
     res.status(429).json({ error: 'Too many requests' });
   };
