@@ -31,7 +31,7 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 const MAX_INTERVENTION_REVIEWS = 50;
 
 // Get dropdown options for the form
-router.get('/options', async (req, res) => {
+router.get('/options', requireAuth, async (req, res) => {
   try {
     const options = {
       meeting_types: [
@@ -83,16 +83,14 @@ router.get('/options', async (req, res) => {
     };
     res.json(options);
   } catch (error) {
-    console.error('Error fetching options:', error);
+    console.error('Error fetching options:', error.message);
     res.status(500).json({ error: 'Failed to fetch options' });
   }
 });
 
 // Get all meetings for a student
-router.get('/student/:studentId', async (req, res) => {
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
     const result = await pool.query(`
       SELECT
         m.*,
@@ -118,24 +116,31 @@ router.get('/student/:studentId', async (req, res) => {
         ) as intervention_reviews
       FROM mtss_meetings m
       LEFT JOIN users u ON m.created_by = u.id
-      WHERE m.student_id = $1
+      WHERE m.student_id = $1 AND m.tenant_id = $2
       ORDER BY m.meeting_date DESC, m.created_at DESC
-    `, [studentId]);
+    `, [req.student.id, req.student.tenant_id]);
     
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching meetings:', error);
+    console.error('Error fetching meetings:', error.message);
     res.status(500).json({ error: 'Failed to fetch meetings' });
   }
 });
 
 // Get single meeting with full details
-router.get('/:id', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
+    // Tenant-and-parent-link-bound SELECT. Single query closes the auth
+    // gate atomically with the data fetch. Branches:
+    //   - role !== 'parent': caller's tenant_id must match meeting's tenant_id
+    //   - role === 'parent': caller must be linked to the meeting's student
+    //     via parent_student_links
+    // Not-found and not-authorized are indistinguishable to the caller
+    // (uniform 403 FORBIDDEN_BODY mirrors POST/PUT/DELETE precedent).
     const meetingResult = await pool.query(`
-      SELECT 
+      SELECT
         m.*,
         u.full_name as created_by_name,
         s.first_name, s.last_name, s.grade, s.tier, s.area
@@ -143,10 +148,18 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN users u ON m.created_by = u.id
       LEFT JOIN students s ON m.student_id = s.id
       WHERE m.id = $1
-    `, [id]);
-    
+        AND (
+          ($2 != 'parent' AND m.tenant_id = $3)
+          OR
+          ($2 = 'parent' AND EXISTS (
+            SELECT 1 FROM parent_student_links psl
+            WHERE psl.parent_user_id = $4 AND psl.student_id = m.student_id
+          ))
+        )
+    `, [id, req.user.role, req.user.tenant_id, req.user.id]);
+
     if (meetingResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Meeting not found' });
+      return res.status(403).json(FORBIDDEN_BODY);
     }
     
     // mi.* covers weekly_progress_snapshot — explicit projection not
@@ -171,7 +184,7 @@ router.get('/:id', async (req, res) => {
     
     res.json(meeting);
   } catch (error) {
-    console.error('Error fetching meeting:', error);
+    console.error('Error fetching meeting:', error.message);
     res.status(500).json({ error: 'Failed to fetch meeting' });
   }
 });
@@ -209,7 +222,7 @@ router.get('/student/:studentId/interventions-summary', requireAuth, requireStud
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching interventions summary:', error);
+    console.error('Error fetching interventions summary:', error.message);
     res.status(500).json({ error: 'Failed to fetch interventions' });
   }
 });
@@ -627,19 +640,17 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // Get meeting counts for a student (useful for knowing which meeting number they're on)
-router.get('/student/:studentId/count', async (req, res) => {
+router.get('/student/:studentId/count', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
-    const { studentId } = req.params;
-    
     const result = await pool.query(`
       SELECT COUNT(*) as meeting_count, MAX(meeting_number) as last_meeting_number
       FROM mtss_meetings
-      WHERE student_id = $1
-    `, [studentId]);
+      WHERE student_id = $1 AND tenant_id = $2
+    `, [req.student.id, req.student.tenant_id]);
     
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error fetching meeting count:', error);
+    console.error('Error fetching meeting count:', error.message);
     res.status(500).json({ error: 'Failed to fetch meeting count' });
   }
 });
