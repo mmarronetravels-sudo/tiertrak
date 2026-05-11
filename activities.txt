@@ -9445,3 +9445,302 @@ auto-banked)
     prod-deploy evidence.
 
 ================================================================================
+
+
+================================================================================
+SESSION: 2026-05-11T13:00:00-07:00 (Session 64)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-64 PR in S65)
+DISPOSITION: 2 PRs merged + LIVE on prod (doc-only chore pair), 9 memory
+             writes banked, 6 followup-numbering assignments made
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Pure session-close housekeeping day. No product code touched.
+  Four sequential priorities executed without surprises: P1 landed
+  the S63 close entry from main's working tree onto main via a
+  doc-only chore PR; P2 triaged the 9 /landing-the-plane memory
+  candidates plus 2 housekeeping items and wrote 7 new feedback
+  memories + extended 2 existing files; P3 assigned master-index
+  Followup numbers to 6 Cowork-task carryovers from S63; P4 edited
+  CLAUDE.md to close Followup G/#92 (positive §11 codification of
+  named-subagent dispatch) and fix §2 hosting topology drift
+  (Vercel→Render for backend + DB, Render Key Value added to
+  "Actual stack", Redis removed from "NOT in stack"). Net session
+  output: PR #90 + PR #91 LIVE on prod; both doc-only-chore-floor
+  deploys (~37s merge-to-LIVE); 9 memory entries durable for future
+  sessions; 6 followups now namespace-coherent with the master index;
+  Followup G/#92 formally closed.
+
+FILES TOUCHED THIS SESSION (across the 2 merged PRs + memory writes)
+
+  activities.txt — PR #90 commit d739b50 (+723/-0). S63 close
+    entry landed on main via PR #90 squash-merge to 19f5244. This
+    S64 entry (current) appends unstaged on main; S65 P1 ships it
+    per chore-PR convention.
+
+  CLAUDE.md — PR #91 commit 33268b8 (+4/-3 across 3 hunks).
+    Hunk 1 (§2 actual stack, lines 30-39): Backend Vercel→Render
+    long-lived Express, Database Supabase→Render, +Caching/
+    rate-limit store (Render Key Value, Valkey 8.1.4) inserted
+    between Email and File uploads. Hunk 2 (§2 NOT-in-stack):
+    removed "Redis or any caching layer" line. Hunk 3 (§11
+    configuration): added new sub-bullet under "Project subagents
+    for review" codifying named-subagent dispatch ("invoke via
+    subagent_type=privacy-reviewer/security-reviewer/
+    tenant-isolation-auditor; do not dispatch reviewer work via
+    subagent_type=general-purpose").
+
+  (Out-of-repo, NOT in any PR diff — operator's home memory dir)
+  7 new feedback files banked under ~/.claude/projects/
+  -Users-melaniemarrone-Projects-tiertrak/memory/:
+    - feedback_render_credential_rotation_precheck.md (S63 outage)
+    - feedback_post_rotation_self_smoke.md (S63 detection layer)
+    - feedback_auth_add_deploy_401_flag.md (PR #89 precedent)
+    - feedback_convergent_grep_verification.md (PR #88 P2 dyad)
+    - feedback_full_router_enum_verification.md (PR #89 audit)
+    - feedback_summary_as_decision_grade_triage_table.md (Obs #7
+      nuance; banked standalone with forward-ref to master-index)
+    - feedback_explicit_verb_at_each_boundary.md (Obs #8; banked
+      standalone after dup-search returned zero memory hits)
+  1 existing feedback file extended (preview-vs-authoritative
+    nuance folded into feedback_stats_from_git_diff_stat.md as
+    new bullet referencing PR #89 application).
+  1 existing reference file extended (reference_production_urls.md
+    — added Render service/DB/Redis IDs, Vercel↔Render proxy
+    contract with implicit-contract callout + CLAUDE.md §2 drift
+    flag, tenant subdomains pointer to master-index). MEMORY.md
+    index updated with 7 new lines + 1 description update; final
+    size 32 lines (well under 200-line truncation threshold).
+  Skipped per operator: feedback_note_not_info_severity_calibration
+    (no file write).
+
+MIGRATIONS RUN
+  none — no schema changes this session. Pure documentation and
+  config-rule edits; no application code, no SQL, no API surface.
+
+TENANT ISOLATION REVIEW
+
+  PR #90: doc-only — N/A. activities.txt is the running session
+    log; no tenant data accessed or surfaced. The S63 entry being
+    landed contained operator-level tenant identifiers (district
+    names as SaaS customer labels) consistent with precedent in
+    earlier session entries already on main.
+
+  PR #91: doc-only — N/A. CLAUDE.md is the project rule surface;
+    edits were to hosting-topology bullets and a subagent-dispatch
+    codification. No SQL, no tenant boundary touched.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Pure doc/config surface.
+  Logging audit: N/A — no logging code modified.
+  Cross-tenant risk: none identified. CLAUDE.md is global rule
+    surface (no per-tenant content); activities.txt is operator
+    log (no PII per project §4B convention).
+  §4B grep on this S64 entry's diff against main: no real student
+    names, no real staff names, no real student IDs, no real emails,
+    no tenant-personal identifiers. Tenant slot 9 references stay
+    abstract ("S63 ops work") rather than re-introducing the
+    customer name.
+
+VERIFICATION
+  Per-PR pre-merge:
+    PR #90 reviewDecision: APPROVED (gh pr view 91 --json
+      reviewDecision after operator confirmed external approval).
+    PR #91 reviewDecision: APPROVED (same mechanical check).
+  Per-PR staged stat (banked discipline: +N/-M sourced from
+    git diff --cached --stat literal):
+    PR #90: activities.txt | 723 +++... | 1 file changed,
+      723 insertions(+) — matches predicted +723/-0.
+    PR #91: CLAUDE.md | 7 ++++--- | 1 file changed,
+      4 insertions(+), 3 deletions(-) — matches predicted +4/-3.
+  Per-PR merge:
+    PR #90 squash-merge to 19f524430d0d67d300bae2b0dd08d4d35d202ff0
+      at 18:48:30Z. Local HEAD verified matches merge SHA.
+    PR #91 squash-merge to 9f20ae543977107889be96043d5dacd336368230
+      at 19:44:21Z. Local HEAD verified matches merge SHA.
+  Per-PR Render auto-deploy (one-pass capture, banked discipline):
+    PR #90: dep-d8129028qa3s73bdoo0g, LIVE 18:49:06.707Z, 36.7s
+      merge-to-LIVE (sourced from GitHub mergedAt vs Render
+      finishedAt).
+    PR #91: dep-d81335i8qa3s73bectp0, LIVE 19:44:58.555Z, 37.6s
+      merge-to-LIVE.
+  Per-PR branch cleanup:
+    PR #90: chore/activities-log-session-63 deleted local + origin;
+      stale tracking refs pruned (7 additional stale refs swept).
+    PR #91: chore/claude-md-G-retire-and-s2-fix deleted local +
+      origin; stale tracking ref pruned.
+  Code-surface verification: N/A this session. No backend or
+    frontend code modified. Backend has no test suite (Followup
+    #73) and no lint config (Followup #74); frontend was not
+    touched so frontend lint would have been a no-op against
+    this session's diff.
+  Pre-implementation greps for P4:
+    grep -rn "general-purpose|fall.?back|workaround|auto.load|
+      named subagent|subagent.*dispatch|parallel.*dispatch"
+      across CLAUDE.md, /Users/melaniemarrone/CLAUDE.md,
+      .claude/agents/, docs/ai-context/ — returned ZERO matches.
+      Workaround text did not exist in CLAUDE.md as the operator
+      had initially described; surfaced this as a HALT in the
+      audit and offered three read-out options. Operator chose
+      Option B (positive codification, not text removal) — the
+      "retirement" became an addition to §11.
+    grep -rn "RATE_LIMIT_REDIS_URL" — verified Render Key Value
+      is actively consumed at middleware/rateLimiters.js:47 with
+      a production FATAL guard at line 53. Justifies the positive
+      "Caching / rate-limit store" entry in §2.
+
+P3 followup-numbering assignments (master-index ↔ Cowork tasks)
+  6 Cowork-task carryovers from S63 assigned master-index Followup
+  numbers (handled operator-side; recorded here for cross-session
+  traceability — actual master-index file updated this session):
+    #93 — Cowork Task #9: users.disabled_at + auth checks
+      (multi-session, full reviewer triad required when scheduled)
+    #94 — Cowork Task #10: scripts/ops/ → .gitignore
+      (small chore PR; can fold into any future doc-only chore)
+    #95 — Cowork Task #12: mtss_meeting_interventions JOIN
+      tenant defense-in-depth (bundle for data-min sweep PR)
+    #96 — Cowork Task #13: s.tier/s.area FERPA review (needs
+      product/legal call; not code-only)
+    #97 — Cowork Task #14: read-side role allowlist on
+      mtssMeetings, row-update (product semantics call)
+    T/#98 — Cowork Task #15: jwt.verify algorithms allowlist
+      (merged into existing letter-Followup T row)
+
+OPEN ITEMS / FOLLOW-UPS
+
+  Outstanding-state housekeeping (low priority):
+    - .claude/settings.json drift × 2 sources (Followup #22 —
+      stash@{1} and stash@{2} carry-forward). 90-line stat in
+      working tree at session close; intentionally untouched
+      per surgical add-only discipline this session.
+    - 4 stashes still parked at slots 0-3 (S59 carryover +
+      Followup #22 × 2 + WIP-on-main logs-transformation).
+      Triage deferred.
+    - scripts/ops/2026-05-11-[tenant]-revoke-audit.sql still
+      untracked. Cowork Task #10 / Followup #94 will gitignore
+      this path.
+    - docs/references/GR_SampleClass.pdf still untracked.
+      Pre-existing as of S63; not in any session's scope yet.
+
+  Followup G/#92 closed via PR #91 (positive §11 codification).
+  Master-index should record #92 as CLOSED at next session
+  opening (P0/handshake task).
+
+  Pre-existing followups (carry forward unchanged):
+    #22 settings drift, #39 (CLOSED via S63 PR #89 — record at
+    next master-index sync), #49 screener-results-prod-dedup,
+    #70 pg error.detail repo-wide, #71/#78/#79 over-fetch sweep
+    cluster, #72 FE-credentials, #73 backend-tests, #74
+    backend-lint, #75 relationship whitelist, #76 int-id
+    validation (partial-closed via S63 PR #89 for 2 student-
+    scoped mtssMeetings routes), #77 phantom tenant_id INSERT,
+    #80 rate-limiting absent (note: Followup #74 + #80
+    interact — backend lint and rate-limiting both pending),
+    #81 CSRF absent, #82 parity-check guard inconsistency,
+    + the 6 new this session (#93-97, T/#98).
+
+  Banked observations worth memory triage at S65 opening:
+    1. "Self-merge" terminology clarification: in this project,
+       "self-merge" = operator-as-merger, NOT operator-as-
+       approver-and-merger. GitHub-side ruleset blocks
+       self-approve mechanically (you cannot approve your own
+       PR via gh pr review --approve). External reviewer is
+       required even for doc-only chore PRs. The "doc-only,
+       no reviewers required" wording in PR bodies refers
+       only to the human-review gate for §4B/§5 PRs — the
+       mechanical APPROVED state is still required by branch
+       protection. Worth banking as feedback or as
+       clarification under existing §2A memory.
+    2. Doc-only-chore-floor merge-to-LIVE baseline now
+       confirmed at ~37s across 3 data points (PR #87 37.6s
+       S63, PR #90 36.7s S64, PR #91 37.6s S64). Tight cluster.
+       Useful for future doc-only PRs as a sanity-check
+       expected-time. Sub-floor or super-floor delta would
+       indicate pipeline change. Worth banking as a project-
+       memory or reference baseline.
+    3. "Check existing file before specifying NEW file" —
+       small operator-side planning discipline surfaced in P2
+       item #6 (operator specified "NEW reference file" but
+       existing reference_production_urls.md was semantically
+       same-topic; Claude flagged + extended rather than
+       creating a sibling). The convention dedup rule
+       overrode the literal item name; operator's flexible
+       phrasing ("use whatever filename/location convention
+       you use") authorized the call. Worth banking as
+       feedback for symmetric coverage with
+       feedback_audit_plan_deviation.md (which covers the
+       inverse: deviating from approved plan — this would
+       cover deviating from a literal item-name when the
+       memory-dedup rule applies).
+    4. Audit-first phase saved scope drift on P4: initial
+       single-substitution §2 fix (line 31 Vercel→Render)
+       would have left §2 internally inconsistent (line 32
+       still Supabase, line 44 still Redis-NOT-in-stack
+       despite production reality). Pre-implementation
+       audit caught lines 32 + 44 as same-migration-
+       narrative drift; operator approved expanded scope.
+       Pattern: doc-edits get a structural pre-read, not
+       just a string-search. Worth banking as a discipline
+       for future CLAUDE.md / docs/ai-context edits.
+
+NEXT SESSION SHOULD (P-queue for S65)
+
+  P1: chore/activities-log-session-64. Land this S64 entry from
+    main's working tree via a doc-only chore PR. Same shape as
+    PR #90 (S63 close) and PR #87 (S62 close). Expected
+    +N/-0 line shape; authoritative stat from git diff
+    --cached --stat at commit time.
+
+  P2: Memory triage on the 4 S64-surfaced banked observations
+    listed above (self-merge terminology, doc-only-chore-floor
+    baseline, check-existing-file convention, audit-first-phase
+    discipline). Operator's call on which to bank, fold, or
+    skip — same triage shape as S64 P2.
+
+  P3: Master-index housekeeping — record Followup G/#92 CLOSED
+    via PR #91 (S64 P4), Followup #39 CLOSED via PR #89 (S63),
+    Followup #76 PARTIAL-CLOSED for 2 student-scoped routes
+    via PR #89 (S63). Bring master-index Followup table in
+    sync with merged-PR closures. Also ingest the 6 newly
+    numbered S64-P3 followups (#93-97, T/#98) into the
+    master-index Followup table proper if not already done.
+
+  P4: Pick from the deferred work queue. Highest-leverage next:
+    - migration/screener-results-prod-dedup (Followup #49 —
+      gates feat/multi-screener-upload; phase-1 design
+      conversation needed first; touches real prod student
+      PII so full reviewer triad required).
+    - sec/students-mutations-require-auth (6 students.js
+      mutation routes; design gate from S57: admin/counselor/
+      specialist for POST /students).
+    - Continue sec/ router sweep — users-require-auth (9),
+      tenants-require-auth (5), staffManagement (4),
+      progressNotes (4), interventionLogs (5),
+      interventionAssignments (3), interventionPlans (10),
+      interventionBank (4), adminTemplates (6).
+    - Followup #80 rate-limiting deployment to PII-mutation
+      routes (HIGH priority per security-reviewer; sibling
+      to #81 CSRF).
+    - Cowork Task #9 / Followup #93 users.disabled_at
+      (multi-session, full triad).
+    - Cowork Task #12 / Followup #95 mtss_meeting_interventions
+      JOIN defense-in-depth (bundle for data-min sweep).
+
+  Wishlist (still unblocked):
+    - Multi-screener feat PR (Wishlist #1; gated on P4
+      migration above)
+    - Export students-with-accommodations report (not started)
+    - Multi-intervention-per-goal design conversation
+      (pure-Cowork, available anytime)
+
+  Outstanding housekeeping (low priority, fold-in opportunistic):
+    - .claude/settings.json drift × 2 sources (Followup #22)
+    - 4 parked stashes at slots 0-3
+    - scripts/ops/ → .gitignore (Cowork #10 / Followup #94 —
+      could fold into S65 P1 chore PR if scope-appropriate)
+    - External tracker namespace decision (S57-S64 deferred —
+      eighth consecutive session; opportunity-cost framing
+      overdue)
+
+================================================================================
