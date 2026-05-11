@@ -145,7 +145,7 @@ function shouldSkip(req) {
 //
 // All decode failure modes (missing cookie, malformed token, decode
 // throw) are silently caught and return null — the log line then
-// shows hashedUserId=none.
+// shows hashedUserId=unknown.
 function peekUserIdFromCookie(req) {
   try {
     const { id } = jwt.decode(req.cookies?.auth_token) || {};
