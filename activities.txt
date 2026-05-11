@@ -8722,3 +8722,726 @@ NEXT SESSION SHOULD (P-queue for S63)
     (carries from Session 53)
 
 ================================================================================
+
+
+================================================================================
+SESSION: 2026-05-11T12:00:00-07:00 (Session 63)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-63 PR in S64)
+DISPOSITION: 3 PRs merged + LIVE on prod, 1 unplanned ops task completed
+             with prod outage and recovery
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Three queued PRs landed end-to-end (chore + sec + sec). Mid-session,
+  an unplanned ops request to revoke Humble (tenant 9) access pivoted
+  through a Render psql connectivity issue, an in-container shell
+  audit, a transactional credential mutation, and a follow-on Render
+  DB default-credential rotation that caused a ~5-10 minute prod
+  outage when the backend's hardcoded non-default DATABASE_URL didn't
+  auto-resync. App recovered via Environment-tab re-point; verified
+  via self-login smoke. Net session output: PR #87, PR #88, PR #89 all
+  LIVE on prod; Humble revocation complete and verified; outage post-
+  mortem captured as banked discipline.
+
+FILES TOUCHED THIS SESSION (across the 3 merged PRs)
+
+  activities.txt — S62 close entry landed on main via PR #87
+    (+437/-0). The S63 close entry (this one) appends unstaged on
+    main; S64 P1 ships it.
+
+  middleware/rateLimiters.js — PR #88 commit d5cd2e9 (+5/-5 across
+    2 hunks). hashUserId falsy-check broadened (== null → !userId),
+    sentinel renamed ('none' → 'unknown') for hashIp parity,
+    docstring updated, and raw 'userId=' log emission in
+    makeRateLimitHandler replaced with 'hashedUserId=' via
+    hashUserId(). Affects all 5 limiters using the shared 429
+    handler factory (auth-ip, auth-login, contact, mutation-user,
+    csv-import).
+
+  middleware/csrfProtection.js — PR #88 commit ccfacda (+1/-1).
+    peekUserIdFromCookie docstring at line 148: 'hashedUserId=none'
+    → 'hashedUserId=unknown' to match the new sentinel.
+
+  routes/mtssMeetings.js — PR #89 commit adb252d (+33/-22 across 9
+    hunks). 4 read routes hardened (requireAuth + tenant-scoped SQL
+    via requireStudentReadAccess where applicable; Route 3 uses
+    inline role-branched WHERE because path param is meeting id not
+    student id). 5 read-route catch-block error logs narrowed to
+    error.message for PR #81 mutation-precedent parity. 404 → 403
+    FORBIDDEN_BODY on Route 3 to close the meeting-id existence
+    oracle.
+
+  (Out-of-band, NOT in any PR diff)
+  DB tenant 9 users table — 6 rows credential-scrubbed in a single
+    psql transaction (Humble revocation). Fields cleared:
+    password_hash, google_id, password_reset_token,
+    password_reset_expires; email replaced with
+    revoked_{id}@revoked.tiertrak.local pattern; full_name
+    replaced with 'Revoked User'. Operationally a data mutation;
+    no code or schema change.
+
+  Render service tiertrak-api environment — DATABASE_URL re-pointed
+    to the new Internal Connection String post-rotation. Single
+    environment-variable change; no deploy artifact change beyond
+    the env-driven restart.
+
+MIGRATIONS RUN
+  none — no schema changes this session. The Humble revocation
+  used pure DML on existing columns; the credential rotation was
+  Render-platform infra, not application schema.
+
+TENANT ISOLATION REVIEW
+
+  PR #87: doc-only — N/A.
+
+  PR #88: log-hygiene — no SQL, no tenant logic touched. The
+    cascade through csrfProtection.js:167 is to a logging path that
+    fires after CSRF middleware's enforce/monitor decision; no
+    tenant boundary crossed.
+
+  PR #89: closes 4 cross-tenant read paths on /api/mtss-meetings.
+    Routes 2 and 4 use requireStudentReadAccess middleware (resolves
+    student → tenant tie for staff path, or parent_student_links
+    for parent path) + defense-in-depth SQL bind on m.tenant_id.
+    Route 3 uses an atomic role-branched WHERE folded into the
+    SELECT (no TOCTOU): staff branch checks m.tenant_id =
+    req.user.tenant_id, parent branch checks
+    parent_student_links EXISTS by req.user.id + m.student_id.
+    Tenant-isolation-auditor verdict: APPROVED-WITH-NOTES.
+    Followup #39 closed. Two WARNs flagged on
+    mtss_meeting_interventions JOIN traversal (pre-existing
+    defense-in-depth gaps, conditional on a hypothetical future
+    write-path bug; not blocking; new followup filed).
+
+  Humble revocation: scoped strictly to tenant_id = 9 via the
+    psql transaction's WHERE clause. No spillover to other
+    tenants; verified by row-count before and after.
+
+  Outage recovery: the DATABASE_URL re-point did not touch any
+    tenant-routing code. The application's request-scoping logic
+    is unchanged; only the connection target.
+
+PRIVACY REVIEW (Section 4B)
+
+  PR #87: doc-only chore. §4B per-entry grep on the S62 close
+    entry diff returned clean (no PII, no real emails, no real
+    student IDs). Verbatim discipline carried.
+
+  PR #88: log-hygiene improvement. Privacy-reviewer pass-2 verdict
+    APPROVED. Closes privacy-reviewer N2 and security-reviewer Q10
+    INFO (raw userId= → hashedUserId= via peppered hash); closes
+    Q9 LOW1 and Q9 LOW2 (falsy-check + sentinel parity with hashIp).
+    Cascade to csrfProtection.js:167 transparently picks up the new
+    sentinel. Convergent INFO finding (csrfProtection.js:148 stale
+    'hashedUserId=none' comment) surfaced by both reviewers
+    independently in pass 1, closed by commit ccfacda in pass 2.
+    Operator note added to PR body and preserved verbatim in merge
+    commit body per security-reviewer NOTE N1.
+
+  PR #89: closes 4 cross-tenant PII spill surfaces. Privacy-reviewer
+    verdict APPROVED-WITH-NOTES. One WARN flagged on Route 3
+    projecting s.tier/s.area to linked parents (pre-existing
+    over-fetch surfaced by the new parent-link branch; sibling to
+    Followup #79; new followup filed). Catch-block log narrowing
+    (5 sites) verified PII-safe (SELECT-side pg errors don't embed
+    row data; constraint/column metadata is schema not PII).
+
+  Humble revocation §4B PRECISION (per this session's brief):
+    role+count shape ONLY in this activities entry:
+    - 2 district_admin
+    - 1 counselor
+    - 1 student_support_specialist
+    - 1 teacher
+    - 1 parent
+    NO names, NO emails, NO student IDs recorded. The substitution
+    values used (revoked_{id}@revoked.tiertrak.local; full_name
+    'Revoked User') are sentinel placeholders, not PII.
+    Named-tenant references (Humble, Lincoln, Summit, Molalla,
+    Mazapan, Vandercook) ARE carry-forward operational notes per
+    S60-S62 precedent — not §4B exposure.
+
+  Outage observability: the outage manifested user-facing as
+    "Google Authentication failed" — a generic backend-can't-reach-
+    DB error class, not a PII-bearing surface. No PII reached error
+    bodies or logs during the outage window.
+
+VERIFICATION
+
+  PR #87 (doc-only chore):
+    git diff --stat (vs main): activities.txt +437/-0
+    §4B per-entry grep: clean (per S60-S62 precedent)
+    Reviewer dyad: none required (doc-only)
+    Collaborator approval: gh pr review --approve, formal
+    Gate verification: reviewDecision APPROVED, mergeStateStatus
+      CLEAN
+    Merge: sha 73a0e122 at 2026-05-11T14:16:33Z
+    Render deploy: dep-d80u9gu8bjmc73elj1hg LIVE at 14:17:10Z
+      (37.6s merge → LIVE; normal shape)
+
+  PR #88 (sec/rate-limit-log-hygiene, 2 commits):
+    git diff --cached --stat: middleware/rateLimiters.js +5/-5
+      (commit d5cd2e9); middleware/csrfProtection.js +1/-1
+      (commit ccfacda)
+    Substitute verification (no backend test suite per Followup
+      #73; no lint per Followup #74):
+      node -c on both files — exit 0
+      Module-load smoke: hashUserId(null|undefined|0|'') →
+        'unknown' (parity confirmed); hashUserId(42) → 'e704c89e';
+        hashUserId('abc') → 'd8434d36'; hashIp parity verified.
+    Reviewer dyad pass 1: privacy APPROVED + security
+      APPROVED-WITH-NOTES; both surfaced convergent INFO on
+      csrfProtection.js:148 docstring drift.
+    Commit ccfacda landed that fix.
+    Reviewer dyad pass 2: privacy APPROVED + security APPROVED
+      (one NOTE on operator-note preservation, not gating).
+    Collaborator approval: gh pr review --approve, formal
+    Gate verification: reviewDecision APPROVED, mergeable
+      MERGEABLE
+    Merge: sha 6c2c7d9 at 2026-05-11T17:23:35Z (two-parent:
+      73a0e12 + ccfacda; operator note preserved verbatim in
+      merge commit body)
+    Render deploy: dep-d811169oagis73et6fng LIVE at 17:24:21Z
+      (46.7s merge → LIVE; normal shape)
+
+  PR #89 (sec/mtssMeetings-read-routes-require-auth):
+    git diff --cached --stat: routes/mtssMeetings.js +33/-22
+      across 9 hunks (4 route signature/SQL edits + 5 catch-block
+      one-token edits)
+    Substitute verification:
+      node -c routes/mtssMeetings.js — exit 0
+      node -c middleware/authorizeInterventionAccess.js — exit 0
+      Module-load smoke: all 8 routes load, every route's
+        middleware chain printed, zero unauthed routes remain.
+        Single load-bearing assertion captured.
+    Reviewer triad (first triad this session; first since S60 PR
+      #81): privacy APPROVED-WITH-NOTES + security APPROVED +
+      tenant-isolation APPROVED-WITH-NOTES. Zero CRITICAL/HIGH/
+      MEDIUM from any reviewer.
+    Collaborator approval: gh pr review --approve, formal
+    Gate verification: reviewDecision APPROVED, mergeable
+      MERGEABLE
+    Merge: sha 37a6754 at 2026-05-11T18:01:11Z (two-parent:
+      6c2c7d9 + adb252d)
+    Render deploy: dep-d811iqjtqb8s7383ri40 LIVE at 18:01:58Z
+      (47.2s merge → LIVE; normal shape)
+
+  Humble revocation:
+    Audit (read-only SELECT): role+count enumeration confirmed
+      6 users in tenant 9 with expected role distribution.
+    Mutation (single psql transaction): UPDATE users SET ...
+      WHERE tenant_id = 9 RETURNING id, role — verified 6 rows
+      affected.
+    Smoke test: original Humble email + arbitrary password
+      against /api/auth/login returned "Invalid email or
+      password" (login-flow rejection).
+    Post-outage self-login smoke: own gmail address
+      credentials authenticated successfully end-to-end via
+      Google OAuth. Backend confirmed reachable; auth flow
+      unaffected.
+
+  Outage:
+    Detection: "Google Authentication failed" user-facing,
+      ~17:30-17:35Z window. Root cause: rotation of default
+      DB credential without simultaneous update of backend
+      DATABASE_URL (which was hardcoded to a non-default
+      credential created S58/S59).
+    Recovery: Render Dashboard → tiertrak-api → Environment →
+      DATABASE_URL re-pointed to new Internal Connection String.
+      Service auto-restarted on env var change; ~30s
+      post-restart self-login smoke succeeded.
+    Duration: ~5-10 min from detection to verified recovery.
+    No data loss. No partial-write window because the failure
+    mode was connection-refused, not partial-commit.
+
+PRs IN DETAIL
+
+  PR #87 (chore/activities-log-session-62)
+    Standard chore-PR pattern (precedents PR #82, #83, #85).
+    Single commit, single file, +437/-0 on activities.txt — the
+    S62 close entry that had been parked unstaged on main per
+    chore-PR convention. Doc-only; no reviewer triad. Collaborator
+    approval submitted via gh pr review --approve. Merge sha
+    73a0e12; deploy dep-d80u9gu8bjmc73elj1hg LIVE 37.6s
+    post-merge.
+
+  PR #88 (sec/rate-limit-log-hygiene)
+    Two-commit PR. Commit 1 (d5cd2e9) closed 4 PR #86 reviewer
+    findings: privacy-reviewer N2 + security-reviewer Q10 INFO
+    (raw userId= log emission in 429 handler factory hashed via
+    hashUserId); Q9 LOW1 (hashUserId null-handling broadened
+    from == null to !userId for hashIp parity); Q9 LOW2
+    (sentinel 'none' → 'unknown' for hashIp parity). Commit 2
+    (ccfacda) closed the convergent pass-1 INFO finding both
+    reviewers surfaced independently: stale 'hashedUserId=none'
+    docstring at csrfProtection.js:148. Operator note added to
+    PR body in same edit pass (SIEM-sweep advisory for external
+    log-parsing rules keyed on the literal 'hashedUserId=none').
+    Reviewer dyad pass 2 verdicts: privacy APPROVED, security
+    APPROVED. Security NOTE N1 (preserve operator note in merge
+    commit body for audit-trail purposes) honored via heredoc'd
+    --body-file at merge time. Merge sha 6c2c7d9 (two-parent
+    preserves d5cd2e9 + ccfacda history); deploy
+    dep-d811169oagis73et6fng LIVE 46.7s post-merge.
+
+  PR #89 (sec/mtssMeetings-read-routes-require-auth)
+    Closes Followup #39 (last gap on the mtssMeetings surface;
+    mutations were closed by PR #81 in S60). Single-file +33/-22.
+    Three logical changes per route (auth middleware addition +
+    SQL tenant binding + catch-block error.message narrowing).
+    Route 1 (/options): requireAuth alone — metadata-only, no
+      per-tenant data, no tenant scoping needed.
+    Route 2 (/student/:studentId): requireAuth +
+      requireStudentReadAccess + defense-in-depth m.tenant_id = $2.
+      Side benefit: req.student.id (middleware-resolved, Number-
+      coerced) replaces raw req.params.studentId, closing
+      Followup #76 PARTIAL for this route.
+    Route 3 (/:id): requireAuth + inline atomic role-branched
+      WHERE folded into the SELECT (path-param is meeting id,
+      not student id, so requireStudentReadAccess doesn't apply
+      as-is). Staff branch: m.tenant_id = req.user.tenant_id;
+      parent branch: parent_student_links EXISTS by
+      req.user.id + m.student_id. 404 → 403 FORBIDDEN_BODY
+      closes the meeting-id existence oracle; parity with PR #81
+      mutation precedent. Predicate formally verified mutually
+      exclusive per row given role-string CHECK constraint.
+    Route 4 (/student/:studentId/count): mirrors Route 2.
+      Closes Followup #76 PARTIAL for this route too.
+    5 catch-block narrowings: error → error.message at lines 86,
+    127, 174, 212, 642. Parity with PR #81 mutation-route
+    precedent at lines 406/594/624.
+    First reviewer triad of the session (sixth consecutive
+    parallel named-subagent dispatch overall). All three named
+    reviewers validated. Verdicts: privacy APPROVED-WITH-NOTES
+    (1 WARN on s.tier/s.area parent-projection — sibling to
+    Followup #79; pre-existing); security APPROVED (2 LOW + 1
+    INFO + 1 WARN, all pre-existing); tenant-isolation
+    APPROVED-WITH-NOTES (2 WARN on mtss_meeting_interventions
+    JOIN defense-in-depth — sibling to Followups #78/#71;
+    pre-existing). Zero new findings introduced.
+    Merge sha 37a6754 (two-parent: 6c2c7d9 + adb252d); deploy
+    dep-d811iqjtqb8s7383ri40 LIVE 47.2s post-merge.
+
+UNPLANNED OPS TASK — HUMBLE (TENANT 9) ACCESS REVOCATION
+
+  Trigger: operator request mid-session to revoke Humble ISD's
+  access to their TierTrak sandbox today while keeping the
+  tenant + sandbox data intact for re-use by other prospects.
+
+  Lightest-path decision: scramble credentials on Humble user
+  accounts; accept the JWT-session window (existing tokens stay
+  valid until expiry; effective revocation within ~1 hour).
+
+  Audit-first read-only audit:
+    Local psql via Render CLI (render psql) failed to negotiate
+    SSL in --command non-interactive mode (FATAL: SSL/TLS
+    required; PGSSLMODE=require not honored; --
+    -v sslmode=require not propagated as connection param).
+    Pivoted to Render Web Shell on backend service container,
+    using $DATABASE_URL as already present in the container env.
+    SELECT (PII-safe shape — non-PII columns only) returned 6
+    users in tenant 9 with role distribution captured above.
+
+  Mutation transaction (in one psql session via Render shell):
+    BEGIN;
+    UPDATE users SET
+      password_hash = NULL,
+      google_id = NULL,
+      password_reset_token = NULL,
+      password_reset_expires = NULL,
+      email = 'revoked_' || id || '@revoked.tiertrak.local',
+      full_name = 'Revoked User'
+    WHERE tenant_id = 9
+    RETURNING id, role;
+    -- (6 rows returned, roles per the distribution above)
+    COMMIT;
+
+  Smoke test: attempted login with original Humble email +
+  arbitrary password → 'Invalid email or password'. Verified
+  revocation effective for password-based login.
+
+  Carry-forward: Humble portion of master-index tenant table
+  needs tag update from "Internal demo, synthetic" to "Revoked
+  Humble access 2026-05-11; sandbox available for new
+  prospects". Not done this session; flag for next master-index
+  edit.
+
+RENDER DB DEFAULT-CREDENTIAL ROTATION + OUTAGE + RECOVERY
+
+  Context: during the Humble psql connectivity troubleshooting
+  phase, the default DB credential string was exposed in chat.
+  Standard post-exposure response: rotate credential.
+
+  Pre-rotation check that SHOULD have happened (didn't this
+  time): grep for hardcoded DATABASE_URL references in
+  application env, not just check "is rotation linked." Render
+  auto-syncs only services that pull from the DB's "Connection
+  Strings" UI directly; services with a hardcoded DATABASE_URL
+  env var (pointing at a specific credential by name) won't
+  auto-update on rotation.
+
+  What happened: rotate clicked. Default credential rotated
+  cleanly on the DB side. Backend's DATABASE_URL was hardcoded
+  to tiertrak_app_2026_05_03 (a non-default credential, likely
+  created in S58/S59 for the connection-pool-bug investigation;
+  not the default that just got rotated). Render did NOT
+  auto-update DATABASE_URL because it wasn't pointing at the
+  default. Connection-string mismatch surfaced as
+  connection-refused on the next pool acquisition. User-facing
+  symptom: "Google Authentication failed" on attempted login,
+  because the backend couldn't query the users table to validate
+  the OAuth-resolved email.
+
+  Recovery: Render Dashboard → tiertrak-api → Environment →
+  DATABASE_URL → re-point to new Internal Connection String
+  (default credential, freshly rotated). Save → auto-restart.
+  ~30s post-restart, self-login via Google OAuth succeeded
+  end-to-end.
+
+  Duration: ~5-10 min from rotation click to verified recovery.
+  No data loss. No partial-write window — failure mode was
+  connection-refused, not partial-commit.
+
+  Banked discipline (see also Memory Candidates section below):
+  - Before rotating a Render DB credential, grep env vars across
+    all services for hardcoded references to that specific
+    credential name. Render's "is rotation linked" UI only tells
+    you about default-credential consumers, not about services
+    pointing at non-default credentials by explicit name.
+  - Post-rotation smoke test as yourself, not just by triggering
+    the revoked-user failure path. The revoked-user path returns
+    "Invalid email or password" for both "user record cleared"
+    AND "backend can't talk to DB" — indistinguishable to the
+    operator without an additional control.
+
+DISCIPLINE OBSERVATIONS BANKED / SURFACED THIS SESSION
+
+  Continuation of the numbered series carried in the activities
+  log. Banked into memory at session level (operator's call at
+  S64 opening per the candidates list below).
+
+  Obs #8 (continuing series): explicit-verb-at-each-boundary
+  pattern reinforced. Across 3 PRs this session, every
+  state-transition (commit / push / open PR / merge) gated on
+  an explicit "proceed" verb from the operator. PR #88 P2's
+  commit-stage halt on stat discrepancy (+3/-3 claim vs +5/-5
+  actual) showed the discipline is load-bearing: silent
+  proceed-anyway would have shipped a self-contradicting commit
+  body. Memory feedback_stats_from_git_diff_stat banked at that
+  halt; cited correctly in the subsequent PR #89 staging step.
+
+  Obs #9 (NEW this session): pre-deploy-flag for unexpected-
+  401-spike pattern. Before merging PR #89 the operator flagged
+  the deploy-time risk that previously-unauthed routes would
+  start 401-ing un-tokened callers; called out as informational,
+  not blocking. Post-deploy no 401 spike observed (no integration
+  partners on the surface; FE was already sending auth tokens).
+  Pattern: when adding auth to previously-open routes, surface
+  the deploy-time 401-spike risk explicitly in the merge prompt
+  so the operator knows to watch Render logs.
+
+  Obs #10 (NEW): convergent-grep-across-reviewers as verification
+  primitive. PR #88 pass-2 review: both privacy-reviewer and
+  security-reviewer independently ran a whole-repo grep for the
+  old 'hashedUserId=none' literal and reported 0 hits. The
+  agreement across two independent agents (each running their
+  own grep, in their own working session, with no cross-talk) is
+  the verification — not either grep in isolation.
+
+  Obs #11 (NEW): summary-as-decision-grade-triage-table as Obs #7
+  nuance. The PR #89 reviewer-triad summary I returned to the
+  operator was accepted in lieu of fully-verbatim quoting
+  because the format was a triage table with severity + source +
+  recommendation columns — a decision-grade artifact, not a prose
+  summary. Obs #7 ("paste verbatim, don't summarize") still
+  applies for individual reviewer reports; the per-PR cross-cutting
+  synthesis table is a separate accepted format.
+
+  Obs #12 (NEW): full-router-enumeration as verification primitive.
+  PR #89's module-load smoke loaded the router and enumerated
+  all 8 mounted routes with their middleware chains. The single
+  load-bearing assertion "every route now has requireAuth in its
+  middleware chain" + "zero unauthed routes remain in this
+  router" is more rigorous than spot-checking the 4 changed
+  routes. Use for any auth-gate-adding PR going forward.
+
+  Obs #13 (NEW): stat-preview-vs-stat-authoritative distinction.
+  Banked across two PRs this session. In PR #88 the post-edit
+  audit summary said "+3/-3" (semantic count of logical changes,
+  wrong by line-count standards); --cached --stat at staging
+  time showed +5/-5 (physical line count). Halt fired correctly.
+  In PR #89 the post-edit audit explicitly prefixed the
+  estimate with "I am not quoting this as the final stat" and
+  cited the banked discipline; the staging-time --cached --stat
+  confirmed +33/-22 and was reported as authoritative.
+
+  Obs #14 (NEW): NOTE-not-INFO severity calibration. Security-
+  reviewer pass-2 on PR #88 returned a finding asking that the
+  operator note be preserved in the merge commit body. Calibrated
+  it as NOTE (audit-trail recommendation, not a finding) not INFO
+  (which would imply a code-level observation). Correct
+  calibration — the recommendation acts on PR metadata not code.
+
+  Obs #15 (NEW): pre-rotation env-var sweep for hardcoded
+  credential names. The Render DB rotation outage is the
+  load-bearing instance. Banked as a hard pre-check before any
+  future credential rotation.
+
+NAMED-SUBAGENT DISPATCH STABILITY
+
+  Sixth consecutive parallel named-subagent dispatch this session
+  (across S60-S63). Tally:
+    S60 PR #81: triad (privacy + security + tenant-isolation)
+    S61 PR #84: dyad (privacy + security)
+    S62 PR #86: dyad (privacy + security)
+    S63 P2 PR #88 pass 1: dyad
+    S63 P2 PR #88 pass 2: dyad
+    S63 P3 PR #89: triad
+  Six-for-six on parallel dispatch via single Agent call with
+  multiple concurrent subagent_type tool uses. All three named
+  reviewers (privacy-reviewer, security-reviewer,
+  tenant-isolation-auditor) validated across both dyad and triad
+  forms. Followup G/#92 (retire the general-purpose workaround
+  documented in CLAUDE.md §11) is overwhelmingly ready to land on
+  the next CLAUDE.md edit; this is the recommended P-queue item
+  for any session that's editing CLAUDE.md regardless.
+
+FOLLOWUPS CLOSED THIS SESSION
+
+  - Followup #39 (mtssMeetings.js read routes — 4 unauthed reads
+    + catch-block error.message narrowings) — CLOSED by PR #89.
+    Last gap on the mtssMeetings surface; full router now
+    authenticated.
+  - Followup #76 PARTIAL — CLOSED for 2 routes via req.student.id
+    usage (the 2 student-scoped routes in PR #89). Remaining 76
+    surface (other routers with raw req.params.* integer params
+    bubbling to 500) still open.
+  - Followup tag (PR #86 family): 4 reviewer findings — privacy
+    N2, security Q9 LOW1, Q9 LOW2, Q10 INFO — CLOSED by PR #88.
+
+FOLLOWUPS OPENED THIS SESSION (filed via Cowork task list — IDs
+are Cowork-internal; need master-index ingestion at S64 opening)
+
+  - users.disabled_at + auth-check column. Would have turned the
+    Humble revocation into a single-column flip (UPDATE users
+    SET disabled_at = NOW() WHERE tenant_id = 9). Requires full
+    reviewer triad + migration + auth-middleware update +
+    reversal-path design (UNREVOKE flow). Multi-session work.
+    HIGH-value, MEDIUM-complexity. Likely lands as
+    migration/users-disabled-at + sec/users-disabled-at-auth-
+    gate paired PRs.
+  - scripts/ops/ to .gitignore. Small chore PR. The
+    2026-05-11-humble-revoke-audit.sql file from this session
+    is the current trigger; future ops scripts should not be
+    one-grep-away-from-accidental-commit. Trivial.
+  - mtss_meeting_interventions JOIN tenant defense-in-depth.
+    WARN from PR #89 tenant-isolation-auditor (2 sites). Sibling
+    to Followups #78 / #71. Bundle for a data-min /
+    defense-in-depth sweep PR.
+  - Route 3 (mtss-meetings GET /:id) projects s.tier and s.area
+    to linked parents. FERPA-protected tier-placement metadata
+    surfaced to parent role for the first time via the new
+    parent-link branch in PR #89. Pre-existing over-fetch shape;
+    sibling to Followup #79. Requires product/legal call before
+    code change.
+  - Read-side role allowlist on mtssMeetings reads. LOW from
+    PR #89 security-reviewer. Teachers in a tenant can read any
+    meeting in that tenant via Routes 2/3/4. Consistent with
+    Routes 2/4 on main pre-PR; inconsistent with write-side
+    MEETING_WRITE_ROLES (which excludes teacher). Product
+    semantics question — is "read scope = tenant" the intended
+    behavior, or should it match write scope?
+  - jwt.verify algorithms allowlist (repo-wide sweep). INFO from
+    PR #89 security-reviewer. jwt.verify called without explicit
+    { algorithms: ['HS256'] } across the repo. jsonwebtoken@9
+    default rejects alg:'none' and key confusion so the practical
+    exposure is low, but the explicit allowlist is the
+    defense-in-depth standard. Sibling to master-index Followup T.
+
+  Carries (unchanged from S62 close):
+    - Followup #22: .claude/settings.json drift. Still carries.
+    - Followup #49: migration/screener-results-prod-dedup. Phase 1
+      design conversation still needed first; touches real prod
+      PII; full reviewer triad.
+    - Followup #70: pg error.detail repo-wide. Still carries.
+    - Followups #73 (no backend test suite), #74 (no backend lint)
+      — still carry as sibling repo-hygiene gaps. PR #88 + PR #89
+      verification posture both relied on substitute verification
+      (node -c + module-load smoke) per the documented banked
+      pattern.
+    - Followups #75-#82 (PR #61 family) — still carry per S62
+      close manifest. None addressed this session.
+    - External tracker namespace decision (carries from S56-S62).
+
+OUTSTANDING STATE AT SESSION CLOSE
+
+  git status (on main):
+  - modified: .claude/settings.json (drift, Followup #22, no
+    change from session start)
+  - untracked: docs/references/GR_SampleClass.pdf (no change)
+  - untracked: scripts/ops/ (new this session; contains
+    2026-05-11-humble-revoke-audit.sql, 947 bytes; resolves
+    via Followup-filed gitignore chore PR in a future session)
+
+  git stash list — all 4 slots intact, unchanged from session
+  start:
+  - stash@{0}: feat/multi-screener-upload S59-carryover-settings-
+    and-activities-pre-migration-branch
+  - stash@{1}: sec/safe-log-pg-error-sweep settings drift
+    (Followup #22)
+  - stash@{2}: chore/activities-log-session-38b settings drift
+    carryover
+  - stash@{3}: WIP on main, fix missing logs data transformation
+
+  main HEAD at session close: 37a6754 (Merge pull request #89
+  from mmarronetravels-sudo/sec/mtssMeetings-read-routes-require-
+  auth)
+
+  activities.txt S63 entry (this entry) appended UNSTAGED on
+  main at close per chore-PR convention — lands on a future
+  chore/activities-log-session-63 PR in S64.
+
+  New env vars this session: NONE. The DB credential rotation
+  was a value change to an existing env var (DATABASE_URL), not
+  a new env var declaration.
+
+NEXT SESSION SHOULD (P-queue for S64)
+
+  P1: chore/activities-log-session-63 PR. Doc-only chore for
+      this entry. Standard pattern (precedents PR #82, #83, #85,
+      #87). Should run unchanged.
+
+  P2 (NEW from S63): chore/gitignore-scripts-ops. Trivial. Add
+      scripts/ops/ to .gitignore. Single-file +1/-0. No reviewer
+      triad needed; doc-style chore. Bundle with P1 if scope
+      allows or land independently.
+
+  P3 (carries from S62 P4, still open): migration/screener-
+      results-prod-dedup (Followup #49). Phase 1 design
+      conversation needed first. Touches real prod PII; full
+      reviewer triad.
+
+  P4 (carries from S62 P5): feat/multi-screener-upload. Wishlist
+      item #1; gated on P3.
+
+  P5 (NEW from S63): users.disabled_at + auth-check column.
+      Multi-session work. Reviewer triad + migration + middleware
+      change. HIGH-value: turns the next Humble-shape revocation
+      into a single-column flip. Worth scoping the migration PR
+      and the auth-middleware PR as separate units in the
+      planning conversation.
+
+  P6 (NEW from S63): mtss_meeting_interventions JOIN
+      defense-in-depth bundle. Could fold into a data-min sweep
+      PR with Followups #78 / #71. Single-file SQL changes.
+
+  P7 (NEW from S63 — PRODUCT/LEGAL): Route 3 (mtss-meetings
+      GET /:id) parent visibility of s.tier / s.area. Needs
+      product/legal call before code change. Surface in the
+      Followup #79 conversation.
+
+  P8 (NEW from S63 — PRODUCT): read-side role allowlist on
+      mtssMeetings reads. Semantics question, not a security
+      finding. Bring to product owner if read-scope-matches-
+      write-scope is the desired posture.
+
+  P9 (NEW from S63 — REPO-WIDE): jwt.verify algorithms allowlist
+      sweep. Defense-in-depth hardening. Could fold into a sec/
+      bundle PR alongside other repo-wide hygiene items.
+
+  P10 (carries): External tracker namespace decision (carries
+      from S56-S62).
+
+  P11+ (carries): S58 resumption queue items (Followup #70,
+       sec/students-mutations-require-auth, sec/ router sweep,
+       Followup V/W/X cleanup).
+
+  Outstanding state housekeeping (low priority, fold into any
+  session):
+  - .claude/settings.json drift triage (Followup #22)
+  - Stash triage (4 parked at slots 0-3, all on irrelevant
+    feature branches now multiple sessions stale)
+  - CLAUDE.md §2 doc drift (still says Vercel; backend on
+    Render — S61 carry, reinforced by PR #88 + #89 prod-deploy
+    evidence: Render deploy cadence confirmed end-to-end again
+    via dep-d811169oa... and dep-d811iqjt... LIVE in 46.7s and
+    47.2s respectively)
+  - CLAUDE.md §11 update to retire the general-purpose
+    workaround (Followup G/#92) — six-for-six named-subagent
+    parallel dispatch validation gives overwhelming evidence
+    the workaround is no longer needed
+  - Vandercook welcome letter / passwords pending
+    hand-delivery (carries from Session 53)
+  - Master-index tenant table: tenant #9 tag update from
+    "Internal demo, synthetic" to "Revoked Humble access
+    2026-05-11; sandbox available for new prospects" (carries
+    from this session)
+
+MEMORY-UPDATE CANDIDATES (for operator's call at S64 opening —
+this session has many; surfaced here as a triaged list, NOT
+auto-banked)
+
+  HIGH-confidence, narrow-scope (recommend banking):
+  - Pre-rotation env-var sweep for hardcoded credential names.
+    Hard pre-check before any future Render DB credential
+    rotation. Tag: feedback_render_credential_rotation_precheck.
+    Source: this session's outage. Specific actionable rule.
+  - Post-rotation smoke as yourself, not just via revoked-user
+    path. The revoked-user failure path's "Invalid email or
+    password" doesn't distinguish "user cleared" from "backend
+    can't reach DB"; need an additional control. Tag:
+    feedback_post_rotation_self_smoke.
+  - Pre-deploy 401-spike flag for auth-add PRs. When adding auth
+    to previously-open routes, surface the deploy-time
+    401-spike risk explicitly in the merge prompt. Source:
+    Obs #9 from PR #89 merge prompt. Tag:
+    feedback_auth_add_deploy_401_flag.
+
+  MEDIUM-confidence, broader pattern (consider banking):
+  - Convergent-grep-across-reviewers as verification primitive.
+    Multi-reviewer agreement on a whole-repo grep returning 0
+    hits is the verification, not either grep in isolation.
+    Source: Obs #10 from PR #88 pass-2. Tag:
+    feedback_convergent_grep_verification.
+  - Full-router-enumeration as auth-gate-add verification.
+    Module-load smoke that enumerates every route's middleware
+    chain catches latent unauthed routes the way per-route
+    inspection cannot. Source: Obs #12 from PR #89. Tag:
+    feedback_full_router_enum_verification.
+  - Stat-preview-vs-stat-authoritative discipline. Reinforces
+    feedback_stats_from_git_diff_stat with the "estimate vs
+    authoritative" framing. Source: Obs #13 banked across PR #88
+    and PR #89. Could be folded into the existing memory or
+    landed as a sibling.
+
+  LOWER-confidence, possibly skill-domain (operator call):
+  - NOTE-not-INFO severity calibration on audit-trail-class
+    findings. Recommendations that act on PR metadata (e.g.,
+    "preserve operator note in merge commit body") are NOTE not
+    INFO. Source: Obs #14. Narrow rule; might not be banked-
+    worthy on its own; could land as a sentence in a broader
+    severity-calibration memory.
+  - Summary-as-decision-grade-triage-table as Obs #7 nuance.
+    The triage-table format (severity + source + recommendation
+    columns) is an acceptable cross-cutting synthesis format
+    distinct from "paste verbatim" for individual reports.
+    Source: Obs #11. Probably bank as a clarifying note on the
+    existing Obs #7-equivalent memory rather than as a separate
+    entry.
+  - Explicit-verb-at-each-boundary pattern. Already implicit in
+    operator's working style this session and across S60-S62.
+    Source: Obs #8. May already be banked under a different name;
+    operator should check existing memory before landing a new
+    one.
+
+  Memory-housekeeping candidates:
+  - Update reference_production_urls.md or similar with the
+    Render service ID (srv-d5nc0e94tr6s73d546u0) and DB instance
+    ID (dpg-d5nbrjd6ubrc73ap0uig-a). These were referenced
+    repeatedly this session and would have saved a `render
+    services list` call each time.
+  - The CLAUDE.md §2 Vercel → Render doc drift correction
+    (carries from S61) is still pending; reinforced by S63's
+    prod-deploy evidence.
+
+================================================================================
