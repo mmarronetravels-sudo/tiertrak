@@ -109,6 +109,8 @@ A supplemental pair-shape pass (`\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b`) catches t
 
 This grep is not optional — it is the procedural enforcement of the bottom guardrail near the foot of this file.
 
+**Out of scope:** master-index synchronization (assigning permanent Followup numbers, updating cross-references across memory files) is operator-side housekeeping, not part of this skill. Surface followups inside the `OPEN ITEMS / FOLLOW-UPS` section of the activities entry; permanent numbering and cross-reference reconciliation happen in a separate ritual.
+
 ### Step 4 — Report back
 
 Show the user a 3-line summary:
