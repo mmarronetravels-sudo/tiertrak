@@ -29,7 +29,9 @@ Announce at start: "I'm using the landing-the-plane skill to close this session.
 
 Run, in order:
 1. `git status` — confirm no stray uncommitted changes. If any exist, surface them and ask whether to commit or discard.
-2. `git branch --show-current` — confirm the current branch is **not** `main` or `master`. If it is, stop and explain that TierTrak's CLAUDE.md Section 2A forbids landing from those branches.
+2. `git branch --show-current` — for **work sessions** (any code change), confirm the current branch is **not** `main` or `master`. If it is, stop and explain that TierTrak's CLAUDE.md Section 2A forbids landing from those branches.
+
+   **Exception — activities-log-only sessions:** if this session's only intended change is appending to `activities.txt` for a prior session's close, the operator legitimately starts on `main` and the skill then creates `chore/activities-log-session-N` from `main`. The main-branch forbid does not apply to this workflow. See `feedback_activities_log_separate_pr.md` and the bottom guardrail at the foot of this file.
 3. The project's test command (`npm test` from the repo root, and `npm test` or the equivalent inside `frontend/` if the task touched UI code).
 4. `npm run lint` (root and/or `frontend/` as relevant).
 
