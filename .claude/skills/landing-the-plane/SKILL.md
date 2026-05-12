@@ -98,6 +98,17 @@ NEXT SESSION SHOULD
 ================================================================================
 ```
 
+**Before staging the activities.txt edit**, run §4B grep against the new content. Per `feedback_4b_per_entry_standard.md`, evaluate the diff against `origin/main` (the new entry only), not the whole file. The pattern catalog lives in `docs/ai-context/4B_GREP_PATTERNS.md`; tenant-slug enumeration is operator-supplied at grep-time per the lookup mechanism described there.
+
+Both narrow and wide grep passes must return zero matches against added lines only (`^+` excluding `^+++`). If matches surface:
+- Remediate via in-line `[tenant]` marker substitution for tenant identifiers.
+- For other PII shapes, replace with generic descriptions (e.g., "3 intervention-plan rows for 1 test tenant").
+- Re-run both grep passes after each remediation; do not stage until both are clean.
+
+A supplemental pair-shape pass (`\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}\b`) catches the most common leak vector — real person names embedded in prose — but produces operational-text false positives that require manual review. Treat it as belt-and-suspenders, not a gating check.
+
+This grep is not optional — it is the procedural enforcement of the bottom guardrail near the foot of this file.
+
 ### Step 4 — Report back
 
 Show the user a 3-line summary:
