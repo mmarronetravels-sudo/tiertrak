@@ -10181,3 +10181,248 @@ NEXT SESSION SHOULD (P-queue for S66)
       overdue)
 
 ================================================================================
+
+
+================================================================================
+SESSION: 2026-05-12T16:38:40-07:00 (Session 66)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-66 PR this session, Step 2 option 2)
+DISPOSITION: 2 PRs merged + LIVE on prod (PR #93 doc-only chore close of
+             S65 entry at cb27b8d; PR #94 chore-skill hardening of
+             /landing-the-plane at 22392ad — first PR landed under its
+             own new rules and self-consistent); 1 read-only audit
+             completed (P2 skill investigation, 6 concerns surfaced);
+             1 memory write decided for S67 (feedback_pr_body_4b_audit_
+             prose_discipline.md); 16 carry-forward memory candidates
+             deferred to S67
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Four-phase session. P1 landed the S65 close entry via chore/
+  activities-log-session-65 (PR #93 squash-merged at cb27b8d). The
+  PR's body required 3 iterations of remediation before clearing
+  §4B grep — surfaced the audit-prose recursive trap: describing a
+  pattern category in a PR body inherits the category's matching
+  strings. Only Option A (no pattern enumeration anywhere, period)
+  cleared the gate. P2 ran a read-only audit of /landing-the-plane
+  skill, surfacing 4 prior concerns from S65 OPEN ITEMS plus 2
+  fresh from PR #93. Verdict: mixed-leaning-playbook-gaps; skill
+  was descriptively correct but procedurally silent on §4B
+  enforcement, PR-body audit-prose, master-index sync, and the
+  activities-log-only workflow exception. P2.5 acted on the audit:
+  hardened the skill via chore/skill-landing-the-plane-hardening
+  (PR #94 squash-merged at 22392ad). Six small commits — 1 new
+  patterns catalog at docs/ai-context/4B_GREP_PATTERNS.md, 4
+  SKILL.md edits (workflow fork, §4B grep gate, master-index out-
+  of-scope note, PR-body attestation discipline), 1 .gitignore
+  entry. Meta-archetype: PR #94 was the first PR landed under its
+  own new rules — body §4B-clean, file-diff hits intentionally
+  confined to the patterns file, self-consistent. P3 triaged
+  memory candidates: 1 to bank in S67 (consolidated audit-prose
+  discipline), 4 noted inline in this entry's OPEN ITEMS, 16
+  carry-forward candidates deferred to S67.
+
+FILES TOUCHED THIS SESSION
+  (PR #93 — squash-merged at cb27b8d)
+  activities.txt — Session 65 close entry (+437/-0) appended.
+
+  (PR #94 — squash-merged at 22392ad)
+  .claude/skills/landing-the-plane/SKILL.md — 4 edits (+23/-2 net):
+    workflow fork in Step 1 (activities-log-only exception);
+    §4B pre-stage grep gate in Step 3 (procedural enforcement of
+    bottom-guardrail's descriptive rule); master-index sync as
+    explicit out-of-scope note in Step 3; PR-body §4B attestation
+    discipline in Step 2 (the recursion-trap fix).
+  docs/ai-context/4B_GREP_PATTERNS.md — NEW (+121/-0). Pattern
+    catalog with 4 regex categories plus tenant-slug lookup
+    mechanism documentation (live tenants-table query or
+    operator-local gitignored config). Audience: operators,
+    scripts, reviewers.
+  .gitignore — +4/-1. Added .4b-tenant-slugs.local for operators
+    using the local-config mechanism.
+
+  (This S66 entry, current — appends unstaged on chore/activities-
+  log-session-66 per chore-PR convention; ships via this same PR)
+  activities.txt — Session 66 close entry (this entry).
+
+MIGRATIONS RUN
+  none — pure audit-trail-procedure work this session. No SQL, no
+  schema, no data path touched.
+
+TENANT ISOLATION REVIEW
+  no DB changes — no SQL, no migrations, no route handlers. New
+  patterns file's tenant-slug section explicitly avoids enumerating
+  slugs in tracked content (operator-supplied at grep-time per
+  documented mechanisms).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Session topic was §4B audit-trail
+    procedure; no PII data path edited.
+  Logging audit: N/A — no logging code modified.
+  Cross-tenant risk: none identified. The new patterns file
+    deliberately keeps tenant-slug enumeration out of tracked
+    content (live-DB lookup or gitignored local file mechanisms
+    documented at 4B_GREP_PATTERNS.md lines 67-95).
+  §4B per-entry grep against this S66 entry's diff vs origin/main:
+    pending post-write verification (Step 3 §4B gate).
+  Session-level §4B observation queued for S67 memory PR
+    (feedback_pr_body_4b_audit_prose_discipline.md): PR #93's body
+    required 3 remediation rounds before clearing the gate. Root
+    cause was audit-prose recursion. Fixed structurally by Edit D
+    of PR #94 — the rule is now codified at SKILL.md Step 2.
+  Privacy-reviewer subagent verdict on PR #94: APPROVED. 4 INFO
+    findings, all confined to the catalog file (anticipated; the
+    file IS the §4B pattern reference). Zero hits outside the
+    catalog.
+
+VERIFICATION
+  P1 — PR #93 lifecycle:
+    Pre-PR §4B sweep: file diff clean on first run; PR body
+      required 3 iterations (audit-prose recursion fix).
+    Staged stat: 1 file changed, 437 insertions(+).
+    reviewDecision: APPROVED by scholapathsystems on 9c6a80b at
+      2026-05-12T14:22:17Z.
+    Merge: --squash --delete-branch to cb27b8d.
+
+  P2 — skill audit (read-only):
+    Read activities.txt S64+S65 sections (lines 9451-10183) for
+      prior concerns; grep surfaced 4 distinct items in S65 OPEN
+      ITEMS. S64 had only memory-triage references, no fresh
+      skill concerns.
+    Read .claude/skills/landing-the-plane/SKILL.md in full (114
+      lines, single file, no companion templates/helpers).
+    Read all docs/ai-context/*.md for doc-style conventions to
+      apply to the new patterns file.
+    Surfaced 2 fresh concerns from PR #93: audit-prose recursive
+      trap + body-template gap.
+    Verdict: mixed-leaning-playbook-gaps; skill was descriptively
+      correct but procedurally silent on 4 enforcement axes.
+
+  P2.5 — PR #94 lifecycle:
+    6 small commits with per-commit `git log -1 --oneline` +
+      `git diff --stat HEAD~1 HEAD` verification.
+    Total branch stat: 3 files changed, 148 insertions(+),
+      3 deletions(-).
+    File-diff §4B grep: 5 hits, all confined to
+      4B_GREP_PATTERNS.md (intentional catalog content).
+      Zero hits in SKILL.md edits or .gitignore.
+    PR body §4B re-grep (Edit D's new discipline): narrow +
+      wide both exit 1 (empty), first-try clean — body
+      crafted under Option A discipline from the start.
+    Privacy-reviewer subagent: APPROVED with 4 INFO findings,
+      all in catalog file. Zero blocking.
+    reviewDecision: APPROVED by scholapathsystems on 62f4251
+      at 2026-05-12T17:58:45Z.
+    Merge: --squash --delete-branch to 22392ad.
+
+  P3 — memory triage decision:
+    Bank 1 new feedback memory in S67:
+      feedback_pr_body_4b_audit_prose_discipline.md
+      Why: consolidates 4 related observations into one
+      load-bearing rule for future PRs.
+    4 items noted inline in this S66 entry's OPEN ITEMS (see
+      below) rather than separate memory writes.
+    16 carry-forward candidates from S63/S65 deferred to S67
+      P-ish-3 sweep.
+
+  Render LIVE timestamp: NOT CAPTURED for either PR #93 or
+    PR #94 — no RENDER_API_KEY in shell, no Render-watch
+    helper. 5th consecutive PR with this gap.
+
+  Code-surface verification: N/A. No backend or frontend code
+    modified this session. Backend has no test suite
+    (Followup #73), no lint (Followup #74); frontend
+    untouched.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  S65 entry factual error correction:
+    The S65 entry stated PR #87 used squash merge style.
+    Verified via git log this session: PR #87's merge commit
+    73a0e122dda5acf58f2cd8c07344d9149f6eeb6e has 2 parents and
+    subject "Merge pull request #87 from ..." — it was a true
+    merge commit, NOT a squash. The squash-modal precedent is
+    PR #90 / #92 / #93 / #94 (1 parent each). #87 is the
+    outlier. Recorded here as a correction; pre-existing S65
+    text on main is governed by its own commit's audit per
+    feedback_4b_per_entry_standard.md.
+
+  Render LIVE timestamp capture gap — NEW FOLLOWUP candidate:
+    Observed for 5th consecutive PR (#87, #90, #92, #93, #94).
+    Root cause: no RENDER_API_KEY in shell environment, no
+    Render-watch helper script. Doc-only-chore-floor baseline
+    (~37-38s merge-to-LIVE per pre-#93 observations) cannot
+    be confirmed for #93 or #94. Operator decision pending:
+    fix environment (add API key to shell, write watch helper)
+    OR accept the gap and document the limitation. Recommend
+    assigning a Followup number when triage happens in S67.
+
+  P2 audit calibration — honest-accounting note:
+    Concerns #2 and #3 in the P2 audit were initially framed
+    as pure "playbook gaps" but more accurately mixed:
+    SKILL.md L110 had a descriptive rule (no PII in
+    activities.txt), but it was procedurally unenforced AND
+    Claude Code didn't apply it reliably. The skill-bug vs
+    Claude-Code-drift split was both. Fixed structurally by
+    Edit B (procedural enforcement) — but the audit should
+    have called this mixed-not-pure from the start. Worth
+    queueing for memory if audit-pattern recurrence is
+    observed; otherwise just a self-correction here.
+
+  Followup #22 (.claude/settings.json drift):
+    Unresolved across 6+ sessions. Parked again at S66 close
+    as stash@{0} (P2.5 stash slot was popped and re-stashed
+    at S66 pre-flight). Carry-forward.
+
+  Pre-existing followups (carry forward unchanged from S65):
+    #22 (above); #39 (CLOSED prior); #49 screener-results-prod-
+    dedup (Phase 1 design DONE in S65, Phase 2 SQL-authoring
+    pending); #70 pg error.detail repo-wide; #71/#78/#79 over-
+    fetch sweep cluster; #72 FE-credentials; #73 backend-tests;
+    #74 backend-lint; #75 relationship whitelist; #76 int-id
+    validation (partial-closed prior); #77 phantom tenant_id
+    INSERT; #80 rate-limiting absent; #81 CSRF absent; #82
+    parity-check guard inconsistency; G/#92 (CLOSED prior);
+    #93 users.disabled_at; #94 scripts/ops/ gitignore; #95
+    mtss_meeting_interventions JOIN; #96 s.tier/s.area FERPA;
+    #97 read-side role allowlist; T/#98 jwt.verify algorithms;
+    #99 activities.txt historical PII audit (S65 provisional);
+    #100 upload-time NULL student_id guard (S65 provisional);
+    sibling-to-#100 test CSVs don't auto-create students (S65
+    provisional).
+
+NEXT SESSION SHOULD (P-ish queue for S67)
+
+  P-ish-1: Memory PR — bank feedback_pr_body_4b_audit_prose_
+    discipline.md per S66 P3 decision. Consolidates the audit-
+    prose recursion lesson (4 observations from PR #93) into
+    one load-bearing rule for future PRs. Citation: SKILL.md
+    Edit D + this S66 entry's VERIFICATION P1 + P2.5 sections.
+
+  P-ish-2: migration-027 Phase 2 — SQL authoring + reviewer
+    triad pass. Convert migration-027-design.md (landed S65)
+    into the actual migration SQL. Branch shape:
+    migration/screener-results-prod-dedup per §2A. Reviewer
+    triad required: tenant-isolation-auditor (DELETE +
+    constraint reshape), privacy-reviewer (operates on
+    student-PII-bearing table even if affected rows are test
+    data — defense-in-depth), security-reviewer (prod DELETE).
+
+  P-ish-3: Full P3 sweep — 16 deferred memory candidates from
+    S63/S65 + whatever S67 generates. Triage to bank/note/skip.
+
+  Wishlist (still unblocked):
+    - Multi-screener feat PR (Wishlist #1) — unblocked after
+      migration-027 ships (P-ish-2).
+    - Export students-with-accommodations report.
+    - Multi-intervention-per-goal design conversation.
+
+  Outstanding housekeeping:
+    - .claude/settings.json drift (Followup #22) — parked at
+      S66 close as stash@{0}.
+    - scripts/ops/ → .gitignore (Followup #94).
+    - 3 parked stashes (slots 0-2 — operator-side carryovers).
+    - docs/references/GR_SampleClass.pdf still untracked
+      (pre-existing as of S63).
+
+================================================================================
