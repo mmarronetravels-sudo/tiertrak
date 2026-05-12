@@ -21,3 +21,6 @@ frontend/dist/
 
 # Operational credentials (CLI tools, never commit)
 .render/
+
+# §4B tenant-slug enumeration (operator-local; never commit per docs/ai-context/4B_GREP_PATTERNS.md)
+.4b-tenant-slugs.local
