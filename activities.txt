@@ -9744,3 +9744,440 @@ NEXT SESSION SHOULD (P-queue for S65)
       overdue)
 
 ================================================================================
+
+
+================================================================================
+SESSION: 2026-05-11T14:18:00-07:00 (Session 65)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-65 PR in S66 P1)
+DISPOSITION: 1 PR merged + LIVE on prod (PR #92, doc-only chore close of
+             S64 entry); 1 design doc authored (migration-027-design.md);
+             3 §4B failure modes caught + remediated mid-flight;
+             [tenant] anonymization marker convention established;
+             3 new provisional followups surfaced (#99, #100,
+             sibling-to-#100); /landing-the-plane skill investigation
+             priority ELEVATED
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Two-phase session. P1: land the S64 close entry from main's working
+  tree via a doc-only chore PR (chore/activities-log-session-64, PR #92,
+  squash-merged to 1a3173e at 20:30:07Z). P2: Phase 1 design conversation
+  for migration-027 (screener_results dedup + UNIQUE constraint reshape),
+  advancing Followup #49 from "Phase 1 pending" to "Phase 1 design DONE
+  — design.md landed". P1 surfaced three §4B failure modes — two caught
+  pre-commit by per-entry grep, one caught post-PR-create by PR-body
+  grep — and established the [tenant] anonymization marker convention
+  for future entries. P2 produced a 4-step locked design in migration-
+  027-design.md based on direct prod recon via Render's web shell.
+
+FILES TOUCHED THIS SESSION
+
+  activities.txt — S64 close entry (+299/-0) landed on main via PR #92
+    squash-merge to 1a3173e (single in-line string swap of one tenant
+    slug to [tenant] marker applied pre-commit; PR body §4B audit-trail
+    prose also remediated via gh pr edit before merge). This S65 entry
+    (current) appends unstaged on main per chore-PR convention; S66 P1
+    ships it.
+
+  migration-027-design.md — NEW design doc authored P2, saved to
+    project folder. Contains the 4-step locked design: DELETE-with-
+    200-row-ceiling-guard / DROP IF EXISTS old constraint / ADD UNIQUE
+    NULLS NOT DISTINCT (6-col) / VERIFY block. Wrapped in BEGIN/COMMIT
+    for atomic apply. Mirrors migration-024 Step 6 PG-15+ branch + the
+    migration-025 transactional-wrapper pattern.
+
+  (Out-of-repo, NOT in any PR diff — operator's home memory dir)
+  Memory writes for §4B per-entry standard reinforcement and the new
+  [tenant] marker convention are operator-side and not in this
+  session's file-touched list per the activities-log convention;
+  tracked via MEMORY.md index.
+
+MIGRATIONS RUN
+  none — design only this session. migration-027 SQL authoring and
+  prod-apply deferred to a future session per the Phase 1 design gate
+  protocol (design.md → review → SQL author → reviewer triad → prod).
+
+TENANT ISOLATION REVIEW
+
+  PR #92: doc-only — N/A. activities.txt is the running session log;
+    no SQL or route handler touched. Per-entry §4B audit on the new
+    content (the S64 entry being landed) caught one tenant-slug leak
+    and remediated mid-flight (see PRIVACY REVIEW below).
+
+  migration-027 design: design doc only; no schema applied. The
+    designed migration includes a 200-row ceiling DELETE guard before
+    the constraint flip — defensive: if a future re-run encounters
+    more than 200 duplicate rows in scope, abort the transaction
+    rather than blindly delete. Tenant-aware via the existing
+    tenant_id column on screener_results; no cross-tenant pathway
+    introduced. Reviewer triad still required for the SQL-authoring
+    PR per #49's MEDIUM/HIGH classification.
+
+PRIVACY REVIEW (Section 4B)
+
+  PII fields touched: none persisted, written, or transmitted by
+    code; one tenant-slug filename reference caught + anonymized in
+    activities-log text (see failure modes below).
+
+  §4B failure modes caught this session (NEW; three in one session):
+
+    1. Activities entry pre-commit leak: the S64 entry being landed
+       via PR #92 referenced a real tenant slug embedded in a
+       filename (scripts/ops/[date]-[tenant]-revoke-audit.sql).
+       Caught by the operator-imposed per-entry grep BEFORE staging.
+       Anonymized via in-line string swap to [tenant] marker
+       pre-commit. Final pre-commit greps (narrow + wide §4B
+       patterns) both returned zero matches against the staged diff.
+
+    2. PR body leak: the SAME literal slug appeared in the §4B
+       audit-trail prose of PR #92's description (i.e., the
+       remediation narrative ITSELF leaked the slug it was
+       documenting the remediation of). Caught by post-creation
+       gh-pr-view-grep. Remediated via gh pr edit --body-file with
+       the literal slug replaced by the phrase "literal tenant slug
+       → [tenant] marker". Body now permanently clean. Lesson
+       banked: §4B applies to the FULL artifact surface (PR title,
+       PR body, commit message, audit-trail prose), not just the
+       staged file diff.
+
+    3. Activities historical contamination (PRE-EXISTING, surfaced):
+       3 occurrences of the same slug in activities.txt total
+       across all session entries; lines 9234 + 9283 belong to the
+       S63 entry that landed on main via PR #90 in S64, before the
+       [tenant] marker convention existed. Per [feedback_4b_per_
+       entry_standard] these are out-of-scope for the current PR's
+       diff (per-entry standard, not whole-file standard). Filed
+       as Followup #99 for a separate historical-audit pass.
+
+  [tenant] anonymization marker convention ESTABLISHED this session.
+    Going forward: any file-path, slug, or reference in activities-
+    log or PR-body text that embeds a real tenant identifier MUST
+    use the [tenant] marker. Tenant_id integers ("tenant 3") remain
+    acceptable per skill bottom-guardrail. Vendor/assessment names
+    (STAR, MAP, etc.) are also acceptable — these are not tenant
+    identifiers.
+
+  Logging audit: N/A — no logging code modified.
+
+  Cross-tenant risk: none identified. The migration-027 design's
+    DELETE-then-flip touches one tenant's test data only (scope
+    confirmed by operator-side prod recon — see VERIFICATION).
+
+  §4B per-entry grep on this S65 entry's diff against main: pending
+    post-write verification (see Step 4 of the close-out — separate
+    grep run after this file write).
+
+VERIFICATION
+
+  P1 — PR #92 lifecycle:
+    Pre-PR §4B sweep (narrow + wide grep on staged diff): both
+      passes returned ZERO MATCHES after [tenant] anonymization.
+    Staged stat: activities.txt | 299 +++... | 1 file changed,
+      299 insertions(+), 0 deletions(-) — matches predicted
+      +299/-0 (in-line char-delta from string swap; no line-delta).
+    reviewDecision: APPROVED — flipped not by operator self-approve
+      (mechanically blocked twice with "Review Can not approve your
+      own pull request" from GitHub's addPullRequestReview GraphQL)
+      but by an external collaborator account submitting gh pr
+      review --approve at 20:27:05Z on commit d8b791a. THIS
+      CORRECTS S64's BANKED "self-merge" TERMINOLOGY: doc-only
+      chore PRs DO need external collaborator review for the
+      mechanical APPROVED state, regardless of the "Docs or README
+      only — None needed" human-review-gate semantics. Banked
+      observation #1 from S64 entry predicted this; this session
+      is the empirical confirmation.
+    Merge style: --squash --delete-branch (matched PR #87/#90/#91
+      precedent). Initial spec was --merge; precedent check from
+      git log caught the deviation and surfaced before execution;
+      corrected to --squash on second verb. Worth banking as a
+      verification primitive (merge-style precedent check before
+      gh pr merge).
+    Merge commit: 1a3173e at 2026-05-11T20:30:07Z (13:30:07 PDT).
+    Render LIVE timestamp: NOT CAPTURED — no RENDER_API_KEY in
+      shell, no Render-watch helper script. Doc-only-chore-floor
+      baseline (~37-38s merge-to-LIVE per PR #87/#90/#91
+      observations) cannot be confirmed or invalidated for PR #92.
+      Data-point gap; worth either (a) adding Render-watch helper
+      with operator-side env var, (b) standardizing operator-side
+      capture from Render dashboard with paste-back, or (c)
+      banking the gap and continuing without.
+
+  P1 — branch cleanup: chore/activities-log-session-64 deleted
+    local + origin via gh pr merge --delete-branch.
+
+  P1 — local main fast-forwarded automatically by gh CLI to
+    1a3173e during the merge call (gh CLI behavior, not separate
+    git pull). Subsequent git pull --ff-only confirmed "Already
+    up to date." Stash@{0} (settings.json drift parked at session
+    open via "git stash push -m '...' -- .claude/settings.json")
+    popped successfully; Dropped stash@{0} (e28002e); working tree
+    restored to pre-PR-92 state: modified .claude/settings.json
+    (90-line drift, +50/-40) + 2 untracked items.
+
+  P2 — migration-027 Phase 1 design:
+    Read-only context dump (operator-imposed scope):
+      Read migration-024-multi-screener-support.sql (173 lines,
+        full contents) — confirmed Step 6's PG-version-gated branch
+        with NULLS NOT DISTINCT on PG 15+ and fallback RAISE
+        WARNING on PG <15.
+      Read migration-025-capture-out-of-band-prod-changes.sql (112
+        lines) — confirmed the BEGIN/COMMIT transactional-wrapper
+        pattern and the pg_index-based dynamic constraint discovery
+        approach. Pattern mirrored in migration-027 design.
+      Read migration-026-screener-types-lookup.sql (78 lines) —
+        confirmed no FK from screener_results.assessment_type to
+        screener_types.name in v1 (membership enforced in route
+        handler, not at SQL layer). Means migration-027 doesn't
+        need to coordinate with screener_types.
+      Read schema.sql screener_results block (lines 91-121 of
+        schema.sql) — confirmed schema-intended contract is
+        6-column UNIQUE NULLS NOT DISTINCT.
+      Read route surface: routes/screener.js — 3 hits (SELECT 43,
+        INSERT 131, SELECT 208). Only ONE route file touches
+        screener_results; surprisingly minimal surface.
+      Activities-log historical grep: 22 hits across prior entries
+        for Migration 024 / Step 6 / dedup context.
+
+    Prod recon via Render's web shell (operator-run; not from this
+      Claude shell — no RENDER_API_KEY in shell, prod URL only
+      lives in Render dashboard per [user_db_workflow]):
+        PG major version: 16 (PG 15+ branch eligible for NULLS
+          NOT DISTINCT — confirms migration-027's design path).
+        Current constraint shape: 6-column UNIQUE on (tenant_id,
+          student_id, assessment_type, subject, screening_period,
+          school_year) WITHOUT NULLS NOT DISTINCT semantics.
+          This is the post-Step-6-PG<15-fallback state captured
+          in S45 activities entries — confirms prod has the
+          wrong-semantics version of the constraint as predicted.
+        Affected scope: 146 rows where student_id IS NULL in
+          tenant 3. Operator inspection confirmed all 146 rows
+          are test data; no customer data in affected scope.
+        No additional NULL-student_id rows in any other tenant.
+
+    "Option A" framing from S64 reframed as framing-only (not
+      a substantive proposal); substantive 4-step design completed
+      this session.
+
+    4-step locked design (in migration-027-design.md):
+      Step 1: DELETE FROM screener_results WHERE student_id IS
+        NULL AND tenant_id = N — guarded by a 200-row ceiling
+        check before execution; ABORT transaction if scope
+        exceeds 200 rows. (Current scope is 146; ceiling gives
+        ~37% safety margin for re-run scenarios.)
+      Step 2: ALTER TABLE screener_results DROP CONSTRAINT IF
+        EXISTS screener_results_unique_per_period_assessment.
+      Step 3: ALTER TABLE screener_results ADD CONSTRAINT
+        screener_results_unique_per_period_assessment UNIQUE
+        NULLS NOT DISTINCT (tenant_id, student_id, assessment_
+        type, subject, screening_period, school_year). PG 16
+        eligible per prod recon Step 2; no version-gated
+        fallback branch needed.
+      Step 4: VERIFY block — SELECT against pg_constraint joined
+        to pg_index to confirm indnullsnotdistinct=true on the
+        new constraint; SELECT COUNT(*) of affected-shape rows
+        (tenant 3, student_id IS NULL) confirms zero.
+      Wrapper: BEGIN; ... COMMIT; — atomic, no half-applied
+        intermediate state committed; if any step fails, full
+        rollback.
+
+    Reviewer triad (privacy + tenant-isolation + security)
+      required for the SQL-authoring PR per Followup #49's
+      MEDIUM/HIGH classification: DELETE + constraint reshape
+      touches student-PII-bearing table even though all
+      affected rows are test data; defense-in-depth.
+
+  Code-surface verification: N/A. No backend or frontend code
+    modified. Backend has no test suite (Followup #73), no lint
+    config (Followup #74); frontend untouched.
+
+NEW PROVISIONAL FOLLOWUPS (S65)
+
+  Three new followups surfaced this session, provisional pending
+  master-index assignment in S66 P3 housekeeping:
+
+    #99 (provisional) — activities.txt historical PII audit.
+      Lines 9234 + 9283 of activities.txt on main contain 2 real
+      tenant-slug references from the S63 entry (landed via PR
+      #90 in S64, before the [tenant] marker convention existed).
+      Decision needed for S66+: retroactive in-place anonymization
+      (history-rewrite via amended commit, riskier; loses the
+      audit trail of the contamination) vs. forward-only via a
+      new chore-PR that anonymizes the lines (additive but leaves
+      the slug in git history). Either path requires tenant-
+      isolation-auditor review before execution.
+
+    #100 (provisional) — upload path allows NULL student_id rows.
+      routes/screener.js:131 INSERT path accepts CSV uploads where
+      the student doesn't resolve to an existing students row, and
+      persists with student_id=NULL. This is the root cause of
+      the dup-cluster shape migration-027 reshapes around. After
+      #100's upload-time guard lands, migration-027's dedup
+      becomes a one-time cleanup rather than ongoing risk.
+      Sequencing call: migration-027 first (cleanup + constraint
+      shape) THEN #100 (upload-time guard against new NULL
+      writes), OR #100 first THEN migration-027 — operator/
+      reviewer call in S66.
+
+    sibling-to-#100 (provisional) — test CSVs don't auto-create
+      students. Related to #100's root cause: when CSV upload
+      encounters an unmatched student (by name/external_id), the
+      current path writes a row with NULL student_id rather than
+      either (a) rejecting the CSV row with a hard error or (b)
+      auto-creating the students record. Product/UX call on
+      which semantic is right BEFORE #100 implementation lands.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  Outstanding-state housekeeping (low priority):
+    - .claude/settings.json drift (Followup #22, source × 2:
+      stash@{1}/stash@{2}). 90-line stat in working tree at
+      session close; intentionally untouched per surgical
+      add-only discipline. The temporary S64-stash created at
+      P1 step 1 was popped + cleanly applied + dropped during
+      P1 step 7; stash list returned to 4 entries (slots 0-3)
+      matching session-open state.
+    - 4 stashes parked at slots 0-3 unchanged from session
+      open (S59 carryover + Followup #22 × 2 + WIP-on-main).
+    - scripts/ops/[date]-[tenant]-revoke-audit.sql still
+      untracked (carry forward from S64 / Cowork Task #10 /
+      Followup #94 will gitignore).
+    - docs/references/GR_SampleClass.pdf still untracked
+      (pre-existing as of S63).
+
+  /landing-the-plane skill investigation — PRIORITY ELEVATED
+  to "before S66 close" minimum.
+    Three skill-quality concerns now stacked across S64/S65:
+      (1) No master-index generation at S64 close (skill-format
+          gap; not in skill template).
+      (2) §4B leak landed on main via PR #90 (S63 entry contained
+          real slugs; skill's bottom-guardrail bullet says "no
+          tenant-identifiable slugs" but the format/template
+          didn't enforce or grep-check).
+      (3) §4B leak risk REPEATED this session — caught by
+          operator-imposed per-entry grep at P1 step 3, NOT by
+          the skill itself; demonstrates skill is not self-
+          policing for the very guardrail it documents.
+    Plus skill internal inconsistency surfaced this session:
+      Step 1 ("forbid main branch") contradicts the bottom-
+      guardrail ("activities.txt lands directly to main via
+      dedicated PR"). Repository convention is the latter;
+      Step 1 wording is wrong.
+    Options to consider for S66 investigation:
+      (a) skill rewrite with self-grep pre-write step + corrected
+          Step 1 wording.
+      (b) skill deprecation in favor of inline ritual per session.
+      (c) skill as scaffolding + operator-imposed grep as belt-
+          and-suspenders (current state; documents the layered
+          defense but accepts the skill is unreliable solo).
+
+  Pre-existing followups (carry forward unchanged from S64 entry):
+    #22 settings drift; #39 (CLOSED via S63 PR #89); #49 screener-
+    results-prod-dedup — STATUS UPDATED: Phase 1 design DONE
+    this session, design.md landed; SQL-authoring PR is next
+    phase (S66 P4); #70 pg error.detail repo-wide; #71/#78/#79
+    over-fetch sweep cluster; #72 FE-credentials; #73 backend-
+    tests; #74 backend-lint; #75 relationship whitelist; #76
+    int-id validation (partial-closed S63 PR #89); #77 phantom
+    tenant_id INSERT; #80 rate-limiting absent; #81 CSRF absent;
+    #82 parity-check guard inconsistency; G/#92 §11 codification
+    (CLOSED via PR #91 S64); #93 users.disabled_at; #94 scripts/
+    ops/ gitignore; #95 mtss_meeting_interventions JOIN; #96
+    s.tier/s.area FERPA; #97 read-side role allowlist; T/#98
+    jwt.verify algorithms; + #99/#100/sibling-to-#100
+    (provisional this session).
+
+  Banked observations worth memory triage at S66 opening:
+    1. Self-merge terminology empirically corrected: doc-only
+       chore PRs DO need external collaborator approval for
+       mechanical APPROVED state. The "Docs or README only —
+       None needed" rule governs the human-review-gate
+       SEMANTICS, NOT the mechanical state. S64 banked
+       observation #1 predicted this; S65 confirmed empirically
+       (two self-approve attempts both failed with the same
+       GitHub error). Worth folding into existing memory or
+       writing fresh.
+    2. Merge-style precedent check is a permanent verification
+       primitive: prior-PR pattern (--squash vs --merge) should
+       be checked from git log BEFORE running gh pr merge.
+       Caught a deviation this session (initial --merge spec
+       reverted to --squash). Worth banking as a feedback
+       memory.
+    3. PR number vs Followup number collision: PR #92 landed
+       with the same integer as Followup G/#92 (closed via
+       PR #91 S64). Pure auto-increment coincidence; creates
+       cross-reference ambiguity in future "ref #92" mentions.
+       Probably not banking-worthy on its own but worth noting
+       for S66 master-index sync.
+    4. Render LIVE timestamp capture gap: first session in the
+       recent run that didn't capture merge-to-LIVE for a
+       doc-only-chore PR. Worth either (a) adding Render-watch
+       helper with operator-side RENDER_API_KEY, (b)
+       standardizing operator-side capture with paste-back, or
+       (c) banking the gap and continuing without. Worth a
+       project memory note.
+    5. §4B applies to PR body audit-trail prose, not just the
+       staged file diff. The literal slug leaked into PR #92's
+       body even after the file diff was clean. Lesson: §4B
+       grep passes apply to the FULL artifact surface (PR
+       title, PR body, commit message, audit-trail prose).
+       Worth banking as a feedback memory for symmetric
+       coverage with the per-entry standard.
+
+NEXT SESSION SHOULD (P-queue for S66)
+
+  P1: chore/activities-log-session-65. Land this S65 entry from
+    main's working tree via doc-only chore PR. Same shape as
+    PR #87/#90/#91/#92. Pre-PR §4B grep MUST run on the diff;
+    expected zero matches if [tenant] convention applied
+    correctly during this write. External-reviewer turnaround
+    expected (per S65's empirical correction of self-merge
+    terminology). Merge style --squash to match precedent.
+
+  P2: Memory triage on the 5 S65-surfaced banked observations
+    above. Operator's call on which to bank, fold, or skip.
+
+  P3: Master-index housekeeping.
+    - Assign permanent Followup numbers to #99, #100, sibling-
+      to-#100 (currently provisional).
+    - Record PR #92 as closing the "S64 close entry land" task.
+    - Update Followup #49 status from "Phase 1 pending" to
+      "Phase 1 design DONE — design.md landed; SQL-authoring
+      PR is next phase".
+    - Reconcile S64 P3 followup numbers (#93-97, T/#98) if not
+      yet ingested into master-index table.
+
+  P4: migration-027 SQL authoring + reviewer triad pass.
+    Convert migration-027-design.md into migration-027-
+    screener-results-dedup.sql per the 4-step locked design.
+    PR shape: migration/screener-results-prod-dedup branch
+    (per CLAUDE.md §2A migration/<slug> convention). Required
+    reviewers: tenant-isolation-auditor (DELETE + constraint
+    reshape touches tenant_id-scoped data), privacy-reviewer
+    (operates on student-PII-bearing table even if all affected
+    rows are test data — defense-in-depth), security-reviewer
+    (DELETE on prod with audit-trail requirement). Apply
+    target: local dev first, then prod via Render External
+    PSQL Command + \i pattern.
+
+  P5: /landing-the-plane skill investigation (ELEVATED). See
+    OPEN ITEMS bullet above for the three stacked concerns +
+    options.
+
+  Wishlist (still unblocked):
+    - Multi-screener feat PR (Wishlist #1) — NOW UNBLOCKED
+      once P4 ships; migration-027 was the prerequisite.
+    - Export students-with-accommodations report (not started)
+    - Multi-intervention-per-goal design conversation
+      (pure-Cowork, available anytime)
+
+  Outstanding housekeeping (low priority, fold-in opportunistic):
+    - .claude/settings.json drift × 2 sources (Followup #22)
+    - 4 parked stashes at slots 0-3
+    - scripts/ops/ → .gitignore (Followup #94 — could fold
+      into S66 P1 chore PR if scope-appropriate)
+    - External tracker namespace decision (S57-S65 deferred —
+      ninth consecutive session; opportunity-cost framing
+      overdue)
+
+================================================================================
