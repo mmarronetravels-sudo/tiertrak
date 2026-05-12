@@ -52,7 +52,13 @@ Implementation complete. What would you like to do?
 Which option?
 ```
 
-Then execute the chosen path using `gh pr create` with the PR template from CLAUDE.md Section 2A for option 2, or the corresponding git commands for the others. Wait for explicit user confirmation before any destructive action (option 4).
+Then execute the chosen path using `gh pr create` with the PR template from CLAUDE.md Section 2A for option 2, or the corresponding git commands for the others.
+
+**§4B discipline on the PR body itself** (option 2 only): the §2A template's Privacy impact section must attest that §4B was run, never describe what was checked for. Describing a pattern category in the body inherits the category's matching strings — a recursion trap documented in the activities log. Cite acts and results only — e.g., "§4B grep (narrow + wide) against diff vs origin/main: 0 matches." Do not enumerate the patterns; refer the reader to `docs/ai-context/4B_GREP_PATTERNS.md`.
+
+After creating the PR, re-grep the PR body itself with the same patterns. The body must clear the same gate as the file diff. If hits appear, remediate via `gh pr edit --body-file` until both narrow and wide passes are empty.
+
+Wait for explicit user confirmation before any destructive action (option 4).
 
 ### Step 3 — Append to activities.txt
 
