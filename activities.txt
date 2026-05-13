@@ -10426,3 +10426,331 @@ NEXT SESSION SHOULD (P-ish queue for S67)
       (pre-existing as of S63).
 
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-13T07:30:00-07:00 (Session 67)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-67 PR this session, Step 2 option 2)
+DISPOSITION: 1 PR merged + LIVE on prod pending verification (PR #96
+             feat/district-structure-foundation at 9e02f8a — Session 1
+             of the district structure project, schema-only foundation);
+             reviewer triad ran in sequence (auditor → privacy → security),
+             all three APPROVED WITH NOTES with zero CRITICAL or HIGH
+             findings; 4 followups surfaced (#103–#106, exact mapping
+             deferred to operator-side master-index sync) plus a list
+             of Session 2 prep notes carried into the next session
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Session 1 of a multi-session district-structure project. Operator
+  handed off a design summary from a planning folder outside the
+  repo. Two-phase work: (1) read-only audit of the design summary's
+  assumptions against the current code, surfacing conflicts before
+  any edits; (2) implementation of the layered tenant-isolation
+  foundation as schema-only changes plus a CLAUDE.md §5 doctrine
+  rewrite. No route, middleware, JWT, or auth code touched —
+  Session 2 will land /api/tenants auth fix (first), JWT-shape
+  change, and access-resolution middleware.
+
+FILES TOUCHED THIS SESSION
+  (PR #96 — squash-merged at 9e02f8a)
+  migration-028-district-structure-foundation.sql — NEW (+95/-0).
+    Standalone .sql at repo root, M023–M026 convention (not wired
+    into server.js boot migrations). Adds: districts table; nullable
+    district_id on tenants and users with composite-uniqueness
+    constraints (tenants_id_district_unique, users_id_district_unique)
+    + indexes; user_school_access table with composite-FK guards
+    rejecting cross-district rows at the schema layer (Migration 021
+    pattern applied to the layered model); ON DELETE RESTRICT on the
+    parent FKs, ON DELETE CASCADE on the child-table FKs, ON DELETE
+    SET NULL on created_by.
+  CLAUDE.md — §5 rewrite (+20/-10). Replaces flat tenant doctrine
+    with layered model: school = tenants row, district = districts
+    row, single-school customers stay as standalone tenant rows with
+    district_id = NULL, cross-district leakage elevated to critical
+    FERPA severity. Names the composite-FK pattern from Migration 021
+    as the required primitive for new child tables. First line uses
+    "ScholarPath Intervention Monitoring" only (no legacy product
+    prefix), per the May 12 rebrand decision.
+
+  (This S67 entry, current — appends unstaged on chore/activities-
+  log-session-67 per chore-PR convention; ships via the chore PR)
+  activities.txt — Session 67 close entry (this entry).
+
+MIGRATIONS RUN
+  migration-028-district-structure-foundation.sql — applied to local
+    Postgres twice for clean-apply + idempotency verification. NOT
+    applied to Render prod this session; Render apply is the
+    operator's own \i workflow and is tracked separately.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor verdict: APPROVED WITH NOTES. 0 CRITICAL,
+    0 HIGH, 1 MEDIUM (doctrine/schema gap — see Followup #103),
+    2 LOW (unindexed created_by; no temporal scoping on grants).
+  Composite-FK NULL-bypass analysis: clean. Walked all NULL paths;
+    the district-structure path is sealed shut to legacy entities
+    (district_id NULL on either side cannot satisfy the composite
+    FK in user_school_access).
+  Existing tenant-scoping on existing tables: UNCHANGED. git diff
+    main..pr-96 --name-only returned exactly two files (migration
+    + CLAUDE.md). No existing route, no existing schema constraint
+    weakened.
+  Four Session-2 hazards surfaced for the next session's PR prep
+    (legacy-vs-district user shape disjoint semantics; users
+    tenant_id not nulled for district users; legacy type=district
+    rows; JWT-must-not-carry-accessible-list).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Schema-only PR adds only structural
+    identifiers (synthetic SERIAL ids, FK columns) plus one
+    customer-identifying district label column. No PII-shape
+    columns added per the authoritative PRIVACY_REVIEW.md list.
+  Logging audit: 0 log statements changed. Grep for the standard
+    console-method signatures on the diff returned zero hits.
+  Cross-tenant risk: none identified for this PR. Composite-FK
+    pattern actively rejects cross-district inserts at the schema
+    layer; same defense-in-depth pattern endorsed for M021.
+  privacy-reviewer subagent verdict: APPROVED WITH NOTES. 0
+    CRITICAL, 0 HIGH, 0 MEDIUM, 3 WARN (FK-error-message integer-
+    ID leak — Session 2 route-layer prep note; district-label
+    column is customer-identifying metadata — Session 2 handling
+    discipline; doctrine-vs-Session-1-schema-state caveat —
+    folds into Followup #103).
+  §4B per-entry grep against this S67 entry's diff vs origin/main:
+    pending post-write verification (Step 3 §4B gate; results
+    shown to operator before staging).
+  No real tenant identifiers appear anywhere in this entry by
+    construction (operator design summary itself uses placeholder
+    markers; this entry inherits that discipline).
+
+VERIFICATION
+  Phase 1 — read-only audit:
+    Read operator's design summary in full (outside the repo).
+    Read schema.sql, routes/tenants.js (confirmed unauthed —
+      Session 2 fix item), routes/auth.js (confirmed single-id
+      JWT shape), server.js boot-migrations region 400-714,
+      middleware/authorizeInterventionAccess.js (central
+      equality enforcement at L78 + L117).
+    Surfaced 7 conflicts/surprises against the design summary
+      before any edits — operator approved 4 of them as
+      Session-1 scope adjustments, 3 deferred to later sessions.
+
+  Phase 2 — implementation:
+    Created feat/district-structure-foundation from main.
+    Wrote migration-028 (95 lines) + CLAUDE.md §5 rewrite (+20/-10).
+    Single commit on the feature branch.
+
+  Phase 3 — local-DB verification:
+    Localhost Postgres (DATABASE_URL confirmed localhost per
+      saved memory, not Render prod).
+    First apply: clean (BEGIN, all DDL, COMMIT).
+    Second apply: idempotent (NOTICEs only, "already exists,
+      skipping" on every IF NOT EXISTS / pg_constraint guard).
+    Schema introspection: districts table + composite UNIQUEs on
+      tenants and users + user_school_access with PK + 3 indexes +
+      3 composite FKs — all verified via \d output.
+    Cross-district guard tests (savepoint-isolated within a
+      ROLLBACK'd outer txn):
+      Happy path (same-district insert): OK.
+      Guard 1 (school in different district): rejected by the
+        (school_tenant_id, district_id) composite FK on tenants.
+      Guard 2 (user not in claimed district): rejected by the
+        (user_id, district_id) composite FK on users.
+      Guard 3 (duplicate access grant): rejected by the PK.
+    Zero test rows leaked after outer ROLLBACK.
+
+  Phase 4 — PR #96 lifecycle:
+    Pushed feat/district-structure-foundation; opened PR with
+      pre-filled §2A body (Summary, Files touched, Stack check,
+      Tenant isolation check, Privacy impact, Verification,
+      Reviewer triad, Ask-first items, Reviewer notes).
+    Reviewer triad ran in sequence (one at a time per operator
+      pause-between-each instruction):
+      tenant-isolation-auditor: APPROVED WITH NOTES.
+      privacy-reviewer:         APPROVED WITH NOTES.
+      security-reviewer:        APPROVED WITH NOTES.
+      All three: 0 CRITICAL, 0 HIGH. Aggregate: 1 MEDIUM
+        (overlapping doctrine gap → Followup #103), 3 LOW, 4 WARN,
+        4 INFO. Detailed mappings recorded inline in the PR
+        comments / reviewer reports pasted verbatim during the
+        session.
+    External approval: scholapathsystems submitted state=APPROVED
+      at 2026-05-13T14:12:24Z (formal API entry per §2A
+      mechanical test).
+    Squash-merge: 2026-05-13T14:14:19Z to 9e02f8a3a438e7b370506
+      a923341bc1cc03f989a (--squash --delete-branch). 1m55s
+      between approval and merge. Local main fast-forwarded
+      ce1f080..9e02f8a clean.
+    Stale tracking refs swept during post-merge prune: feature
+      branch + four older session-chore branches (operator-side
+      housekeeping side effect, not part of this PR).
+
+  Phase 5 — file-diff §4B grep on PR #96:
+    Standard narrow + wide passes (per docs/ai-context/
+      4B_GREP_PATTERNS.md) ran against the PR diff. Operator
+      tenant-slug file absent this session; that pass was
+      skipped and compensated by by-construction discipline
+      (no real-world identifiers in any new content).
+    Result: 0 PII matches against the diff. Reviewer-triad
+      independent agreement reinforced this — privacy-reviewer's
+      own grep returned identical posture.
+
+  Render LIVE timestamp: NOT CAPTURED for PR #96 — 6th
+    consecutive PR with this gap (5 prior + this one). No
+    RENDER_API_KEY in shell, no Render-watch helper. Tracked as
+    Followup #102 per S66 close master-index; not re-recommended
+    here (see OPEN ITEMS for recurrence note).
+
+  Code-surface verification: N/A for non-test-suite paths. No
+    backend or frontend test code modified; backend has no test
+    suite (Followup #73), no lint (Followup #74); frontend
+    untouched.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  Followup #103 — Doctrine/schema divergence (operator-named
+    during reviewer triad acknowledgement):
+    schema.sql:7 still permits tenants.type='district' even
+    though §5 doctrine now says districts live in the districts
+    table. Aggregates three convergent reviewer signals:
+      tenant-isolation MEDIUM #1 (legacy type='district' rows
+        become stranded shape — no districts.id link, no
+        user_school_access viability).
+      privacy WARN #3 (§5 line "Role alone never determines
+        school access — the access table is the source of
+        truth" describes target state; Session 1 ships table
+        empty).
+      security LOW #3 (§5 implies but doesn't state the
+        accessible-school set must be resolved server-side on
+        every request, not cached in JWT payload).
+    Resolution path: either schema-side (narrow the CHECK to
+    type='school' after a one-time data migration) or doctrine-
+    side (soften §5 with a deprecation note on type='district').
+    Recommend addressing in Session 2 or as a paired chore PR.
+
+  Followups #104–#106 — operator-named range, exact mapping
+    deferred to master-index sync. Candidate items from the
+    reviewer triad that need durable cross-session tracking:
+      (a) DDL locking pattern at district scale — security MEDIUM.
+        Inline ADD COLUMN + ADD CONSTRAINT UNIQUE pattern in M028
+        is safe today (small tables) but does not generalize to
+        district-scale tables (50k+ users). Migration-template doc
+        should add a CONCURRENTLY-aware split for large-table
+        cases. Not a code change to this PR.
+      (b) ON DELETE RESTRICT operator footgun — security LOW #1.
+        Operator who tries DELETE FROM districts hits
+        restrict_violation; risk is they reach for manual
+        cascade workarounds. Belongs in a "district decommissioning"
+        runbook, not the schema.
+      (c) user_school_access audit-trail gap — security LOW #2.
+        ON DELETE CASCADE on user deletion erases historical
+        access record. Session 2 grant/revoke surface should write
+        to a separate append-only audit table on grant/revoke/
+        cascade events.
+
+  Session 2 prep notes (NOT Followups — expected to be folded
+    into the Session 2 PR description and verification plan):
+      FK error messages leak integer scope IDs and table
+        structure if Session 2 routes echo err.message/err.detail
+        verbatim. Mitigation: catch 23503/23505 and return
+        generic 400 ("invalid grant"). Convergent signal from
+        privacy WARN #1 + security INFO #2.
+      district-label column is customer-identifying metadata —
+        OK in tenant-scoped API responses, NOT OK in logs / error
+        bodies / cross-district surfaces. Session 2 routes that
+        SELECT it must keep it out of hot logging paths.
+      EXPLAIN ANALYZE the access-set resolution query at
+        Session 2 implementation time to confirm idx_user_school
+        _access_user is used and the plan doesn't degenerate.
+        Security WARN — procedural, not a code defect.
+      Four Session-2 hazards from tenant-isolation auditor:
+        Hazard A (disjoint legacy-vs-district semantics — need a
+          single resolveAccessibleTenantIds helper, branch on
+          users.district_id IS NULL).
+        Hazard B (users.tenant_id reconciliation — decide
+          explicitly whether to clear it when district_id is set
+          or treat it as ignored).
+        Hazard C (legacy type='district' rows — Session 2 must
+          emit one-time audit SELECT and reconcile).
+        Hazard D (JWT must NOT carry accessibleTenantIds list —
+          scope resolved server-side every request).
+
+  S66 P-ish queue STILL not addressed in S67 (carried forward):
+    P-ish-1 (memory PR — feedback_pr_body_4b_audit_prose
+      _discipline.md from S66 P3 decision). Not blocked; just
+      deferred because S67 prioritized district-structure work.
+    P-ish-2 (migration-027 Phase 2 — SQL authoring for screener-
+      results-prod-dedup, Followup #49). Note: migration NUMBER
+      027 is operator-reserved for #49 per S67 operator clarification
+      during plan-review; this S67 PR correctly uses 028.
+    P-ish-3 (full P3 memory sweep — 16 deferred candidates from
+      S63/S65 + whatever S66 + S67 generates).
+
+  Pre-existing followups (carry forward unchanged):
+    #22 (.claude/settings.json drift, still parked across 7+
+      sessions; pre-existing M flag in git status at this S67
+      close); #39 (CLOSED prior); #49 screener-results-prod-dedup
+      (Phase 1 design DONE S65, Phase 2 SQL pending — P-ish-2
+      above); #70 pg error.detail repo-wide; #71/#78/#79 over-
+      fetch sweep cluster; #72 FE-credentials; #73 backend-tests;
+      #74 backend-lint; #75 relationship whitelist; #76 int-id
+      validation (partial-closed prior); #77 phantom tenant_id
+      INSERT; #80 rate-limiting absent; #81 CSRF absent; #82
+      parity-check guard inconsistency; G/#92 (CLOSED prior);
+      #93 users.disabled_at; #94 scripts/ops/ gitignore (note:
+      scripts/ops/ still untracked at this S67 close — still
+      pre-existing); #95 mtss_meeting_interventions JOIN;
+      #96 s.tier/s.area FERPA (table-column reference, not this
+      session's PR number); #97 read-side role allowlist;
+      T/#98 jwt.verify algorithms; #99 activities.txt historical
+      PII audit (S65 provisional); #100 upload-time NULL
+      student_id guard (S65 provisional); #101 test CSVs don't
+      auto-create student records (promoted from S65 sibling-to-
+      #100 at S66 close); #102 Render LIVE timestamp gap on doc-
+      only chore merges (promoted from S65 banked observation at
+      S66 close).
+
+  Render LIVE timestamp gap recurrence: 6 consecutive PRs without
+    LIVE capture. Tracked as Followup #102 per S66 close master-
+    index; recurrence frequency continues to climb across S65–S67.
+
+NEXT SESSION SHOULD (P-ish queue for S68)
+
+  P-ish-1: Session 2 of district structure — execute on the
+    operator's stated order: /api/tenants auth fix FIRST (the
+    fully-unauthed CRUD surface that becomes the operator-only
+    district-management interface), then JWT-shape change to
+    carry user identity only (NOT the accessible list per
+    Hazard D), then access-resolution middleware that branches
+    on users.district_id IS NULL (Hazard A) and decides the
+    users.tenant_id reconciliation policy (Hazard B), then the
+    role-CHECK constraint update for the six-role model
+    (including the new District Tech Admin) and the Interventionist
+    collapse of behavior_specialist + student_support_specialist
+    + mtss_support. PR shape: sec/district-structure-session-2
+    (sec/ prefix because §2A names auth/RBAC/tenant-isolation
+    changes as the sec/ trigger). Reviewer triad required again.
+
+  P-ish-2: Resolve Followup #103 — pick schema-side or
+    doctrine-side and ship as paired chore or fold into the
+    Session 2 sec/ PR.
+
+  P-ish-3: S66 carry-forwards (memory PR for audit-prose
+    discipline; migration-027 Phase 2 for #49; full P3 sweep).
+    None blocked; all deferred by S67 prioritization.
+
+  Wishlist (still unblocked):
+    Multi-screener feat PR (Wishlist #1) — unblocked after
+      migration-027 ships (P-ish-3 carry-forward).
+    Export students-with-accommodations report.
+    Multi-intervention-per-goal design conversation.
+
+  Outstanding housekeeping:
+    .claude/settings.json drift (Followup #22) — STILL parked
+      at S67 close (pre-existing M flag in this session's
+      working tree throughout).
+    scripts/ops/ untracked (Followup #94) — STILL pre-existing.
+    docs/references/GR_SampleClass.pdf untracked (pre-existing
+      since S63).
+
+================================================================================
