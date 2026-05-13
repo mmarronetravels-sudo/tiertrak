@@ -10754,3 +10754,377 @@ NEXT SESSION SHOULD (P-ish queue for S68)
       since S63).
 
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-13T11:15:00-07:00 (Session 68)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-68 PR this session)
+DISPOSITION: 1 PR merged + LIVE on prod, M029 applied on prod (PR #98
+             sec/district-structure-session-2 at c836e0e — Session 2
+             of the district-structure project, operator-side
+             scaffolding: /api/tenants auth gate + JWT shape change
+             + tenants.type CHECK narrowing); reviewer triad APPROVED
+             WITH NOTES (3 of 3) on commits 9e02f8a..b3654d5; one
+             mid-flight pivot on M029 after prod pre-flight surfaced
+             a second legacy district-typed tenant row; re-audited by
+             tenant-isolation-auditor only; LIVE timestamp captured
+             (closes Followup #102 after 7-PR gap); 8 followups banked
+             this session (#107–#114) plus #76 augmented
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Session 2 of a multi-session district-structure project. PR A
+  scaffolding for the layered tenant model introduced in PR #96:
+  /api/tenants gated behind requireAuth + a new env-allowlist
+  platformAdminOnly middleware; JWT payload reduced to identity-only
+  ({ id } + iat/exp), removing role/tenant_id/email from the cookie;
+  tenants.type CHECK narrowed to 'school' only via Migration 029,
+  reconciling all legacy district-typed rows. CLAUDE.md §5 doctrine
+  paragraph added documenting the dual-path access contract (legacy
+  vs district-shape users).
+
+FILES TOUCHED THIS SESSION
+  (PR #98 — squash-merged at c836e0e)
+  routes/tenants.js — gate all 5 routes with requireAuth +
+    platformAdminOnly; sanitize err.message from response bodies;
+    int-ID validation on :id params; required-field validation on
+    POST/PUT bodies; Postgres error-code mapping (23514->400,
+    23505->409, 23503->409 on DELETE).
+  routes/auth.js — two jwt.sign sites reduced to { id }-only.
+    POST /create-parent decoupled from decoded.tenant_id (sourced
+    from DB via expanded admin-check SELECT).
+  middleware/csrfProtection.js — comment-only fix in
+    peekUserIdFromCookie docblock; the prior named-field framing
+    was stale after the JWT-shape change.
+  middleware/platformAdminOnly.js — NEW. Env-allowlist gate;
+    PLATFORM_ADMIN_USER_IDS comma-separated, parsed once at module
+    load. Empty/unset → fail-closed 403. Number-coerces req.user.id
+    at the Set.has comparison for shape-drift resilience.
+  migration-029-narrow-tenants-type-and-reconcile.sql — NEW.
+    Atomic INSERT districts row per legacy district-typed tenant
+    → UPDATE each to type='school' via correlated sub-SELECT keyed
+    on name → DO-block guard (RAISE EXCEPTION on any remaining
+    district-typed row) → DROP CHECK → ADD CHECK. All in
+    BEGIN/COMMIT. Idempotent. Revised mid-session from per-id to
+    per-shape after pre-flight audit on prod (see PIVOT below).
+  scripts/ops/audit-legacy-district-tenants.sql — NEW. Operator
+    pre-flight read-only SELECT.
+  CLAUDE.md — §5 paragraph documenting the dual-path access
+    contract (+2 lines).
+
+  Cumulative: +210 / -53 across 7 files, 9 commits on the feature
+  branch before squash-merge.
+
+  (This S68 entry, current — appends unstaged on chore/activities-
+  log-session-68 per chore-PR convention; ships via the chore PR)
+  activities.txt — Session 68 close entry (this entry).
+
+MIGRATIONS RUN
+  migration-029-narrow-tenants-type-and-reconcile.sql — applied to
+    prod via Render web shell after PR #98 merge. Result: 2 rows
+    inserted into the districts table (one per legacy
+    district-typed tenant), 2 tenant rows reconciled to
+    type='school' with populated district_id, tenants_type_check
+    constraint narrowed from IN ('school','district') to ('school')
+    atomically. Step-3 DO-block guard passed with zero remaining
+    district-typed rows post-update.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor verdict on commits 9e02f8a..b3654d5:
+    APPROVED WITH NOTES. 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW
+    (seed-roster district-typed literals, schema-of-record drift),
+    2 WARN (M029 partial-replay edge, app-layer type validation),
+    2 INFO (platformAdminOnly observability, duplicate requireAuth
+    implementations).
+  Re-audit on M029 revision (commit c6e1371) by
+    tenant-isolation-auditor only (auth/JWT/route surfaces
+    untouched): APPROVED WITH NOTES. 0 CRITICAL, 0 HIGH, 0 MEDIUM,
+    0 LOW, 1 WARN (continuation of prior WARN-1 in broader scope
+    after multi-row generalization), 2 INFO (name-collision hazard
+    verified safe under today's data; pre-flight comment loosening
+    from mechanical assertion to per-row judgment, mitigated by
+    the step-3 guard).
+  Composite-FK guards from M028 verified unchanged. Both reconciled
+    tenant rows post-M029 now have type='school' with populated
+    district_id, fitting the layered-tenant model cleanly. No
+    row-level scoping shift for child data (users, students,
+    interventions for those tenant ids keep their tenant_id
+    references intact).
+  Auth gate on /api/tenants is intentionally cross-tenant
+    (operator-only surface). Customer-facing roles never reach the
+    handlers via the env-allowlist keyed on user.id, not role.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. PR does not touch student or staff
+    data fields. JWT payload reduction removes email from the
+    cookie — a net positive on the PII surface.
+  Logging audit: err.message removed from /api/tenants response
+    bodies (5 sites); replaced with console.error('[tenants:<op>]',
+    err.message) — server-side log only, bounded to a table with
+    no student or staff PII. JWT payload no longer carries email;
+    no log line in any changed file logs the decoded payload
+    directly.
+  Cross-tenant risk: none identified by this PR. /api/tenants is
+    operator-only cross-tenant by design; customer-facing surfaces
+    untouched.
+  privacy-reviewer verdict on commits 9e02f8a..b3654d5: APPROVED
+    WITH NOTES. 0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW, 2 WARN
+    (pre-existing PII bleed in routes/auth.js — out-of-diff,
+    routes/auth.js:89, :388, :391, :406, :407; basis for Followup
+    #114), 4 INFO (JWT shape propagation clean, prior unauthed
+    state hardened, err.message bounded, M029/audit-script/
+    CLAUDE.md/csrfProtection.js all clean).
+  §4B grep (narrow + wide) on this S68 entry's diff vs origin/main:
+    pending post-write verification (Step 3 §4B gate; results shown
+    to operator before staging).
+  No tenant identifiers appear in this entry by construction —
+    legacy district-typed rows are referenced by tenant id only
+    ("tenant #9", "tenant #11" where unavoidable for traceability),
+    never by name, slug, or label. Followup #109's file paths are
+    redacted on the same basis.
+
+VERIFICATION
+  Phase 1 — read-only audit + planning:
+    Read CLAUDE.md §4B + §5 (post-PR #96 layered doctrine).
+    Read migration-028, routes/tenants.js, routes/auth.js,
+      middleware/authorizeInterventionAccess.js +
+      authorizeDocumentAccess.js + csrfProtection.js,
+      routes/tier1-assessments.js, the schema-of-record file.
+    R3 sweep on tenants.type references: migration-*.sql,
+      frontend/, routes/, middleware/, server.js — only M029
+      itself reads the column. 0 hits elsewhere.
+    R4/R5 spot-check on all 7 JWT consumer sites: only
+      /create-parent read decoded.tenant_id; sequenced to
+      decouple before the shape change.
+    Frontend caller sweep on /api/tenants: 0 hits. Safe to add
+      auth without FE breakage.
+    Cookie httpOnly verification at both jwt.sign sites:
+      getAuthCookieOptions() returns httpOnly: true.
+
+  Phase 2 — implementation (8 commits, then 9th for M029 revision):
+    Created sec/district-structure-session-2 from main.
+    Eight commits laid down in sequenced order:
+      25155bf chore(ops): audit-legacy-district-tenants.sql
+      05a5121 chore(migration): M029 (initial per-id form)
+      3a36b63 feat(middleware): platformAdminOnly
+      36314c0 sec(tenants): gate /api/tenants
+      39f9f9e sec(auth): source tenant_id from DB in /create-parent
+      7fa23ee sec(auth): reduce JWT payload to { id }
+      c205256 chore(csrf): retire stale named-field note
+      b3654d5 docs(claude-md): §5 dual-path access contract
+    Each auth/migration commit reviewed with full diff before
+      staging; non-auth commits reviewed inline.
+
+  Phase 3 — reviewer triad on commits 9e02f8a..b3654d5:
+    Sequential per operator pause-between-each:
+      tenant-isolation-auditor: APPROVED WITH NOTES (above).
+      privacy-reviewer:         APPROVED WITH NOTES (above).
+      security-reviewer:        APPROVED WITH NOTES — 0 CRITICAL,
+        0 HIGH, 0 MEDIUM, 0 LOW, 1 WARN (parseTenantId accepts
+        finite-but-out-of-INTEGER-range values like 1e100,
+        triggering pg 22003 → 500 instead of 400; basis for
+        Followup #76 augmentation), 5 INFO (M029 subquery,
+        platformAdminOnly silent on 401/403, JWT propagation clean,
+        /create-parent decouple-before-shape ordering correct,
+        CSRF interaction correct).
+    Aggregate: 0 CRITICAL / 0 HIGH / 0 MEDIUM / 2 LOW / 5 WARN /
+      11 INFO across all three reviewers. No blockers.
+
+  Phase 4 — PIVOT: pre-flight audit + M029 revision:
+    Operator ran the audit script on prod via \i. Result: 2 rows
+      returned, not 1. S67 close inventory under-counted by one
+      legacy district-typed tenant.
+    M029 as-authored was pinned via WHERE id = <known-id>; would
+      have RAISE EXCEPTION'd at the step-3 guard, rolling back
+      without reconciling the second legacy row.
+    Revision (commit c6e1371): drop WHERE id = <known-id> from
+      steps 1 and 2; replace with WHERE type = 'district'
+      (per-shape, not per-id). Step 2's sub-SELECT becomes a
+      correlated query keyed on tenants.name matching to
+      districts.name. BEGIN/COMMIT wrap, DO-block guard, DROP/ADD
+      CHECK unchanged. Idempotent.
+    Re-audit by tenant-isolation-auditor only on the revision
+      (auth/JWT/route surfaces untouched): APPROVED WITH NOTES
+      (above). No blockers.
+
+  Phase 5 — PR #98 lifecycle:
+    Pushed branch; opened PR with full §2A body. After re-audit,
+      pushed M029 revision commit and updated PR body to reflect
+      multi-row reconcile + reviewer triad past-tense.
+    Reviewer-comment on PR captured all three triad outcomes +
+      re-audit + operator-prereq status before external review
+      request.
+    External approval: APPROVED.
+    Operator prereqs cleared between approval and merge:
+      PLATFORM_ADMIN_USER_IDS env var captured + set on Render
+      (visible in deploy log as a service_updated trigger 16 min
+      before merge), Render dashboard confirmation, audit script
+      re-run on prod.
+    Squash-merge: 2026-05-13T17:56Z to c836e0e51b. Branch
+      auto-deleted via --delete-branch flag.
+
+  Phase 6 — prod apply + LIVE capture:
+    Render auto-deploy on commit c836e0e: started
+      2026-05-13T17:56:19Z, reached LIVE at 2026-05-13T17:56:54Z.
+      35-second build + deploy.
+    LIVE timestamp captured via Render API (RENDER_API_KEY set
+      in env at session start). Closes Followup #102 after a
+      seven-PR LIVE-timestamp-capture gap.
+    M029 applied to prod via Render web shell after deploy: 2
+      districts rows inserted, 2 tenants reconciled to
+      type='school' with populated district_id,
+      tenants_type_check narrowed atomically. Step-3 guard
+      passed.
+
+  Phase 7 — smoke test on /api/tenants:
+    Unauthenticated GET /api/tenants → 401 'Not authenticated'.
+    Authenticated as a non-allowlist user → 403 'Forbidden'.
+    Authenticated as the allowlist operator account → 200 with
+      the full tenant list.
+    All three legs match the platformAdminOnly + requireAuth
+      contract documented in the PR's Risks section.
+
+  Code-surface verification: N/A for non-test-suite paths.
+    Backend has no test suite (Followup #73), no lint (Followup
+    #74); frontend untouched.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  Followups banked this session (8 new + 1 augmented + 1 closed):
+
+  Followup #107 — UNIQUE on districts.name. Surfaced during
+    M029 review. Case-sensitivity + trim rules + scope decisions
+    deserve their own migration. LOW priority. Mitigation path
+    for re-audit WARN-3 (continuation of original WARN-1 after
+    M029 revision); without UNIQUE, a pre-existing same-name
+    districts row would cause M029 step 2's sub-SELECT to return
+    multiple rows and roll back the transaction.
+
+  Followup #108 — Duplicate requireAuth implementations in
+    routes/tier1-assessments.js:47 and middleware/
+    authorizeDocumentAccess.js:41. Canonical lives in
+    middleware/authorizeInterventionAccess.js. Pre-existing
+    tech debt; chore/dedupe-requireAuth PR.
+
+  Followup #109 — Stale district-typed literals in two
+    seed-roster files under data/. LOW. Hard-fail-with-rollback
+    post-M029; standalone chore PR to flip to type='school' and
+    add district_id field. File paths intentionally redacted in
+    this entry per §4B (one of the two paths embeds a
+    tenant-identifying slug).
+
+  Followup #110 — Schema-of-record drift. The bootstrap SQL
+    file still declares the wider tenants.type CHECK. LOW. Add
+    header note that migrations are the source of truth, or
+    regenerate via pg_dump.
+
+  Followup #111 — M029 operator-playbook documentation. WARN.
+    Document "apply as a single \i unit, do not run statements
+    individually" to prevent partial-state replay (step-2
+    sub-SELECT returns multiple rows if a duplicate districts
+    row slipped in).
+
+  Followup #112 — App-layer type validation in routes/tenants.js
+    POST/PUT. WARN. Add 1-line guard if (type !== 'school')
+    return 400. Defense-in-depth; the DB CHECK is already
+    authoritative.
+
+  Followup #113 — platformAdminOnly allowlist-size log line at
+    module load. INFO. console.log of count only (not IDs) for
+    operator env-var-misconfig debugging.
+
+  Followup #114 — sec/auth-error-message-redaction. WARN→higher
+    priority (customer-facing PII surface in registration and
+    account-creation catch paths). Apply this PR's redaction
+    pattern from routes/tenants.js to routes/auth.js catch blocks
+    at the five sites identified by privacy-reviewer.
+
+  Followup #76 augmented — parseIntParam helper must bound
+    id <= 2147483647 (Postgres INTEGER max). Inputs like 1e100
+    pass Number.isInteger and trigger pg 22003 → 500. Surface
+    seen first in routes/tenants.js parseTenantId() this session.
+    Fix once globally via the helper rather than per-route.
+
+  Followup #102 — CLOSED. Render LIVE timestamp captured via
+    RENDER_API_KEY (set in env at session start). Seven-PR
+    capture gap closed.
+
+  Followup #103 — CLOSED via M029. Doctrine/schema divergence
+    introduced by PR #96 (§5 said districts live in the
+    districts table; tenants CHECK still permitted
+    type='district') is now resolved. Two legacy district-typed
+    tenant rows reconciled to type='school' under matching
+    districts rows; CHECK narrowed.
+
+  S66 P-ish queue STILL not addressed in S68 (carried forward):
+    P-ish-1 (memory PR — feedback_pr_body_4b_audit_prose_
+      discipline.md from S66 P3 decision).
+    P-ish-2 (migration-027 Phase 2 — SQL authoring for the
+      screener-results-prod-dedup work, Followup #49).
+    P-ish-3 (full P3 memory sweep — deferred candidates from
+      prior sessions).
+
+  Pre-existing followups (carry forward unchanged):
+    #22 (.claude/settings.json drift, still parked); #39
+    (CLOSED prior); #49 (Phase 2 SQL pending); #70 pg
+    error.detail repo-wide; #71/#78/#79 over-fetch sweep
+    cluster; #72 FE-credentials; #73 backend-tests; #74
+    backend-lint; #75 relationship whitelist; #76 int-id
+    validation (AUGMENTED this session); #77 phantom
+    tenant_id INSERT; #80 rate-limiting absent; #81 CSRF
+    absent; #82 parity-check guard inconsistency; G/#92
+    (CLOSED prior); #93 users.disabled_at; #94 scripts/ops/
+    gitignore; #95 mtss_meeting_interventions JOIN; #96
+    s.tier/s.area read-side review (table-column reference);
+    #97 read-side role allowlist; T/#98 jwt.verify
+    algorithms (note: numerical collision with this
+    session's PR number — these are pre-existing references
+    to different things); #99 activities.txt historical PII
+    audit; #100 upload-time NULL student_id guard; #101
+    test CSVs don't auto-create student records; #102
+    (CLOSED this session); #103 (CLOSED this session via
+    M029); #104–#106 (S67-banked range, exact mapping
+    deferred to master-index sync).
+
+NEXT SESSION SHOULD (P-ish queue for S69)
+
+  P-ish-1: Session 3 of district structure — execute on the
+    91-occurrence req.user.tenant_id sweep across 12 route
+    files. Backend-side application code does not yet read
+    user_school_access; until the read-side sites migrate to
+    accessible-tenant-set membership, no district-shape user
+    can actually access multiple schools. PR shape:
+    sec/district-structure-session-3 (sec/ prefix because the
+    sweep touches PII-adjacent routes and tenant-isolation
+    enforcement points). Reviewer triad required.
+
+  P-ish-2: Followup #114 — sec/auth-error-message-redaction.
+    Customer-facing PII surface in the registration and
+    account-creation catch paths (response bodies + log lines).
+    See PR #98 privacy-reviewer findings for site-level detail.
+    Higher priority than the LOW/INFO-grade followups. Estimate:
+    small chore PR, ~10-15 lines. Could land before Session 3 or
+    queued behind depending on session bandwidth.
+
+  P-ish-3: Carry-forward — S66 P-ish queue (memory PR for
+    audit-prose discipline; migration-027 Phase 2 for #49;
+    full P3 sweep). None blocked; deferred by S67/S68
+    prioritization on district-structure work.
+
+  Wishlist (still unblocked):
+    Multi-screener feat PR (Wishlist #1) — unblocked after
+      migration-027 ships (P-ish-3 carry-forward).
+    Export-students-with-accommodations report.
+    Multi-intervention-per-goal design conversation.
+
+  Outstanding housekeeping:
+    .claude/settings.json drift (Followup #22) — STILL parked
+      at S68 close (pre-existing M flag in this session's
+      working tree throughout).
+    scripts/ops/ untracked-by-policy (Followup #94) — STILL
+      pre-existing (one tracked file added this session, but
+      the directory is still not gitignored-or-tracked-as-
+      policy).
+    docs/references/GR_SampleClass.pdf untracked
+      (pre-existing since S63).
+================================================================================
