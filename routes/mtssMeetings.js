@@ -19,9 +19,7 @@ const MEETING_WRITE_ROLES = [
   'district_admin',
   'school_admin',
   'counselor',
-  'student_support_specialist',
-  'behavior_specialist',
-  'mtss_support'
+  'interventionist'
 ];
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };

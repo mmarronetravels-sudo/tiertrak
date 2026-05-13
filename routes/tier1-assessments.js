@@ -19,9 +19,7 @@ const ROLES_WHO_CAN_EDIT = [
   'district_admin',
   'school_admin',
   'counselor',
-  'student_support_specialist',
-  'behavior_specialist',
-  'mtss_support'
+  'interventionist'
 ];
 
 // Allowed values for archived_reason. Keep in sync with any UI that

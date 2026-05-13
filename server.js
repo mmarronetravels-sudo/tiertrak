@@ -259,7 +259,7 @@ const createTables = async () => {
     
     await pool.query(`
       UPDATE users SET school_wide_access = TRUE 
-      WHERE role IN ('counselor', 'school_admin') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
+      WHERE role IN ('counselor', 'school_admin', 'interventionist') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
     `);
     
     await pool.query(`
@@ -424,7 +424,8 @@ const createTables = async () => {
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
       ALTER TABLE users ADD CONSTRAINT users_role_check
-        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
+        CHECK (role IN ('district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'))
+        NOT VALID;
     `);
     console.log('Migration 017: mtss_support role added');
 

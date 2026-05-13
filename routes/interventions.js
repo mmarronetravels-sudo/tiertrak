@@ -84,12 +84,9 @@ router.delete('/templates/:id', async (req, res) => {
 // Assign an intervention to a student
 router.post('/assign', requireAuth, async (req, res) => {
   try {
-    // Role gate: only school staff can assign. mtss_support and parents are
-    // explicitly rejected. Sourced from req.user.role (cookie/JWT-verified)
-    // rather than the prior x-user-role header (client-spoofable).
-    if (req.user.role === 'mtss_support') {
-      return res.status(403).json({ error: 'MTSS Support staff cannot assign interventions' });
-    }
+    // Role gate: only school staff can assign. Parents are explicitly
+    // rejected. Sourced from req.user.role (cookie/JWT-verified) rather
+    // than the prior x-user-role header (client-spoofable).
     if (req.user.role === 'parent') {
       return res.status(403).json({ error: 'Not authorized' });
     }
