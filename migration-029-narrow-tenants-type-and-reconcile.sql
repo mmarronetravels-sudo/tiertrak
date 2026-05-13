@@ -2,14 +2,16 @@
 --
 -- Closes Followup #103 (doctrine/schema divergence introduced when
 -- PR #96 rewrote §5 to put districts in the districts table — but
--- the tenants CHECK still permitted type='district'). Reconciles the
--- one known legacy row (tenant #9, Humble ISD Demo) by converting
--- it to a school-tenant under a newly-created district row.
+-- the tenants CHECK still permitted type='district'). Reconciles ALL
+-- legacy type='district' rows by creating matching districts entries
+-- and flipping type to 'school'. As of S68 P1 audit, two such rows
+-- exist: tenant #9 (Humble ISD Demo) and tenant #11 (Vandercook Demo).
 --
 -- Pre-flight (operator's responsibility, not this migration):
 --   Run scripts/ops/audit-legacy-district-tenants.sql first.
---   If any rows OTHER than #9 appear, STOP and reconcile manually.
---   This migration assumes exactly one legacy district row (#9).
+--   Review every row returned and confirm each is genuinely a legacy
+--   district-typed tenant that should be reconciled to school-tenant
+--   shape under a new districts row carrying its current name.
 --
 -- Idempotent. Safe to re-run.
 --
@@ -19,25 +21,27 @@
 
 BEGIN;
 
--- 1) Insert a districts row for Humble ISD Demo.
---    Idempotent: on re-run, step 2 has already flipped tenant #9 to
+-- 1) Insert a districts row for each legacy type='district' tenant.
+--    Idempotent: on re-run, step 2 has already flipped these rows to
 --    type='school', so the SELECT returns zero rows and the INSERT
---    inserts nothing. The district label is sourced from the existing
---    tenant name so no operator-side string entry is required.
+--    inserts nothing. District labels are sourced from existing
+--    tenant names so no operator-side string entry is required.
 INSERT INTO districts (name)
-SELECT name FROM tenants WHERE id = 9 AND type = 'district';
+SELECT name FROM tenants WHERE type = 'district';
 
--- 2) Convert tenant #9 to type='school' and link to its district.
---    Conditional UPDATE: only fires if #9 still has type='district'.
+-- 2) Convert each legacy type='district' tenant to type='school' and
+--    link to its matching district. Conditional UPDATE: only fires on
+--    rows still typed 'district'. Correlated sub-SELECT matches each
+--    tenant to its districts row by name (step 1 just inserted one
+--    districts row per such tenant).
 UPDATE tenants
    SET type = 'school',
        district_id = (
          SELECT d.id FROM districts d
-         JOIN tenants t ON t.name = d.name
-         WHERE t.id = 9
+         WHERE d.name = tenants.name
        ),
        updated_at = CURRENT_TIMESTAMP
- WHERE id = 9 AND type = 'district';
+ WHERE type = 'district';
 
 -- 3) Verify zero remaining type='district' rows before narrowing the
 --    CHECK. RAISE EXCEPTION inside a DO block aborts the transaction

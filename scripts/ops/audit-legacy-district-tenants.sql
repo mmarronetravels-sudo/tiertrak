@@ -3,8 +3,9 @@
 -- Run via: `\i scripts/ops/audit-legacy-district-tenants.sql` on prod.
 -- Operator-runnable. Read-only. No side effects.
 --
--- Expected result (per S67 close entry): exactly one row, tenant #9
--- (Humble ISD Demo). Any other rows must be reconciled before M029.
+-- Expected result: one or more legacy district rows; S68 P1 audit on
+-- prod found 2: tenant #9 (Humble ISD Demo) and tenant #11 (Vandercook
+-- Demo). M029 reconciles each.
 
 SELECT id, name, type, district_id, subdomain, created_at
   FROM tenants
