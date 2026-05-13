@@ -11,8 +11,12 @@
 //       that user. The composite-FK guarantees from migration-028
 //       (UNIQUE(id, district_id) on users + tenants, composite FK on
 //       user_school_access) make cross-district rows structurally
-//       impossible at the schema layer; this helper does not need to
-//       re-check district_id at query time.
+//       impossible at the schema layer. This helper additionally
+//       filters on district_id at the query layer as defense-in-
+//       depth (S69 tenant-isolation-auditor WARN-1 resolution,
+//       agentId ad6586832a807a7fa); the safety property is self-
+//       contained in the query rather than depending on M028's FK
+//       never being weakened.
 //
 // Returns Promise<number[]>. An empty array means "no accessible
 // schools" — legitimate for district users with no grants yet (will
@@ -60,8 +64,8 @@ async function resolveAccessibleTenantIds(user) {
     return user.tenant_id == null ? [] : [user.tenant_id];
   }
   const { rows } = await pool.query(
-    'SELECT school_tenant_id FROM user_school_access WHERE user_id = $1',
-    [user.id]
+    'SELECT school_tenant_id FROM user_school_access WHERE user_id = $1 AND district_id = $2',
+    [user.id, user.district_id]
   );
   return rows.map((r) => r.school_tenant_id);
 }
