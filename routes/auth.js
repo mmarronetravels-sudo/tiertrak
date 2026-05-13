@@ -298,16 +298,19 @@ router.post('/create-parent', async (req, res) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Check if user has permission to create parent accounts
+    // Check if user has permission to create parent accounts.
+    // tenant_id is sourced from the DB row, not the JWT payload — JWT
+    // carries identity only ({ id }); requireAuth-like pattern.
     const adminCheck = await pool.query(
-      'SELECT role FROM users WHERE id = $1',
+      'SELECT role, tenant_id FROM users WHERE id = $1',
       [decoded.id]
     );
-    
+
 const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'student_support_specialist'];
     if (!adminCheck.rows.length || !allowedRoles.includes(adminCheck.rows[0].role)) {
       return res.status(403).json({ error: 'You do not have permission to create parent accounts' });
     }
+    const adminTenantId = adminCheck.rows[0].tenant_id;
     
     const { email, full_name, student_ids } = req.body;
     
@@ -334,7 +337,7 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_s
       `INSERT INTO users (tenant_id, email, full_name, role, password_reset_token, password_reset_expires) 
        VALUES ($1, $2, $3, 'parent', $4, $5) 
        RETURNING id, email, full_name, role`,
-      [decoded.tenant_id, email, full_name, setupToken, setupTokenExpires]
+      [adminTenantId, email, full_name, setupToken, setupTokenExpires]
     );
     
     const newUser = result.rows[0];
@@ -346,7 +349,7 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_s
           `INSERT INTO parent_student_links (parent_user_id, student_id, tenant_id)
            VALUES ($1, $2, $3)
            ON CONFLICT DO NOTHING`,
-          [newUser.id, studentId, decoded.tenant_id]
+          [newUser.id, studentId, adminTenantId]
         );
       }
     }
