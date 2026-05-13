@@ -19,9 +19,7 @@ const ROLES_WHO_CAN_EDIT = [
   'district_admin',
   'school_admin',
   'counselor',
-  'student_support_specialist',
-  'behavior_specialist',
-  'mtss_support'
+  'interventionist'
 ];
 
 // Allowed values for archived_reason. Keep in sync with any UI that
@@ -50,7 +48,7 @@ const requireAuth = async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      'SELECT id, role, tenant_id FROM users WHERE id = $1',
+      'SELECT id, role, tenant_id, district_id FROM users WHERE id = $1',
       [decoded.id]
     );
     if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });

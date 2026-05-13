@@ -24,7 +24,7 @@ const STAFF_DELETE_ROLES = [
   'district_admin',
   'school_admin',
   'counselor',
-  'behavior_specialist'
+  'interventionist'
 ];
 
 // requireAuth — duplicated from middleware/authorizeInterventionAccess.js.
@@ -44,7 +44,7 @@ const requireAuth = async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      'SELECT id, role, tenant_id FROM users WHERE id = $1',
+      'SELECT id, role, tenant_id, district_id FROM users WHERE id = $1',
       [decoded.id]
     );
     if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });

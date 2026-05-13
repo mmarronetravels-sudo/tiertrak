@@ -10,11 +10,9 @@ const initializePool = (dbPool) => {
 // Staff roles (not parent)
 const STAFF_ROLES = [
   'school_admin',
-  'counselor', 
+  'counselor',
   'teacher',
-  'behavior_specialist',
-  'student_support_specialist',
-  'mtss_support'
+  'interventionist'
 ];
 
 // GET /api/staff/:tenantId - List all staff for a tenant
@@ -27,12 +25,12 @@ router.get('/:tenantId', async (req, res) => {
        FROM users 
        WHERE tenant_id = $1 AND role != 'parent'
        ORDER BY 
-         CASE role 
+         CASE role
            WHEN 'district_admin' THEN 1
-           WHEN 'school_admin' THEN 2
-           WHEN 'counselor' THEN 3
-           WHEN 'behavior_specialist' THEN 4
-           WHEN 'student_support_specialist' THEN 5
+           WHEN 'district_tech_admin' THEN 2
+           WHEN 'school_admin' THEN 3
+           WHEN 'counselor' THEN 4
+           WHEN 'interventionist' THEN 5
            WHEN 'teacher' THEN 6
          END,
          full_name ASC`,
@@ -65,7 +63,7 @@ router.post('/', async (req, res) => {
     }
 
     // Set school_wide_access based on role
-    const schoolWideAccess = ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support'].includes(role);
+    const schoolWideAccess = ['school_admin', 'district_admin', 'counselor', 'interventionist'].includes(role);
 
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
@@ -94,7 +92,7 @@ router.put('/:id', async (req, res) => {
 
     // Recalculate school_wide_access if role changed
     const schoolWideAccess = role 
-      ? ['school_admin', 'district_admin', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support'].includes(role)
+      ? ['school_admin', 'district_admin', 'counselor', 'interventionist'].includes(role)
       : undefined;
 
     const result = await pool.query(

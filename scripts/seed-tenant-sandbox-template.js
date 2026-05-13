@@ -61,9 +61,8 @@ const BCRYPT_ROUNDS = 10;
 const PASSWORD_BYTES = 12; // 12 random bytes → 16-char base64url string, ~96 bits entropy
 
 const ALLOWED_ROLES = new Set([
-  'district_admin', 'school_admin', 'teacher', 'counselor',
-  'behavior_specialist', 'student_support_specialist',
-  'mtss_support', 'parent',
+  'district_admin', 'school_admin', 'district_tech_admin',
+  'teacher', 'counselor', 'interventionist', 'parent',
 ]);
 const ALLOWED_TIERS = new Set([1, 2, 3]);
 const ALLOWED_AREAS = new Set(['Behavior', 'Academic', 'Social-Emotional']);

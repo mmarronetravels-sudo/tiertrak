@@ -259,7 +259,7 @@ const createTables = async () => {
     
     await pool.query(`
       UPDATE users SET school_wide_access = TRUE 
-      WHERE role IN ('counselor', 'school_admin') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
+      WHERE role IN ('counselor', 'school_admin', 'interventionist') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
     `);
     
     await pool.query(`
@@ -391,7 +391,7 @@ const createTables = async () => {
         INSERT INTO users (tenant_id, email, password_hash, full_name, role, school_wide_access) VALUES
         (3, 'teacher1@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Maria Santos', 'teacher', FALSE),
         (3, 'teacher2@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'James Wilson', 'teacher', FALSE),
-        (3, 'specialist@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Dr. Angela Thompson', 'student_support_specialist', TRUE),
+        (3, 'specialist@lincoln.edu', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Dr. Angela Thompson', 'interventionist', TRUE),
         (3, 'parent1@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Sarah Johnson', 'parent', FALSE),
         (3, 'parent2@gmail.com', '$2b$10$xPPPGQ5IAVP4VnKBKhGHXu3UH/J8EJfGJHQG7V6.6O7E0lLrVz8Zm', 'Michael Davis', 'parent', FALSE)
       `);
@@ -424,7 +424,8 @@ const createTables = async () => {
     await pool.query(`
       ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
       ALTER TABLE users ADD CONSTRAINT users_role_check
-        CHECK (role IN ('district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'mtss_support', 'parent'));
+        CHECK (role IN ('district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'))
+        NOT VALID;
     `);
     console.log('Migration 017: mtss_support role added');
 

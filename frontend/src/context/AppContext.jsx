@@ -36,11 +36,11 @@ export function AppProvider({ children }) {
   const [mtssMeetings, setMTSSMeetings] = useState([]);
 
   // === DERIVED VALUES ===
-  const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
-  const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
-  const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'mtss_support'].includes(user.role);
-  const canManageInterventions = user && user.role !== 'mtss_support' && user.role !== 'parent';
-  const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
+  const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
+  const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
+  const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
+  const canManageInterventions = user && user.role !== 'parent';
+  const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const isParent = user && user.role === 'parent';
 
   // === REFS (shared across components) ===

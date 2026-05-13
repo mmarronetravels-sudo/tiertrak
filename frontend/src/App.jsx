@@ -397,20 +397,20 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   const [interventionArchiveReason, setInterventionArchiveReason] = useState('');
   const [showArchivedInterventions, setShowArchivedInterventions] = useState(false);
   
-  // Check if user is admin (includes counselor and behavior_specialist with full admin access)
-const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
-  
-  // Check if user can archive (admins and counselors)
-const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
-  
-// Check if user can add students (admins + mtss_support)
-const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'mtss_support'].includes(user.role);
+  // Check if user is admin (includes counselor and interventionist with full admin access)
+const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
 
-// Check if user can assign interventions and log progress (everyone except mtss_support and parent)
-const canManageInterventions = user && user.role !== 'mtss_support' && user.role !== 'parent';
+  // Check if user can archive (admins and counselors)
+const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
+
+// Check if user can add students (admins + interventionist)
+const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
+
+// Check if user can assign interventions and log progress (everyone except parent)
+const canManageInterventions = user && user.role !== 'parent';
 
 // Check if user can delete documents (admin-level only)
-const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'behavior_specialist'].includes(user.role);
+const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
 
 // Check if user is a parent
 const isParent = user && user.role === 'parent';
@@ -2186,8 +2186,7 @@ if (!user) {
       {/* Tier 1 Self-Assessment card */}
       {tier1Dashboard.loaded && user?.role !== 'parent' && (() => {
         const ROLES_WHO_CAN_EDIT_TIER1 = [
-          'district_admin', 'school_admin', 'counselor',
-          'student_support_specialist', 'behavior_specialist', 'mtss_support'
+          'district_admin', 'school_admin', 'counselor', 'interventionist'
         ];
         const canEdit = ROLES_WHO_CAN_EDIT_TIER1.includes(user?.role);
         const { state, assessment, priors = [] } = tier1Dashboard;
@@ -2519,7 +2518,7 @@ if (!user) {
 )}
 
       {/* MTSS Referral Candidates Alert */}
-      {referralCandidates.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
+      {referralCandidates.count > 0 && !['teacher', 'parent'].includes(user?.role) && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="w-5 h-5 text-orange-600" />
@@ -2592,7 +2591,7 @@ if (!user) {
       )}
 
       {/* Monitoring Section */}
-      {monitoredStudents.count > 0 && !['teacher', 'mtss_support', 'parent'].includes(user?.role) && (
+      {monitoredStudents.count > 0 && !['teacher', 'parent'].includes(user?.role) && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Eye className="w-5 h-5 text-slate-600" />
@@ -4812,7 +4811,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             Plan Templates
           </div>
         </button>
-        {['school_admin', 'counselor', 'behavior_specialist'].includes(user.role) && (
+        {['school_admin', 'counselor', 'interventionist'].includes(user.role) && (
         <button
           onClick={() => { setAdminTab('bank'); fetchBankInterventions(user.tenant_id); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
@@ -5369,8 +5368,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                          member.role === 'district_admin' ? 'District Admin' :
                          member.role === 'counselor' ? 'Counselor' :
                          member.role === 'teacher' ? 'Teacher' :
-                         member.role === 'behavior_specialist' ? 'Behavior Spec.' :
-                         member.role === 'student_support_specialist' ? 'Support Spec.' :
+                         member.role === 'interventionist' ? 'Interventionist' :
                          member.role}
                       </span>
                     </td>

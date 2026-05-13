@@ -16,7 +16,7 @@ const pool = new Pool({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const VALID_ROLES = ['district_admin', 'school_admin', 'teacher', 'counselor', 'behavior_specialist', 'student_support_specialist', 'parent'];
+const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'];
 
 // Auth cookie options. Prod needs SameSite=None + Secure for the cross-
 // origin frontend↔backend pair; dev uses Lax (no Secure, cross-port
@@ -304,7 +304,7 @@ router.post('/create-parent', async (req, res) => {
       [decoded.id]
     );
 
-const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'behavior_specialist', 'student_support_specialist'];
+const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'interventionist'];
     if (!adminCheck.rows.length || !allowedRoles.includes(adminCheck.rows[0].role)) {
       return res.status(403).json({ error: 'You do not have permission to create parent accounts' });
     }
