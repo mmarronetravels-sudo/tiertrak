@@ -289,10 +289,10 @@ All six resources are visible to Admin and Staff. Parent sees none.
 | 7.3 | Parent Assessment Results Summary Template | ✅ | ✅ | ❌ | **Blank template staff fill in.** Parents receive the *filled* version from staff, never the blank. |
 
 "Admin" for access purposes means any role in `isAdmin`'s definition
-(`district_admin`, `school_admin`, `counselor`, `behavior_specialist`).
-"Staff" in the role-mapping sense covers the same roles plus
-`mtss_support`. In practice, the check is "not parent and not
-unauthenticated" — equivalent to the nav being visible at all.
+(`district_admin`, `school_admin`, `counselor`, `interventionist`).
+"Staff" in the role-mapping sense covers the same roles. In practice,
+the check is "not parent and not unauthenticated" — equivalent to the
+nav being visible at all.
 
 ---
 

@@ -33,9 +33,8 @@
  * ---------------------------------------------------------------------------
  *
  *   - users.role         CHECK (one of: 'district_admin', 'school_admin',
- *                                'teacher', 'counselor', 'behavior_specialist',
- *                                'student_support_specialist', 'mtss_support',
- *                                'parent')
+ *                                'district_tech_admin', 'teacher', 'counselor',
+ *                                'interventionist', 'parent')
  *                        ADMINS default to 'district_admin'. Override by
  *                        setting `role` explicitly on an ADMINS entry — e.g.,
  *                        'school_admin' for charter or international tenants.

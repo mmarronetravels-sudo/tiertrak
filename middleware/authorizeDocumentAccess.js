@@ -24,7 +24,7 @@ const STAFF_DELETE_ROLES = [
   'district_admin',
   'school_admin',
   'counselor',
-  'behavior_specialist'
+  'interventionist'
 ];
 
 // requireAuth — duplicated from middleware/authorizeInterventionAccess.js.

@@ -17,7 +17,7 @@
  *
  * Schema constraints honored:
  *   - users.role         CHECK ('district_admin', 'counselor', 'teacher',
- *                                'student_support_specialist', 'parent', ...)
+ *                                'interventionist', 'parent', ...)
  *   - students.tier      CHECK (1, 2, 3)
  *   - students.area      CHECK ('Behavior', 'Academic', 'Social-Emotional')
  *   - students.risk_level CHECK ('low', 'moderate', 'high')
@@ -49,7 +49,7 @@ const STAFF = [
   {
     email: 'interventionist@humble.edu',
     full_name: 'Jordan Reeves',
-    role: 'student_support_specialist',
+    role: 'interventionist',
     school_wide_access: true,
   },
   {

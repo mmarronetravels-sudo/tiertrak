@@ -73,9 +73,7 @@ credentials: 'include',
               <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
               <option value="counselor">Counselor — full admin access</option>
               <option value="school_admin">Admin — full access, manages everything</option>
-              <option value="behavior_specialist">Behavior Specialist — full admin access</option>
-              <option value="student_support_specialist">Student Support Specialist — sees all students, manages referrals</option>
-              <option value="mtss_support">MTSS Support — sees all students, adds students, uploads documents</option>
+              <option value="interventionist">Interventionist — sees all students, manages interventions, uploads documents</option>
             </select>
           </div>
         </div>
@@ -160,9 +158,7 @@ credentials: 'include',
               <option value="teacher">Teacher</option>
               <option value="counselor">Counselor</option>
               <option value="school_admin">Admin</option>
-              <option value="behavior_specialist">Behavior Specialist</option>
-              <option value="student_support_specialist">Student Support Specialist</option>
-              <option value="mtss_support">MTSS Support</option>
+              <option value="interventionist">Interventionist</option>
             </select>
           </div>
         </div>
