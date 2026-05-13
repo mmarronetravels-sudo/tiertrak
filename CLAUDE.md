@@ -275,16 +275,26 @@ If a change could plausibly expose PII across schools or externally, flag it exp
 
 ## 5) MULTI-TENANCY & SECURITY CONSTRAINTS
 
-In TierTrak, a "tenant" is a school or district. Every piece of student and staff data belongs to exactly one school. Cross-tenant data leakage is not just a product bug — it is a potential FERPA violation. Treat any cross-tenant risk as a critical severity issue.
+In ScholarPath Intervention Monitoring, the tenant model is **layered**:
 
-- Every database query that returns student, staff, or intervention data must be scoped to the correct school.
-- Never return data from a query without a school-scoping WHERE clause.
-- Never trust the frontend to enforce school scoping — always enforce it in the backend.
-- JWT tokens must be validated on every protected route.
-- New database tables that store school-specific data must include a school identifier column.
-- New school-scoped tables must have an index on the school identifier column.
-- Do not introduce cross-school reads or writes under any circumstance.
-- Rate limiting should be preserved on any endpoint that accepts external input.
+- A **school** is a `tenants` row (`type = 'school'`). It owns the student/staff/intervention data.
+- A **district** is a `districts` row. It is a parent of one or more school-tenants via `tenants.district_id`.
+- **Single-school customers** are standalone tenant rows with `district_id = NULL`. They are still tenants in the strict sense — no district layer above them.
+- **Cross-district data leakage is treated as a critical FERPA risk**, identical in severity to cross-school leakage in the pre-district model. There is no scenario in which one district's data may be read or written by another district's session.
+
+Every staff user belongs to exactly one district (or none, for legacy single-tenant users). The set of school-tenants a user can access is recorded in `user_school_access(user_id, school_tenant_id, district_id)`. Role alone never determines school access — the access table is the source of truth.
+
+Hard rules:
+
+- Every database query that returns student, staff, or intervention data must be scoped to the requesting user's **accessible school-tenant set**, not to a single hard-coded `tenant_id`.
+- Never return data from a query without that scoping clause.
+- Never trust the frontend to enforce school or district scoping — always enforce it in the backend.
+- JWT tokens must be validated on every protected route. The token payload identifies the user; the user's accessible-school set is the authoritative scope.
+- New tables that store school-scoped data must include a school-tenant identifier column AND an index on it. (Storing only a `district_id` is not sufficient — the school identity is what scopes the data.)
+- District-scoped data (e.g., district-level reports, district-wide audit logs) must include a `district_id` column AND an index on it, and must be scoped by the user's district.
+- The composite-FK cross-scope rejection pattern from Migration 021 (`UNIQUE(id, scope_id)` on the parent + `(child_id, scope_id) REFERENCES parent(id, scope_id)`) must be used for any new child table whose rows must live within a single school or single district.
+- Do not introduce cross-school reads/writes that bypass `user_school_access`. Do not introduce cross-district reads/writes under any circumstance.
+- Rate limiting must be preserved on any endpoint that accepts external input.
 
 ---
 
