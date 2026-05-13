@@ -139,9 +139,8 @@ function shouldSkip(req) {
 // correlate.
 //
 // Destructure-and-discard: ONLY the `id` field is bound to a local
-// variable. The JWT payload also contains `email` (PII) and
-// `tenant_id` — those are never read into a variable and never reach
-// the log surface, even transiently.
+// variable. If the JWT payload ever carries additional fields, the
+// destructure ensures they never reach the log surface even transiently.
 //
 // All decode failure modes (missing cookie, malformed token, decode
 // throw) are silently caught and return null — the log line then
