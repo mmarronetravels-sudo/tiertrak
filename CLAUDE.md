@@ -284,7 +284,7 @@ In ScholarPath Intervention Monitoring, the tenant model is **layered**:
 
 Every staff user belongs to exactly one district (or none, for legacy single-tenant users). The set of school-tenants a user can access is recorded in `user_school_access(user_id, school_tenant_id, district_id)`. Role alone never determines school access — the access table is the source of truth.
 
-Dual-path access contract: scope resolution branches on `users.district_id`. For legacy single-tenant users (`users.district_id IS NULL`), scope is `users.tenant_id` equality. For district users (`users.district_id IS NOT NULL`), scope is the membership of `user_school_access` for that user. A centralized helper enforces this branch; call sites must not inline the check.
+Dual-path access contract: scope resolution branches on `users.district_id`. For legacy single-tenant users (`users.district_id IS NULL`), scope is `users.tenant_id` equality. For district users (`users.district_id IS NOT NULL`), scope is the membership of `user_school_access` for that user. A centralized helper (`resolveAccessibleTenantIds`, at `middleware/resolveAccessibleTenantIds.js`) enforces this branch; call sites must not inline the check.
 
 Hard rules:
 
