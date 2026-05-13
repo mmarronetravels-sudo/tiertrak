@@ -11128,3 +11128,468 @@ NEXT SESSION SHOULD (P-ish queue for S69)
     docs/references/GR_SampleClass.pdf untracked
       (pre-existing since S63).
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-13T12:00:00-07:00 (Session 69)
+BRANCH:  main (entry appends UNSTAGED per chore-PR convention; lands via
+         chore/activities-log-session-69 PR this session)
+DISPOSITION: 2 PRs merged + LIVE on prod, 1 PIVOT mid-session (composite-FK
+             defense-in-depth fix after tenant-isolation WARN-1; narrow re-
+             audit clean), 7 followups banked (#115 closed by PR #101; #116
+             #117 #118 #119 #120 #121 open), 3 feedback memories banked, 2
+             migrations applied on prod (M030 + M031) plus role-array sweep
+             across 16 sites in 14 files
+--------------------------------------------------------------------------------
+
+TASK SUMMARY
+  Session 2b of the multi-session district-structure project (PR B1) plus
+  the CRITICAL-severity Followup #115 sec/users-staff-delete-require-auth
+  closure (PR #101). PR B1 shipped the access-layer foundation:
+  resolveAccessibleTenantIds helper enforcing CLAUDE.md §5's dual-path
+  contract, M030 role consolidation (8 -> 7 roles), M031 user_school
+  _access_audit table + cascade-event trigger, role-array sweep across BE
+  + FE, and the operator pre-flight audit script. PR #101 then closed the
+  unauthed DELETE-FROM-users cascade-attack window in the same session,
+  consuming the helper as its first production call site.
+
+FILES TOUCHED THIS SESSION
+
+  PR #100 -- B1 (squash-merged at 2d1db63):
+    scripts/ops/audit-role-consolidation-targets.sql -- NEW. Three-query
+      operator audit; S68 §3 two-layer §4B output discipline (Q1 shareable
+      counts, Q2 operator-private PII detail, Q3 guardrail).
+    migration-030-role-consolidation.sql -- NEW. Per-shape UPDATE flipping
+      behavior_specialist + student_support_specialist + mtss_support ->
+      interventionist; DO-block guard; DROP+ADD CHECK to 7-role universe;
+      atomic BEGIN/COMMIT; explicit idempotency-mechanism header (S68
+      lesson on M029's WHERE-NOT-EXISTS framing).
+    migration-031-user-school-access-audit.sql -- NEW. Append-only audit
+      table with BIGSERIAL audit_id, denormalized scope columns with no
+      FK constraints (FERPA §99.32 record-of-disclosure retention per
+      privacy-reviewer design consultations), CHECK on action enum,
+      AFTER DELETE trigger on user_school_access. Trigger NO SECURITY
+      DEFINER.
+    middleware/resolveAccessibleTenantIds.js -- NEW. Central helper
+      enforcing §5 dual-path branch. Post-PIVOT (commit 7) includes
+      defense-in-depth AND district_id = $2 filter at query layer.
+    middleware/authorizeInterventionAccess.js -- SELECT widening to
+      include district_id alongside id, role, tenant_id, school_wide_
+      access.
+    middleware/authorizeDocumentAccess.js -- SELECT widening for
+      district_id; STAFF_DELETE_ROLES collapsed (behavior_specialist ->
+      interventionist).
+    routes/auth.js -- VALID_ROLES rewrite to 7-role universe; allowed
+      Roles collapse on /create-parent.
+    routes/users.js -- VALID_ROLES rewrite.
+    routes/staffManagement.js -- STAFF_ROLES + ORDER BY CASE + 2x
+      schoolWideAccess includes-list collapse.
+    routes/mtssMeetings.js -- MEETING_WRITE_ROLES collapse.
+    routes/tier1-assessments.js -- ROLES_WHO_CAN_EDIT collapse + SELECT
+      widening.
+    routes/interventions.js -- DQ1 (b) mtss_support assign-block removal
+      + comment rewrite.
+    server.js -- L262 backfill clause widened to include 'interventionist'
+      (F4 -- first-boot post-deploy behavior change); L394 seed user role
+      flipped to 'interventionist'; L425-428 boot CHECK rewritten with
+      NOT VALID + 7-role universe (DQ2 i).
+    frontend/src/context/AppContext.jsx -- 5 authz consts collapsed.
+    frontend/src/App.jsx -- 6 hunks: authz block, ROLES_WHO_CAN_EDIT_TIER1
+      collapse, 2x exclusion-list DQ1 (b) mirrors, inline role array,
+      display label.
+    frontend/src/components/Modals/StaffModals.jsx -- create + edit
+      dropdown collapses; provisional display strings 'Interventionist'.
+    data/humble-isd-sandbox-roster.js -- seed roster role + docstring
+      (closes Followup #109 role-literal dimension in this file family).
+    data/sandbox-roster-template.js -- docstring CHECK list.
+    scripts/seed-tenant-sandbox-template.js -- ALLOWED_ROLES.
+    docs/scoping-v2.md -- isAdmin/Staff prose update per (i)-decision.
+    CLAUDE.md -- §5 helper-name reference (replaces generic "centralized
+      helper" wording shipped in PR #98).
+    Cumulative: +411 / -74 across 21 files, 7 commits on the feature
+    branch including the WARN-1 defense-in-depth fix.
+
+  PR #101 -- #115 (squash-merged at 36df115):
+    routes/users.js -- DELETE handler rewrite: requireAuth + self-delete
+      guard + role authz + target SELECT + §5 helper-consumed scope check
+      (first production call site of resolveAccessibleTenantIds) +
+      RETURNING id trim + err.message redaction; #76 augmented bound.
+    routes/staffManagement.js -- same shape + parent-as-404 route-
+      boundary guard.
+    Cumulative: +86 / -25 across 2 files, 1 commit.
+
+  Activities log (this entry, current -- appends on chore/activities-
+  log-session-69 per S68 §3 + S65 banked discipline)
+    activities.txt -- Session 69 close entry (this entry).
+
+MIGRATIONS RUN
+
+  migration-030-role-consolidation.sql -- applied to prod via Render
+    External PSQL Command + \i after PR #100 merge. Result: BEGIN /
+    UPDATE 5 / DO / ALTER TABLE / ALTER TABLE / COMMIT. Post-apply
+    verification (SELECT role, COUNT(*) GROUP BY): counselor=4,
+    district_admin=4, interventionist=5, parent=11, school_admin=8,
+    teacher=18 (total 50, unchanged from pre-apply count). Zero legacy-
+    role users remain. district_tech_admin admitted to CHECK but
+    uninhabited (F9 as designed).
+
+  migration-031-user-school-access-audit.sql -- applied to prod via
+    Render External PSQL Command + \i after M030 succeeded. Result:
+    BEGIN / CREATE TABLE / COMMENT / CREATE INDEX / CREATE FUNCTION /
+    NOTICE (trigger does not exist, skipping -- expected first-run) /
+    DROP TRIGGER / CREATE TRIGGER / COMMIT. Audit table verified via
+    \d: BIGSERIAL audit_id, 3 NOT NULL INTEGER scope columns, action
+    CHECK on 3-action enum, actor_user_id nullable, occurred_at default
+    CURRENT_TIMESTAMP, idx_user_school_access_audit_district on
+    (district_id, occurred_at DESC), NO foreign-key constraints. Trigger
+    bound (AFTER DELETE ON user_school_access FOR EACH ROW) and dormant
+    until B2 ships first writer.
+
+  CHECK constraint post-state verified via pg_get_constraintdef on
+    users_role_check: 7-role universe present; NOT VALID suffix absent
+    (M030's fully-validated ADD CONSTRAINT correctly superseded
+    server.js boot's NOT VALID-flagged version for the current deploy;
+    subsequent boots will re-add with NOT VALID -- Followup #117 retires
+    the boot DDL block entirely).
+
+TENANT ISOLATION REVIEW
+
+  PR B1:
+  tenant-isolation-auditor (S69 triad #1 initial, agentId
+    ad6586832a807a7fa) verdict: APPROVED WITH NOTES. 0 CRITICAL, 0 HIGH,
+    0 MEDIUM, 0 LOW, 2 WARN, 5 INFO, 4 OK. WARN-1 raised composite-FK
+    trust on the helper (defense-in-depth push-back); WARN-2 carried NOT
+    VALID deploy-window operational concern.
+  WARN-1 -> CLOSED via commit 7 (defense-in-depth AND district_id = $2
+    filter at the helper's query layer + docstring update referencing
+    reviewer agentId). Operator chose path (b) over PR-body-affirmation
+    after surfacing residual concerns: M028 invariant is one-jump-away,
+    helper is the §5 enforcement point, CLAUDE.md §5 favors redundant
+    backend enforcement.
+  Narrow re-audit (agentId a9cf247deeaf18f09) on the single-file
+    revision: APPROVED. 0/0/0/0/1W(carryover)/0/OK. WARN-1 confirmed
+    closed; all 4 affirmations (parameterized, non-null guarantee, self-
+    contained, closure-to-OK) verified.
+  Composite-FK guards from M028 verified unchanged through commit 7's
+    revision. Cascade chain users -> user_school_access -> user_school
+    _access_audit confirmed intact.
+
+  PR #101 (#115):
+  tenant-isolation-auditor (S69 triad #2 secondary, agentId
+    a2711ef5957d64852) verdict: APPROVED. 0/0/0/0/1W/7I/OK. WARN-1
+    convergent with security on #118 cascade-actor-capture deferral
+    (audit-traceability gap, not tenant-isolation gap). Explicitly
+    framed PR #101 as "the canonical first-call-site demonstrating the
+    §5 helper-consumption pattern."
+
+  Followup #116 boundary verified: full router enumeration on both
+    files confirmed only the 2 DELETE handlers carry requireAuth; the
+    remaining 11 non-DELETE routes remain unauthed (tracked by #116).
+
+PRIVACY REVIEW (Section 4B)
+
+  PR B1:
+  privacy-reviewer (S69 triad #2 of 3, agentId a68e756b404a3e175)
+    verdict: APPROVED WITH NOTES. 0/0/0/0/2W/5I. WARN-1 + WARN-2 on
+    canDeleteDocs + canAddStudents capability expansions (3-4 former
+    student_support_specialist users gain authority; ACCEPTABLE under
+    FERPA -- pre-existing read access mitigates disclosure surface).
+    Both WARNs led to Followup #119 observability followup.
+  M031 schema implementation matched both pre-B1 privacy-reviewer
+    design-consultation verdicts cleanly:
+      agentId ad5577dc9a9aba16b -- (i)-decision verdict on trigger-based
+        audit + FERPA §99.32 record-of-disclosure retention grounding.
+      agentId aa64397dba70ad892 -- FK shape (b) denormalized integer
+        columns NO FK constraint + single occurred_at timestamp.
+  Audit script Query 2 PII layering reviewed as EXEMPLARY application
+    of S68 §3 two-layer §4B output discipline.
+
+  PR #101 (#115):
+  privacy-reviewer SKIPPED per PR #101 §7 reviewer plan (no new PII
+    surfaces; no schema changes; #114-class fold-ins F1+F2 are
+    reductive). Posture only improves with this PR (RETURNING trim +
+    err.message redaction).
+
+  §4B self-grep on this S69 entry's diff: pending post-write
+    verification (Step 3 §4B gate; operator independent grep gates
+    branch + commit + push).
+  No per-row PII in this entry by construction. Operator-self-
+    identification context referenced via PR #100 §16.6 framing; not
+    duplicated here.
+
+VERIFICATION
+
+  PR B1 Phase 1 -- design consultations (pre-B1):
+    Two privacy-reviewer design consultations on M031 architecture:
+    (i) trigger-based audit vs (ii) app-layer-only -- verdict (i) on
+    FERPA §99.32 grounds (agentId ad5577dc9a9aba16b); subsequent FK
+    shape (b) denormalized no-FK + single occurred_at clarification
+    (agentId aa64397dba70ad892). SendMessage tool unavailable in this
+    environment forced fresh-agent-spawn for the second consultation.
+
+  PR B1 Phase 2 -- read-only audit + planning:
+    Read CLAUDE.md §0/§2A/§4B/§5; M028, M029, server.js boot region,
+    middleware/authorizeInterventionAccess.js, schema.sql.
+    Surfaced 10 F-level findings (F1 boot CHECK drift, F2 master-
+    index drift hazard, F3 VALID_ROLES vs DB CHECK pre-existing
+    drift, F4 server.js:262 backfill widening, F5 Followup #108
+    duplicate requireAuth compounded, F6 backfill script scope
+    clarification -- answered b operational template, F7 M031 cascade
+    capture decision -- answered i trigger after consultation, F8
+    timeline reframe, F9 district_tech_admin uninhabited, F10
+    app.js vs server.js mount point -- confirmed server.js).
+    7 design questions surfaced + answered (DQ1-DQ7-ish across two
+    phases: M030 per-shape, §5 naming, parseIntParam local, FE caller
+    sweep, reviewer triad, DQ1 (b) mtss_support block removal, DQ2 (i)
+    NOT VALID boot CHECK).
+
+  PR B1 Phase 3 -- implementation:
+    Created sec/district-structure-session-2b-access-layer from main.
+    Seven commits laid down in sequenced order:
+      34368b2 chore(ops): audit-role-consolidation-targets.sql
+      d57151b chore(migration): M030 role consolidation
+      a65fd01 sec(roles): backend role-array sweep (commit 3)
+      dfcc492 sec(roles): literal-pass completion (commit 3.5,
+        15 findings across 9 files surfaced by post-commit-3 audit +
+        cascade-pause for 2 additional exclusion-list mirrors)
+      725146e sec(district): resolveAccessibleTenantIds helper +
+        3x SELECT widenings + CLAUDE.md §5 helper-name (commit 4)
+      543a0b5 chore(migration): M031 audit table + trigger (commit 5)
+      c16d765 fix(district): defense-in-depth district_id filter on
+        helper (commit 7 -- PIVOT post-WARN-1)
+
+  PR B1 Phase 4 -- triad review (3 reviewers, 4 invocations counting
+  the narrow re-audit):
+    tenant-isolation-auditor initial (ad6586832a807a7fa): APPROVED
+      WITH NOTES, 2W/5I/4OK. WARN-1 composite-FK trust.
+    Commit 7 PIVOT -- defense-in-depth filter added.
+    tenant-isolation-auditor narrow re-audit (a9cf247deeaf18f09):
+      APPROVED, 1W(carryover)/0/OK. WARN-1 closed.
+    privacy-reviewer (a68e756b404a3e175): APPROVED WITH NOTES,
+      2W/5I. Capability expansion within-tenant; observability
+      followup #119 recommended.
+    security-reviewer (a0752af96a2b212ec): APPROVED WITH NOTES,
+      2W/6I/7OK. NOT VALID convergence + allowedRoles +1 user
+      convergence.
+    Aggregate: 0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW / 5 WARN
+      (1 closed + 4 deferred/affirmed) / 19 INFO / 11 OK.
+
+  PR B1 Phase 5 -- external review + merge:
+    External scholapathsystems formal review: APPROVED.
+    Operator ran pre-flight audit script on prod via Render External
+      PSQL + \i. Query 1 results: behavior_specialist=1,
+      mtss_support=1, student_support_specialist=3 (total 5, matched
+      S68 master index exactly, no drift). Query 3 guardrail=0 (hard
+      stop NOT triggered). M030 cleared to apply.
+    Folded actuals into PR body §14.5 Verification block.
+    Squash-merge: 2026-05-13T21:36:23Z to 2d1db63. Branch auto-
+      deleted via --delete-branch.
+    Render auto-deploy: started 21:36:23Z, LIVE 21:37:00Z (~37s
+      elapsed merge -> LIVE, captured via operator dashboard since
+      RENDER_API_KEY unset this session; Followup #102 pattern
+      preserved method-agnostically).
+    M030 applied to prod via \i: BEGIN / UPDATE 5 / DO / ALTER /
+      ALTER / COMMIT. 5 legacy-role users flipped to interventionist.
+    M031 applied to prod via \i: audit table + index + trigger
+      function + trigger created. Trigger dormant until B2.
+    Operator smoke test: school_admin login on a real-tenant
+      verified Dashboard/Students/Interventions loaded cleanly;
+      operator account routed to parent portal as expected
+      pre-existing behavior.
+
+  PR B1 Phase 6 -- PR body §15 + §16 fold-in:
+    §15 reviewer triad verdicts populated verbatim across 5
+      subsections (15.1-15.4 verbatim verdicts, 15.5 aggregate +
+      convergence table, 15.6 WARN dispositions, 15.7 doctrine
+      trail with 6 agentIds, 15.8 followups inventory cross-
+      reference).
+    §16 post-merge prod-apply log populated across 7 subsections
+      (merge / LIVE / M030 / M031 / CHECK / smoke / Followup #102
+      operational re-affirmation).
+    Body grew from 29.7K to 47.6K to 51.3K chars across two edits.
+
+  PR #101 (#115) -- separate lifecycle:
+    Created sec/users-staff-delete-require-auth from main after B1
+      merge. Single commit (e749e47): requireAuth + role authz +
+      §5 helper-consumed scope check + self-delete guard + #76
+      augmented bound + parent-as-404 (staff route) + RETURNING
+      trim + err.message redaction. Both DELETE handlers updated
+      symmetrically.
+    Triad review:
+      security-reviewer primary (aef8dfbb946f43fd2): APPROVED.
+        0/0/0/0/2W/8I/OK. parseInt edge cases traced; auth chain
+        verified; CSRF inheritance from server.js:40 confirmed.
+      tenant-isolation-auditor secondary (a2711ef5957d64852):
+        APPROVED. 0/0/0/0/1W/7I/OK. Explicitly framed as
+        "canonical first-call-site demonstrating the §5 helper-
+        consumption pattern."
+      privacy-reviewer SKIPPED per §7 plan (no new PII, no
+        schema, #114-class fold-ins reductive).
+      Aggregate: 0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW / 3 WARN
+        (1 converged across reviewers + 2 deferred-followup
+        acknowledgments) / 15 INFO / 2 OK.
+    External APPROVED. Squash-merge: 2026-05-13T22:27:09Z to
+      36df115. LIVE 22:27:12Z (~3s elapsed, notably faster than
+      B1; likely Render cached build context from recent B1
+      deploy -- not a defect).
+    Operator smoke check: curl unauthed DELETE on
+      /api/users/9999 returned 403 "Invalid CSRF token" -- attack
+      path blocked at the CSRF outer layer (security-reviewer
+      INFO-3 confirmed CSRF inheritance); requireAuth inner
+      layer triad-verified.
+    Followup #115 CLOSED.
+
+  Code-surface verification: N/A for non-test-suite paths. Backend
+    has no test suite (Followup #73), no lint (Followup #74).
+    Frontend touched in PR B1 (16 sites across 3 files); no
+    automated tests; manual operator smoke covered the path.
+
+OPEN ITEMS / FOLLOW-UPS
+
+  Followups banked this session (6 new + 1 closed + carryovers):
+
+  Followup #115 -- sec/users-staff-delete-require-auth + cascade-
+    audit hazard. CLOSED via PR #101 merge + LIVE at
+    36df115/22:27:12Z. The unauthed DELETE-FROM-users cascade-
+    attack window is closed.
+
+  Followup #116 -- sec/users-staffManagement-require-auth-router-
+    level. HIGH. Remaining 11 non-DELETE routes (8 in users.js +
+    3 in staffManagement.js) still unauthed at router level.
+    Tracked separately from #115 by severity differentiation.
+
+  Followup #117 -- chore/retire-server-boot-ddl-for-users-role-
+    check. HIGH-medium. server.js:425-428 re-applies users_role
+    _check at every boot with NOT VALID; retire entirely so
+    migrations are sole source of truth. Sibling to F1 + #110.
+
+  Followup #118 -- chore/trigger-actor-capture-via-current-setting.
+    MEDIUM. M031 cascade trigger writes actor_user_id=NULL.
+    SET LOCAL plumbing at DELETE-FROM-users sites would let
+    trigger read current_setting('app.actor_user_id'). Both PR
+    B1 + PR #101 triad reviewers recommended landing #118 before
+    B2 ships first writer to user_school_access.
+
+  Followup #119 -- chore/monitor-capability-expansion-post-m030.
+    LOW-medium observability. 30-day post-deploy event-volume
+    monitoring on canDeleteDocs (4 users gain) + canAddStudents
+    (3 users gain) per privacy-reviewer triad #2 WARN-1+WARN-2.
+
+  Followup #120 -- docs/privacy-review-m031-audit-table-shape.
+    LOW doc-only. Add PRIVACY_REVIEW.md entry documenting M031
+    audit table + no-FK doctrine + both S69 design-consultation
+    agentIds.
+
+  Followup #121 -- sec/users-delete-protected-user-allowlist.
+    LOW-medium. PROTECTED_USER_IDS env-var allowlist parallel to
+    PLATFORM_ADMIN_USER_IDS, guarding operator account + any
+    future protected accounts from district_admin/school_admin
+    DELETE under #115's role-gated path.
+
+  Followup #76 augmented (carryover) -- INTEGER bound (id <=
+    2147483647). Pattern applied at both DELETE handlers in PR
+    #101; global parseIntParam helper still pending.
+
+  Followup #109 augmented -- role-literal dimension closed in
+    data/humble-isd-sandbox-roster.js + data/sandbox-roster-
+    template.js by PR B1's commit 3.5. District-typed literal
+    dimension still open per S68's original framing.
+
+  Followup #108 widened -- duplicate requireAuth in 3 sites kept
+    in sync with district_id SELECT widening. Full dedupe still
+    deferred.
+
+  Feedback memories banked this session:
+    feedback_numbered_step_ordering_is_protocol.md -- operator's
+      numbered orderings are gates, not suggestions; echo each
+      step as a heading; includes "operator-instruction-vs-
+      convention surface-and-defer" sub-note.
+    feedback_role_sweep_grep_literals_not_names.md -- literal-
+      pass grep is authoritative over named-array enumeration;
+      scope to frontend/, data/, docs/ in addition to backend
+      dirs; enumerate every hit regardless of inclusion vs
+      exclusion shape; chat-relay convention sub-note (high-
+      stakes artifacts inline-pasted in response text, not via
+      tool output).
+    feedback_helper_consume_dont_inline_5_branch.md -- when
+      implementing §5 district-aware access scoping at a new
+      call site, ALWAYS consume resolveAccessibleTenantIds;
+      never inline. Inline branches miss user_school_access
+      membership for post-M028 school_admins.
+
+  Pre-existing followups (carry forward unchanged):
+    #22 (.claude/settings.json drift, still parked across 8+
+      sessions; pre-existing M flag throughout this session);
+    #49 screener-results-prod-dedup Phase 2 SQL still pending;
+    #70 pg error.detail repo-wide; #71/#78/#79 over-fetch
+      cluster (#79 partially closed this session by PR #101's
+      RETURNING trim on staff DELETE); #72 FE-credentials;
+      #73 backend-tests; #74 backend-lint; #75 relationship
+      whitelist; #77 phantom tenant_id; #80 rate-limiting
+      absent; #81 CSRF absent (note: outer-layer CSRF was the
+      blocker on the smoke test, so CSRF middleware is in fact
+      mounted globally -- re-evaluate #81's framing); #82
+      parity-check guard; #93 users.disabled_at; #94 scripts/
+      ops/ untracked-by-policy; #95 mtss_meeting_interventions
+      JOIN; #96 s.tier/s.area FERPA; #97 read-side role
+      allowlist; #99 activities.txt historical PII audit;
+      #100 upload-time NULL student_id guard; #101 test CSVs
+      auto-create student records guard; #102 (CLOSED prior,
+      re-affirmed this session); #103 (CLOSED prior); #104-
+      #114 (S67-S68 banked range, carried forward unchanged).
+
+  S66 P-ish queue STILL not addressed in S69 (carried forward):
+    P-ish-1 (memory PR for audit-prose discipline);
+    P-ish-2 (migration-027 Phase 2 SQL); P-ish-3 (full P3 sweep).
+    None blocked; deferred by district-structure prioritization.
+
+  Master-index <-> CC-memory drift observation banked
+    (feedback_master_index_memory_drift.md S69) -- operator's
+    sec/X-require-auth aggregate entries are operator-side; CC
+    banked #115/#116 are CC-side. Reconciliation deferred per the
+    feedback memory's "don't chase mid-session" guidance.
+
+NEXT SESSION SHOULD (P-ish queue for S70)
+
+  P-ish-1: Followup #118 -- chore/trigger-actor-capture-via-
+    current-setting. MEDIUM. Both PR B1 + PR #101 triad reviewers
+    recommended landing before B2 ships first writer. Estimate
+    ~+10 lines across the two DELETE handlers (post-#115) +
+    1-line trigger function update reading current_setting. Adds
+    transaction-handling at the DELETE sites that PR #101
+    deliberately deferred.
+
+  P-ish-2: PR B2 -- grant/revoke surface at /api/districts/:id/
+    users/:userId/access. STRETCH goal for S69 deferred to S70.
+    Cascade attack path closed; sequencing B1 -> #115 -> B2
+    achieved. M031 audit table + trigger will start capturing
+    real grant/revoke + cascade events at B2's first writer.
+    Reviewer triad required (all 3); composite-FK trust precedent
+    set by helper's commit 7 fix; helper consumption pattern
+    canonical-established by PR #101.
+
+  P-ish-3: Session 3 of district structure -- req.user.tenant_id
+    sweep across ~91 call sites in 12 route files. Should land
+    after B2. Each call site replaces req.user.tenant_id equality
+    with resolveAccessibleTenantIds membership. Per feedback
+    memory feedback_helper_consume_dont_inline_5_branch.md, every
+    call site MUST consume the helper (no inline branches).
+
+  Wishlist (still unblocked):
+    Multi-screener feat PR (after migration-027 Phase 2 ships).
+    Export-students-with-accommodations report.
+    Multi-intervention-per-goal design conversation.
+
+  Outstanding housekeeping:
+    .claude/settings.json drift (Followup #22) -- STILL parked at
+      S69 close (pre-existing M flag in this session's working
+      tree throughout; unchanged by either PR).
+    scripts/ops/ untracked-by-policy (Followup #94) -- STILL
+      pre-existing.
+    docs/references/GR_SampleClass.pdf untracked -- pre-existing
+      since S63.
+
+  Customer onboarding deadline (July 1, 2026) still within
+    window. B2 + Session 3 sweep both fit comfortably before
+    the deadline.
+
+================================================================================
