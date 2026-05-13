@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
-const bcrypt = require('bcrypt'); 
+const bcrypt = require('bcrypt');
 require('dotenv').config();
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -174,20 +176,50 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete a user
-router.delete('/:id', async (req, res) => {
+// Delete a user. Gated by requireAuth + role authz + §5 helper-consumed
+// scope check. Cascade to user_school_access via M028 ON DELETE CASCADE
+// is captured by M031's user_school_access_audit_after_delete trigger
+// (writes action='cascade_user_delete' with actor_user_id=NULL pending #118).
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    if (id === req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const ADMIN_DELETE_ROLES = ['district_admin', 'school_admin'];
+    if (!ADMIN_DELETE_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const target = await pool.query(
+      'SELECT id, tenant_id FROM users WHERE id = $1',
+      [id]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(target.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      'DELETE FROM users WHERE id = $1 RETURNING *',
+      'DELETE FROM users WHERE id = $1 RETURNING id',
       [id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'Not found' });
     }
     res.json({ message: 'User deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    console.error('[users:delete]', err.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
