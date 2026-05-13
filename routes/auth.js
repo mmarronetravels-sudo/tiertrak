@@ -125,13 +125,12 @@ router.post('/login', authLoginCompoundLimiter, async (req, res) => {
     }
     
     // Create token
+    // JWT carries identity only ({ id } + iat/exp). role / tenant_id /
+    // email are re-read from the DB on every authenticated request by
+    // requireAuth — the DB row is the source of truth, the cookie is
+    // just the identity envelope.
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
-        role: user.role,
-        tenant_id: user.tenant_id
-      },
+      { id: user.id },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -252,13 +251,12 @@ router.post('/google', async (req, res) => {
     }
     
     // Create token
+    // JWT carries identity only ({ id } + iat/exp). role / tenant_id /
+    // email are re-read from the DB on every authenticated request by
+    // requireAuth — the DB row is the source of truth, the cookie is
+    // just the identity envelope.
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
-        role: user.role,
-        tenant_id: user.tenant_id
-      },
+      { id: user.id },
       JWT_SECRET,
       { expiresIn: '8h' }
     );
