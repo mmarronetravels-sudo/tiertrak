@@ -178,9 +178,12 @@ router.put('/:id', async (req, res) => {
 
 // Delete a user. Gated by requireAuth + role authz + §5 helper-consumed
 // scope check. Cascade to user_school_access via M028 ON DELETE CASCADE
-// is captured by M031's user_school_access_audit_after_delete trigger
-// (writes action='cascade_user_delete' with actor_user_id=NULL pending #118).
+// is captured by M031's user_school_access_audit_after_delete trigger.
+// Followup #118: SELECT + DELETE run in an explicit transaction so a
+// transaction-local set_config('app.actor_user_id', ...) propagates into
+// M032's trigger body for cascade-row actor capture.
 router.delete('/:id', requireAuth, async (req, res) => {
+  const client = await pool.connect();
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
@@ -196,30 +199,49 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const target = await pool.query(
+    const actorId = Number(req.user.id);
+    if (!Number.isInteger(actorId) || actorId <= 0) {
+      console.error('[users:delete]', 'invalid req.user.id from JWT');
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(
+      "SELECT set_config('app.actor_user_id', $1, true)",
+      [String(actorId)]
+    );
+
+    const target = await client.query(
       'SELECT id, tenant_id FROM users WHERE id = $1',
       [id]
     );
     if (target.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
 
     const accessible = await resolveAccessibleTenantIds(req.user);
     if (!accessible.includes(target.rows[0].tenant_id)) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const result = await pool.query(
+    const result = await client.query(
       'DELETE FROM users WHERE id = $1 RETURNING id',
       [id]
     );
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
+    await client.query('COMMIT');
     res.json({ message: 'User deleted successfully' });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('[users:delete]', err.message);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
