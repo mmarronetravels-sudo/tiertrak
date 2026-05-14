@@ -68,6 +68,7 @@ const tier1AssessmentsRoutes = require('./routes/tier1-assessments');
 const student504Routes = require('./routes/student504');
 const parent504Routes = require('./routes/parent504');
 const screenerRoutes = require('./routes/screener');
+const districtAccessRoutes = require('./routes/districtAccess');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -741,6 +742,7 @@ app.use('/api/tier1-assessments', tier1AssessmentsRoutes);
 app.use('/api/student-504', student504Routes);
 app.use('/api/parent-504', parent504Routes);
 app.use('/api/screener-results', screenerRoutes);
+app.use('/api/districts', districtAccessRoutes);
 
 // Test route
 app.get('/', (req, res) => {
