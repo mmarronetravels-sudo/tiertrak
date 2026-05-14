@@ -11593,3 +11593,136 @@ NEXT SESSION SHOULD (P-ish queue for S70)
     the deadline.
 
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-14T12:00:00-07:00
+BRANCH:  main (session-open) → docs/privacy-review-doctrine-trail (PR #106, merged) → main (session-close)
+DISPOSITION: merged — PR #106 squash-merged at commit b1c95e7 (2026-05-14T18:32:31Z); branch deleted via --delete-branch.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Shipped Followup #120 as a doc-only PR. Added a new sub-section
+  "Access control audit records (FERPA §99.32)" to PRIVACY_REVIEW.md
+  documenting the M031 + M032 + M033 doctrine trail, the two-GUC
+  contract (app.actor_user_id + app.audit_action), and the three
+  writer profiles (PR #104 explicit-revoke, cascade-from-users via
+  PR #101 handlers, direct DBA psql). One-PR session closing the
+  WARN-1 finding raised by privacy-reviewer in PR #104 §9.1. No
+  schema, no route, no migration — pure doc-only.
+
+FILES TOUCHED
+  docs/ai-context/PRIVACY_REVIEW.md — NEW sub-section inserted
+    between Universal screener records (ends prior line 105) and
+    Uploaded content (was line 107, now line 165). +58 / -0;
+    no existing lines modified. Mirrors the §504 + screener
+    sub-section precedent (intro paragraph → bold-named per-table
+    blocks → cross-cutting notes → migration provenance → Phase 2+
+    deferred surfaces).
+
+MIGRATIONS RUN
+  None (doc-only).
+
+TENANT ISOLATION REVIEW
+  N/A (doc-only; no SQL queries added or modified, no DB writes,
+  no schema changes).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Doc text refers to user_school_access
+    and user_school_access_audit only by name + column shape; no
+    production data referenced. All cross-references use migration
+    numbers (M028/M031/M032/M033) and PR numbers (#100/#101/#103/
+    #104).
+  Logging audit: N/A (no code paths touched).
+  Cross-tenant risk: N/A (doc-only).
+
+  Triple-layer §4B verification (specific to this privacy-
+  reviewer-bound PR):
+    Layer 1 (Claude self-grep): narrow + wide passes against added
+      lines only (^+ excluding ^+++); zero matches.
+    Layer 2 (operator Cowork-side independent grep): clean,
+      confirmed verbatim.
+    Layer 3 (privacy-reviewer subagent grep, scope item #3):
+      0 hits for email / tenant-slug / personal-name / literal-ID
+      patterns against the added 58 lines. Verified at PR #106 §7.1.
+
+  Privacy-reviewer single-pass verdict: APPROVED (0 CRITICAL /
+    0 HIGH / 0 MEDIUM / 0 LOW / 0 WARN / 3 INFO + extensive OK).
+    All five scope items verified: doctrine fidelity vs migration
+    headers; WARN-1 (a/b/c) coverage substantive; §4B grep on
+    added lines; placement + structural consistency; line-number
+    citations against migration files.
+    Reviewer in-report agentId:
+      pr-pre-review-priv-pr106-9f3e2a1c7b8d4e6f
+    Reviewer runtime agentId:
+      ab975af09a310ecd1
+    Doctrine-trail continuity: this PR closes WARN-1 raised in
+    PR #104 §9.1 by privacy-reviewer runtime agentId
+    a7dca9f24d15f4dda.
+
+VERIFICATION
+  npm test — N/A (Followup #73, no backend test suite)
+  npm run lint — N/A (Followup #74, no backend lint configured)
+  No code paths touched, no migrations, no routes — no test
+    surface to exercise.
+  Pre-flight read of working tree before merge: clean of any S71
+    work (pre-existing carry-overs only).
+  Post-merge state: local main fast-forwarded f245a9a → b1c95e7;
+    feature branch deleted; working tree returns to pre-existing
+    carry-over state (no new artifacts from S71).
+
+  Estimate-vs-actual capture (per S70 §8 doctrine):
+    S69 initial estimate (Followup #120 banking) — ~+25 lines.
+    S70 re-sized estimate (per S70 NEXT SESSION SHOULD) — ~+60-80.
+    Plan-phase forecast (S71 audit) — ~+95-105 lines.
+    Actual — +58 / -0.
+    Direction: UNDER both estimates — 2 lines below the re-sized
+    lower bound (60), 37 lines below the plan-phase lower bound
+    (95). Cause: dense markdown rendering compressed footprint
+    below prose-density forecast. Doctrine note for future
+    estimates: machinery documented at §504/screener precedent
+    density lands in the 50-70 range, not 90-120.
+
+  Render auto-deploy of b1c95e7:
+    LIVE 2026-05-14T18:33Z (~30 seconds elapsed from merge SHA
+    b1c95e7; captured via operator-side manual dashboard read per
+    S69 banked credential discipline). Confirms S70 §7
+    sub-minute LIVE as new normal — third consecutive PR with
+    sub-minute deploy on cached Render builds.
+    Note: doc-only PR; Render build is a no-op for app behavior;
+    no curl smoke test needed.
+
+OPEN ITEMS / FOLLOW-UPS
+  Followup #22 (.claude/settings.json drift): the M-flag carry-
+    forward continues into S71 close — eleventh consecutive
+    session with the file modified but not committed. Pattern is
+    structural to the editor's session handling; not introduced
+    by any session's work. Consider scheduling a stand-alone
+    chore/settings-reset PR to absorb the drift baseline.
+  Pre-existing untracked working-tree files unchanged across S71:
+    one operator-side ops audit script (carry-over from prior
+    sessions; filename names a customer tenant — operator artifact,
+    not committed), one PDF reference document. Neither is in S71
+    scope; carry to S72 disposition.
+  Followup #73 (recurring): no backend test suite. Doc-only PRs
+    fall back trivially (no test surface to exercise), but the
+    next code-bearing PR will again hit the gap.
+  Followup #74 (recurring): no backend lint. Sibling of #73.
+
+NEXT SESSION SHOULD
+  Plan and ship Session 3 — the 91-callsite dual-path helper-
+    consumption sweep across ~12 route files. Recommended S72 P1.
+    The sweep is the gating dependency for FE work to land usefully
+    against district-shape users + for the July 1 customer
+    onboarding deadline (~7 weeks from S71 close). Legacy
+    single-tenant scoping in pre-M028 route handlers does not yet
+    consume resolveAccessibleTenantIds; until swept, a district-
+    shape user landing on those routes either reads cross-school
+    data or reads nothing, depending on the handler. Sweep needs
+    careful per-file triage (some handlers may need design
+    decisions, not mechanical swaps).
+  Track FE Session 4 dependencies: backfill (operator-side) still
+    precedes any FE-driven grant, and Session 3 sweep still
+    precedes FE work landing usefully against district-shape
+    users on legacy routes.
+  Customer onboarding deadline (July 1, 2026) — Session 3 sweep
+    is the bottleneck; B2 + #118 + #120 are off the critical path.
+================================================================================
