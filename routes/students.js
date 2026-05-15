@@ -10,6 +10,23 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// Role allowlists for the write-side of this router. Three tiers per
+// PR-S3-D-sec operator decision:
+//   - ROLES_WHO_CAN_EDIT: roster create + MTSS-tier writes + soft-delete/restore.
+//     Mirrors routes/tier1-assessments.js:19-23 and
+//     routes/mtssMeetings.js:19-24 (MEETING_WRITE_ROLES) — same membership,
+//     route-local because no shared roles module exists yet.
+//   - ADMIN_ROLES: PUT /:id demographic edits. Narrower than EDIT for
+//     reasoning recorded in PR-S3-D-sec proposal. Mirrors
+//     routes/prereferralForms.js:25 and routes/parentLinks.js:25.
+//   - DELETE_ROLES: HARD DELETE /:id only. One-element array intentional —
+//     documents the role-allowlist intent and supports future additions
+//     without retrofitting (e.g., if product later widens to 'school_admin'
+//     on a per-tenant flag, the const is the single place to edit).
+const ROLES_WHO_CAN_EDIT = ['district_admin', 'school_admin', 'counselor', 'interventionist'];
+const ADMIN_ROLES = ['school_admin', 'district_admin'];
+const DELETE_ROLES = ['district_admin'];
+
 // Get archive reason options
 router.get('/archive-reasons', requireAuth, async (req, res) => {
   const reasons = [
@@ -413,15 +430,24 @@ router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res
   }
 });
 
-// Create a new student
-router.post('/', async (req, res) => {
+// Create a new student.
+// Single-home tenant binding: the new row's tenant_id is pinned to
+// req.user.tenant_id (the caller's home school). body.tenant_id (if
+// present) is intentionally ignored — closes the body-forgery vector
+// that pre-auth-gap code carried. Security-tightening, NOT §5 widening.
+// Revisit binding semantics when Followup #125 resolves the district
+// multi-school write product decision.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
-      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE) 
+      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
        RETURNING *`,
-      [tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
+      [req.user.tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -430,17 +456,32 @@ router.post('/', async (req, res) => {
 });
 
 // Update a student
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    // Pre-flight tenant scope: 404 for both not-found and not-in-accessible
+    // (leak-resistance, mirrors tier1-assessments.js:251 post-PR-S3-C).
+    // Tenant-bound UPDATE WHERE is belt-and-suspenders against the
+    // pre-flight/UPDATE TOCTOU window.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
     const result = await pool.query(
-      `UPDATE students 
-       SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4, 
+      `UPDATE students
+       SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4,
            tier = $5, area = $6, risk_level = $7, secondary_area = $8, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $9 
+       WHERE id = $9 AND tenant_id = ANY($10::int[])
        RETURNING *`,
-      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id]
+      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
@@ -452,16 +493,27 @@ router.put('/:id', async (req, res) => {
 });
 
 // Update student tier only
-router.patch('/:id/tier', async (req, res) => {
+router.patch('/:id/tier', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const { tier } = req.body;
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
     const result = await pool.query(
-      `UPDATE students 
+      `UPDATE students
        SET tier = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 
+       WHERE id = $2 AND tenant_id = ANY($3::int[])
        RETURNING *`,
-      [tier, id]
+      [tier, id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
@@ -472,11 +524,23 @@ router.patch('/:id/tier', async (req, res) => {
   }
 });
 
-// Archive a student
-router.patch('/:id/archive', async (req, res) => {
+// Archive a student.
+// archived_by is derived from req.user.id (server-side
+// actor identity). body.archived_by (if present) is
+// intentionally ignored — closes the actor-spoofing
+// vector where a caller could claim to archive as
+// anyone. Mirrors server-side actor-identity pattern
+// at prereferralForms.js:518 — counselor_id is bound
+// from req.user.id directly into a user-id column
+// (one-step id-bind, parallel to this handler's
+// archived_by binding).
+router.patch('/:id/archive', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
-    const { archived_reason, archived_by } = req.body;
+    const { archived_reason } = req.body;
     
     if (!archived_reason) {
       return res.status(400).json({ error: 'Archive reason is required' });
@@ -493,17 +557,26 @@ router.patch('/:id/archive', async (req, res) => {
     if (!validReasons.includes(archived_reason)) {
       return res.status(400).json({ error: 'Invalid archive reason' });
     }
-    
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
     const result = await pool.query(
-      `UPDATE students 
-       SET archived = TRUE, 
+      `UPDATE students
+       SET archived = TRUE,
            archived_at = CURRENT_TIMESTAMP,
            archived_by = $1,
            archived_reason = $2,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       WHERE id = $3 AND tenant_id = ANY($4::int[])
        RETURNING *`,
-      [archived_by, archived_reason, id]
+      [req.user.id, archived_reason, id, accessible]
     );
     
     if (result.rows.length === 0) {
@@ -517,20 +590,32 @@ router.patch('/:id/archive', async (req, res) => {
 });
 
 // Unarchive (reactivate) a student
-router.patch('/:id/unarchive', async (req, res) => {
+router.patch('/:id/unarchive', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
-    
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
     const result = await pool.query(
-      `UPDATE students 
-       SET archived = FALSE, 
+      `UPDATE students
+       SET archived = FALSE,
            archived_at = NULL,
            archived_by = NULL,
            archived_reason = NULL,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1
+       WHERE id = $1 AND tenant_id = ANY($2::int[])
        RETURNING *`,
-      [id]
+      [id, accessible]
     );
     
     if (result.rows.length === 0) {
@@ -544,12 +629,19 @@ router.patch('/:id/unarchive', async (req, res) => {
 });
 
 // Delete a student
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
+    if (!DELETE_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
+    // Atomic tenant-bound DELETE — no pre-flight needed; the WHERE clause
+    // IS the auth gate. 0 rows affected → 404 (leak-resistant: same
+    // response for not-found and not-in-accessible).
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
-      'DELETE FROM students WHERE id = $1 RETURNING *',
-      [id]
+      'DELETE FROM students WHERE id = $1 AND tenant_id = ANY($2::int[]) RETURNING *',
+      [id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
