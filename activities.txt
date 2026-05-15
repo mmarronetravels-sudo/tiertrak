@@ -11983,3 +11983,247 @@ NEXT SESSION SHOULD
     bottleneck. PR-S3-C + PR-S3-D should comfortably ship before
     deadline given S72's two-PRs-in-one-overnight-session pace.
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-15T11:00:00-07:00
+BRANCH:  main (session-open) → chore/session-3-tier1-callsite-survey (local-only, never pushed, discarded) → sec/session-3-tier1-sweep-with-108-retire (PR #111, merged) → chore/activities-log-session-73 (this entry) → main (session-close)
+DISPOSITION: merged — PR #111 (PR-S3-C) squash-merged at commit 37b912f8f7d3c49287c26ba8c9d3fd953f0e7682 (2026-05-15T18:21:34Z); branch deleted via --delete-branch. Render LIVE 2026-05-15T18:22Z — ~minute elapsed merge → LIVE; 8th consecutive sub-minute deploy on cached Render builds per §10 banked from S72.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Shipped Session-3 PR-C of the §5 dual-path doctrine sweep,
+  bundling Followup #108 (duplicate-requireAuth retirement) with
+  the tier1-assessments.js read-handler widening forecast in
+  S72's NEXT SESSION SHOULD. Three commits inside PR-S3-C:
+  (1) auth migration — retire the file-local requireAuth in
+  routes/tier1-assessments.js and consume the shared requireAuth
+  from middleware/authorizeInterventionAccess.js post-PR-#108;
+  (2) read-handler widening on GET / and GET /:id only
+  (callsites C3/C4/C5 per the pre-decision audit survey) using
+  resolveAccessibleTenantIds; (3) doctrine-comment hygiene on
+  the block-headers at lines 121-123 and 205-208 (post-Commit-1
+  numbering). The five write-coupled handlers (H1/H5/H6/H7/H8)
+  and all six Pattern E sites stay deferred to PR-S3-D per the
+  read/write coupling reasoning from the audit.
+
+FILES TOUCHED
+  PR #111 total: -38 / +15 = net -23 lines on
+    routes/tier1-assessments.js across the three commits
+    (Commit 1: -28; Commit 2: +4; Commit 3: +1). Commit 1
+    retired the file-local requireAuth function, the jwt
+    require, and the adjacent doctrine comment block; added
+    the shared requireAuth import. Commit 2 added the
+    resolveAccessibleTenantIds import and widened C3/C4/C5
+    to WHERE tenant_id = ANY($N::int[]). Commit 3 updated
+    the GET / and GET /:id block-header comments to
+    accessible-tenant-set language.
+  Pre-PR audit survey (read-only, not committed):
+    chore/session-3-tier1-callsite-survey — local-only branch,
+      never pushed to origin, deleted before PR-S3-C work began.
+      Survey artifacts captured in chat-side master index, not
+      in the repo.
+
+MIGRATIONS RUN
+  None (code-only; no schema changes).
+
+TENANT ISOLATION REVIEW
+  APPROVED by tenant-isolation-auditor (load-bearing primary
+  scope on this PR, dispatched first per operator instruction).
+  14 queries audited; all 14 tenant-scoped. Verdict counts:
+  0/0/0/0/0W/5I.
+    INFO findings: (a) auth-migration shape compatibility —
+    req.user.tenant_id preserved verbatim, eight deferred legacy
+    callsites unaffected; (b) §5 dual-path compliance —
+    resolveAccessibleTenantIds consumed at both H2 and H4
+    handler-top, no inline branching; (c) empty-array semantics
+    — ANY('{}'::int[]) yields zero rows, never universal-access;
+    (d) 404-leak-resistance preserved on GET /:id;
+    (e) pattern parity with post-#109 sweep (WHERE ... =
+    ANY($N::int[]) idiom matches the established post-#109
+    callsites).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in new query plumbing. GET / surfaces
+    creator.full_name and completer.full_name from the users
+    JOIN — classified by privacy-reviewer as STAFF PII, not
+    student/parent PII. Classification anchored to the
+    ROLES_WHO_CAN_EDIT writer-side gate at
+    routes/tier1-assessments.js:18-24 plus the fact that
+    tier1-assessments.js is the sole writer to the
+    tier1_assessments table. Cross-school staff-name visibility
+    for district admins is the documented §5 dual-path contract,
+    not a FERPA student-record disclosure.
+  Logging audit: verified no PII in logs. All console.error
+    sites log err.message string only; no row data, no req.user,
+    no query params.
+  Cross-tenant risk: none introduced. For legacy single-tenant
+    users (district_id IS NULL, all current prod users): helper
+    returns [user.tenant_id], so WHERE tenant_id = ANY([...]) is
+    mathematically equivalent to pre-sweep equality — zero
+    behavioral change. For district users with multi-school
+    user_school_access membership: GET / and GET /:id now return
+    rows across all granted schools, which is the intentional
+    widening documented in the updated block-header comments.
+
+  §4B verification:
+    - Self-grep on PR-S3-C diff (Claude-side): narrow + wide +
+      pair-shape passes, zero hits.
+    - Privacy-reviewer audit: content review of all 5
+      console.error sites, 3 distinct error-response bodies,
+      and the GET / + GET /:id changed-line column set — zero
+      student-PII findings; staff full_name surfacing classified
+      as in-scope per §5 dual-path.
+
+  Privacy-reviewer triad verdict:
+    APPROVED WITH NOTES (0/0/0/0/0W/3I). The "WITH NOTES" tag
+    here is the softer doc-drift flavor — see Followup #124
+    below for the recommended documentation entry — NOT the
+    actionable-mandate flavor that PR #109 W-1 carried for
+    Followup #122.
+
+VERIFICATION
+  PR #111:
+    node --check PASS on routes/tier1-assessments.js after each
+      of the three commits (auth-migration, read-handler sweep,
+      comment hygiene).
+    npm test — N/A (Followup #73, no backend test suite).
+    npm run lint — N/A (Followup #74, no backend lint
+      configured).
+    Test surface for tier1-assessments.js handlers: ZERO.
+      Sweep reviewed by full triad on diff against main.
+    Triad verdicts:
+      tenant-isolation-auditor: APPROVED (0/0/0/0/0W/5I,
+        primary, load-bearing, dispatched first)
+      security-reviewer: APPROVED (0/0/0/0/0W/4I, convergent
+        secondary)
+      privacy-reviewer: APPROVED WITH NOTES (0/0/0/0/0W/3I —
+        doc-drift flavor, Followup #124)
+
+  Render auto-deploy (cached-build):
+    PR #111 (37b912f): LIVE 2026-05-15T18:22Z — ~minute
+      elapsed merge → LIVE. 8th consecutive sub-minute deploy
+      on cached Render builds, extending the §10-banked streak
+      from S72 (PR #102 → #103 → #104 → #106 → #108 → #109 →
+      #110 activities-log → #111).
+
+  Post-deploy watch (armed at merge):
+    429-spike on tier1 POST/PATCH endpoints (NOT 401-spike).
+    mutationUserLimiter is the new user-visible behavior from
+    the shared-requireAuth migration; auth was already required
+    pre-merge. No 429 signal flagged at session-close.
+
+  Estimate-vs-actual capture:
+    PR #111: net diff -23 lines across the three commits.
+    Audit-survey forecast: -22 ± noise; actual one line over
+    forecast, within plan-phase tolerance — minimal-surgical
+    sweep, effectively zero drift from plan.
+
+OPEN ITEMS / FOLLOW-UPS
+  Followup #123 (NEW this session): one-in-progress-per-tenant
+    product decision for district users with multi-school
+    user_school_access membership. OPEN, gating-class. Origin:
+    PR-S3-C audit survey identified that the
+    idx_tier1_assessments_one_in_progress_per_tenant partial
+    unique index pins the in_progress constraint to a single
+    tenant_id, so for a multi-school district user the POST /
+    semantics need a product call — three paths exist
+    (per-school / per-set / single-home). Same gating character
+    as Followup #122 from S72. Operator backfill of
+    user_school_access stays BLOCKED until BOTH #122 AND #123
+    resolve. Banked Cowork-side at master-index for
+    project_followup_123_one_in_progress_per_tenant_district.
+
+  Followup #124 (NEW this session): optional PRIVACY_REVIEW.md
+    doc-drift. OPEN, LOW priority, doc-only. Origin:
+    privacy-reviewer's "APPROVED WITH NOTES" recommended a
+    docs/privacy-review-tier1-cross-school-reads entry
+    capturing (a) tier1 is school-level implementation-health
+    data, not student PII; (b) joined full_name fields are
+    staff-only by ROLES_WHO_CAN_EDIT construction;
+    (c) cross-school read visibility for district users is
+    intentional per §5 dual-path. Doc-only PR when convenient;
+    not blocking any future code work.
+
+  Followup #122 (carry-forward from S72): cross-school
+    parent-student link product decision. STILL OPEN. Operator
+    backfill of district_admin with multi-school
+    user_school_access remains BLOCKED until BOTH #122 AND
+    #123 (new this session) resolve.
+
+  Followup #22 (.claude/settings.json drift): fourteenth
+    consecutive session carry-over. Pattern unchanged from S72
+    record.
+
+  Pre-existing untracked working-tree files unchanged across
+    S73 (carry-forward from S72): one operator-side ops audit
+    script (filename names a customer tenant — operator
+    artifact, not committed) plus one PDF reference document.
+    Carry to S74 disposition.
+
+  Followup #73 (recurring): no backend test suite. PR-S3-C
+    fell back to node --check + full-triad-on-diff. Standing
+    advice from S72 still applies — growing sweep surface
+    increases the cost of zero-coverage drift.
+
+  Followup #74 (recurring): no backend lint. Sibling of #73.
+
+  Banked observation S73 §1 (subagent-citation hygiene):
+    During PR-S3-C work CC and review subagents emitted four
+    memory-file citations whose underlying reasoning was
+    correct but whose citation form was fictional —
+    feedback_auth_add_deploy_401_flag.md and
+    feedback_explicit_verb_at_each_boundary.md cited in the
+    pre-decision audit survey; feedback_convergent_grep_
+    verification.md cited in the security-reviewer report;
+    plus one non-extant MEMORY entry cited by the
+    tenant-isolation-auditor. Reasoning behind each cite was
+    sound — pattern is name-substitution, not
+    content-fabrication. Worth tracking as a recurring
+    subagent-output discipline note; if it persists across
+    multiple sessions, recommend a "cite-only-verified-memory"
+    guardrail at the subagent layer.
+
+NEXT SESSION SHOULD
+  Plan and ship PR-S3-D: the deferred Pattern E handler
+    clusters across tier1-assessments.js (H1 POST /, H5 PATCH
+    /:id/responses/:itemId, H6 POST /:id/complete, H7 PATCH
+    /:id/archive, H8 PATCH /:id/unarchive — totaling 6 Pattern
+    E sites + 5 coupled Pattern C sites per the PR #111
+    catalog) AND the 6-file Pattern E deferral from PR-S3-B
+    (12 primary + 13 cascading-var sites across csvImport.js +
+    screener.js + mtssMeetings.js + student504.js +
+    prereferralForms.js + students.js per the S72 record).
+    Pattern E requires per-handler
+    tenant-derivation from related rows (assessment's tenant_id
+    for event INSERTs in tier1, student's tenant_id for
+    csvImport bulk-insert, etc.). More design-per-handler than
+    mechanical; estimate-vs-actual brackets should widen vs
+    PR-S3-A/B/C minimal-surgical pace.
+
+  Followup #123 product decision (NEW this session) should
+    settle before any PR-S3-D code touching the
+    tier1-assessments.js POST / handler. Followup #122
+    (carry-forward) similarly gates the csvImport.js and
+    parentLinks.js POST surfaces. Both decisions can land
+    independently of PR-S3-D code work on the non-coupled
+    handlers — but the coupled handlers must wait.
+
+  Onboarding sequence to record:
+    PR-S3-A merge ✓ (S72)
+    PR-S3-B merge ✓ (S72)
+    PR-S3-C merge ✓ (S73)
+    → PR-S3-D merge (S74 candidate)
+    → Followups #122 + #123 resolved
+    → operator backfill of district_admin with multi-school
+      user_school_access
+
+  Customer onboarding deadline (July 1, 2026) — the broader
+    critical path runs PR-S3-D → Followups #122 + #123
+    resolution → Session 4 (admin UI) → Session 5 (staff CSV
+    import). With ~47 calendar days remaining and three of four
+    Session-3 PRs landed, the master-index forecast (PR-S3-D in
+    S74, Sessions 4-5 in S75-S76 with ~2-week cushion) holds.
+
+  Optional doc-only PR for Followup #124 (PRIVACY_REVIEW.md
+    tier1-cross-school-reads entry) can land any time and is
+    not blocking.
+================================================================================
