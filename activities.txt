@@ -11726,3 +11726,260 @@ NEXT SESSION SHOULD
   Customer onboarding deadline (July 1, 2026) — Session 3 sweep
     is the bottleneck; B2 + #118 + #120 are off the critical path.
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-15T10:00:00-07:00
+BRANCH:  main (session-open) → sec/session-3-middleware-sweep (PR #108, merged) → sec/session-3-route-sweep-non-tier1 (PR #109, merged) → main (session-close)
+DISPOSITION: merged — PR #108 squash-merged at commit 1741aea (2026-05-14T20:15:03Z); PR #109 squash-merged at commit fe50727 (2026-05-15T15:02:51Z); both branches deleted via --delete-branch. Session spanned overnight 2026-05-14 → 2026-05-15 (~19h calendar elapsed).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Shipped Sessions-3 PR-A and PR-B of the §5 dual-path doctrine
+  sweep across the auth-middleware and route-handler layers. PR-S3-A
+  (PR #108): middleware sweep across authorizeInterventionAccess.js
+  and authorizeDocumentAccess.js — 8 callsites swept + 4 doctrine-
+  comment updates including 1 hidden Pattern A (userRow.tenant_id
+  parameter-shadow at resolveStudentAccess:82). PR-S3-B (PR #109):
+  route-level sweep across 10 modified route files — 42 in-scope
+  callsites (11th file routes/csvImport.js entirely deferred to
+  PR-S3-D per Pattern E coupling). The middleware-then-routes
+  ordering follows the load-bearing-first sequence flagged in S72's
+  callsite-survey audit.
+
+FILES TOUCHED
+  PR #108 (middleware sweep):
+    middleware/authorizeInterventionAccess.js — 4 callsites swept
+      + 2 doctrine comments updated + helper import added
+    middleware/authorizeDocumentAccess.js — 4 callsites swept
+      (including 1 hidden Pattern A inside resolveStudentAccess
+      helper) + 2 doctrine comments updated + helper import added
+  PR #109 (route-handler sweep, 10 modified):
+    routes/interventions.js — 1 Pattern A site swept (POST /assign
+      student-tenant check)
+    routes/parent504.js — 1 Pattern D-read cascade (GET /procedural-
+      safeguards)
+    routes/studentDocuments.js — 1 Pattern F site (GET /expiring/
+      :tenantId, after PR-S3-A swept requireExpiringListAccess)
+    routes/weeklyProgress.js — 1 Pattern F site (GET /missing/
+      :tenantId, after PR-S3-A swept requireTenantStaffAccess)
+    routes/screener.js — 1 Pattern F site (GET /:tenantId dashboard
+      list, after PR-S3-A swept requireTenantStaffAccess)
+    routes/mtssMeetings.js — 3 sites swept (GET single with OR-
+      conditional Pattern C-read; PUT pre-flight SELECT filter;
+      DELETE filter)
+    routes/parentLinks.js — 6 sites swept (including 1 hidden Pattern
+      A inside loadLinkAndAssertTenant helper, parallel to PR-S3-A
+      Finding 1 generalization)
+    routes/student504.js — 6 Pattern D-read cascades (uniform shape
+      across 6 GET handlers)
+    routes/prereferralForms.js — 12 sites swept (including 1 hidden
+      Pattern A inside loadFormAndAssertTenant helper, second
+      Finding-1 generalization site)
+    routes/students.js — 10 sites mixing Pattern B (handler-top
+      inline equality) with Pattern F (path-tenant cascades in SQL
+      filters)
+  Untouched-by-design in PR #109 (deferred to PR-S3-D):
+    routes/csvImport.js — all 3 sites Pattern E coupled (POST CSV
+      bulk-import writes new student rows with tenant_id as INSERT
+      column VALUE; cannot sweep read-side alone without breaking
+      write-side)
+
+MIGRATIONS RUN
+  None (both PRs code-only; no schema changes).
+
+TENANT ISOLATION REVIEW
+  PR #108 — APPROVED by tenant-isolation-auditor (primary scope, 8
+    callsite middleware sweep). Helper-consumption pattern
+    established as the canonical doctrine for the auth-middleware
+    layer.
+  PR #109 — APPROVED by tenant-isolation-auditor (primary scope, 42
+    callsite route sweep, load-bearing reviewer dispatched first).
+    11 queries audited at PR-104 vintage + 31 helper-consumption
+    sites added in this PR + 20 Pattern F path-tenant rebindings;
+    all tenant-scoped. Composite-FK structural backstop from M028
+    preserved. Cross-district risk: zero new pathways. Pattern E
+    deferral catalog (12 code residuals + 13 cascading-var sites)
+    verified via §9 scoped-grep matching exactly.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in either PR.
+    Both PRs are pure callsite refactors against the helper
+    consumer-precedent. No new PII surfaces, no logging changes,
+    no response-shape widening, no error-body PII echo. Helper
+    signature is Promise<number[]> — only integer tenant IDs
+    traverse; no name, email, IEP/504 narrative, intervention
+    notes, attendance, or behavioral PII goes through any swept
+    code path.
+  Logging audit: verified no PII in logs across both PRs by
+    privacy-reviewer. Zero new console.log/console.error sites
+    introduced; pre-existing error catches retained verbatim.
+  Cross-tenant risk: none identified.
+    - Legacy single-tenant users (district_id IS NULL, all current
+      prod users): helper short-circuits to [user.tenant_id], so
+      membership check semantically identical to pre-sweep equality.
+      Zero behavior change.
+    - District users (district_id IS NOT NULL): none exist in prod
+      yet. The §5 dual-path widening is unexercised. Per Followup
+      #122 mandate, district-user onboarding is gated behind
+      PR-S3-D merge AND Followup #122 resolution.
+    - Composite FK backstop preserved at M028 layer; helper's
+      (user_id, district_id) filter at query layer provides
+      defense-in-depth.
+
+  §4B verification (PR #109):
+    - Claude self-grep on added lines: narrow + wide passes
+      against ^+ (excluding ^+++); zero matches.
+    - Operator Cowork-side independent grep: clean, confirmed
+      verbatim before PR-S3-B commit.
+    - Privacy-reviewer subagent diff-grep (per PR #109 §12.3):
+      0 hits for email / tenant-slug / personal-name /
+      literal-ID patterns.
+
+  Privacy-reviewer triad verdicts:
+    PR #108: APPROVED (0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW /
+      0 WARN / 2 INFO / 10 OK).
+    PR #109: APPROVED WITH NOTES (0/0/0/0/1W/3I + extensive OK).
+      WARN-1 = Followup #122 emergent semantic widening at
+      parentLinks.js POST cross-check (lines 148-170); recommended
+      ACCEPTABLE FOR MERGE on empty-population invariant;
+      privacy-reviewer mandate that Followup #122 MUST resolve
+      before any district user is granted a district_admin role
+      with multi-school user_school_access membership.
+
+VERIFICATION
+  PR #108:
+    node --check PASS on both modified middleware files
+    npm test — N/A (Followup #73, no backend test suite)
+    npm run lint — N/A (Followup #74, no backend lint configured)
+    Test surface for middleware/: ZERO. Sweep reviewed by full
+      triad on diff against main.
+    Triad verdicts:
+      tenant-isolation-auditor: APPROVED (primary, secondary scope)
+      security-reviewer: APPROVED (primary)
+      privacy-reviewer: APPROVED (2 INFO / 10 OK)
+  PR #109:
+    node --check PASS on all 10 modified route files
+    npm test — N/A (Followup #73)
+    npm run lint — N/A (Followup #74)
+    Test surface for these handlers: ZERO. Sweep reviewed by full
+      triad on diff against main.
+    Triad verdicts:
+      tenant-isolation-auditor: APPROVED (primary, load-bearing,
+        dispatched first per operator instruction)
+      security-reviewer: APPROVED (primary)
+      privacy-reviewer: APPROVED WITH NOTES (W-1 = Followup #122,
+        acceptable-for-merge per empty-population invariant)
+
+  Render auto-deploys (cached-build):
+    PR #108 (1741aea): LIVE 2026-05-14T20:15Z — sub-minute (5th
+      consecutive sub-minute deploy on cached Render builds; per
+      S71 §2 master index counting PRs #102/#103/#104/#106).
+    PR #109 (fe50727): LIVE 2026-05-15T15:03Z — sub-minute (6th
+      consecutive at PR #109 — stable enough to bank as standing
+      expectation per S71 §2 pattern extending).
+
+  Estimate-vs-actual capture:
+    PR #108: ~+38 / -16 = net +22. Operator estimate ~30-50;
+      plan-phase forecast ~+15-25. Doctrine comments more verbose
+      than projected; within forecast range.
+    PR #109: ~+196 / -130 = net +66. Operator estimate ~180-220;
+      plan-phase forecast ~+107 / -46 = net +61. Net delta +5 —
+      within forecast noise. Raw +/- counts higher than projection
+      due to doctrine-comment paragraph rewrites (each shows as
+      -N+M; net effect minimal). Operator gut estimates run ~3x
+      high vs CC plan-phase on minimal-surgical sweeps.
+
+OPEN ITEMS / FOLLOW-UPS
+  Followup #122 (NEW this session): cross-school parent-student link
+    product decision. OPEN, LOW priority. Origin: PR-S3-B emergent
+    semantic widening at parentLinks.js:148-170 POST cross-check.
+    Privacy-reviewer mandate: MUST resolve before any district user
+    is granted a district_admin role with multi-school
+    user_school_access membership. Resolution paths: (1) close as
+    accepted-by-design (cross-school links permitted, no code
+    change) or (2) feat PR adding explicit same-tenant assertion
+    inside cross-check (cross-school links forbidden). Banked in
+    CC memory at project_followup_122_cross_school_parent_link.md.
+
+  Followup #22 (.claude/settings.json drift): twelfth consecutive
+    session carry-over. Pattern is structural to the editor's
+    session handling; not introduced by any session's work.
+    Recommend scheduling a stand-alone chore/settings-reset PR
+    to absorb the drift baseline in a future session.
+
+  Pre-existing untracked working-tree files unchanged across S72:
+    one operator-side ops audit script (carry-over from prior
+    sessions; filename names a customer tenant — operator artifact,
+    not committed), one PDF reference document. Neither in S72
+    scope; carry to S73 disposition.
+
+  Followup #73 (recurring): no backend test suite. Both PRs in S72
+    fell back to node --check + full-triad-on-diff. The growing
+    sweep surface is increasing the cost of zero-coverage drift;
+    consider when to invest.
+
+  Followup #74 (recurring): no backend lint. Sibling of #73.
+
+  Ten banked discipline observations from S72 (full text in master
+  index file Cowork-side, referenced here by number only):
+    §1 — Pattern E discovery (new sweep classification: write-path
+         tenant DERIVATION distinct from Pattern C read-side filter)
+    §2 — Pattern F discovery (new sub-pattern for path-tenant
+         rebinding on /tenant/:tenantId-shaped routes)
+    §3 — Finding-1 generalization extended to route-level helpers
+         (loadLinkAndAssertTenant, loadFormAndAssertTenant)
+    §4 — Option 2 → Option 3 hybrid drift caught at PR-description
+         review (per-handler bucketing for coupled handlers)
+    §5 — Triad convergence on emergent widening confirms Cowork
+         layer-2 review pipeline
+    §6 — Empty-population invariant as merge-acceptance lens for
+         district-structure emergent widenings
+    §7 — "APPROVED WITH NOTES" as third triad verdict class
+         (between APPROVED and BLOCKED; carries actionable mandate
+         without blocking merge)
+    §8 — Disk-verify-via-cat for commit artifacts containing
+         precise regex / shell syntax (chat-relay can strip
+         backslashes)
+    §9 — Operator-side estimate calibration confirmed at ~3x high
+         vs CC plan-phase on minimal-surgical sweeps
+    §10 — Sub-minute Render LIVE on cached builds — 6th consecutive
+          at PR #109, stable enough to bank as standing expectation
+          per S71 §2 pattern extending
+
+NEXT SESSION SHOULD
+  Plan and ship PR-S3-C (S73 P1): routes/tier1-assessments.js
+    sweep BUNDLED with Followup #108 (duplicate-requireAuth
+    retirement). tier1-assessments.js was deferred from PR-S3-B
+    because it ships its own local requireAuth implementation that
+    bypasses the shared authorizeInterventionAccess.js middleware
+    (Followup #108 territory). PR-S3-C addresses both at once:
+    retire the duplicate requireAuth + sweep the 19 inline-equality
+    callsites that file contains. Same minimal-surgical / per-
+    handler discipline as PR-S3-B.
+
+  After PR-S3-C ships: PR-S3-D — sweep the 9 deferred Pattern E
+    handler clusters identified in PR-S3-B (12 code residuals + 13
+    cascading-var sites across csvImport.js, screener.js,
+    mtssMeetings.js, student504.js, prereferralForms.js, students.js).
+    Pattern E requires per-handler tenant-derivation from related
+    rows (e.g., student.tenant_id from the student row, not
+    req.user.tenant_id). More design-per-handler than mechanical;
+    estimate-vs-actual brackets should widen vs PR-S3-A/B
+    minimal-surgical.
+
+  After PR-S3-D ships: resolve Followup #122 (cross-school
+    parent-student link product decision). Privacy-reviewer mandate
+    gates first district-user onboarding behind this resolution.
+
+  Onboarding sequence to record:
+    PR-S3-B merge ✓ (this session)
+    → PR-S3-C merge (S73 P1 candidate)
+    → PR-S3-D merge
+    → Followup #122 resolved
+    → operator backfill of district_admin with multi-school
+      user_school_access
+
+  Customer onboarding deadline (July 1, 2026) — Session 3 sweep
+    completion (PR-S3-A ✓ + PR-S3-B ✓ + PR-S3-C + PR-S3-D) is the
+    bottleneck. PR-S3-C + PR-S3-D should comfortably ship before
+    deadline given S72's two-PRs-in-one-overnight-session pace.
+================================================================================
