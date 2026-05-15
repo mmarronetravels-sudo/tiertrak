@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const {
   ITEM_BANK_VERSION,
   DOMAINS,
@@ -127,8 +128,9 @@ router.post('/', requireAuth, async (req, res) => {
 // ============================================
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const where = ['a.tenant_id = $1'];
-    const params = [req.user.tenant_id];
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const where = ['a.tenant_id = ANY($1::int[])'];
+    const params = [accessible];
 
     // Validate status filter if present.
     if (Object.prototype.hasOwnProperty.call(req.query, 'status')) {
@@ -212,6 +214,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
+
     const assessResult = await pool.query(
       `SELECT id, tenant_id, created_by, completed_by, status,
               total_score, max_score, overall_percentage, score_band,
@@ -219,8 +223,8 @@ router.get('/:id', requireAuth, async (req, res) => {
               archived, archived_at, archived_by, archived_reason,
               created_at, updated_at, completed_at
        FROM tier1_assessments
-       WHERE id = $1 AND tenant_id = $2`,
-      [idInt, req.user.tenant_id]
+       WHERE id = $1 AND tenant_id = ANY($2::int[])`,
+      [idInt, accessible]
     );
 
     if (assessResult.rows.length === 0) {
@@ -233,9 +237,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       `SELECT id, item_id, domain_number, score, evidence_url, notes,
               created_at, updated_at
        FROM tier1_assessment_responses
-       WHERE assessment_id = $1 AND tenant_id = $2
+       WHERE assessment_id = $1 AND tenant_id = ANY($2::int[])
        ORDER BY item_id`,
-      [assessment.id, req.user.tenant_id]
+      [assessment.id, accessible]
     );
 
     res.json({ assessment, responses: responsesResult.rows });
