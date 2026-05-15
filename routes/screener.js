@@ -167,10 +167,11 @@ router.post('/upload', requireAuth, async (req, res) => {
 });
 
 // GET /api/screener-results/:tenantId — dashboard list, scoped to the
-// caller's tenant. requireTenantStaffAccess refuses parent role and
-// verifies path :tenantId matches req.user.tenant_id. The SQL sources
-// its tenant from req.user.tenant_id (server-authoritative); the path
-// param is used here only for the middleware's equality check.
+// caller's tenant. requireTenantStaffAccess (PR-S3-A swept) refuses parent
+// role and verifies that the path :tenantId is in the caller's accessible-
+// tenant set via resolveAccessibleTenantIds per §5 dual-path doctrine.
+// Path-tenant scoped: SQL filter uses Number(req.params.tenantId);
+// middleware-membership-check validated access.
 //
 // Optional query params (all filter additively):
 //   schoolYear, period, subject, assessmentType.
@@ -178,7 +179,7 @@ router.post('/upload', requireAuth, async (req, res) => {
 router.get('/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const conditions = ['sr.tenant_id = $1'];
-    const values = [req.user.tenant_id];
+    const values = [Number(req.params.tenantId)];
     let idx = 2;
 
     if (req.query.schoolYear) {

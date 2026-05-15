@@ -5,6 +5,7 @@ const {
   requireTenantStaffAccess,
   requireStudentReadAccess
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
 
@@ -23,15 +24,16 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // — widen if a counselor use case for parent-roster management appears.
 const ADMIN_ROLES = ['school_admin', 'district_admin'];
 
-// Load a parent_student_links row by id and assert it belongs to the
-// caller's tenant. parent_student_links has no tenant_id column so we
-// JOIN to students to derive the tenant. Returns { ok: true, row } or
-// { ok: false, status, body } so the caller can respond with a byte-
-// identical 403 for both "row not found" and "wrong tenant" — preventing
-// existence-disclosure across tenants. Mirrors loadFormAndAssertTenant
-// from PR #59 (routes/prereferralForms.js:30-42); the only deviation is
-// the JOIN and the dropped status column (parent_student_links has no
-// status-guard concept).
+// Load a parent_student_links row by id and assert it belongs to a tenant
+// in the caller's accessible-tenant set (§5 dual-path doctrine via helper).
+// parent_student_links has no tenant_id column so we JOIN to students to
+// derive the tenant. Returns { ok: true, row } or { ok: false, status, body }
+// so the caller can respond with a byte-identical 403 for both "row not
+// found" and "wrong tenant" — preventing existence-disclosure across
+// tenants. Mirrors loadFormAndAssertTenant from PR #59
+// (routes/prereferralForms.js:30-42); the only deviation is the JOIN and
+// the dropped status column (parent_student_links has no status-guard
+// concept).
 async function loadLinkAndAssertTenant(linkId, user) {
   const result = await pool.query(
     `SELECT psl.id, s.tenant_id
@@ -43,7 +45,8 @@ async function loadLinkAndAssertTenant(linkId, user) {
   if (result.rows.length === 0) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
-  if (result.rows[0].tenant_id !== user.tenant_id) {
+  const accessible = await resolveAccessibleTenantIds(user);
+  if (!accessible.includes(result.rows[0].tenant_id)) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
   return { ok: true, row: result.rows[0] };
@@ -61,14 +64,15 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
   try {
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       SELECT psl.*, u.full_name as parent_name, u.email as parent_email
       FROM parent_student_links psl
       JOIN users u ON psl.parent_user_id = u.id
       JOIN students s ON psl.student_id = s.id
-      WHERE psl.student_id = $1 AND s.tenant_id = $2
+      WHERE psl.student_id = $1 AND s.tenant_id = ANY($2::int[])
       ORDER BY psl.relationship
-    `, [req.params.studentId, req.user.tenant_id]);
+    `, [req.params.studentId, accessible]);
 
     res.json(result.rows);
   } catch (error) {
@@ -97,13 +101,14 @@ router.get('/parent/:parentUserId', requireAuth, async (req, res) => {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       SELECT s.*, psl.relationship
       FROM students s
       JOIN parent_student_links psl ON s.id = psl.student_id
-      WHERE psl.parent_user_id = $1 AND s.tenant_id = $2
+      WHERE psl.parent_user_id = $1 AND s.tenant_id = ANY($2::int[])
       ORDER BY s.last_name, s.first_name
-    `, [req.user.id, req.user.tenant_id]);
+    `, [req.user.id, accessible]);
 
     res.json(result.rows);
   } catch (error) {
@@ -143,21 +148,23 @@ router.post('/', requireAuth, async (req, res) => {
     }
     const relationship = req.body.relationship || 'parent';
 
-    // Two-tenant cross-check: student must belong to caller's tenant AND
-    // parent_user_id must belong to caller's tenant with role='parent'.
-    // Five failure modes collapse to one byte-identical 403 — a probe
-    // gives no information beyond "request denied."
+    // Two-tenant cross-check: student's tenant AND parent's tenant must
+    // both be in the caller's accessible-tenant set (§5 dual-path doctrine
+    // via helper) AND parent must have role='parent'. Five failure modes
+    // collapse to one byte-identical 403 — a probe gives no information
+    // beyond "request denied."
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const crossCheck = await pool.query(`
       SELECT 1
       WHERE EXISTS (
               SELECT 1 FROM students
-              WHERE id = $1 AND tenant_id = $3
+              WHERE id = $1 AND tenant_id = ANY($3::int[])
             )
         AND EXISTS (
               SELECT 1 FROM users
-              WHERE id = $2 AND tenant_id = $3 AND role = 'parent'
+              WHERE id = $2 AND tenant_id = ANY($3::int[]) AND role = 'parent'
             )
-    `, [studentId, parentUserId, req.user.tenant_id]);
+    `, [studentId, parentUserId, accessible]);
 
     if (crossCheck.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
@@ -211,14 +218,15 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const auth = await loadLinkAndAssertTenant(req.params.id, req.user);
     if (!auth.ok) return res.status(auth.status).json(auth.body);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       DELETE FROM parent_student_links psl
       USING students s
       WHERE psl.id = $1
         AND psl.student_id = s.id
-        AND s.tenant_id = $2
+        AND s.tenant_id = ANY($2::int[])
       RETURNING psl.id
-    `, [req.params.id, req.user.tenant_id]);
+    `, [req.params.id, accessible]);
 
     if (result.rows.length === 0) {
       // Helper assert passed but the DELETE returned no rows. Only
@@ -236,10 +244,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 // GET all parent-student links for a tenant (for Admin panel)
-// requireTenantStaffAccess parity-asserts the URL :tenantId against
-// req.user.tenant_id and excludes parent role. SQL sources tenant_id from
-// req.user.tenant_id (server-derived) — the URL param is decorative and
-// trusted only after the middleware's equality check.
+// requireTenantStaffAccess (PR-S3-A swept) verifies that the path :tenantId
+// is in the caller's accessible-tenant set via resolveAccessibleTenantIds
+// per §5 dual-path doctrine, and excludes parent role. Path-tenant scoped:
+// SQL filter uses Number(req.params.tenantId); middleware-membership-check
+// validated access.
 router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -256,7 +265,7 @@ router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (re
       JOIN students s ON psl.student_id = s.id
       WHERE s.tenant_id = $1
       ORDER BY u.full_name, s.last_name
-    `, [req.user.tenant_id]);
+    `, [Number(req.params.tenantId)]);
 
     res.json(result.rows);
   } catch (error) {

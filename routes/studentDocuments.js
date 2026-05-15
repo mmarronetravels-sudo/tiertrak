@@ -229,10 +229,12 @@ router.delete('/:id', requireAuth, requireDocumentWriteAccess, async (req, res) 
 });
 
 // GET /api/student-documents/expiring/:tenantId - Get documents expiring within 30 days
-// requireExpiringListAccess has already refused parent role and verified that
-// the path :tenantId matches req.user.tenant_id. The SQL sources the tenant
-// from req.user (server-authoritative) and re-joins s.tenant_id = sd.tenant_id
-// so a crafted student_id cannot pull rows across tenants.
+// requireExpiringListAccess (PR-S3-A swept) has already refused parent role
+// and verified that the path :tenantId is in the caller's accessible-tenant
+// set via resolveAccessibleTenantIds. Path-tenant scoped: SQL filter uses
+// Number(req.params.tenantId); middleware-membership-check validated access.
+// JOIN s.tenant_id = sd.tenant_id remains so a crafted student_id cannot
+// pull rows across tenants.
 router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -249,7 +251,7 @@ router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async 
         AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
         AND sd.expiration_date >= CURRENT_DATE
       ORDER BY sd.expiration_date ASC
-    `, [req.user.tenant_id]);
+    `, [Number(req.params.tenantId)]);
 
     res.json(result.rows);
   } catch (error) {

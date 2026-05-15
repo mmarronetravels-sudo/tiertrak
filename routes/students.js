@@ -3,6 +3,7 @@ const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
 const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -22,58 +23,63 @@ router.get('/archive-reasons', requireAuth, async (req, res) => {
 });
 
 // Get all students for a tenant (with archive filter and role-based access)
+// Path-tenant scoped: tenant membership verified via helper (§5 dual-path
+// doctrine); SQL filter uses Number(req.params.tenantId) after membership
+// check passes.
 router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    if (Number(req.params.tenantId) !== req.user.tenant_id) {
+    const pathTenantId = Number(req.params.tenantId);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(pathTenantId)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const { includeArchived, onlyArchived, search } = req.query;
     const userId = req.user.id;
     const userRole = req.user.role;
     const schoolWideAccess = req.user.school_wide_access === true;
-    
+
     let query;
     let params;
-    
+
     // Admin and users with school_wide_access see all students
     if (userRole === 'school_admin' || schoolWideAccess) {
       query = `
-        SELECT s.*, u.full_name as teacher_name 
+        SELECT s.*, u.full_name as teacher_name
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
       `;
-      params = [req.user.tenant_id];
+      params = [pathTenantId];
     }
     // Parents see only their linked children
     else if (userRole === 'parent') {
       query = `
-        SELECT DISTINCT s.*, u.full_name as teacher_name 
+        SELECT DISTINCT s.*, u.full_name as teacher_name
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         INNER JOIN parent_student_links psl ON s.id = psl.student_id
         WHERE s.tenant_id = $1 AND psl.parent_user_id = $2
       `;
-      params = [req.user.tenant_id, userId];
+      params = [pathTenantId, userId];
     }
     // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
       query = `
-        SELECT DISTINCT s.*, u.full_name as teacher_name 
+        SELECT DISTINCT s.*, u.full_name as teacher_name
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
-        WHERE s.tenant_id = $1 
+        WHERE s.tenant_id = $1
           AND (
             s.tier = 1
             OR s.id IN (
-              SELECT si.student_id 
+              SELECT si.student_id
               FROM student_interventions si
               INNER JOIN intervention_assignments ia ON si.id = ia.student_intervention_id
               WHERE si.status = 'active' AND ia.user_id = $2
             )
           )
       `;
-      params = [req.user.tenant_id, userId];
+      params = [pathTenantId, userId];
     }
     
     // Archive filters
@@ -99,10 +105,13 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
 });
 
 // Get student statistics including archive counts
+// requireTenantStaffAccess (PR-S3-A swept) validated path :tenantId is in
+// caller's accessible-tenant set. Path-tenant scoped: SQL filter uses
+// Number(req.params.tenantId); middleware-membership-check validated.
 router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT 
+      SELECT
         COUNT(*) FILTER (WHERE archived = FALSE OR archived IS NULL) as active_count,
         COUNT(*) FILTER (WHERE archived = TRUE) as archived_count,
         COUNT(*) FILTER (WHERE tier = 1 AND (archived = FALSE OR archived IS NULL)) as tier1_count,
@@ -111,8 +120,8 @@ router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, asy
         COUNT(*) as total_count
       FROM students
       WHERE tenant_id = $1
-    `, [req.user.tenant_id]);
-    
+    `, [Number(req.params.tenantId)]);
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -120,16 +129,18 @@ router.get('/tenant/:tenantId/stats', requireAuth, requireTenantStaffAccess, asy
 });
 
 // Get students by tier
+// requireTenantStaffAccess (PR-S3-A swept) validated path :tenantId.
+// Path-tenant scoped: SQL filter uses Number(req.params.tenantId).
 router.get('/tenant/:tenantId/tier/:tier', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const { tier } = req.params;
     const result = await pool.query(
-      `SELECT s.*, u.full_name as teacher_name 
+      `SELECT s.*, u.full_name as teacher_name
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.tenant_id = $1 AND s.tier = $2 AND (s.archived = FALSE OR s.archived IS NULL)
        ORDER BY s.last_name, s.first_name`,
-      [req.user.tenant_id, tier]
+      [Number(req.params.tenantId), tier]
     );
     res.json(result.rows);
   } catch (error) {
@@ -162,7 +173,9 @@ router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
     if (req.user.role === 'parent') {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    if (parseInt(req.params.tenantId, 10) !== req.user.tenant_id) {
+    const pathTenantId = parseInt(req.params.tenantId, 10);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(pathTenantId)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
@@ -192,14 +205,14 @@ router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
         AND s.archived = false
         AND s.id NOT IN (SELECT student_id FROM referral_monitoring)
       GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, pf.id, pf.status
-      HAVING 
+      HAVING
         COUNT(DISTINCT si.id) >= 3
         OR (COUNT(DISTINCT wp.id) >= 4 AND AVG(wp.rating) <= 2.0)
         OR (COUNT(DISTINCT si.id) >= 2 AND COUNT(DISTINCT wp.id) >= 2 AND AVG(wp.rating) < 3.0)
-      ORDER BY 
+      ORDER BY
         COALESCE(AVG(wp.rating), 0) ASC,
         COUNT(DISTINCT si.id) DESC
-    `, [req.user.tenant_id]);
+    `, [pathTenantId]);
 
     // Filter out students who already have submitted/approved pre-referral forms
     const candidates = result.rows.filter(s => 
@@ -234,7 +247,9 @@ router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
     if (req.user.role === 'parent') {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    if (parseInt(req.params.tenantId, 10) !== req.user.tenant_id) {
+    const pathTenantId = parseInt(req.params.tenantId, 10);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(pathTenantId)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const result = await pool.query(`
@@ -262,10 +277,10 @@ router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
       WHERE rm.tenant_id = $1
         AND s.tier = 1
         AND s.archived = false
-      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, 
+      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier,
                rm.id, rm.notes, rm.created_at, u.full_name
       ORDER BY COALESCE(AVG(wp.rating), 0) ASC
-    `, [req.user.tenant_id]);
+    `, [pathTenantId]);
 
     res.json({
       count: result.rows.length,
@@ -341,10 +356,13 @@ router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) =
     // is more probe-resistant than a 403 because attackers cannot
     // enumerate student_ids by trying random ones and observing
     // different responses for "exists in another tenant" vs
-    // "does not exist."
+    // "does not exist." Tenant scope widened to caller's accessible
+    // set per §5 dual-path doctrine; legacy single-tenant semantics
+    // preserved (accessible = [user.tenant_id]).
+    const accessible = await resolveAccessibleTenantIds(req.user);
     await pool.query(
-      'DELETE FROM referral_monitoring WHERE student_id = $1 AND tenant_id = $2',
-      [studentId, req.user.tenant_id]
+      'DELETE FROM referral_monitoring WHERE student_id = $1 AND tenant_id = ANY($2::int[])',
+      [studentId, accessible]
     );
     res.json({ success: true });
   } catch (error) {
