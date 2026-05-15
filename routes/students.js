@@ -430,18 +430,24 @@ router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res
   }
 });
 
-// Create a new student
+// Create a new student.
+// Single-home tenant binding: the new row's tenant_id is pinned to
+// req.user.tenant_id (the caller's home school). body.tenant_id (if
+// present) is intentionally ignored — closes the body-forgery vector
+// that pre-auth-gap code carried. Security-tightening, NOT §5 widening.
+// Revisit binding semantics when Followup #125 resolves the district
+// multi-school write product decision.
 router.post('/', requireAuth, async (req, res) => {
   try {
     if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
-    const { tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
-      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE) 
+      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
        RETURNING *`,
-      [tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
+      [req.user.tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -518,14 +524,23 @@ router.patch('/:id/tier', requireAuth, async (req, res) => {
   }
 });
 
-// Archive a student
+// Archive a student.
+// archived_by is derived from req.user.id (server-side
+// actor identity). body.archived_by (if present) is
+// intentionally ignored — closes the actor-spoofing
+// vector where a caller could claim to archive as
+// anyone. Mirrors server-side actor-identity pattern
+// at prereferralForms.js:518 — counselor_id is bound
+// from req.user.id directly into a user-id column
+// (one-step id-bind, parallel to this handler's
+// archived_by binding).
 router.patch('/:id/archive', requireAuth, async (req, res) => {
   try {
     if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const { id } = req.params;
-    const { archived_reason, archived_by } = req.body;
+    const { archived_reason } = req.body;
     
     if (!archived_reason) {
       return res.status(400).json({ error: 'Archive reason is required' });
@@ -561,7 +576,7 @@ router.patch('/:id/archive', requireAuth, async (req, res) => {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND tenant_id = ANY($4::int[])
        RETURNING *`,
-      [archived_by, archived_reason, id, accessible]
+      [req.user.id, archived_reason, id, accessible]
     );
     
     if (result.rows.length === 0) {
