@@ -457,13 +457,25 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     const { id } = req.params;
     const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    // Pre-flight tenant scope: 404 for both not-found and not-in-accessible
+    // (leak-resistance, mirrors tier1-assessments.js:251 post-PR-S3-C).
+    // Tenant-bound UPDATE WHERE is belt-and-suspenders against the
+    // pre-flight/UPDATE TOCTOU window.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
     const result = await pool.query(
-      `UPDATE students 
-       SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4, 
+      `UPDATE students
+       SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4,
            tier = $5, area = $6, risk_level = $7, secondary_area = $8, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $9 
+       WHERE id = $9 AND tenant_id = ANY($10::int[])
        RETURNING *`,
-      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id]
+      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
@@ -482,12 +494,20 @@ router.patch('/:id/tier', requireAuth, async (req, res) => {
     }
     const { id } = req.params;
     const { tier } = req.body;
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
     const result = await pool.query(
-      `UPDATE students 
+      `UPDATE students
        SET tier = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2 
+       WHERE id = $2 AND tenant_id = ANY($3::int[])
        RETURNING *`,
-      [tier, id]
+      [tier, id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
@@ -522,17 +542,26 @@ router.patch('/:id/archive', requireAuth, async (req, res) => {
     if (!validReasons.includes(archived_reason)) {
       return res.status(400).json({ error: 'Invalid archive reason' });
     }
-    
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
     const result = await pool.query(
-      `UPDATE students 
-       SET archived = TRUE, 
+      `UPDATE students
+       SET archived = TRUE,
            archived_at = CURRENT_TIMESTAMP,
            archived_by = $1,
            archived_reason = $2,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       WHERE id = $3 AND tenant_id = ANY($4::int[])
        RETURNING *`,
-      [archived_by, archived_reason, id]
+      [archived_by, archived_reason, id, accessible]
     );
     
     if (result.rows.length === 0) {
@@ -553,6 +582,15 @@ router.patch('/:id/unarchive', requireAuth, async (req, res) => {
     }
     const { id } = req.params;
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentLookup = await pool.query(
+      'SELECT tenant_id FROM students WHERE id = $1',
+      [id]
+    );
+    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
     const result = await pool.query(
       `UPDATE students
        SET archived = FALSE,
@@ -560,9 +598,9 @@ router.patch('/:id/unarchive', requireAuth, async (req, res) => {
            archived_by = NULL,
            archived_reason = NULL,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1
+       WHERE id = $1 AND tenant_id = ANY($2::int[])
        RETURNING *`,
-      [id]
+      [id, accessible]
     );
     
     if (result.rows.length === 0) {
@@ -582,9 +620,13 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const { id } = req.params;
+    // Atomic tenant-bound DELETE — no pre-flight needed; the WHERE clause
+    // IS the auth gate. 0 rows affected → 404 (leak-resistant: same
+    // response for not-found and not-in-accessible).
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
-      'DELETE FROM students WHERE id = $1 RETURNING *',
-      [id]
+      'DELETE FROM students WHERE id = $1 AND tenant_id = ANY($2::int[]) RETURNING *',
+      [id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
