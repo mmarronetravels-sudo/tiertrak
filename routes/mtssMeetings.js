@@ -4,6 +4,7 @@ const {
   requireAuth,
   requireStudentReadAccess
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
 
@@ -132,11 +133,13 @@ router.get('/:id', requireAuth, async (req, res) => {
 
     // Tenant-and-parent-link-bound SELECT. Single query closes the auth
     // gate atomically with the data fetch. Branches:
-    //   - role !== 'parent': caller's tenant_id must match meeting's tenant_id
+    //   - role !== 'parent': meeting's tenant_id must be in the caller's
+    //     accessible-tenant set (§5 dual-path doctrine via helper)
     //   - role === 'parent': caller must be linked to the meeting's student
     //     via parent_student_links
     // Not-found and not-authorized are indistinguishable to the caller
     // (uniform 403 FORBIDDEN_BODY mirrors POST/PUT/DELETE precedent).
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const meetingResult = await pool.query(`
       SELECT
         m.*,
@@ -147,14 +150,14 @@ router.get('/:id', requireAuth, async (req, res) => {
       LEFT JOIN students s ON m.student_id = s.id
       WHERE m.id = $1
         AND (
-          ($2 != 'parent' AND m.tenant_id = $3)
+          ($2 != 'parent' AND m.tenant_id = ANY($3::int[]))
           OR
           ($2 = 'parent' AND EXISTS (
             SELECT 1 FROM parent_student_links psl
             WHERE psl.parent_user_id = $4 AND psl.student_id = m.student_id
           ))
         )
-    `, [id, req.user.role, req.user.tenant_id, req.user.id]);
+    `, [id, req.user.role, accessible, req.user.id]);
 
     if (meetingResult.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
@@ -444,11 +447,13 @@ router.put('/:id', requireAuth, async (req, res) => {
 
   const { id } = req.params;
 
-  // Tenant gate. Tenant-bound SELECT — not-found and wrong-tenant are
+  // Tenant gate. Tenant-bound SELECT scoped by caller's accessible-tenant
+  // set (§5 dual-path doctrine via helper) — not-found and wrong-tenant are
   // indistinguishable to the caller (mirrors authorizeByInterventionId).
+  const accessible = await resolveAccessibleTenantIds(req.user);
   const meetingLookup = await pool.query(
-    'SELECT id, tenant_id, student_id FROM mtss_meetings WHERE id = $1 AND tenant_id = $2',
-    [id, req.user.tenant_id]
+    'SELECT id, tenant_id, student_id FROM mtss_meetings WHERE id = $1 AND tenant_id = ANY($2::int[])',
+    [id, accessible]
   );
   if (meetingLookup.rows.length === 0) {
     return res.status(403).json(FORBIDDEN_BODY);
@@ -621,9 +626,13 @@ router.delete('/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
+    // Tenant gate scoped by caller's accessible-tenant set (§5 dual-path
+    // doctrine via helper). 0-rows-affected → 403 (mirrors POST/PUT/GET
+    // precedent in this file).
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
-      'DELETE FROM mtss_meetings WHERE id = $1 AND tenant_id = $2 RETURNING id',
-      [id, req.user.tenant_id]
+      'DELETE FROM mtss_meetings WHERE id = $1 AND tenant_id = ANY($2::int[]) RETURNING id',
+      [id, accessible]
     );
 
     if (result.rows.length === 0) {

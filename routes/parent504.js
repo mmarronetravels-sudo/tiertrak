@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -154,11 +155,13 @@ router.get('/accommodations/student/:studentId', requireAuth, requireStudentRead
 //     versioned form set. No student data, no staff data, no
 //     intervention data is read or returned by this handler. The
 //     only DB read is tenant_form_sets, which carries no PII.
-//   - Cross-tenant: tenant_form_sets is scoped by req.user.tenant_id;
-//     a request from one tenant cannot read another tenant's form
-//     set selection. The form-set CONTENT is shared (multiple
-//     tenants can use 'oregon-ode-2025'), which is correct because
-//     the content is published policy.
+//   - Cross-tenant: tenant_form_sets is scoped by the caller's
+//     accessible-tenant set via resolveAccessibleTenantIds(req.user)
+//     per §5 dual-path doctrine. A request from one tenant cannot
+//     read another tenant's form set selection unless the caller has
+//     explicit user_school_access membership. The form-set CONTENT
+//     is shared (multiple tenants can use 'oregon-ode-2025'), which
+//     is correct because the content is published policy.
 //
 // Contract (PR 2): returns ONLY { text: formSet.proceduralSafeguardsText }.
 // No fallback, no error envelope wrapping a placeholder. Until the
@@ -173,14 +176,14 @@ router.get('/accommodations/student/:studentId', requireAuth, requireStudentRead
 // the ORDER BY is for the edge case.
 router.get('/procedural-safeguards', requireAuth, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
       `SELECT form_set_id
        FROM tenant_form_sets
-       WHERE tenant_id = $1 AND is_active = TRUE
+       WHERE tenant_id = ANY($1::int[]) AND is_active = TRUE
        ORDER BY created_at DESC, id DESC
        LIMIT 1`,
-      [tenantId]
+      [accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'No active form set for tenant' });

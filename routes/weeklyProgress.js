@@ -140,10 +140,11 @@ router.get('/intervention/:interventionId', requireAuth, requireInterventionRead
 });
 
 /// Get interventions missing this week's log for a tenant
-// requireTenantStaffAccess refuses parent role and verifies that the path
-// :tenantId matches req.user.tenant_id. The SQL sources its tenant from
-// req.user.tenant_id (server-authoritative); the path param is no longer
-// passed to the query.
+// requireTenantStaffAccess (PR-S3-A swept) refuses parent role and verifies
+// that the path :tenantId is in the caller's accessible-tenant set via
+// resolveAccessibleTenantIds per §5 dual-path doctrine. Path-tenant scoped:
+// SQL filter uses Number(req.params.tenantId); middleware-membership-check
+// validated access.
 router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
@@ -168,7 +169,7 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
           AND wp.week_of = $2
         )
       ORDER BY s.last_name, s.first_name
-    `, [req.user.tenant_id, currentWeek]);
+    `, [Number(req.params.tenantId), currentWeek]);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching missing logs:', err.message);
