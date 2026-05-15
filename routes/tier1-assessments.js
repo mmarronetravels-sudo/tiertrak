@@ -118,9 +118,9 @@ router.post('/', requireAuth, async (req, res) => {
 
 // ============================================
 // GET /api/tier1-assessments
-// List the caller's tenant's assessments as summary rows. Any
-// authenticated tenant member may call this (no role check). Supports
-// two optional query params:
+// List assessments scoped to the caller's accessible-tenant set
+// (§5 dual-path) as summary rows. Any authenticated user may call
+// this (no role check). Supports two optional query params:
 //   status=in_progress|completed       filter by lifecycle state
 //   include_archived=true|false        default false
 // Rows are sorted completed_at DESC NULLS FIRST (so in_progress bubbles
@@ -203,9 +203,10 @@ router.get('/item-bank', requireAuth, (req, res) => {
 
 // ============================================
 // GET /api/tier1-assessments/:id
-// Fetch a single assessment + all its responses, scoped to the caller's
-// tenant. Cross-tenant access returns 404 (not 403) to avoid leaking
-// existence of assessments belonging to other tenants.
+// Fetch a single assessment + all its responses, scoped to the
+// caller's accessible-tenant set (§5 dual-path). Cross-tenant access
+// returns 404 (not 403) to avoid leaking existence of assessments
+// belonging to other tenants.
 // ============================================
 router.get('/:id', requireAuth, async (req, res) => {
   try {
