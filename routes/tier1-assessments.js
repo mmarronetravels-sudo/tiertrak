@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const jwt = require('jsonwebtoken');
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const {
   ITEM_BANK_VERSION,
   DOMAINS,
@@ -31,35 +31,6 @@ const ARCHIVE_REASONS = [
   'Superseded by a newer assessment',
   'Other'
 ];
-
-// Extract the current user from the httpOnly auth_token cookie and attach
-// { id, role, tenant_id } to req.user. Replaces the legacy x-user-* header
-// pattern used by older route files; all new routes use this.
-const requireAuth = async (req, res, next) => {
-  try {
-    const token = req.cookies && req.cookies.auth_token;
-    if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (_) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const { rows } = await pool.query(
-      'SELECT id, role, tenant_id, district_id FROM users WHERE id = $1',
-      [decoded.id]
-    );
-    if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });
-
-    req.user = rows[0];
-    next();
-  } catch (err) {
-    console.error('[tier1 requireAuth]', err.message);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
 
 // ============================================
 // POST /api/tier1-assessments
