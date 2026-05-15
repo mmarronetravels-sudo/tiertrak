@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const jwt = require('jsonwebtoken');
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const {
   ITEM_BANK_VERSION,
   DOMAINS,
@@ -31,35 +32,6 @@ const ARCHIVE_REASONS = [
   'Superseded by a newer assessment',
   'Other'
 ];
-
-// Extract the current user from the httpOnly auth_token cookie and attach
-// { id, role, tenant_id } to req.user. Replaces the legacy x-user-* header
-// pattern used by older route files; all new routes use this.
-const requireAuth = async (req, res, next) => {
-  try {
-    const token = req.cookies && req.cookies.auth_token;
-    if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-    let decoded;
-    try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
-    } catch (_) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-
-    const { rows } = await pool.query(
-      'SELECT id, role, tenant_id, district_id FROM users WHERE id = $1',
-      [decoded.id]
-    );
-    if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });
-
-    req.user = rows[0];
-    next();
-  } catch (err) {
-    console.error('[tier1 requireAuth]', err.message);
-    res.status(500).json({ error: 'Server error' });
-  }
-};
 
 // ============================================
 // POST /api/tier1-assessments
@@ -146,9 +118,9 @@ router.post('/', requireAuth, async (req, res) => {
 
 // ============================================
 // GET /api/tier1-assessments
-// List the caller's tenant's assessments as summary rows. Any
-// authenticated tenant member may call this (no role check). Supports
-// two optional query params:
+// List assessments scoped to the caller's accessible-tenant set
+// (§5 dual-path) as summary rows. Any authenticated user may call
+// this (no role check). Supports two optional query params:
 //   status=in_progress|completed       filter by lifecycle state
 //   include_archived=true|false        default false
 // Rows are sorted completed_at DESC NULLS FIRST (so in_progress bubbles
@@ -156,8 +128,9 @@ router.post('/', requireAuth, async (req, res) => {
 // ============================================
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const where = ['a.tenant_id = $1'];
-    const params = [req.user.tenant_id];
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const where = ['a.tenant_id = ANY($1::int[])'];
+    const params = [accessible];
 
     // Validate status filter if present.
     if (Object.prototype.hasOwnProperty.call(req.query, 'status')) {
@@ -230,9 +203,10 @@ router.get('/item-bank', requireAuth, (req, res) => {
 
 // ============================================
 // GET /api/tier1-assessments/:id
-// Fetch a single assessment + all its responses, scoped to the caller's
-// tenant. Cross-tenant access returns 404 (not 403) to avoid leaking
-// existence of assessments belonging to other tenants.
+// Fetch a single assessment + all its responses, scoped to the
+// caller's accessible-tenant set (§5 dual-path). Cross-tenant access
+// returns 404 (not 403) to avoid leaking existence of assessments
+// belonging to other tenants.
 // ============================================
 router.get('/:id', requireAuth, async (req, res) => {
   try {
@@ -241,6 +215,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
+
     const assessResult = await pool.query(
       `SELECT id, tenant_id, created_by, completed_by, status,
               total_score, max_score, overall_percentage, score_band,
@@ -248,8 +224,8 @@ router.get('/:id', requireAuth, async (req, res) => {
               archived, archived_at, archived_by, archived_reason,
               created_at, updated_at, completed_at
        FROM tier1_assessments
-       WHERE id = $1 AND tenant_id = $2`,
-      [idInt, req.user.tenant_id]
+       WHERE id = $1 AND tenant_id = ANY($2::int[])`,
+      [idInt, accessible]
     );
 
     if (assessResult.rows.length === 0) {
@@ -262,9 +238,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       `SELECT id, item_id, domain_number, score, evidence_url, notes,
               created_at, updated_at
        FROM tier1_assessment_responses
-       WHERE assessment_id = $1 AND tenant_id = $2
+       WHERE assessment_id = $1 AND tenant_id = ANY($2::int[])
        ORDER BY item_id`,
-      [assessment.id, req.user.tenant_id]
+      [assessment.id, accessible]
     );
 
     res.json({ assessment, responses: responsesResult.rows });
