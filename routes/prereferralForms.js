@@ -5,6 +5,7 @@ const {
   requireTenantStaffAccess,
   requireStudentReadAccess
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
 
@@ -23,10 +24,11 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 const APPROVE_ROLES = ['counselor', 'school_admin', 'district_admin'];
 const ADMIN_ROLES = ['school_admin', 'district_admin'];
 
-// Load a prereferral_forms row by id and assert it belongs to the caller's
-// tenant. Returns { ok: true, row } or { ok: false, status, body } so the
-// caller can respond with a byte-identical 403 for both "row not found" and
-// "wrong tenant" — preventing existence-disclosure across tenants.
+// Load a prereferral_forms row by id and assert it belongs to a tenant in
+// the caller's accessible-tenant set (§5 dual-path doctrine via helper).
+// Returns { ok: true, row } or { ok: false, status, body } so the caller
+// can respond with a byte-identical 403 for both "row not found" and "wrong
+// tenant" — preventing existence-disclosure across tenants.
 async function loadFormAndAssertTenant(formId, user) {
   const result = await pool.query(
     'SELECT id, tenant_id, status FROM prereferral_forms WHERE id = $1',
@@ -35,7 +37,8 @@ async function loadFormAndAssertTenant(formId, user) {
   if (result.rows.length === 0) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
-  if (result.rows[0].tenant_id !== user.tenant_id) {
+  const accessible = await resolveAccessibleTenantIds(user);
+  if (!accessible.includes(result.rows[0].tenant_id)) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
   return { ok: true, row: result.rows[0] };
@@ -154,6 +157,10 @@ router.get('/options', requireAuth, async (req, res) => {
 });
 
 // GET /tenant/:tenantId - Get all forms for a tenant
+// requireTenantStaffAccess (PR-S3-A swept) validated the path :tenantId is
+// in the caller's accessible-tenant set via resolveAccessibleTenantIds per
+// §5 dual-path doctrine. Path-tenant scoped: SQL filter uses
+// Number(req.params.tenantId); middleware-membership-check validated access.
 router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const { status } = req.query;
@@ -169,7 +176,7 @@ router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (re
       LEFT JOIN users u ON pf.referred_by = u.id
       WHERE pf.tenant_id = $1
     `;
-    const params = [req.user.tenant_id];
+    const params = [Number(req.params.tenantId)];
 
     if (status) {
       query += ` AND pf.status = $2`;
@@ -187,6 +194,9 @@ router.get('/tenant/:tenantId', requireAuth, requireTenantStaffAccess, async (re
 });
 
 // GET /pending/:tenantId - Get counts of pending forms
+// requireTenantStaffAccess (PR-S3-A swept) validated the path :tenantId is
+// in the caller's accessible-tenant set. Path-tenant scoped: SQL filter
+// uses Number(req.params.tenantId); middleware-membership-check validated.
 router.get('/pending/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -196,7 +206,7 @@ router.get('/pending/:tenantId', requireAuth, requireTenantStaffAccess, async (r
         COUNT(*) FILTER (WHERE status = 'changes_requested') as changes_requested_count
       FROM prereferral_forms
       WHERE tenant_id = $1
-    `, [req.user.tenant_id]);
+    `, [Number(req.params.tenantId)]);
 
     res.json(result.rows[0]);
   } catch (error) {
@@ -212,13 +222,14 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
   try {
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       SELECT pf.*, u.full_name as referred_by_name
       FROM prereferral_forms pf
       LEFT JOIN users u ON pf.referred_by = u.id
-      WHERE pf.student_id = $1 AND pf.tenant_id = $2
+      WHERE pf.student_id = $1 AND pf.tenant_id = ANY($2::int[])
       ORDER BY pf.created_at DESC
-    `, [req.params.studentId, req.user.tenant_id]);
+    `, [req.params.studentId, accessible]);
 
     res.json(result.rows);
   } catch (error) {
@@ -234,12 +245,13 @@ router.get('/check-approved/:studentId', requireAuth, requireStudentReadAccess, 
   try {
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       SELECT id, status FROM prereferral_forms
-      WHERE student_id = $1 AND tenant_id = $2 AND status = 'approved'
+      WHERE student_id = $1 AND tenant_id = ANY($2::int[]) AND status = 'approved'
       ORDER BY created_at DESC
       LIMIT 1
-    `, [req.params.studentId, req.user.tenant_id]);
+    `, [req.params.studentId, accessible]);
 
     res.json({
       hasApprovedForm: result.rows.length > 0,
@@ -264,6 +276,7 @@ router.get('/:id', requireAuth, async (req, res) => {
     const auth = await loadFormAndAssertTenant(req.params.id, req.user);
     if (!auth.ok) return res.status(auth.status).json(auth.body);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       SELECT pf.*,
              s.first_name as student_first_name,
@@ -277,8 +290,8 @@ router.get('/:id', requireAuth, async (req, res) => {
       JOIN students s ON pf.student_id = s.id
       LEFT JOIN users u ON pf.referred_by = u.id
       LEFT JOIN users c ON pf.counselor_id = c.id
-      WHERE pf.id = $1 AND pf.tenant_id = $2
-    `, [req.params.id, req.user.tenant_id]);
+      WHERE pf.id = $1 AND pf.tenant_id = ANY($2::int[])
+    `, [req.params.id, accessible]);
 
     if (result.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
@@ -408,12 +421,13 @@ router.put('/:id', requireAuth, async (req, res) => {
     
     setClauses.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
-    values.push(req.user.tenant_id);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    values.push(accessible);
 
     const query = `
       UPDATE prereferral_forms
       SET ${setClauses.join(', ')}
-      WHERE id = $${paramCount} AND tenant_id = $${paramCount + 1}
+      WHERE id = $${paramCount} AND tenant_id = ANY($${paramCount + 1}::int[])
       RETURNING *
     `;
 
@@ -447,15 +461,16 @@ router.patch('/:id/submit', requireAuth, async (req, res) => {
     );
     const referringStaffName = userResult.rows[0]?.full_name || null;
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       UPDATE prereferral_forms
       SET status = 'submitted',
           referring_staff_name = $3,
           referring_staff_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND tenant_id = $2 AND status IN ('draft', 'changes_requested')
+      WHERE id = $1 AND tenant_id = ANY($2::int[]) AND status IN ('draft', 'changes_requested')
       RETURNING *
-    `, [req.params.id, req.user.tenant_id, referringStaffName]);
+    `, [req.params.id, accessible, referringStaffName]);
 
     if (result.rows.length === 0) {
       // Form exists in caller's tenant (helper verified) but is in a non-
@@ -490,6 +505,7 @@ router.patch('/:id/approve', requireAuth, async (req, res) => {
     );
     const counselorName = userResult.rows[0]?.full_name || null;
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       UPDATE prereferral_forms
       SET status = 'approved',
@@ -497,9 +513,9 @@ router.patch('/:id/approve', requireAuth, async (req, res) => {
           counselor_id = $4,
           counselor_signed_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
+      WHERE id = $1 AND tenant_id = ANY($2::int[]) AND status = 'submitted'
       RETURNING *
-    `, [req.params.id, req.user.tenant_id, counselorName, req.user.id]);
+    `, [req.params.id, accessible, counselorName, req.user.id]);
 
     if (result.rows.length === 0) {
       // See commit 4 row 9 comment: tenant assert passed, so this is
@@ -527,15 +543,16 @@ router.patch('/:id/request-changes', requireAuth, async (req, res) => {
 
     const { comments } = req.body;
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       UPDATE prereferral_forms
       SET status = 'changes_requested',
           change_request_comments = $3,
           counselor_id = $4,
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
+      WHERE id = $1 AND tenant_id = ANY($2::int[]) AND status = 'submitted'
       RETURNING *
-    `, [req.params.id, req.user.tenant_id, comments, req.user.id]);
+    `, [req.params.id, accessible, comments, req.user.id]);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Form is not in a state to request changes' });
@@ -560,13 +577,14 @@ router.patch('/:id/archive', requireAuth, async (req, res) => {
     const auth = await loadFormAndAssertTenant(req.params.id, req.user);
     if (!auth.ok) return res.status(auth.status).json(auth.body);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       UPDATE prereferral_forms
       SET status = 'archived',
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1 AND tenant_id = $2
+      WHERE id = $1 AND tenant_id = ANY($2::int[])
       RETURNING *
-    `, [req.params.id, req.user.tenant_id]);
+    `, [req.params.id, accessible]);
 
     if (result.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
@@ -592,11 +610,12 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const auth = await loadFormAndAssertTenant(req.params.id, req.user);
     if (!auth.ok) return res.status(auth.status).json(auth.body);
 
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(`
       DELETE FROM prereferral_forms
-      WHERE id = $1 AND tenant_id = $2 AND status = 'draft'
+      WHERE id = $1 AND tenant_id = ANY($2::int[]) AND status = 'draft'
       RETURNING id
-    `, [req.params.id, req.user.tenant_id]);
+    `, [req.params.id, accessible]);
 
     if (result.rows.length === 0) {
       // Tenant assert passed, so this is operational state (form is not

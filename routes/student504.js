@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -138,14 +139,14 @@ function isPositiveInt(n) {
 //     impossible via this handler.
 router.get('/active-form-set', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
       `SELECT form_set_id, form_set_version
        FROM tenant_form_sets
-       WHERE tenant_id = $1 AND is_active = TRUE
+       WHERE tenant_id = ANY($1::int[]) AND is_active = TRUE
        ORDER BY created_at DESC, id DESC
        LIMIT 1`,
-      [tenantId]
+      [accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'No active form set for tenant' });
@@ -231,7 +232,7 @@ router.post('/cycles', requireAuth, refuseParentRole, async (req, res) => {
 // behavior (no probe for cross-tenant student existence).
 router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const studentId = Number(req.params.studentId);
     if (!isPositiveInt(studentId)) {
       return res.status(400).json({ error: 'Invalid studentId' });
@@ -241,9 +242,9 @@ router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (r
       `SELECT id, tenant_id, student_id, form_set_id, form_set_version,
               status, created_by, created_at, updated_at
        FROM student_504_cycles
-       WHERE student_id = $1 AND tenant_id = $2
+       WHERE student_id = $1 AND tenant_id = ANY($2::int[])
        ORDER BY created_at DESC`,
-      [studentId, tenantId]
+      [studentId, accessible]
     );
     return res.json(result.rows);
   } catch (err) {
@@ -266,7 +267,7 @@ router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (r
 // if an FK ever drifted.
 router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const cycleId = Number(req.params.cycleId);
     if (!isPositiveInt(cycleId)) {
       return res.status(400).json({ error: 'Invalid cycleId' });
@@ -344,8 +345,8 @@ router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) =
            WHERE tm.cycle_id = c.id AND tm.tenant_id = c.tenant_id
          ), '[]'::json) AS team_members
        FROM student_504_cycles c
-       WHERE c.id = $1 AND c.tenant_id = $2`,
-      [cycleId, tenantId]
+       WHERE c.id = $1 AND c.tenant_id = ANY($2::int[])`,
+      [cycleId, accessible]
     );
 
     if (result.rows.length === 0) {
@@ -462,7 +463,7 @@ router.post('/consents', requireAuth, refuseParentRole, async (req, res) => {
 // 404 for both "doesn't exist" and "wrong tenant" — non-leaky.
 router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
     if (!isPositiveInt(id)) {
       return res.status(400).json({ error: 'Invalid id' });
@@ -474,8 +475,8 @@ router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
               staff_signature_text, staff_signature_at,
               created_by, created_at, updated_at
        FROM student_504_evaluation_consents
-       WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId]
+       WHERE id = $1 AND tenant_id = ANY($2::int[])`,
+      [id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Not found' });
@@ -576,7 +577,7 @@ router.post('/eligibility-determinations', requireAuth, refuseParentRole, async 
 // family does NOT expose this resource at all.
 router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
     if (!isPositiveInt(id)) {
       return res.status(400).json({ error: 'Invalid id' });
@@ -587,8 +588,8 @@ router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, asy
               determination_notes, determined_at,
               created_by, created_at, updated_at
        FROM student_504_eligibility_determinations
-       WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId]
+       WHERE id = $1 AND tenant_id = ANY($2::int[])`,
+      [id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Not found' });
@@ -707,7 +708,7 @@ router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
 // match). 404 covers both "not found" and "wrong tenant" — non-leaky.
 router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
     if (!isPositiveInt(id)) {
       return res.status(400).json({ error: 'Invalid id' });
@@ -741,8 +742,8 @@ router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
            WHERE tm.cycle_id = p.cycle_id AND tm.tenant_id = p.tenant_id
          ), '[]'::json) AS team_members
        FROM student_504_plans p
-       WHERE p.id = $1 AND p.tenant_id = $2`,
-      [id, tenantId]
+       WHERE p.id = $1 AND p.tenant_id = ANY($2::int[])`,
+      [id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Not found' });

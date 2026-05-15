@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { mutationUserLimiter } = require('./rateLimiters');
+const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -75,8 +76,11 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
     if (assignmentResult.rows.length === 0) {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
-  } else if (req.user.tenant_id !== interventionTenantId) {
-    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  } else {
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(interventionTenantId)) {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
   }
 
   req.intervention = {
@@ -114,8 +118,11 @@ async function authorizeReadByInterventionId(req, res, studentInterventionId) {
     if (linkResult.rows.length === 0) {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
-  } else if (req.user.tenant_id !== interventionTenantId) {
-    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  } else {
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(interventionTenantId)) {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
   }
 
   req.intervention = {
@@ -200,9 +207,13 @@ async function requireInterventionReadAccess(req, res, next) {
 }
 
 // Staff-only tenant gate for routes shaped GET /resource/.../:tenantId.
-// Refuses parent role and requires Number(tenantId) === req.user.tenant_id.
-// The route SHOULD source its tenant from req.user.tenant_id (server-derived);
-// the path param is used here only for the equality check.
+// Refuses parent role; requires Number(tenantId) to be in the caller's
+// accessible-tenant set as resolved by resolveAccessibleTenantIds(req.user).
+// Per §5 dual-path doctrine: legacy single-tenant users (district_id IS NULL)
+// have accessible set [user.tenant_id] — single-tenant semantics preserved.
+// District users (district_id IS NOT NULL) have accessible set sourced from
+// user_school_access membership — multi-tenant within their accessible schools.
+// Failure status preserved at 403 to maintain existing caller contract.
 async function requireTenantStaffAccess(req, res, next) {
   try {
     const { tenantId } = req.params;
@@ -210,7 +221,8 @@ async function requireTenantStaffAccess(req, res, next) {
       return res.status(400).json({ error: 'Missing required parameter: tenantId' });
     }
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
-    if (Number(tenantId) !== req.user.tenant_id) return res.status(403).json(FORBIDDEN_BODY);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(Number(tenantId))) return res.status(403).json(FORBIDDEN_BODY);
     return next();
   } catch (err) {
     console.error('[requireTenantStaffAccess]', err.message);
@@ -244,8 +256,11 @@ async function requireStudentReadAccess(req, res, next) {
       if (linkResult.rows.length === 0) {
         return res.status(403).json(FORBIDDEN_BODY);
       }
-    } else if (req.user.tenant_id !== studentTenantId) {
-      return res.status(403).json(FORBIDDEN_BODY);
+    } else {
+      const accessible = await resolveAccessibleTenantIds(req.user);
+      if (!accessible.includes(studentTenantId)) {
+        return res.status(403).json(FORBIDDEN_BODY);
+      }
     }
 
     req.student = { id: Number(studentId), tenant_id: studentTenantId };

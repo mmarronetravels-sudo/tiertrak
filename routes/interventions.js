@@ -6,6 +6,7 @@ const {
   requireStudentReadAccess,
   requireWriteAccessByInterventionId
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -93,12 +94,14 @@ router.post('/assign', requireAuth, async (req, res) => {
 
     const { student_id, intervention_template_id, intervention_name, notes, log_frequency = 'weekly', start_date, end_date, no_progress_monitoring_required } = req.body;
 
-    // Tenant verification: student must belong to caller's tenant.
+    // Tenant verification: student's tenant must be in the caller's
+    // accessible-tenant set (§5 dual-path doctrine via helper).
     const studentResult = await pool.query(
       'SELECT tenant_id FROM students WHERE id = $1',
       [student_id]
     );
-    if (studentResult.rows.length === 0 || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (studentResult.rows.length === 0 || !accessible.includes(studentResult.rows[0].tenant_id)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 

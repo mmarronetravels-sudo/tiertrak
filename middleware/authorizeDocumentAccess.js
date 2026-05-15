@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -58,7 +59,9 @@ const requireAuth = async (req, res, next) => {
 };
 
 // Returns { ok, studentTenantId } for "can this user access this student's data?"
-// Staff: tenant match. Parent: row in parent_student_links.
+// Staff: studentTenantId in resolveAccessibleTenantIds(userRow) per §5 dual-
+// path doctrine — legacy single-tenant users see [user.tenant_id]; district
+// users see user_school_access membership. Parent: row in parent_student_links.
 async function resolveStudentAccess(userRow, studentId) {
   const studentResult = await pool.query(
     'SELECT id, tenant_id FROM students WHERE id = $1',
@@ -79,7 +82,8 @@ async function resolveStudentAccess(userRow, studentId) {
     return { ok: linkResult.rows.length > 0, studentTenantId };
   }
 
-  return { ok: userRow.tenant_id === studentTenantId, studentTenantId };
+  const accessible = await resolveAccessibleTenantIds(userRow);
+  return { ok: accessible.includes(studentTenantId), studentTenantId };
 }
 
 // GET /student/:studentId — list documents for a student.
@@ -122,8 +126,9 @@ async function requireDocumentReadAccess(req, res, next) {
       const ownUpload = doc.uploaded_by === req.user.id;
       const categoryVisible = PARENT_VISIBLE_CATEGORIES.includes(doc.document_category);
       if (!ownUpload && !categoryVisible) return res.status(403).json(FORBIDDEN_BODY);
-    } else if (req.user.tenant_id !== doc.tenant_id) {
-      return res.status(403).json(FORBIDDEN_BODY);
+    } else {
+      const accessible = await resolveAccessibleTenantIds(req.user);
+      if (!accessible.includes(doc.tenant_id)) return res.status(403).json(FORBIDDEN_BODY);
     }
 
     req.document = doc;
@@ -155,7 +160,8 @@ async function requireDocumentWriteAccess(req, res, next) {
       if (!ok) return res.status(403).json(FORBIDDEN_BODY);
     } else {
       if (!STAFF_DELETE_ROLES.includes(req.user.role)) return res.status(403).json(FORBIDDEN_BODY);
-      if (req.user.tenant_id !== doc.tenant_id) return res.status(403).json(FORBIDDEN_BODY);
+      const accessible = await resolveAccessibleTenantIds(req.user);
+      if (!accessible.includes(doc.tenant_id)) return res.status(403).json(FORBIDDEN_BODY);
     }
 
     req.document = doc;
@@ -195,7 +201,8 @@ async function requireExpiringListAccess(req, res, next) {
       return res.status(400).json({ error: 'Missing required parameter: tenantId' });
     }
     if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
-    if (Number(tenantId) !== req.user.tenant_id) return res.status(403).json(FORBIDDEN_BODY);
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(Number(tenantId))) return res.status(403).json(FORBIDDEN_BODY);
     return next();
   } catch (err) {
     console.error('[requireExpiringListAccess]', err.message);
