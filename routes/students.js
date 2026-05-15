@@ -431,8 +431,11 @@ router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res
 });
 
 // Create a new student
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
       `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived) 
@@ -447,8 +450,11 @@ router.post('/', async (req, res) => {
 });
 
 // Update a student
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
+    if (!ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
@@ -469,8 +475,11 @@ router.put('/:id', async (req, res) => {
 });
 
 // Update student tier only
-router.patch('/:id/tier', async (req, res) => {
+router.patch('/:id/tier', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const { tier } = req.body;
     const result = await pool.query(
@@ -490,8 +499,11 @@ router.patch('/:id/tier', async (req, res) => {
 });
 
 // Archive a student
-router.patch('/:id/archive', async (req, res) => {
+router.patch('/:id/archive', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const { archived_reason, archived_by } = req.body;
     
@@ -534,13 +546,16 @@ router.patch('/:id/archive', async (req, res) => {
 });
 
 // Unarchive (reactivate) a student
-router.patch('/:id/unarchive', async (req, res) => {
+router.patch('/:id/unarchive', requireAuth, async (req, res) => {
   try {
+    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
-    
+
     const result = await pool.query(
-      `UPDATE students 
-       SET archived = FALSE, 
+      `UPDATE students
+       SET archived = FALSE,
            archived_at = NULL,
            archived_by = NULL,
            archived_reason = NULL,
@@ -561,8 +576,11 @@ router.patch('/:id/unarchive', async (req, res) => {
 });
 
 // Delete a student
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
+    if (!DELETE_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
     const { id } = req.params;
     const result = await pool.query(
       'DELETE FROM students WHERE id = $1 RETURNING *',
