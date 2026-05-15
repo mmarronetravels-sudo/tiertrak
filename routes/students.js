@@ -10,6 +10,23 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// Role allowlists for the write-side of this router. Three tiers per
+// PR-S3-D-sec operator decision:
+//   - ROLES_WHO_CAN_EDIT: roster create + MTSS-tier writes + soft-delete/restore.
+//     Mirrors routes/tier1-assessments.js:19-23 and
+//     routes/mtssMeetings.js:19-24 (MEETING_WRITE_ROLES) — same membership,
+//     route-local because no shared roles module exists yet.
+//   - ADMIN_ROLES: PUT /:id demographic edits. Narrower than EDIT for
+//     reasoning recorded in PR-S3-D-sec proposal. Mirrors
+//     routes/prereferralForms.js:25 and routes/parentLinks.js:25.
+//   - DELETE_ROLES: HARD DELETE /:id only. One-element array intentional —
+//     documents the role-allowlist intent and supports future additions
+//     without retrofitting (e.g., if product later widens to 'school_admin'
+//     on a per-tenant flag, the const is the single place to edit).
+const ROLES_WHO_CAN_EDIT = ['district_admin', 'school_admin', 'counselor', 'interventionist'];
+const ADMIN_ROLES = ['school_admin', 'district_admin'];
+const DELETE_ROLES = ['district_admin'];
+
 // Get archive reason options
 router.get('/archive-reasons', requireAuth, async (req, res) => {
   const reasons = [
