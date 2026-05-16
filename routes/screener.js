@@ -6,6 +6,7 @@ const {
   requireStudentReadAccess,
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -13,12 +14,86 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// ============================================================
+// Tenant-binding doctrine (POST handlers in this file)
+//
+// Per Followup #125 (per-school binding), POST handlers compute the
+// target tenant via resolveAndBindTargetTenant(req):
+//   - Optional req.body.target_tenant_id (positive integer).
+//   - Absent → falls back to req.user.tenant_id (backwards-compat
+//     for the current single-tenant users whose JWT carries their
+//     only accessible tenant).
+//   - Present → validated against resolveAccessibleTenantIds(req.user);
+//     not-in-set returns 403 before any INSERT, so a body-explicit
+//     cross-tenant probe collapses to 403, not 400-FK.
+//
+// Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+// (master-index Followup 67) for the multi-school case only. The
+// rule remains in force for any field NOT named target_tenant_id;
+// GET handlers continue to derive scope from
+// resolveAccessibleTenantIds(req.user) directly.
+//
+// Scope in THIS file:
+//   - POST /upload (bulk-import screener rows) — in scope.
+//     Binding is PER-REQUEST, not per-row inside the bulk loop:
+//     one resolved target_tenant_id governs the whole batch. The
+//     ON CONFLICT (tenant_id, student_id, assessment_type, subject,
+//     screening_period, school_year) tuple on screener_results is
+//     unaffected — tenant_id remains the first key column.
+//
+// Helper is duplicated module-local per Followup #132 (consolidation
+// deferred to a chore PR post-PR-S3-D-4).
+// ============================================================
+
 // PR1 backward-compat default: any upload row missing assessment_type is
 // treated as STAR (the only vendor any prior UI ever produced). Migration
 // 024's catch-all backfill uses the same default for unlisted tenants.
 // PR2 adds a UI-driven dropdown of assessment types and the body field
 // becomes required at that point — remove this default then.
 const DEFAULT_ASSESSMENT_TYPE = 'STAR';
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
+/**
+ * Resolve and validate the target tenant for a POST write handler.
+ *
+ * Per Followup #125 (per-school binding), POST handlers read an optional
+ * target_tenant_id from req.body:
+ *   - Absent → falls back to req.user.tenant_id (backwards-compat for
+ *     the current single-tenant users whose JWT carries their only
+ *     accessible tenant).
+ *   - Present but not a positive integer → 400.
+ *   - Present, positive integer, but not in
+ *     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+ *     INSERT; a body-explicit cross-tenant probe collapses to 403,
+ *     not 400-FK).
+ *
+ * Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+ * (master-index Followup 67) for the multi-school case only.
+ *
+ * @param {object} req - Express request. requireAuth must have already
+ *   populated req.user; req.body may carry an optional target_tenant_id.
+ * @returns {Promise<{targetTenantId: number|null, error: {status: number, body: object}|null}>}
+ *   On success: { targetTenantId: <int>, error: null }.
+ *   On failure: { targetTenantId: null, error: { status, body } } —
+ *   caller should respond res.status(error.status).json(error.body).
+ */
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
+}
 
 // GET /api/screener-results/student/:studentId — single student's screener
 // history. Parent gate: parent_student_links via requireStudentReadAccess.
@@ -77,7 +152,8 @@ router.post('/upload', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: screeningPeriod, schoolYear, rows' });
     }
 
-    const tenantId = req.user.tenant_id;
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const uploadedBy = req.user.id;
     let matched = 0;
     const unmatched = [];
