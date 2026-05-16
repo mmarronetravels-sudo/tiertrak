@@ -12640,3 +12640,179 @@ NEXT SESSION SHOULD
     the master-index forecast (D-1/2/3/4 in S75-S77, Sessions
     4-5 in S78-S79 with ~2-week cushion) holds.
 ================================================================================
+================================================================================
+SESSION: 2026-05-16T08:33:52-07:00
+BRANCH:  sec/students-504-pattern-e
+DISPOSITION: merged (squash to main as 50936af; remote branch deleted via --delete-branch; local branch still present)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Ship PR-S3-D-1 (PR #115): per-school target_tenant_id binding for the 4
+  Pattern E POST handlers in routes/student504.js, per Followup #125 resolution
+  (per-school path, decided S75 P1). First implementation of the per-school
+  binding pattern; sets the precedent for PR-S3-D-2/3/4.
+
+FILES TOUCHED
+  routes/student504.js — added resolveAndBindTargetTenant helper (file-local),
+                         rewrote day-one header tenant-binding contract, wired
+                         helper into POST /cycles, POST /consents, POST
+                         /eligibility-determinations, POST /plans. Form-set
+                         lookup in /cycles re-scoped to resolved target tenant
+                         via tenantId identifier rebind. +74 / -12 = +62 net.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  Pre-decision audit re-read (S75) confirmed 4 Pattern E sites unchanged from
+  S74 baseline; S74 pre-decision Cowork audit-read provided the baseline.
+  Implementation triad (S75 P3): tenant-isolation-auditor + security-reviewer
+  + privacy-reviewer all APPROVED on PR #115 with paste-anchored evidence
+  across all six severity slots. Tenant-isolation-auditor PASS-5 paste-anchored
+  the 6-step runtime-precedence trace at POST /cycles, confirming the rebind
+  on line 231 strictly precedes the form-set lookup on line 249; form-set
+  query therefore validates against the resolved target tenant. Security +
+  privacy reviewers each surfaced 1 INFO (the same FE-contract observation
+  on string-encoded-integer rejection, listed for triad symmetry). Helper
+  gates on resolveAccessibleTenantIds(req.user) (consumes user_school_access,
+  no inline district-id branch per §5 doctrine). 403-before-INSERT preserved
+  at every POST site. Composite-FK schema (Migration 021) remains as SQL-layer
+  defense-in-depth behind the helper's accessible-set check.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none directly by the diff. tenantId is the only
+                     tenant-identity slot in each POST's INSERT parameter
+                     array; no body field overrides it; response-body
+                     RETURNING projections unchanged by this PR.
+  Logging audit:     verified no PII in logs — diff-scoped grep for added
+                     console.* lines returned zero hits; all 10 pre-existing
+                     console.error sites log SQLSTATE only (`err && err.code`);
+                     Followup #114 broader redaction debt not regressed.
+  Cross-tenant risk: none identified — accessible-set check gates every POST
+                     write site; 403 string is invariant whether target tenant
+                     exists or not (gated on user_school_access only, no
+                     tenants-table existence side-channel); diff-scoped
+                     req.body grep confirmed no handler reads tenant_id from
+                     body outside the helper.
+
+VERIFICATION
+  node --check routes/student504.js — OK
+  tenant-isolation-auditor (PR #115) — APPROVED; 0 CRITICAL / 0 HIGH /
+                                       0 MEDIUM / 0 LOW / 0 WARN / 3 INFO
+                                       (form-set re-scope verified at
+                                       /cycles entry; helper consumption
+                                       centralized per §5; composite-FK
+                                       defense-in-depth confirmed)
+  security-reviewer (PR #115)        — APPROVED; 0 CRITICAL / 0 HIGH /
+                                       0 MEDIUM / 0 LOW / 0 WARN / 1 INFO
+                                       (string-encoded-integer FE-contract
+                                       note, intentional strictness)
+  privacy-reviewer (PR #115)         — APPROVED; 0 CRITICAL / 0 HIGH /
+                                       0 MEDIUM / 0 LOW / 0 WARN / 1 INFO
+                                       (same observation, listed for triad
+                                       symmetry)
+  gh pr view 115                     — reviewDecision: APPROVED, mergeable:
+                                       MERGEABLE, mergeStateStatus: CLEAN
+  gh pr merge 115 --squash
+    --delete-branch                  — merged at 50936af; fast-forwarded
+                                       local main as side-effect
+  Render LIVE timestamp              — 2026-05-16T15:00:00Z (merge
+                                       14:59:45Z → LIVE 15s, twelfth-
+                                       consecutive sub-minute per S74 §7
+                                       banking)
+  Backend test suite (Followup #73)
+    and lint (Followup #74)          — still open repo-wide; verification
+                                       fell back to triad-on-diff per
+                                       PR-S3-D-sec precedent
+
+OPEN ITEMS / FOLLOW-UPS
+  - Bank: FE school-picker UI followup (sibling to #128 dead-FE-field
+    cleanup) — current App.jsx forms don't send target_tenant_id; legacy
+    callers continue on JWT-fallback path; FE work needed before any
+    multi-school caller can exercise the new contract.
+  - Bank: shared-module refactor for resolveAndBindTargetTenant
+    post-PR-S3-D-4 (parallel to Followup #126 precedent for role-allowlist
+    consts).
+  - INFO finding (both reviewers): string-encoded integer rejected by
+    isPositiveInt — intentional strictness, FE-contract clarity note;
+    no remediation required.
+  - Forecast-calibration data point: +62 actual vs +45 midpoint = +38%
+    over, mirrors PR-S3-D-sec +37% overshoot. Refine S74 §9 banking —
+    sec/-class inflator confirmed at ~37–40%, not 30–40%.
+  - PR-S3-D-2 (mtssMeetings + screener + prereferralForms), PR-S3-D-3
+    (csvImport), PR-S3-D-4 (students.js Pattern E) — precedent now
+    shipped; cluster unblocked.
+  - .claude/settings.json: sixteenth-consecutive-session uncommitted
+    drift; rode along with this branch but kept out of both commits.
+    Followup #22 still tracks the future stand-alone chore/settings-reset
+    PR.
+  - user_school_access prod state remains EMPTY; first per-school-binding
+    exercise gated on Followups #122 + #123 (#125 now resolved by this
+    PR's merge).
+  - Local sec/students-504-pattern-e branch still present after remote
+    deletion; operator can prune at discretion.
+
+DISCIPLINE OBSERVATIONS (S75)
+  §1: S74 §3 slot-omission drift resolved via single-sentence prompt-level
+      reminder ("list all six slots explicitly with (0) or (N)"). Cheapest
+      possible intervention sufficient — bank as recommended pattern for
+      future-session subagent prompts.
+  §2: Reviewer memory-citation discipline trajectory — security-reviewer
+      and privacy-reviewer both chose zero memory citations and anchored
+      entirely on disk-source evidence; tenant-isolation-auditor cited one
+      memory file (feedback_helper_consume_dont_inline_5_branch) without
+      paste-anchoring. Reviewer-discretion-to-skip-memory-citation posture
+      (security + privacy) recommended as cleanest default for sec/-class
+      triad dispatch.
+  §3: S74 §5 cross-reviewer corroboration pattern recurred — security-
+      reviewer INFO-1 and privacy-reviewer INFO-1 independently surfaced
+      the same observation (target_tenant_id must be JSON number, not
+      string, due to isPositiveInt requiring Number.isInteger). Two-
+      reviewer corroboration on the same finding as the load-bearing
+      data point for FE-contract clarity.
+  §4: S74 §9 trailing-newline artifact pattern paid off on third
+      consecutive PR — gh pr view ... --jq .body trailing-newline diff
+      identified as known artifact on PR #115 without fresh investigation.
+      Pattern now from "investigate-once-then-bank" (PR #113) to
+      "identify-and-skip" (PR #115) within three sessions of first
+      surfacing.
+  §5: Tenant-isolation-auditor PASS-5 phantom-line self-correct — auditor
+      paste-anchored a "line 258" reference, then self-corrected inline
+      with parenthetical "(Disregard...)." Load-bearing precedence claim
+      survived intact, but the artifact is the S74 §2 paste-density drift
+      indicator. Sample of one this session; track persistence through
+      PR-S3-D-2 triad before classifying as pattern or noise.
+  §6: S75 P(c) guardrail bimodal trajectory within session.
+      POSITIVE: operator demanded diff bytes when CC summarized
+      commit results instead of paste-anchoring (cumulative diff
+      after git push and node --check); carry-forward gap from
+      S74 §7 closed in-flight rather than silently propagating.
+      NEGATIVE: same pattern recurred three turns later when CC
+      summarized fix-application as a "map" instead of pasting
+      cat output of the corrected draft; operator-prompt-level
+      enforcement does not carry across action-type shifts
+      (commit-results → fix-apply). Dispatch-prompt requirement
+      language insufficient for action-shift boundaries; needs
+      per-action paste-anchored-output requirement explicitly
+      stated each time the action shifts. Bimodal-within-session
+      framing per S74 §7 precedent.
+  §7: sec/-class inflator refined to 37-40% upper-band based on two
+      consecutive data points — PR-S3-D-sec actual +92 vs forecast ~+67
+      = +37%; PR-S3-D-1 actual +62 vs forecast ~+45 midpoint = +38%.
+      Refines S74 §9 from "~30-40%" to "~37-40%" for sec/-class PRs.
+  §8: Tenant-isolation-auditor unanchored memory citation in PASS-1 —
+      S74 §1 + §7 soft recurrence on first reviewer of session. S74 §8
+      mid-session self-correction trajectory did not fully carry across
+      the session boundary into S75. Dispatch-prompt requirement
+      language was necessary but not sufficient; need stronger in-prompt
+      enforcement next session.
+
+NEXT SESSION SHOULD
+  (a) Master-index synchronization: assign permanent Followup numbers for
+      items banked this session; reconcile cross-references across memory
+      files.
+  (b) PR-S3-D-2 (mtssMeetings + screener + prereferralForms cluster) as
+      the priority continuation — precedent shape now shipped via
+      PR-S3-D-1, cluster unblocked.
+  (c) Rank the new Followups (FE school-picker UI, shared-helper-post-D-4
+      refactor) in the master-index priority queue.
+================================================================================
