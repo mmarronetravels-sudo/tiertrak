@@ -225,7 +225,11 @@ router.get('/active-form-set', requireAuth, refuseParentRole, async (req, res) =
 // concurrently — body inputs are validated against the row that matches.
 router.post('/cycles', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    // Per Followup #125 — per-school binding. tenantId is the resolved
+    // target tenant; the tenant_form_sets lookup below therefore
+    // validates the form set is active for the target school.
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const userId = req.user.id;
     const { student_id, form_set_id, form_set_version } = req.body || {};
 
@@ -430,7 +434,10 @@ router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) =
 // a UX/policy rule the frontend Form C surface enforces.
 router.post('/consents', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    // Per Followup #125 — per-school binding. tenantId below is the
+    // resolved target tenant for this write.
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const userId = req.user.id;
     const {
       cycle_id,
@@ -561,7 +568,10 @@ router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
 // are uncapped, which is the majority house style being followed.
 router.post('/eligibility-determinations', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    // Per Followup #125 — per-school binding. tenantId below is the
+    // resolved target tenant for this write.
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const userId = req.user.id;
     const {
       cycle_id,
@@ -680,7 +690,10 @@ router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, asy
 // a frontend/form-set concern.
 router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
   try {
-    const tenantId = req.user.tenant_id;
+    // Per Followup #125 — per-school binding. tenantId below is the
+    // resolved target tenant for this write.
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const userId = req.user.id;
     const {
       cycle_id,
