@@ -152,7 +152,8 @@ router.post('/upload', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields: screeningPeriod, schoolYear, rows' });
     }
 
-    const tenantId = req.user.tenant_id;
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const uploadedBy = req.user.id;
     let matched = 0;
     const unmatched = [];

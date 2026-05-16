@@ -395,13 +395,16 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing required field: student_id' });
     }
 
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
+
     // Tenant verification: student must belong to caller's tenant.
     const studentResult = await pool.query(
       'SELECT tenant_id FROM students WHERE id = $1',
       [student_id]
     );
     if (studentResult.rows.length === 0
-        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+        || studentResult.rows[0].tenant_id !== tenantId) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
@@ -427,7 +430,7 @@ router.post('/', requireAuth, async (req, res) => {
         student_id, tenant_id, referred_by, initiated_by, prior_interventions, status
       ) VALUES ($1, $2, $3, $4, $5, 'draft')
       RETURNING *
-    `, [student_id, req.user.tenant_id, req.user.id, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
+    `, [student_id, tenantId, req.user.id, initiated_by || 'staff', JSON.stringify(priorInterventions)]);
 
     res.status(201).json(result.rows[0]);
   } catch (error) {

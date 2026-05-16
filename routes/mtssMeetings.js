@@ -385,7 +385,8 @@ router.post('/', requireAuth, async (req, res) => {
     }
   }
 
-  const tenantId = req.user.tenant_id;
+  const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+  if (bindError) return res.status(bindError.status).json(bindError.body);
   const createdBy = req.user.id;
 
   // Tenant gate on the student. Tenant-bound SELECT — not-found and
