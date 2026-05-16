@@ -13573,3 +13573,642 @@ P8 — Migration-027 Phase 2; multi-screener feat. Carry-
 forward.
 
 ================================================================
+
+========================================================================
+SESSION 78 — May 16, 2026 (Saturday afternoon Pacific)
+PR-S3-D-4 (students.js per-school target_tenant_id binding) + close
+========================================================================
+
+Spanned ~2 hours calendar elapsed from S77-close-resumption (22:04 UTC
+PR #120 LIVE) through PR-S3-D-4 audit + 1a + 1b + full triad + merge
+(23:18:30 UTC) + LIVE (~23:19 UTC) + close-entry composition + close
+PR. One substantive PR merged (PR #121, PR-S3-D-4) closing the Pattern
+E handler-family sweep across the D-class series.
+
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Wired per-school target_tenant_id binding into the two remaining
+Pattern E POST handlers in routes/students.js: POST / (create student
+roster row) and POST /referral-monitoring. Closes the Pattern E sweep
+across all five D-class PRs (D-sec, D-1, D-2, D-3, D-4). Helper
+resolveAndBindTargetTenant (with isPositiveInt) now lives in six
+file-local copies awaiting Followup #132 consolidation chore PR
+post-D-4.
+
+In-PR work beyond binding wire-in:
+
+D-1 fix — POST /referral-monitoring student-row tenant equality check
+rewritten from student.tenant_id !== req.user.tenant_id to !==
+tenantId (the resolved single-target school), preventing cross-
+school-within-district scope widening for district admins. §5
+dual-path correctness.
+
+D-2 — isPositiveInt(student_id) shape-parity gate added at POST
+/referral-monitoring. Framed in Cowork pre-PR analysis as Pattern E
+shape consistency with five other consumer files; tenant-iso
+reviewer reframed as Followup #76 pattern application at the body-
+input layer (closes a downstream-failure path: non-integer student_id
+→ generic 500 becomes explicit 400 at handler boundary). Both
+framings accurate; reviewer's adds substantive nuance.
+
+D-5 — 7-line stale "Single-home tenant binding... Revisit when
+Followup #125 resolves..." comment block above POST / removed
+(Option C of three options analyzed pre-edit). One-line
+// Create a new student. purpose comment preserved for navigation
+parity with other route comments in the file. Canonical statement
+now carried by the file-level doctrine block at L13-47 (added in 1a).
+
+Triad dispatched sequentially per S77 D-3 precedent (tenant-iso →
+security → privacy). All three landed APPROVED 0/0/0/0/0W/2I —
+triple convergence at identical severity slot shape with zero
+remediable findings. First session in the D-class series where
+triple-convergence landed at zero in-PR remediation requirements
+(S77 D-3 had a WARN-tier privacy finding requiring 1c).
+
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/students.js: +94 -10 cumulative across two commits.
+  - 1a (cfab88c): +79 -0 doctrine block + helpers as dead-code
+    scaffolding. Doctrine 35 lines + isPositiveInt 3 lines +
+    resolveAndBindTargetTenant 39 lines (including JSDoc) + 2
+    trailing-blank separators.
+  - 1b (cee9bdc): +15 -10 helper wire-in into both POSTs + D-1 +
+    D-2 + D-5.
+
+activities.txt: this entry (current chore PR).
+
+No other files touched. No migrations applied. No schema changes.
+No env var changes. No dependency changes. No package.json mods.
+
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor subagent dispatched on PR #121 diff (commits
+cfab88c + cee9bdc vs main). Verdict: APPROVED 0/0/0/0/0W/2I.
+
+Eight scope items confirmed against disk-source paste-anchored bytes:
+
+(a) Helper resolution ordering canonical at both wire-sites:
+    role-gate → helper → SELECT/INSERT. POST /referral-monitoring:
+    parent-role check at L408-410 → helper at L415 → bindError early
+    return at L416 → isPositiveInt gate at L418-420 → SELECT at
+    L422-425 → tenant check at L426-428 → INSERT at L437-444.
+    POST /: ROLES_WHO_CAN_EDIT check at L524-526 → helper at L527 →
+    bindError early return at L528 → INSERT at L530-535.
+
+(b) D-1 §5 dual-path correctness: !== tenantId single-target
+    equality at L427, not accessible.includes(...) widening.
+    Wire-site doctrine comment at L411-414 captures the reasoning
+    accurately ("not the caller's accessible-set — the helper has
+    already narrowed to one").
+
+(c) Legacy-caller Path 1 bit-equivalence: for the 50 current single-
+    tenant users (no body.target_tenant_id), helper's JWT-fallback
+    branch at L94-97 returns req.user.tenant_id; no DB call on this
+    branch. tenantId === req.user.tenant_id; INSERT bind identical;
+    D-1 check identical. Bit-for-bit equivalent to pre-PR.
+
+(d) Body-explicit cross-tenant probe Path 2: 403 fires before any
+    DB work at L102-104 (helper's accessible-set membership check).
+    Pre-PR behavior: body.target_tenant_id silently ignored per
+    Followup #67 doctrine; binding fell back to req.user.tenant_id;
+    no breach but confusing user-facing no-op. Post-PR: explicit
+    403, no DB work, closes the silent-fallback footgun.
+
+(e) Body-explicit accessible-tenant Path 3: district-admin path
+    correctly binds to chosen school's tenant_id at INSERT.
+    Unexercised at merge time (user_school_access EMPTY per fail-
+    closed posture); logic correct for when first district admin
+    onboards.
+
+(f) 7 GET handlers untouched (git diff --stat confirms only POSTs
+    changed). GET /:studentId via requireStudentReadAccess derives
+    scope via §5 dual-path on existing-row tenant_id; out-of-scope
+    per doctrine block L29-30.
+
+(g) 6 non-POST writes (PUT /:id, PATCH /:id/tier, PATCH /:id/archive,
+    PATCH /:id/unarchive, DELETE /:id, DELETE /referral-monitoring/
+    :studentId) re-verified as §5 dual-path scoped on existing-row
+    tenant_id via resolveAccessibleTenantIds. Out-of-scope per
+    doctrine L39-43.
+
+(h) Helper byte-equivalence to canonical routes/student504.js:111-152:
+    independently re-ran diff returning EXIT:0. Confirms helper-block
+    byte-stability across consumer files.
+
+Two INFO entries (observational, not findings):
+- D-2 isPositiveInt gate framed as co-shipped improvement applying
+  Followup #76 pattern at the body-input layer.
+- Followup #132 (helper consolidation) already disclosed in-code at
+  L45-46 doctrine comment.
+
+Zero remediable findings. Zero memory citations (S77 §I posture
+honored).
+
+
+------------------------------------------------------------------------
+SECURITY REVIEW
+------------------------------------------------------------------------
+
+security-reviewer subagent dispatched. Verdict: APPROVED 0/0/0/0/0W/2I.
+
+Eight scope items confirmed:
+
+(a) Helper SQL surface: zero template-literal interpolation
+    introduced. Helper executes zero SQL directly; only call is to
+    pre-existing resolveAccessibleTenantIds middleware.
+
+(b) isPositiveInt strict validation property re-confirmed:
+    Number.isInteger(n) && n > 0 rejects strings, floats, negatives,
+    zero, NaN, Infinity, null, undefined, booleans, objects. Applied
+    at two gates: L99 (helper bodyTarget) and L418 (student_id at
+    POST /referral-monitoring). SEXTUPLY-CONFIRMED across D-class
+    series (S75 D-1 + S76 D-2 + S77 D-3 + S77 D-3 security + S78
+    D-4 tenant-iso + S78 D-4 security). Property locked as load-
+    bearing wire-contract per S77 §K standing.
+
+(c) INSERT param flow: 2 modified INSERTs reviewed (POST / at
+    L530-534; POST /referral-monitoring at L437-444); both fully
+    parameterized $1-$9 / $1-$4. tenantId flows directly from
+    helper return into param array without intermediate string
+    concatenation. Pre-flight SELECT at L422-425 also parameterized.
+
+(d) Error response body leak check (new surfaces): four new paths
+    reviewed (L100 helper 400 'Invalid target_tenant_id'; L104
+    helper 403 'Not authorized for target tenant'; L419 isPositive-
+    Int gate 400 'Invalid or missing student_id'; L428 modified
+    403 'Not authorized'). All static-string bodies, probe-
+    resistant. No row counts, no tenant IDs, no accessible-set
+    enumeration signal, no DB internals, no table/column leakage.
+
+(e) Pre-existing error-message surfaces enumerated for Followup
+    #114 elevation: 10 sites in routes/students.js leaking raw
+    error.message via res.status(500).json({ error: error.message })
+    at L199, L223, L243, L517, L538, L575, L607, L672, L711, L735.
+    Not introduced by this PR; banked for #114 batch-redaction.
+
+(f) Auth flow integrity preserved: requireAuth on both modified
+    POSTs (L406, L522); role-gates upstream of helper invocation
+    (parent-role at L408-410; ROLES_WHO_CAN_EDIT at L524-526).
+    No regression in auth-then-role-then-helper sequence.
+
+(g) No new external HTTP, env vars, file I/O, password/JWT
+    handling. Zero new fetch/axios; zero new require() (resolveAcc-
+    essibleTenantIds was pre-existing import at L6); zero new env
+    var reads.
+
+(h) D-5 stale comment deletion: no load-bearing security commentary
+    lost. New doctrine block at L13-47 carries body-forgery vector
+    closure ("body-explicit cross-tenant probe collapses to 403,
+    not 400-FK") and Followup #67 superseding ("rule remains in
+    force for any field NOT named target_tenant_id"). Old "Single-
+    home tenant binding" framing correctly superseded by per-school
+    binding.
+
+Two INFO entries:
+- 10 pre-existing error.message leak sites mapped to Followup #114
+  banking (10 sites > 5-line §M trivial-patch threshold; warrants
+  dedicated #114 chore PR, not bundle-in).
+- Followup #132 helper duplication (in-code disclosed; no action).
+
+Cross-reviewer convergence with tenant-iso at identical 0/0/0/0/0W/2I
+slot shape (different INFO contents; same severity distribution).
+
+§I posture per §G: reviewer cited feedback_convergent_grep_
+verification.md by name AND paste-anchored substantive content. Per
+S77 §G refinement, paste-anchored content is the discipline; name-
+only citation is the gap. Held this round.
+
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent dispatched. Verdict: APPROVED 0/0/0/0/0W/2I.
+
+Eight scope items confirmed:
+
+(a) PII handling in handler logic: helper + new gates operate
+    exclusively on tenant_id integers + req.user.{tenant_id, role,
+    district_id}. No PII (names, IDs, parent/staff info) enters any
+    new log line. Zero new console.* statements.
+
+(b) Error response bodies leak-free from privacy lens: four new
+    paths (L100, L104, L419, L428) all static-string, no PII echo
+    of submitted values.
+
+(c) Pre-existing logging surfaces re-scanned: 10 wire-leak sites
+    (matches security enumeration) + 4 server-log surfaces at
+    L336, L400, L447, L474 (console.error('<static-context>:',
+    error)). All pre-existing; not introduced by this PR. Server-
+    log surfaces lower urgency than wire-leak (operator-visible
+    logs vs wire to authenticated user) but worth bundling under
+    Followup #114.
+
+(d) Empty user_school_access fail-closed reconfirmation: helper's
+    three-branch resolution preserves fail-closed posture for
+    district-admin path. Empty accessible-set → 403 at L104 for any
+    positive integer target. Reconfirmed per S76 §K + S77.
+
+(e) Helper file-local distribution count post-D-4: 6 copies
+    (student504.js, screener.js, mtssMeetings.js, prereferralForms.js,
+    csvImport.js, students.js). Grep across routes/ + middleware/
+    confirms. Followup #132 covers consolidation post-D-4.
+
+(f) D-1 privacy implication: rewrite at L427 (student.tenant_id
+    !== tenantId vs !== req.user.tenant_id) is privacy-tightening
+    — prevents cross-school-within-district student-reference
+    forgery for future district-admin path. For legacy single-
+    tenant users behavior is bit-identical (tenantId ===
+    req.user.tenant_id); for future district-admin case the new
+    shape is strictly tighter.
+
+(g) Behavioral profile in prod: 50 current single-tenant users
+    bit-for-bit identical (Path 1 JWT fallback). District-admin
+    path unexercised at merge time per fail-closed user_school_
+    access.
+
+(h) CSV/multer file-on-disk lifecycle: N/A confirmed. No multer/
+    upload/req.file/fs.unlink surface in routes/students.js (grep
+    zero hits). Rules out S77 D-3 finding class. Both modified
+    POSTs consume application/json bodies.
+
+Two INFO entries:
+- 10 wire-leak error.message sites + 4 server-log console.error
+  sites in students.js banked under Followup #114.
+- (No Followup #132 INFO from privacy; already covered by tenant-iso
+  + security.)
+
+§F slot-vs-prose consistency: slot count 0/0/0/0/0/2 matches prose
+framing ("nothing remediable in-PR via S77 §M trivial-patch is
+required"). Significant contrast from S77 D-3 privacy review which
+had the WARN-prose-vs-INFO-slot inconsistency. §F discipline working
+on the reviewer side this round.
+
+Forward-looking "fragile pattern" framing: privacy reviewer noted
+that while currently bounded (no UNIQUE constraints with PII-leaking
+detail today), the error.message cluster could surface column values
+in future schema iterations. Forward-looking schema-evolution risk
+framing beyond pure enumeration.
+
+D-1 triple-framing across the three lenses (banked at §B below).
+
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+PR-S3-D-4 verification gates:
+
+1a stage byte-equivalence diff: EXIT:0 — helper paste at routes/
+students.js:66-107 byte-identical to routes/student504.js:111-152.
+Paste-anchored disk-source diff, not convergent-grep proxy.
+
+1a + 1b cumulative diff vs main: +94 -10 — exact match to forecast
+(1a +79 -0 plan = actual; 1b +15 -10 plan = actual).
+
+node --check routes/students.js: EXIT:0 (syntactic validity).
+
+Lint absent per Followup #74: project has no eslint installed and no
+npm run lint script. node --check is NOT lint coverage; only parse
+validation. Stronger lint coverage deferred to Followup #74. FIRST
+per-PR verification gate in our session work where Followup #74's
+lint absence hit explicitly. Banked at §K below: future sec/-class
+PR verification templates should include "node --check exit 0 (lint
+unavailable per Followup #74)" rather than asking for a lint command
+that doesn't exist.
+
+§J behavior-equivalence trace serves as test substitute per S77 §J
+standing practice (test-config gap per Followup #73/#74). Three
+paths × two handlers traced explicitly in 1b commit message + PR
+body; independently re-walked by tenant-iso + privacy reviewers
+with three divergent framings (correctness + flow + privacy-
+tightening) converging on same conclusion.
+
+Merge ceremony:
+- Merge SHA: f5b469c1699c24e0cb664b96d5efcbe0005f8cf7
+- Merge timestamp: 2026-05-16T23:18:30Z
+- Squash + delete-branch (non-auto per S72 §11 banking)
+- §M Mode 4 paste-anchoring: paste-anchored bytes-of-state at both
+  commit ceremonies (cfab88c, cee9bdc) + merge ceremony (f5b469c).
+  No locked-in audit-trail defects.
+- Branch deletion confirmed: local sec/students-d4-pattern-e removed
+  by --delete-branch; remote tracking ref removed by fetch --prune;
+  ls-remote --heads origin sec/students-d4-pattern-e returns empty.
+- LIVE timestamp (operator-supplied from Render dashboard):
+  2026-05-16 16:19 PDT = 23:19 UTC. Elapsed ~30-89s minute-precision
+  window. 18th consecutive sub-minute code-deploy since PR #102
+  per S77 §K convention.
+
+
+------------------------------------------------------------------------
+OPEN ITEMS
+------------------------------------------------------------------------
+
+Namespace at S78 close: #134 (+1 from S77 close's #133 — Followup
+#134 banked for D-3 body-shape-validation gap on POST / in students.js;
+sibling of Followup #76; out-of-scope for D-4 per §9 smallest-safe-
+change).
+
+Carry-forward Followups (unchanged scope, with S78 extensions noted):
+
+#114 — Auth-error-message redaction. Scope expanded to 17 sites
+across 3 files (prereferralForms.js:437 + csvImport.js:278/309 +
+students.js: 10 wire-leak + 4 server-log). Largest single-session
+contribution to #114 came in S78 D-4. Ready-to-ship as dedicated
+chore PR for S79 P4.
+
+#132 — Helper consolidation. Now 6 file-local copies post-D-4
+(canonical at student504.js + 5 derived at screener, mtssMeetings,
+prereferralForms, csvImport, students). Chore PR target post-D-4 —
+S79 P3.
+
+#22 — .claude/settings.json drift. NINETEENTH-consecutive-session
+recurrence (S62-S78). FIFTH-consecutive elevation candidacy. Should
+rank for S79 or S80 slot rather than continuing indefinite deferral.
+
+#76 — Body-shape validation. NEW sibling Followup #134 (S78 D-4)
+adds students.js POST / body-shape validation gap (grade, teacher_id,
+tier, area, secondary_area, risk_level fields). Could batch with
+#76 if scheduled together.
+
+#74 — Backend lint config. First explicit per-PR verification-gate
+surfacing in S78. Future verification templates should expect node
+--check substitution.
+
+#125 — Per-school binding. CLOSED at PR #121 merge (Pattern E sweep
+fully retired across D-class series).
+
+#67 — "Routes NEVER read req.body.tenant_id" day-one rule. Super-
+seded for the multi-school case by Followup #125 resolution; rule
+remains in force for any field NOT named target_tenant_id.
+
+All other Followups (#43, #48, #49v2, #50, #52, #73, #83, #85, #95,
+#96, #116, #117, #119, #121, #122, #123, #124, #126, #127, #128,
+#129, #130, #131, #133) carry forward unchanged in scope.
+
+State at session close (record-keeping; not bugs):
+- 6 tenants (Lincoln Elementary 3, Summit Learning Charter 4,
+  Molalla River Academy 8, Humble ISD Demo 9, Mazapan School 10,
+  Vandercook Demo 11). UNCHANGED from S77.
+- 2 districts (Humble ISD Demo 1, Vandercook Demo 2). UNCHANGED.
+- 50 users in prod. UNCHANGED.
+- user_school_access prod state: EMPTY. Fail-closed by design per
+  S76 §K (reconfirmed S77 + S78). Operator backfill gated on
+  Followups #122 + #123 product decisions (timeline-dependent, not
+  safety-dependent).
+- user_school_access_audit prod state: EMPTY (trigger active, no
+  writers fired).
+- .claude/settings.json drift continues unchanged (Followup #22).
+- 4 stashes intact (carry-forward from S65/S66).
+- ~46 calendar days to July 1 from S78 close (same calendar day as
+  S77 close, ~2 hours later).
+
+
+------------------------------------------------------------------------
+DISCIPLINE OBSERVATIONS
+------------------------------------------------------------------------
+
+§A — Triple convergence at identical severity zero-remediable
+(first in D-series). PR-S3-D-4 received APPROVED 0/0/0/0/0W/2I from
+all three triad reviewers with identical slot shape and zero in-PR
+remediation required. Significant contrast from S77 D-3 where triad-
+APPROVED came with one WARN-tier privacy finding requiring 1c
+remediation. The per-school binding pattern is now well-shaped
+enough that experienced triad reviewers find nothing actionable.
+Sextuply-confirmed isPositiveInt property + helper byte-equivalence
++ canonical Pattern E ordering + paste-anchored doctrine + audit-
+first re-anchoring + §J trace template all stacking to remove
+surfaces. Pattern is mature; D-class-style work can land cleanly
+going forward. Banked as feedback_triple_convergence_identical_
+severity_zero_remediable_first_in_d_series.
+
+§B — D-1 triple-framing across the three reviewer lenses. The
+student-row tenant check rewrite (!== tenantId vs !== req.user.
+tenant_id) was independently characterized through different lenses:
+tenant-iso as "single-target equality, not accessible-set widening"
+(correctness lens); security as "no regression in auth-then-role-
+then-helper sequence" (flow integrity lens); privacy as "prevents
+cross-school-within-district student-reference forgery" (privacy-
+tightening lens). All three accurate; each identifies a different
+aspect of why D-1 is correct. Convergent conclusion via divergent
+framings — §J trace template withstood three independent
+interpretations without contradiction. Worth elevating: future §J
+traces for D-class-style structural rewrites should be drafted to
+support multiple reviewer-lens interpretations rather than narrowly
+to one. Banked as feedback_d1_triple_framing_three_reviewer_lenses.
+
+§C — isPositiveInt strict validation SEXTUPLY-confirmed across the
+D-class series. S75 §3 catalogued; S76 §J twice-confirmed; S77 §K
+quadruply-confirmed (D-1 + D-2 + D-3 + D-3 security); S78 D-4 adds
+two more (tenant-iso + security). Total: six confirmations across
+five PRs. Property is solidly load-bearing wire-contract; future
+sec/-class reviewers can treat as established invariant rather than
+needing fresh verification. Banked as feedback_isPositiveInt_strict_
+validation_sextuply_confirmed_load_bearing.
+
+§D — Followup #114 scope expansion to 17 sites across 3 files. S76
+§L anchored prereferralForms.js:437 (1). S77 security + privacy
+added csvImport.js:278 + :309 (2). S78 D-4 added students.js: 10
+wire-leak + 4 server-log = 14. Cumulative: 17. That's substantial
+chore PR scope. Privacy-reviewer's "fragile pattern" framing
+(UNIQUE-constraint detail lines could surface PII in future schema
+iterations) sharpens the sizing — not cosmetic redaction, latent
+schema-evolution risk closure. Banked as feedback_followup_114_
+scope_17_sites_3_files_fragile_pattern.
+
+§E — Privacy-lens "fragile pattern" framing beyond enumeration.
+Privacy reviewer characterized error.message cluster as "currently
+bounded but the pattern is fragile" — forward-looking risk framing
+identifying schema-evolution latency rather than enumerating sites.
+Adds value beyond security's enumeration-only frame on the same
+surface. Useful template: future privacy-reviewer dispatches can
+explicitly invite forward-looking-risk framing alongside enumeration.
+Banked as feedback_privacy_lens_fragile_pattern_framing_beyond_
+enumeration.
+
+§F — §A discipline graduated to multi-session standing practice.
+S77 §A banked the conditional-greenlight phrasing calibration as
+"calibrated mid-S77, held thereafter." S78 tested across EIGHT pause
+ceremonies: audit pause + 1a stage pause + 1a commit pause + 1b
+plan pause + 1b stage pause + 1b commit pause + PR-open pause +
+triad sequential dispatch (tenant-iso → security → privacy). All
+eight pauses held without slippage. S77 §A elevation from "calibrated
+and held within session" to "standing practice across sessions" is
+now multi-session-validated. Banked as feedback_s77_section_a_
+standing_practice_eight_pauses_s78.
+
+§G — External-approval-before-triad operator-side pattern surfaced
+and corrected mid-session. Operator ran §2A scholarpathsystems
+external review approval BEFORE dispatching triad subagent reviews,
+then signaled "external review done and approved" expecting merge
+prep. Cowork held the line: §2A external approval is one gate; triad
+subagent reviews are the other; both are independent prerequisites
+for merge per playbook Phase 4. Sequence corrected — triad ran after
+the catch (tenant-iso → security → privacy, sequential). All three
+APPROVED 0/0/0/0/0W/2I. The catch proves the playbook works: §A
+discipline + Phase 4 surfacing prevented merge-without-triad. Banked
+as feedback_external_approval_before_triad_operator_side_pattern_
+caught_playbook_held.
+
+§H — §I forecast methodology held on D-4. S77 §I refined the per-
+school binding forecast model: per-file shape × file count regardless
+of file count, no §7 inflator. Audit-time forecast for D-4: +85 to
++95 net range, +87 midpoint. Actual: +94 -10 = +84 net (3 below
+midpoint, 1 below lower bound, within natural variance). Deviation
+reason surfaced honestly per feedback_deviation_first_line_diff_
+summary: D-5 Option C stale-comment deletion was 6 lines (audit
+anticipated 3). Banked as feedback_section_i_methodology_held_d4_
+single_file_per_school. Methodology continues standing.
+
+§I — Per-school binding wire-ins can include opportunistic deletion
+of stale binding-rationale prose (D-5 here; not present in D-1 /
+D-2 / D-3). Positive forensic outcome (cleaning stale prose during
+sec/-class commit rather than letting it accumulate as Followup
+#114-style debt) but produces downside §I forecast variance. §I
+isn't invalidated; the nuance is that single-file per-school PRs
+overlapping with stale-comment cleanup can land below the per-file
+shape midpoint. Sharpens §I forecast: when audit-time spots stale
+binding-rationale prose for deletion, predict at the lower edge of
+the per-file shape band, not midpoint. Banked as feedback_per_school
+_binding_wire_in_with_stale_comment_cleanup_downside_variance.
+
+§J — Reviewer-supplied reframing of D-2 isPositiveInt as Followup
+#76 pattern at body-input layer. Cowork pre-PR framing characterized
+D-2 as "shape parity with established Pattern E across 5 other
+consumer files" — accurate but narrow. Tenant-iso reviewer's framing
+characterized D-2 as "Followup #76 (non-integer URL params → 500)
+pattern applied at the body-input layer here" — more substantive,
+identifies D-2 as defensively closing a downstream-failure path.
+Both framings accurate; reviewer's adds nuance Cowork pre-PR framing
+didn't surface. Worth incorporating into future D-class commit
+messages and PR bodies. Banked as feedback_d2_shape_parity_alternate
+_framing_as_followup_76_body_layer_application.
+
+§K — Audit-first discipline caught two anomalies pre-edit. Ask 1
+(doctrine-block scope discrepancy): audit-time non-POST-write
+enumeration named 5 items but disk-source shows 6 — DELETE
+/referral-monitoring/:studentId at L365 was read during initial
+audit but elided from summary. Caught by paste-anchored grep before
+1a paste. Ask 2 (helper insertion site recalibration): doctrine
+line-count corrected from estimated 34 to actual 35, trailing-blank
+omissions surfaced in initial estimate. Both caught at audit-first
+re-anchoring before any Edit calls. FOURTH consecutive PR (D-1 +
+D-2 + D-3 + D-4) where audit-first paste-anchoring caught structural
+deviations pre-edit. Worth elevating to standing practice alongside
+S77 §J + §L. Banked as feedback_audit_first_paste_anchoring_fourth_
+consecutive_pre_edit_catch.
+
+§L — Template-suitability-review-before-paste. Initial 1a plan
+proposed routes/student504.js:12-53 as the doctrine block template.
+Pre-paste re-check surfaced that student504's doctrine is file-
+specific (Form letters, parent504.js sibling, Migration 021
+composite-FK, server-stubs PR narrative) which would Frankenstein
+under trimming. Recalibrated to routes/prereferralForms.js:15-44 as
+cleaner file-agnostic template. Pre-paste template-suitability
+review prevented stale-content carryover from a high-specificity
+source. Sibling discipline to audit-first paste-anchoring (catches
+structural deviations) and helper byte-equivalence diff (catches
+content drift). Banked as feedback_template_suitability_review_
+before_paste.
+
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+P1 — S79 master-index sync ratification (brief, ~10-15 min):
+confirm §A-§L catalog authoritative; confirm §C isPositiveInt
+sextuply-confirmed elevation to solidly-load-bearing-wire-contract
+status; confirm §F §A discipline graduation to multi-session standing
+practice; confirm §D Followup #114 sized at 17 sites for dedicated
+chore PR; confirm §G external-approval-before-triad pattern banked
+as catch-test-cleared-evidence for playbook efficacy; confirm §K +
+§L elevations to standing practice alongside S77 §J.
+
+P2 — Followups #122 + #123 pure-Cowork product decisions (in
+parallel; same shape as S75 P1 #125 conversation). Both gate first
+district-user onboarding. Could be a single longer session or two
+shorter parallel threads. Target: within 1-2 sessions of S78 to
+unblock operator backfill.
+
+P3 — Followup #132 chore PR (helper consolidation): six file-local
+copies of resolveAndBindTargetTenant + isPositiveInt across
+student504.js, screener.js, mtssMeetings.js, prereferralForms.js,
+csvImport.js, students.js → shared middleware module. Forecast:
+chore PR with -N net (deletions across consumer files) + +M net
+(new shared module). Estimated 6-15 day budget depending on whether
+the consolidation includes API-surface refinement.
+
+P4 — Followup #114 chore PR (17 sites across 3 files: 10 wire-leak
++ 4 server-log in students.js + 2 wire-leak in csvImport.js + 1
+wire-leak in prereferralForms.js). Batch-redaction scope: convert
+error.message exposure to generic strings with structured logging
+on the server side. Privacy-lens fragile-pattern framing sharpens
+the urgency.
+
+P5 — chore/settings-reset PR for Followup #22 (nineteenth-consecutive-
+session drift; fifth-consecutive elevation candidacy). Single-commit
+chore.
+
+P6 — Followup #134 (NEW from S78): students.js POST / body-shape
+validation. Sibling of Followup #76; can batch with #76 if
+scheduled together.
+
+P7 — Memory roll-up (~95+ candidates accumulated: ~85 pre-S78 +
+~10 new S78 candidates per §A-§L).
+
+P8 — migration-027 Phase 2 + feat/multi-screener-upload.
+
+S79 opener decision (recommend Cowork pre-decision phase): P1
+master-index sync ratification first, then choose between P2
+(product decisions — slower-shape pure-Cowork) or P3/P4 (chore PRs
+— coding work). District onboarding timeline (~46 days to July 1
+from S78 close) suggests P2 should be in the next 1-2 sessions to
+unblock operator backfill.
+
+Three S79 guardrails worth surfacing at session-open per S78 §A,
+§F, §G:
+
+(a) §A triple-convergence at identical severity zero-remediable
+    is the new clean-PR benchmark for D-class-style work — if a
+    future PR's triad lands with WARN findings, that's a meaningful
+    step-down from D-4's bar, not noise.
+
+(b) §F §A discipline is multi-session standing practice now —
+    future sec/-class work should default to explicit-pause two-
+    step framing without re-deriving the pattern from scratch each
+    session.
+
+(c) §G external-approval-before-triad is a known operator-side
+    pattern; surfacing-and-correction sequence held cleanly in
+    S78 and the catch-test confirms playbook efficacy — but the
+    pattern itself doesn't preclude recurrence. Mid-session
+    reminders may help if it recurs.
+
+District structure state at S78 close: Session 3 — PR-S3-A + PR-S3-B
++ PR-S3-C + PR-S3-D-sec + PR-S3-D-1 + PR-S3-D-2 + PR-S3-D-3 +
+**PR-S3-D-4** all shipped. Pattern E sweep CLOSED. Remaining:
+2 product decisions (Followups #122 + #123) + 2 admin sessions
+(Session 4 admin UI + Session 5 staff CSV import). user_school_
+access still EMPTY in prod (fail-closed). ~46 days to July 1 from
+S78 close.
+
+========================================================================
+END SESSION 78 — main HEAD f5b469c
+========================================================================
