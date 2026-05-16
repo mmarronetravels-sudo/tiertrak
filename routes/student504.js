@@ -18,16 +18,26 @@ const pool = new Pool({
 //
 //   - Every handler runs requireAuth (parent-route variants live in
 //     routes/parent504.js, not this file).
-//   - tenant_id is ALWAYS derived from req.user.tenant_id (JWT claim)
-//     server-side. Routes NEVER read req.body.tenant_id (master-index
-//     Followup 67 lesson — applied from day one for the 504 surface
-//     so this route family does not inherit the legacy gap).
-//   - INSERT statements in PR 2 will set created_by from req.user.id
-//     for the 4 form-bearing tables that carry it (cycles + the 3
-//     form types).
+//   - target_tenant_id binding contract (POST handlers): the resolved
+//     target tenant is computed via resolveAndBindTargetTenant(req).
+//     Optional req.body.target_tenant_id (positive integer). Absent
+//     → falls back to req.user.tenant_id (backwards-compat for the
+//     current single-tenant users whose JWT carries their only
+//     accessible tenant). Present → validated against
+//     resolveAccessibleTenantIds(req.user); not-in-set returns 403
+//     before any INSERT, so a body-explicit cross-tenant probe
+//     collapses to 403, not 400-FK. Per Followup #125 (per-school) —
+//     this supersedes the day-one rule "Routes NEVER read
+//     req.body.tenant_id" (master-index Followup 67) for the
+//     multi-school case only. The rule remains in force for any
+//     field NOT named target_tenant_id; GET handlers continue to
+//     derive scope from resolveAccessibleTenantIds(req.user) directly.
+//   - INSERT statements set created_by from req.user.id for the 4
+//     form-bearing tables that carry it (cycles + the 3 form types).
 //   - Composite-FK schema (Migration 021) rejects cross-tenant child
 //     references at the SQL layer regardless of any application bug
-//     in these handlers.
+//     in these handlers — defense-in-depth behind the helper's
+//     accessible-set check.
 //
 // Form letter mapping documented in migration-021-504-foundation.sql:
 //   Form C → /consents
@@ -100,6 +110,45 @@ const SIGNATURE_TEXT_MAX = 300;
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
+}
+
+/**
+ * Resolve and validate the target tenant for a POST write handler.
+ *
+ * Per Followup #125 (per-school binding), POST handlers read an optional
+ * target_tenant_id from req.body:
+ *   - Absent → falls back to req.user.tenant_id (backwards-compat for
+ *     the current single-tenant users whose JWT carries their only
+ *     accessible tenant).
+ *   - Present but not a positive integer → 400.
+ *   - Present, positive integer, but not in
+ *     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+ *     INSERT; a body-explicit cross-tenant probe collapses to 403,
+ *     not 400-FK).
+ *
+ * Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+ * (master-index Followup 67) for the multi-school case only.
+ *
+ * @param {object} req - Express request. requireAuth must have already
+ *   populated req.user; req.body may carry an optional target_tenant_id.
+ * @returns {Promise<{targetTenantId: number|null, error: {status: number, body: object}|null}>}
+ *   On success: { targetTenantId: <int>, error: null }.
+ *   On failure: { targetTenantId: null, error: { status, body } } —
+ *   caller should respond res.status(error.status).json(error.body).
+ */
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
 }
 
 // ============================================================
