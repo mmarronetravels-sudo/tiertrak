@@ -12,6 +12,36 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
+// ============================================================
+// Tenant-binding doctrine (POST handlers in this file)
+//
+// Per Followup #125 (per-school binding), POST handlers compute the
+// target tenant via resolveAndBindTargetTenant(req):
+//   - Optional req.body.target_tenant_id (positive integer).
+//   - Absent → falls back to req.user.tenant_id (backwards-compat
+//     for the current single-tenant users whose JWT carries their
+//     only accessible tenant).
+//   - Present → validated against resolveAccessibleTenantIds(req.user);
+//     not-in-set returns 403 before any INSERT, so a body-explicit
+//     cross-tenant probe collapses to 403, not 400-FK.
+//
+// Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+// (master-index Followup 67) for the multi-school case only. The
+// rule remains in force for any field NOT named target_tenant_id;
+// GET handlers continue to derive scope from
+// resolveAccessibleTenantIds(req.user) directly.
+//
+// Scope in THIS file:
+//   - POST / (create meeting) — in scope.
+//   - PUT /:id and DELETE /:id — OUT of scope; both derive scope
+//     from the meeting row's own tenant_id via a tenant-bound
+//     SELECT/DELETE-by-id (target identity is the URL-supplied
+//     meeting id, not body).
+//
+// Helper is duplicated module-local per Followup #132 (consolidation
+// deferred to a chore PR post-PR-S3-D-4).
+// ============================================================
+
 // Roles authorized to mutate MTSS meetings (POST / PUT / DELETE). Defined
 // route-local; closest semantic peer is ROLES_WHO_CAN_EDIT in
 // routes/tier1-assessments.js. Teachers and parents are intentionally
@@ -28,6 +58,49 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // Caps intervention_reviews.length on POST/PUT /api/mtss-meetings to
 // bound the per-row authorization loop. See PR #81 security-reviewer M1.
 const MAX_INTERVENTION_REVIEWS = 50;
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
+/**
+ * Resolve and validate the target tenant for a POST write handler.
+ *
+ * Per Followup #125 (per-school binding), POST handlers read an optional
+ * target_tenant_id from req.body:
+ *   - Absent → falls back to req.user.tenant_id (backwards-compat for
+ *     the current single-tenant users whose JWT carries their only
+ *     accessible tenant).
+ *   - Present but not a positive integer → 400.
+ *   - Present, positive integer, but not in
+ *     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+ *     INSERT; a body-explicit cross-tenant probe collapses to 403,
+ *     not 400-FK).
+ *
+ * Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+ * (master-index Followup 67) for the multi-school case only.
+ *
+ * @param {object} req - Express request. requireAuth must have already
+ *   populated req.user; req.body may carry an optional target_tenant_id.
+ * @returns {Promise<{targetTenantId: number|null, error: {status: number, body: object}|null}>}
+ *   On success: { targetTenantId: <int>, error: null }.
+ *   On failure: { targetTenantId: null, error: { status, body } } —
+ *   caller should respond res.status(error.status).json(error.body).
+ */
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
+}
 
 // Get dropdown options for the form
 router.get('/options', requireAuth, async (req, res) => {
