@@ -10,6 +10,42 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// ============================================================
+// Tenant-binding doctrine (POST handlers in this file)
+//
+// Per Followup #125 (per-school binding), POST handlers compute the
+// target tenant via resolveAndBindTargetTenant(req):
+//   - Optional req.body.target_tenant_id (positive integer).
+//   - Absent → falls back to req.user.tenant_id (backwards-compat
+//     for the current single-tenant users whose JWT carries their
+//     only accessible tenant).
+//   - Present → validated against resolveAccessibleTenantIds(req.user);
+//     not-in-set returns 403 before any INSERT, so a body-explicit
+//     cross-tenant probe collapses to 403, not 400-FK.
+//
+// Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+// (master-index Followup 67) for the multi-school case only. The
+// rule remains in force for any field NOT named target_tenant_id;
+// GET handlers continue to derive scope from
+// resolveAccessibleTenantIds(req.user) directly.
+//
+// Scope in THIS file:
+//   - POST / (create student roster row) — in scope.
+//   - POST /referral-monitoring — in scope. Includes a pre-INSERT
+//     student-row tenant check; that check is rewritten to assert
+//     the student belongs to the resolved targetTenantId (single
+//     target school, not the caller's accessible-set — the helper
+//     has already narrowed to one).
+//   - PUT /:id, PATCH /:id/tier, /:id/archive, /:id/unarchive,
+//     DELETE /:id, DELETE /referral-monitoring/:studentId — OUT of
+//     scope. These operate on existing rows; tenant scoping is
+//     already via resolveAccessibleTenantIds(req.user) on the
+//     row's own tenant_id (§5 dual-path).
+//
+// Helper is duplicated module-local per Followup #132 (consolidation
+// deferred to a chore PR post-PR-S3-D-4).
+// ============================================================
+
 // Role allowlists for the write-side of this router. Three tiers per
 // PR-S3-D-sec operator decision:
 //   - ROLES_WHO_CAN_EDIT: roster create + MTSS-tier writes + soft-delete/restore.
@@ -26,6 +62,49 @@ const pool = new Pool({
 const ROLES_WHO_CAN_EDIT = ['district_admin', 'school_admin', 'counselor', 'interventionist'];
 const ADMIN_ROLES = ['school_admin', 'district_admin'];
 const DELETE_ROLES = ['district_admin'];
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
+/**
+ * Resolve and validate the target tenant for a POST write handler.
+ *
+ * Per Followup #125 (per-school binding), POST handlers read an optional
+ * target_tenant_id from req.body:
+ *   - Absent → falls back to req.user.tenant_id (backwards-compat for
+ *     the current single-tenant users whose JWT carries their only
+ *     accessible tenant).
+ *   - Present but not a positive integer → 400.
+ *   - Present, positive integer, but not in
+ *     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+ *     INSERT; a body-explicit cross-tenant probe collapses to 403,
+ *     not 400-FK).
+ *
+ * Supersedes the day-one rule "Routes NEVER read req.body.tenant_id"
+ * (master-index Followup 67) for the multi-school case only.
+ *
+ * @param {object} req - Express request. requireAuth must have already
+ *   populated req.user; req.body may carry an optional target_tenant_id.
+ * @returns {Promise<{targetTenantId: number|null, error: {status: number, body: object}|null}>}
+ *   On success: { targetTenantId: <int>, error: null }.
+ *   On failure: { targetTenantId: null, error: { status, body } } —
+ *   caller should respond res.status(error.status).json(error.body).
+ */
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
+}
 
 // Get archive reason options
 router.get('/archive-reasons', requireAuth, async (req, res) => {
