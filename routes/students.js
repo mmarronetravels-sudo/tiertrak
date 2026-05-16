@@ -408,14 +408,23 @@ router.post('/referral-monitoring', requireAuth, async (req, res) => {
     if (req.user.role === 'parent') {
       return res.status(403).json({ error: 'Not authorized' });
     }
+    // Per Followup #125 — per-school binding. tenantId is the resolved
+    // target tenant; the student-row tenant check below asserts the
+    // student belongs to THAT school (single target), not the caller's
+    // accessible-set (the helper has already narrowed to one).
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const { student_id, notes } = req.body;
-    // Tenant verification: student must belong to caller's tenant.
+    if (!isPositiveInt(student_id)) {
+      return res.status(400).json({ error: 'Invalid or missing student_id' });
+    }
+    // Tenant verification: student must belong to the resolved target tenant.
     const studentResult = await pool.query(
       'SELECT tenant_id FROM students WHERE id = $1',
       [student_id]
     );
     if (studentResult.rows.length === 0
-        || studentResult.rows[0].tenant_id !== req.user.tenant_id) {
+        || studentResult.rows[0].tenant_id !== tenantId) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     // Coerce notes to a safe shape: string, trimmed, length-limited.
@@ -432,7 +441,7 @@ router.post('/referral-monitoring', requireAuth, async (req, res) => {
         monitored_by = $3,
         created_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [student_id, req.user.tenant_id, req.user.id, safeNotes]);
+    `, [student_id, tenantId, req.user.id, safeNotes]);
     res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Error marking as monitoring:', error);
@@ -510,23 +519,19 @@ router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res
 });
 
 // Create a new student.
-// Single-home tenant binding: the new row's tenant_id is pinned to
-// req.user.tenant_id (the caller's home school). body.tenant_id (if
-// present) is intentionally ignored — closes the body-forgery vector
-// that pre-auth-gap code carried. Security-tightening, NOT §5 widening.
-// Revisit binding semantics when Followup #125 resolves the district
-// multi-school write product decision.
 router.post('/', requireAuth, async (req, res) => {
   try {
     if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
     const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
     const result = await pool.query(
       `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
        RETURNING *`,
-      [req.user.tenant_id, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
+      [tenantId, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
