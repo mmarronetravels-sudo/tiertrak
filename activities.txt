@@ -13155,3 +13155,421 @@ NEXT SESSION SHOULD
       these are the last gates on operator backfill of
       user_school_access.
 ================================================================================
+================================================================
+SESSION 77
+2026-05-16 Saturday afternoon Pacific
+================================================================
+
+TASK SUMMARY
+
+PR-S3-D-3 merged. Per-school target_tenant_id binding contract
+(Followup #125) wired into the bulk-CSV-import POST handler in
+routes/csvImport.js; requireMatchingTenant middleware (Pattern F)
+retired. Three commits on the feature branch sec/csvImport-d3-
+pattern-e: 1a (helper + doctrine, dead code), 1b (wire-in +
+Pattern F retirement), 1c (fs.unlink cleanup before bindError
+early-return, privacy fix surfaced by privacy-reviewer triad
+pass). Squash-merged via PR #119 at commit 8f63c59 on main at
+2026-05-16T21:35:33Z. Render LIVE at 2026-05-16T21:36Z (sub-
+minute, 16th consecutive sub-minute LIVE in the cached-build
+streak from PR #102 through PR #119).
+
+Sibling to PR-S3-D-1 (PR #115 / student504.js, S75) and
+PR-S3-D-2 (PR #117 / mtss + screener + prereferral cluster, S76)
+under the Session 3 district structure roadmap. With PR-S3-D-3
+shipped, only PR-S3-D-4 (students.js remaining Pattern E) remains
+to close out the Pattern E sweep before Followup #132 chore PR
+consolidates helpers across all five file-local copy sites.
+
+FILES TOUCHED
+
+- routes/csvImport.js
+    1a (2997eac): +83 / -0  (helper + doctrine + import)
+    1b (4de7e27):  +6 / -11 (wire-in + Pattern F retirement)
+    1c (6ed03ce):  +1 / -0  (fs.unlink cleanup)
+  Cumulative: +79 net (+90 / -11).
+
+Squash merge: 8f63c59.
+
+MIGRATIONS RUN
+
+None this session.
+
+TENANT ISOLATION REVIEW
+
+tenant-isolation-auditor subagent dispatched against branch vs
+main. Verdict APPROVED (0/0/0/0/0W/1I).
+
+Six PR-specific asks confirmed with paste-anchored disk-source
+evidence:
+  - Helper resolution ordering: AFTER file-check (body-shape
+    validation), BEFORE bulk-INSERT loop.
+  - URL :tenantId vestigial: zero req.params.tenantId code-
+    level references post-1b.
+  - Behavior-change carve-out: bounded to URL-tampering callers;
+    no cross-tenant write path introduced.
+  - Pattern F retirement completeness: zero code-level
+    requireMatchingTenant references; doctrine prose mention
+    at L60 is intentional historical documentation.
+  - GET handlers (/template + /template/download) tenant-
+    agnostic: static content; no pool.query; no tenant_id reads.
+  - Legacy-caller JWT-fallback bit-equivalence trace: helper
+    return → destructure-rename → local tenantId → INSERT $1,
+    bit-for-bit identical to pre-PR for callers with no body
+    field.
+
+Zero memory citations (S75 §2 / S76 §I posture honored).
+
+One INFO observation: vestigial :tenantId route signature flagged
+for traceability; intentional per Cowork decision and documented
+in 1a doctrine block.
+
+SECURITY REVIEW
+
+security-reviewer subagent dispatched. Verdict APPROVED
+(0/0/0/0/0W/5I).
+
+Seven PR-specific asks confirmed:
+  - isPositiveInt strict validation (Number.isInteger && n>0;
+    rejects string-encoded integers): quadruply-confirmed across
+    PR-S3-D-1, PR-S3-D-2, PR-S3-D-3, and this review per S76 §J.
+  - Three-branch validation order: 400 before accessible-set
+    check; 403 from membership check, not JWT fallback path.
+  - requireMatchingTenant retirement safety: defense-in-depth
+    removal of URL=JWT match; JWT-derived binding remains the
+    actual tenant authority.
+  - Middleware-chain coverage intact (requireAuth +
+    blockParentRole + upload.single('file')); no middleware
+    unintentionally dropped.
+  - Doctrine block accuracy (vestigial-URL clause, multer
+    multipart note, GET-handlers-tenant-agnostic clause all
+    verified against actual handler bodies).
+  - Error response bodies leak-free across all early-return
+    paths.
+  - No SQL template-literal interpolation introduced.
+
+One §8 surface: reviewer cited "ALWAYS import the helper"
+memory entry un-paste-anchored. Remediated CC-side per S76 §I
+resolution path 3 (paste-anchored memory file content at
+~/.claude/projects/-Users-melaniemarrone-Projects-tiertrak/memory/
+feedback_helper_consume_dont_inline_5_branch.md confirmed
+substance matches the reviewer's paraphrase). §8 surface goal
+satisfied without reviewer re-dispatch.
+
+Five INFO observations: two pre-existing error-message leak
+surfaces (routes/csvImport.js:278 row-level dbError.message;
+routes/csvImport.js:309 top-level error.message) banked toward
+Followup #114 elevation per S76 §L (now three concrete sites
+across two files including prereferralForms.js:437 from S76);
+three positive doctrine/middleware confirmations.
+
+PRIVACY REVIEW (Section 4B)
+
+privacy-reviewer subagent dispatched. Verdict APPROVED WITH
+NOTES (0/0/0/0/1W after Cowork severity reclassification,
+addressed by 1c / 3I).
+
+Seven PR-specific asks confirmed:
+  - Zero new logging in 1a + 1b.
+  - req.body content not logged; parsed CSV row data not
+    logged.
+  - Error response bodies leak-free for new 1b early-returns.
+  - Pre-existing logging inconsistency check: two new concrete
+    sites mapped (L278 + L309) joining prereferralForms.js:437
+    under Followup #114.
+  - Empty user_school_access fail-closed reconfirmed per S76
+    §K: helper's district branch returns 403 when accessible-
+    set is empty AND target_tenant_id is body-supplied.
+  - CSV file lifecycle audit per §4B: identified bindError
+    early-return cleanup gap (see remediation below).
+  - Helper now exists in fourth file-local copy per Followup
+    #132 (csvImport.js joins mtssMeetings.js, screener.js,
+    prereferralForms.js; original at student504.js).
+    Consolidation deferred to chore PR post-PR-S3-D-4.
+
+One WARN-tier finding (severity reclassified from INFO slot
+count to WARN at Cowork relay-time review per privacy reviewer's
+own prose intent and CLAUDE.md §7 "Privacy & compliance failure"
+framing): the new bindError early-return at L165 fires AFTER
+multer (diskStorage via dest:'uploads/') has written the
+uploaded CSV to disk but exits without invoking fs.unlink.
+Uploaded CSVs contain student PII per §4B; persistence on disk
+after handler return violates §4B lifecycle requirements.
+
+Remediation: 1c (commit 6ed03ce, +1 net) adds
+fs.unlink(req.file.path, () => {}) between the bindError check
+opener and the return statement, mirroring outer-catch cleanup
+pattern. Addressed in this PR via new 1c commit (not
+git commit --amend) per Option 1 honest-disclosure discipline
+from S76 §B; preserves discovery sequence in commit history.
+
+Cleanup coverage post-1c covers all four completion paths:
+file-check 400 (no file → no cleanup needed); bindError 400/403
+(NEW L165); success path (L285); outer-catch parse/INSERT errors
+(L308).
+
+Zero memory citations (S75 §2 / S76 §I posture honored).
+
+Three INFO observations: two pre-existing logging surfaces
+(folded to Followup #114 per §L); one pre-existing fs callback
+console.error noted for completeness.
+
+VERIFICATION
+
+1a verification batch: identifier grep + helper boundary grep
++ byte-identity diff vs student504.js:111-152 (empty output,
+exit 0) + node --check (PASS) + git diff --stat + git status
+--short + full diff. All gates clean.
+
+1b verification batch: requireMatchingTenant + req.params.tenantId
+grep (zero code refs post-1b; sole doctrine-prose hit at L60
+intentional) + resolveAndBindTargetTenant + targetTenantId grep
+(helper definition + doctrine + wire-in at L163) + INSERT param
+grep (tenantId preserved as $1 at L268 via destructure-rename)
++ node --check (PASS) + git diff --stat + git status --short
++ full diff. All gates clean.
+
+1c verification batch: fs.unlink grep returns three hits (L165
+NEW bindError cleanup; L285 success path; L308 outer-catch) +
+node --check (PASS) + git diff --stat (+1 / -0) + git status
+--short + full diff. All gates clean.
+
+Triad: 3-of-3 APPROVED (privacy WARN-tier finding addressed
+in-PR via 1c rather than derivative cleanup PR; Option 1 honest
+disclosure path).
+
+Test suite / lint: no-op per Followups #73 / #74 (4th
+consecutive sec/-class PR on this gate per S76 §C).
+Behavior-equivalence verified by code-reading trace per S76 §G
+as test-substitute discipline.
+
+OPEN ITEMS
+
+- PR-S3-D-4 (students.js remaining Pattern E) is the final
+  Pattern E PR in this batch; closes the sweep.
+- Followup #122 (cross-school parent-student link) + #123
+  (one-in-progress-per-tenant) product decisions still open;
+  gate first district-user onboarding.
+- Followup #132 chore PR consolidates both
+  resolveAndBindTargetTenant AND isPositiveInt helpers
+  post-PR-S3-D-4 (fourth file-local derived copy at csvImport.js
+  this PR brings the post-D-3 count to four derived copies plus
+  the original at student504.js per S76 §F mental scope).
+- Followup #131 (FE school-picker UI) scope expansion: first
+  district user CSV import requires FE multipart
+  target_tenant_id wiring; JSON body contract from D-1/D-2 does
+  not apply to CSV upload because multer parses multipart form-
+  data into req.body.
+- Followup #114 (error-message redaction) elevation candidacy
+  with three concrete scoped sites now anchored
+  (prereferralForms.js:437; csvImport.js:278; csvImport.js:309).
+- user_school_access prod state: EMPTY (fail-closed by design
+  per S76 §K reconfirmed this PR).
+- .claude/settings.json drift carry-forward (Followup #22):
+  18th consecutive session; elevation candidate.
+
+DISCIPLINE OBSERVATIONS
+
+§A. Conditional-greenlight phrasing read as unconditional.
+PR-S3-D-3 / 1a commit landed at 2997eac before the gated diff-
+byte review fired. Cowork prompt language was "Once I see the
+diff bytes, you have 'ship 1a' greenlight: stage, commit"; CC
+interpreted the second clause as standalone authorization,
+short-circuiting the conditional clause. Subsequent gates in
+the same PR adopted explicit standalone STOP markers and
+unambiguous "wait for separate Cowork confirmation" framing;
+the corrected pattern held across 1b, 1c, PR open, and merge
+ceremonies. Generalizable banking: conditional-greenlight
+phrasing where the conditional precedes the directive is
+structurally ambiguous and should be replaced with explicit
+two-step framing ("STOP after diff; await separate ship
+confirmation"). Pattern observed once, immediately calibrated,
+held thereafter.
+
+§B. Verbatim stdout vs narrative summary paste latency.
+Multiple turns in early 1a/1b cycles had CC describing command
+outputs in narrative form rather than pasting verbatim stdout
+("Three hunks visible above" with no diff bytes in the message,
+or "all gates pass" with no grep stdout). Cowork-side layer-2
+relied on verbatim bytes for byte-level verification; narrative
+summaries arrived but the underlying bytes did not. Remediated
+mid-session via explicit "paste verbatim stdout, no narrative
+summary" framing in subsequent prompts. After that calibration,
+verbatim paste discipline held. Banking: prompts requiring
+byte-level layer-2 should include explicit "verbatim stdout"
+framing; narrative-summary defaults are not sufficient for
+multi-step verification.
+
+§C. Post-action structural anchors derived from pre-action
+context. The 1b plan-kickoff turn included a structural-anchor
+paste describing requireMatchingTenant at L43-L49 and helper
+at L51 — those line numbers were post-1a (pre-1b) state
+carried forward without re-grepping the post-1a file. The
+correct post-1a positions (requireMatchingTenant at L83,
+helper at L91) had already been confirmed via earlier grep
+in the same session. Remediated via fresh grep at the next
+turn. Banking: structural anchors at action-class shift points
+must be re-derived from a fresh grep against the post-action
+file, not carried forward from prior-action context.
+
+§D. Rendering-collapse of blank lines in chat code blocks.
+CC's old_string and new_string drafts for Edit calls displayed
+without visible blank lines that were present in the actual
+Edit tool input. Cowork could not verify byte-equivalence from
+the displayed text alone. Resolved via explicit [BLANK]
+markers when authoring old_string/new_string for layer-2
+review; once introduced, blank-line ambiguity was eliminated.
+Banking: when authoring multi-line tool arguments for layer-2
+review, use explicit blank-line markers (or cat -An style
+output) so blanks are unambiguous in the displayed text.
+
+§E. Relay-side §H phantom-line drift inversion. The tenant-
+isolation-auditor's report cited helper at L111-L114 and POST
+at L158; Cowork's relay-time §H flag claimed the citations
+were drifted and that the post-1b positions were L103-L115 and
+L161. Fresh on-disk grep confirmed the auditor's citations
+were accurate; Cowork's relay claim was the actual drift
+(derived from arithmetic projection rather than disk verification).
+Banking refinement for S76 §H: phantom-line drift at relay time
+is symmetric — it can land in the reviewer's report OR in the
+Cowork-side counter-claim. The cure (paste-anchored bytes-on-
+disk in the same turn as the citation) applies to both
+directions. Subsequent relay-side §H passes in this session
+adopted fresh-grep verification and held cleanly.
+
+§F. Triad-report internal severity inconsistency. The privacy-
+reviewer's report on PR-S3-D-3 / 1b filed the CSV-on-disk
+cleanup-gap finding under INFO in the severity slot count but
+framed it as WARN-tier in the narrative prose ("this surfaces
+as a WARN ... is 'Privacy & compliance failure' per CLAUDE.md
+§7"). Slot count was a clerical slip; prose was the authoritative
+analytical conclusion. Cowork relay-time reclassified to WARN
+per the substance. Banking: triad-report layer-2 should include
+a slot-count-vs-prose consistency check alongside the §H line-
+citation discipline.
+
+§G. §I posture in dispatch prompts is informational, not
+enforcement. The security-reviewer dispatch included the §I
+posture ("skip memory citations entirely if disk-source evidence
+is sufficient"); the reviewer cited the "ALWAYS import the
+helper" memory entry by name anyway. The §I posture serves as
+guidance but does not block reviewers from citing memory if
+their internal reasoning surfaces it. Enforcement remains via
+CLAUDE.md §8 + CC-side paste-anchor remediation per S76 §I
+resolution path 3. Banking: §I-posture-in-prompt is a soft
+suggestion; §8 + remediation is the hard enforcement gate.
+
+§H. Heredoc escape verification grep-pattern shape. The PR-S3-
+D-3 PR body was passed via cat <<'EOF' heredoc with several
+backslash-escaped tokens (\$1, escaped backticks around code
+references). Single-quoted heredoc preserves backslashes
+literally; the rendered PR body had visible backslashes at
+the three escape sites. Cowork's initial visual-check grep
+pattern matched double-backslash sequences (the source-file
+shape) and returned zero hits; the actual landed content was
+single-backslash form (the rendered shape) and required a
+revised pattern. Banking: when grep-checking for escape
+artifacts in rendered content (PR bodies, markdown output,
+documentation), the pattern must match the renderer's surface
+form (typically single-backslash) not the source-encoding form
+(typically double-backslash).
+
+§I. Methodology refinement on per-school binding forecasts.
+S76 §B distinguished multi-file per-school sweeps (per-file-
+shape × file-count) from single-file sweeps (re-test §7 band).
+PR-S3-D-3 was a single-file case; the §7-band hypothesis did
+not hold. Helper-and-doctrine fixed cost (~+75 per file)
+applies regardless of file count; the §7 percentage inflator
+(37-40%) was developed against PRs without helper-and-doctrine
+fan-out and does not apply to per-school binding PRs at all.
+Refined model: per-school binding PRs use per-file-shape ×
+file-count as the mechanical baseline regardless of file count;
+no inflator on top. D-1 (+62 single file), D-2 (+228 = +76 avg
+× 3 files), D-3 (+79 single file) all fit this single-shape
+model within reasonable variance. Supersedes the S76 §B
+single-file vs multi-file distinction.
+
+§J. §G behavior-equivalence trace template held across three
+commits. PR-S3-D-3 / 1b's wire-in trace (helper return →
+destructure-rename → local tenantId → INSERT $1) was paste-
+anchored at each site per the §G template banked at S76. Both
+tenant-iso and privacy reviewers independently re-walked the
+trace in their reports. Test-substitute discipline now triply-
+applied (D-1, D-2, D-3) and remains the operational substitute
+for missing integration tests under #73/#74 carry-forward.
+Worth elevating to standing practice for sec/-class behavior-
+live commits while test-config gap remains open.
+
+§K. §M Mode 4 paste-anchoring held across three commit
+ceremonies + merge ceremony. PR #119 merge ceremony
+paste-anchored branch deletion via empty git branch --list,
+empty git ls-remote, and fetch-prune triple-anchor — pattern
+banked at S76 §M as standard practice held. No locked-in
+defects in this session's audit-trail composition.
+
+§L. Audit-first re-paste-anchoring caught structural deviations
+pre-edit. The 1a commit-plan prompt required sed -n verification
+of source line ranges; the audit-time recheck surfaced the
+missing resolveAccessibleTenantIds import in csvImport.js
+(needed by helper body) and confirmed helper-block byte-stability
+vs student504.js:111-152. Both surfaces caught pre-edit; no
+runtime bugs entered the diff. S76 §A discipline (per-action
+verify-on-disk catches semantic bugs cheap) continues to pay
+off — third consecutive PR (D-1, D-2, D-3) where audit-first
+discipline surfaced structural deviations before they reached
+file modifications.
+
+§M. 1c remediation pattern (privacy finding → in-PR fix via
+new commit) established as precedent. The privacy-reviewer
+triad-pass finding on 1b's bindError-path CSV-on-disk
+persistence was addressed in this PR via a single 1c commit
+(+1 net, fs.unlink insertion) rather than spawned to a
+derivative cleanup PR. Reasoning: §4B non-negotiable; fix
+trivial; in-PR atomic; new commit (not amend) preserves
+discovery sequence in commit history. Pattern banked for
+future triad-surfaced findings: when a reviewer surfaces a
+WARN+ finding addressable via a trivially small patch, in-PR
+remediation via a new commit (not amend) is the proportionate
+response. Preserves audit-trail integrity at the commit-history
+level per S76 §B honest-disclosure discipline.
+
+NEXT SESSION SHOULD
+
+P1 — Master-index sync at S78 open. Confirm S77 §A-§M catalog
+authoritative; confirm §I methodology refinement supersedes
+S76 §B's multi-file-vs-single-file distinction; confirm §J §G
+trace template elevation to standing practice; confirm §H
+heredoc-escape-grep-pattern-shape refinement banked.
+
+P2 — PR-S3-D-4 (students.js remaining Pattern E). Final
+Pattern E sweep PR; smallest cluster. Apply §I refined
+methodology — per-file shape (~+75) × 1 file ± Pattern B
+collapse adjustments → forecast ~+70-80 net. Audit-first
+re-read recommended.
+
+P3 — Followup #122 + #123 product decisions in parallel
+(pure-Cowork; can run alongside P2 audit). Both gate first
+district-user onboarding; resolutions feed operator
+user_school_access backfill timeline.
+
+P4 — Followup #132 chore PR consolidation post-PR-S3-D-4
+(covers both resolveAndBindTargetTenant AND isPositiveInt;
+five file-local locations to consolidate per S76 §F mental
+scope plus the post-D-3 csvImport.js copy).
+
+P5 — Followup #114 chore PR (three concrete scoped sites
+across two files anchored at S77 close per §L precedent;
+ready-to-ship status from elevation-candidate).
+
+P6 — chore/settings-reset PR for Followup #22 (18th
+consecutive session of drift; fourth consecutive session of
+elevation candidacy).
+
+P7 — Memory roll-up (~85+ candidates accumulated since S63;
+nine new from this session §A-§I + four positive surface
+notes §J-§M).
+
+P8 — Migration-027 Phase 2; multi-screener feat. Carry-
+forward.
+
+================================================================
