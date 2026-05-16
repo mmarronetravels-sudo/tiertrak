@@ -162,6 +162,7 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
 
   const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
   if (bindError) {
+    fs.unlink(req.file.path, () => {});
     return res.status(bindError.status).json(bindError.body);
   }
 
