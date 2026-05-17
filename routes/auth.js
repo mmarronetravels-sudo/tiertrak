@@ -168,9 +168,11 @@ router.get('/me', async (req, res) => {
     const decoded = jwt.verify(token, JWT_SECRET);
     
     const result = await pool.query(
-      `SELECT u.id, u.email, u.full_name, u.role, u.tenant_id, t.name as tenant_name, u.school_wide_access
+      `SELECT u.id, u.email, u.full_name, u.role, u.tenant_id, t.name as tenant_name,
+              u.school_wide_access, u.district_id, d.name as district_name
        FROM users u
        JOIN tenants t ON u.tenant_id = t.id
+       LEFT JOIN districts d ON u.district_id = d.id
        WHERE u.id = $1`,
       [decoded.id]
     );
