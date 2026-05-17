@@ -15915,3 +15915,627 @@ don't-rewrite-history convention).
 ========================================================================
 END SESSION 80
 ========================================================================
+
+========================================================================
+SESSION 81 — May 17, 2026 (Sunday afternoon-evening Pacific)
+========================================================================
+
+TASK SUMMARY
+============
+
+Session 81 (May 17, Sunday afternoon-evening Pacific). One
+substantive code PR merged this session: PR #126 (feat/district-
+admin-dashboard) — the first user-facing UI PR since the S60-S62
+baseline, mechanically unblocked by S80 P2's district_admin row
+landing in prod. PR #126 ships the read-only "My District"
+landing page surfacing per-school aggregate counts (active
+students, staff, active interventions) for district_admin users
+across every school in their user_school_access set.
+
+Session flow:
+
+  P1 — Master-index sync ratification (brief). S80 §A-§H catalog
+  confirmed authoritative. §M Pass 4 (branch-name-embedded slug)
+  banking ratified as standing-practice candidate. Followup #137
+  namespace position confirmed. Multi-channel §D extension
+  adopted at S81 P1: PR bodies enter the §M three-pass tracked-
+  content channel set alongside activities.txt — same persistence-
+  surface logic (GitHub PR bodies persist indefinitely and are
+  separately indexable via GitHub search and PR feeds).
+
+  P2 — PR #126 (feat/district-admin-dashboard) full lifecycle.
+  Read-only district-admin landing page returning per-school
+  aggregate counts via new GET /api/districts/:id/dashboard.
+  Auth chain mirrors routes/districtAccess.js (requireAuth +
+  role + district guard returning 403 on mismatch). Tenant
+  isolation via resolveAccessibleTenantIds helper consumption
+  (no inline §5 branching) + per-CTE tenant_id = ANY($accessible
+  ::int[]) filter + outer t.district_id = $2 defense-in-depth +
+  empty-array short-circuit semantics. /api/auth/me widened
+  additively with u.district_id and d.name as district_name via
+  LEFT JOIN districts (LEFT JOIN preserves /me semantics for
+  legacy users with district_id IS NULL). Frontend adds parallel
+  isDistrictAdmin derived value (isAdmin untouched per blast-
+  radius audit Risk #1); nav exposes new "My District" tab gated
+  on isDistrictAdmin; Admin tab narrowed via {isAdmin &&
+  !isDistrictAdmin && ...} to avoid silent single-school
+  misrepresentation flagged in the pre-implementation blast-
+  radius audit. Empty-state copy: "No schools yet. Contact your
+  system administrator." (operator-revised; CC's first draft
+  pointed at "ask your district admin" which a district_admin
+  cannot do above themselves). Footer note: "Staff and student
+  management arrives in the next update." Triad reviewer
+  dispatch returned 3-of-3 APPROVED (zero CRITICAL/HIGH/MEDIUM
+  across all three). One actionable LOW from privacy-reviewer
+  (logError arg-order swap at the FE view call site) fixed in
+  same-branch follow-on commit before merge. External reviewer
+  submitted formal gh pr review --approve. Squash-merge with
+  --delete-branch + Render auto-deploy + 5-min post-LIVE 401-
+  spike watch all clean.
+
+FILES TOUCHED
+=============
+
+None this PR except activities.txt itself (this close entry
+append).
+
+In PR #126 (the substantive PR merged this session):
+  - routes/districtDashboard.js (NEW, 119 lines)
+  - routes/auth.js (+3 / -1) — /me SELECT widening with LEFT JOIN
+    districts
+  - server.js (+2) — new router mount alongside districtAccess
+  - frontend/src/views/DistrictDashboardView.jsx (NEW, 114 lines)
+  - frontend/src/context/AppContext.jsx (+2 / -1) — isDistrictAdmin
+    derived value
+  - frontend/src/App.jsx (+19 / -1) — import + nav button +
+    Admin gate narrow + view dispatch
+Plus one follow-on commit on the same branch:
+  - frontend/src/views/DistrictDashboardView.jsx (+1 / -1) —
+    logError arg-order swap per privacy-reviewer L-2 pre-approval
+
+MIGRATIONS RUN
+==============
+
+None. PR #126 introduces no schema change; no DDL ran. The /me
+JOIN was added against the existing districts table (M028
+vintage).
+
+TENANT ISOLATION REVIEW
+=======================
+
+tenant-isolation-auditor dispatched on PR #126 returned APPROVED
+with zero CRITICAL/HIGH/MEDIUM/LOW findings (three INFO notes
+only, all non-blocking). The reviewer's verification matrix
+confirmed the §5 dual-path doctrine end-to-end across seven
+checkpoints: helper consumption (not inlined), per-CTE
+ANY($accessible) filter on every aggregate subquery, outer
+t.district_id = $2 defense-in-depth, empty-array short-circuit
+returning {schools: []}, role + district guard ordering before
+any data query, staff-count exclusion of district roles (role
+NOT IN ('parent','district_admin','district_tech_admin')), and
+transitive scope via JOIN-on-students for student_interventions
+(which has no own tenant_id column). The auditor explicitly
+named the four-layer pattern as the strongest tenant-isolation
+shape currently in the codebase for a read-aggregate surface;
+banking as benchmark per §C below.
+
+This PR's diff is activities.txt-only; tenant-isolation-auditor
+invocation on the close PR follows S80 precedent (data-tenant-
+bound-prose class even when activities-only). Recommend
+dispatching the auditor at the chore-PR review pass.
+
+SECURITY REVIEW
+===============
+
+security-reviewer dispatched on PR #126 returned APPROVED. Two
+LOW notes both pre-existing pattern observations deferred to
+existing followup sweeps: LOW-1 Pool instantiation duplication
+(candidate for X1 #132 helper consolidation), LOW-2
+validateIntParam reimplementation (folds into Followup #76
+non-integer URL params bubble to 500). Two INFO notes: /me
+widening benign (district_id integer + district_name string are
+organizational identifiers, not PII), router mount order safe
+(two routers on /api/districts; path segments disjoint — users/
+... vs dashboard — no shadowing). The reviewer's full-router-
+enumeration primitive (per memory feedback_full_router_enum_
+verification) was applied to verify the disjoint-path property
+held under the dual mount.
+
+Recommend invoking security-reviewer on this close PR per S80 §E
+precedent (docs-only diff, but the upstream PR #126 merged auth-
+adjacent code — /me JOIN widening — and the close entry cites
+auth-surface details, so first-PR-after pattern applies).
+
+PRIVACY REVIEW (§4B)
+====================
+
+Three §M-grep gates applied this session per the multi-channel
+§D extension adopted at S81 P1:
+
+  (1) Source pre-append — three-pass §M run on activities.txt
+      file state before any write. Zero hits.
+
+  (2) Post-stage diff — three-pass §M re-run on the staged
+      diff after git add. Zero hits.
+
+  (3) PR body composition mid-session — three-pass §M applied
+      to PR #126's body at gh pr create + gh pr edit time.
+      Pass 1 + Pass 2 clean on first run; Pass 3 (§H low-id
+      correlation-richness window) FIRED on the Verification
+      section's original draft, redacted via gh pr edit before
+      triad dispatch. Spot-checks confirmed Pass 1 + Pass 2 did
+      not regress on the edit. See §B below for the discipline
+      observation — this was the first real test of the multi-
+      channel §D extension.
+
+§4B PII-anchor scan: ZERO PII anchors of any §4B-catalogued
+shape across the appended content. Per recursion-trap discipline
+(S79 §M Pass 3), audit-trail prose cites that §4B was run plus
+result count, never what was checked for.
+
+VERIFICATION
+============
+
+§M Mode 4 paste-anchored at every operational gate per S77 §K +
+S78 §F + S79 §M + S80 standing practice. PR #126 merge sequence
+executed across five gates:
+
+  Step 1 — Pre-merge state. gh pr view 126 --json
+  reviewDecision,mergeStateStatus returned
+  {"mergeStateStatus":"CLEAN","reviewDecision":"APPROVED"}
+  verbatim.
+
+  Step 2 — Squash-merge with --delete-branch. gh pr merge 126
+  --squash --delete-branch returned a fast-forward with 6 files
+  (+259 / -3). Squash-merge SHA captured:
+  7162eb431a867379201d0e6d10a9a2aece60e9ca. mergedAt captured
+  from gh pr view 126 --json mergedAt: "2026-05-17T21:12:22Z".
+
+  Step 3 — Render LIVE timestamp via programmatic CLI. render
+  deploys list --output json filtered for the matching commit
+  returned dep-d852ue68bjmc73drlg20 with status="live",
+  finishedAt="2026-05-17T21:13:07.495893Z", trigger="new_commit",
+  commit.id matching the squash SHA. Elapsed merge → LIVE:
+  45.495893 seconds.
+
+  Step 4 — Four post-merge git/GH gates, all paste-anchored:
+    4a — git branch --list feat/district-admin-dashboard: empty
+    4b — git ls-remote --heads origin feat/district-admin-
+         dashboard: empty (fetch confirmed remote deletion)
+    4c — git log origin/main -1 --oneline: 7162eb4 feat(district
+         -dashboard): read-only schools+counts landing for
+         district admins (#126)
+    4d — gh pr view 126 --json state,mergeCommit: state="MERGED",
+         mergeCommit.oid matching the squash SHA
+
+  Step 5 — Post-deploy 5-min 401-spike watch. Three-axis
+  verification across the window 21:13:07Z → 21:18:07Z, all
+  empty:
+    Axis 1 — HTTP 401/500 hits via --status-code 401,500 filter:
+             empty
+    Axis 2 — district/district_id text errors via --text
+             districts,district_id grepped for error/exception/
+             JWT/TypeError: explicit no-match acknowledgment
+             line emitted
+    Axis 3 — --level error broader sweep: empty
+  Watch interpretation: clean window, no 401 spike against the
+  widened /me JOIN, no 500s against the new /districts/:id/
+  dashboard route, no district-related SQL errors.
+
+Background-Bash + Monitor mechanism failure observed during the
+watch window — see §F below for the discipline observation. Out-
+of-band verification queries were load-bearing for the all-clear,
+not Monitor notifications.
+
+All gates cleared without slippage. Pre-existing carryover
+(.claude/settings.json drift = Followup #22 TWENTY-SECOND-
+consecutive-session, GR_SampleClass.pdf NWEA reference untracked,
+scripts/ops/2026-05-11-[tenant]-revoke-audit.sql untracked
+working file = Followup #94) correctly identified and excluded
+from staging at close-entry compose time.
+
+OPEN ITEMS
+==========
+
+Carry-forward from S80 unchanged in scope except where noted:
+
+- Followup #22 (.claude/settings.json drift) — now TWENTY-SECOND-
+  consecutive-session deferral; EIGHTH-consecutive elevation
+  candidacy. Elevation watch continues.
+
+- user_school_access prod state UPDATED at S80 (now NON-EMPTY,
+  2 rows) — UNCHANGED in S81 (PR #126 added no rows; the new
+  route only READS).
+
+- user_school_access_audit prod state UPDATED at S80 (now NON-
+  EMPTY, 2 'grant' rows) — UNCHANGED in S81. M031 cascade-trigger
+  remains dormant (no DELETE has fired against user_school_access
+  in prod).
+
+- Pending from S80: hand-delivery of set-password URL via secure
+  channel within the 7-day token validity window. Standing open
+  until delivery confirmed and the new district_admin successfully
+  completes password setup. Operator can independently update
+  window state.
+
+- Pending privacy-reviewer LOW items from PR #126 (NEW):
+    L-1: PRIVACY_REVIEW.md catalogue update for the /api/auth/me
+    widening (district_id + district_name) and dashboard
+    response shape (school_tenant_id + school_name + three
+    aggregate counts). Doc-only follow-on; candidate for X6
+    retroactive cleanup bundle or its own chore PR.
+    L-2: logError arg-order at the FE view call site. CLOSED —
+    fixed in same-branch follow-on commit before merge per
+    reviewer pre-approval pattern (see §E).
+
+- Pending security-reviewer LOW items from PR #126 (NEW, both
+  pre-existing pattern observations):
+    LOW-1: Pool instantiation duplication. Defer to future
+    shared-helper consolidation (X1 #132 candidate).
+    LOW-2: validateIntParam reimplementation. Folds into
+    Followup #76 (non-integer URL params bubble to 500).
+
+- X-list (#132 helper consolidation, #114 redaction, #134 body-
+  shape validation, #135 parent-link fragility, #136 retroactive
+  §4B cleanup, X7 Vercel investigation, X8 filename-on-disk
+  forensic remediation, X9 memory rollup, X10 migration-027
+  Phase 2, X11 multi-screener feat, X12 Followup #137 stale-
+  product-name reference cleanup) all carry forward.
+
+NUMBERING NOTE — namespace, continued
+=====================================
+
+S81 promotes ZERO new Followups. All S81 discipline observations
+(§A-§G below) bank as discipline notes or extensions to existing
+standing-practice items; none warrant Followup numbering. The §B
+mid-session §M-Pass-3 catch is a new APPLICATION of the multi-
+channel §D extension adopted at S81 P1, not a new Followup. The
+§F Monitor-mechanism limitation is a tool-class observation
+banked for future Mode-4 paste-anchoring discipline, not promoted
+to Followup status.
+
+Namespace through #137 at session open (carried in from S80);
+through #137 at S81 close — unchanged.
+
+External tracker namespace decision still deferred. Twenty-fifth-
+consecutive session of deferral. Still worth a 15-minute
+opportunity-cost talk during a calmer session.
+
+DISCIPLINE OBSERVATIONS — Session 81
+====================================
+
+§A. First UI work since S60-S62 baseline shipped cleanly (S81)
+
+PR #126 is the first user-facing UI PR since the S60-S62
+baseline. UI-class discipline that had not been exercised in
+many sessions surfaced cleanly without friction: lint scoping to
+new files (separate concern from pre-existing FE lint hits),
+inline-vs-extracted view component decision (extracted to
+frontend/src/views/ following the existing ResourcesView.jsx
+precedent), Tailwind utility convention preservation (no new
+design tokens, matched existing indigo/slate palette + gradient
+summary card pattern from DashboardView).
+
+The UI-class blast-radius audit pre-implementation surfaced one
+structural Q (Admin tab visibility for district_admin) that drove
+a meaningful product decision (hide rather than show-with-banner)
+based on reading inline view dispatch + role gates across the
+7146-line App.jsx. Without the audit, the structural silent-
+misrepresentation footgun would have shipped.
+
+BANKING: UI-class work after long-baseline-gaps benefits from
+explicit pre-implementation blast-radius audits even when the
+change appears small. The Admin-tab visibility decision could
+not have been made correctly from PR-diff inspection alone; it
+required structural read of the existing FE state-machine.
+Standing-practice candidate: any UI PR after a >10-session UI
+baseline gap should include an explicit blast-radius audit
+section in the planning pass.
+
+§B. §M Pass 3 §H-correlation-window catch on PR body composition
+    — first real test of multi-channel §D extension (S81)
+
+The multi-channel §D extension adopted at S81 P1 (PR bodies
+enter the tracked-content channel set) fired on its first real
+test: §M Pass 3 catch on PR #126's Verification section, where
+the original draft embedded a count-implying ordinal + session-
+tag pair against a singleton row class during the gradient
+window established by S80 §H. Redacted to a count-neutral
+ordinal-less form via gh pr edit before triad dispatch. Pass 1
+and Pass 2 spot-checks confirmed no regression on the edit.
+
+Caught at three-pass-pre-dispatch gate, not after triad ran.
+The triad saw the redacted body; the historical record of the
+unredacted phrase exists only in CC's transient compose
+scrollback, not in any tracked-content channel.
+
+BANKING: multi-channel §D extension validated — PR-body-as-
+channel discipline is load-bearing during the §H low-id
+correlation-richness window. Pattern: any time CC composes a PR
+body that references "the first X user" or "the only Y in prod"
+or similar count-revealing ordinals during a known gradient
+window, run §M Pass 3 before any external surface (triad
+dispatch, gh pr create publish). The catch IS the discipline
+working as designed. The structural basis for the catch is S80
+§H; the channel extension makes the same discipline applicable
+to PR bodies as well as activities.txt.
+
+§C. Reviewer triad convergent-grep verification — first real
+    application post-banking (S81)
+
+Triad dispatch on PR #126 returned 3-of-3 APPROVED with zero
+CRITICAL/HIGH/MEDIUM. All three reviewers independently
+exercised the §5 dual-path checklist (helper consumption, per-
+CTE filter, outer district predicate, empty-array short-circuit)
+and reached the same conclusion. Per memory feedback_convergent_
+grep_verification, convergent grep across reviewers IS the
+verification — stronger than any single pass.
+
+The §5 layered defense for read-aggregate surfaces was named
+explicitly by the tenant-isolation-auditor as the strongest
+tenant-isolation pattern currently in the codebase for a read-
+aggregate surface. This becomes a benchmark shape for future
+read-aggregate route work.
+
+BANKING: when designing read-aggregate routes that cross §5
+surface, the four-layer pattern (helper-resolved accessible
+set + per-CTE ANY filter + outer scope predicate + empty-array
+short-circuit) is the canonical shape. Subsequent read-aggregate
+PRs should mirror this shape rather than reinvent. Recommend
+referencing routes/districtDashboard.js as the worked example
+in future related-surface planning prompts.
+
+§D. Privacy-reviewer caught FE arg-order bug outside strict §4B
+    scope (S81)
+
+PR #126's privacy reviewer surfaced L-2 (logError arg-order swap
+at the FE view call site) — a correctness issue, not a §4B PII
+concern. The reviewer's lens flagged it because in some
+hypothetical worse case the swapped order could log a PII-
+bearing arg in the wrong position; this case had no PII, but
+the reviewer surfaced the call-shape bug regardless. Fixed in
+one-line follow-on commit before merge.
+
+BANKING: the privacy-reviewer lens picks up adjacent correctness
+issues on FE code paths even when the strict §4B test passes.
+Useful complement to lint and to the security-reviewer's auth-
+correctness lens. Not redundant with either. Continue
+dispatching privacy-reviewer on FE-touching PRs even when no
+PII surface is directly touched. This is a third worked example
+of the §F precedent established at S79 (privacy-lens fragile-
+pattern engagement validated): privacy-lens findings extend
+beyond strict §4B scope.
+
+§E. Reviewer-pre-approved L-2 fix as scope-bounded extension of
+    APPROVED state (S81)
+
+Privacy-reviewer's L-2 finding explicitly noted "pre-approved
+this exact change in the privacy report" enabling a one-line
+surgical fix without re-dispatching the triad. CC executed the
+sequence: surgical fix, three-pass §M-grep on the commit message
+before push, paste-anchored diff for operator review, then
+commit + push. The §M three-pass on the commit message returned
+clean (no PII in commit body either).
+
+BANKING: when a reviewer report explicitly pre-approves an exact
+fix, the fix can proceed on the same branch without re-dispatch
+IF (a) the fix is exactly what was pre-approved, (b) §M
+discipline runs on the fix's own commit message and diff, (c)
+operator sees the diff before commit, and (d) the operator
+greenlights. The reviewer's pre-approval acts as a scope-bounded
+scope-extension of their original APPROVED state, scoped to the
+exact change they pre-approved and nothing else.
+
+§F. Background-Bash + Monitor mechanism failure on long-poll-
+    with-final-emit pattern (S81)
+
+The 5-min 401-spike watch was first attempted as Monitor with
+`render logs --tail`, which failed (CLI does not actually stream
+in non-interactive mode despite the --tail flag existing). Re-
+attempted as a background-Bash poll loop wrapped in a Monitor
+task. Both background tasks (the watch loop + an earlier deploy-
+status poll) failed to surface their final-emit notifications.
+Runtime reported both as "running" 10+ minutes past their
+expected exit (Monitor timeout, until-loop termination). Output
+files were 0 bytes on disk. Successfully killed via TaskStop.
+
+Cause hypothesis (not load-bearing — verification was done out-
+of-band): bash subprocesses spawning short-lived CLI child
+processes (render logs, render deploys get) hold stdout open in
+a way that prevents the runtime's task-status reporting from
+advancing, or the final printf in each script never flushed
+before the bash shell terminated.
+
+The mitigation that worked: one-shot out-of-band verification
+queries (render logs filtered to the watch window with --start
+and --end timestamps) provided the authoritative all-clear
+independent of the Monitor task state.
+
+BANKING: for long-watch-with-final-emit patterns, plan to verify
+out-of-band. Monitor's terminal emit cannot be trusted to fire
+when the watch script spawns CLI subprocesses. Mode-4 §M paste-
+anchoring discipline extends: at the end of any background-
+watch window, run an out-of-band verification query and treat
+that as the authoritative paste, not the Monitor notification.
+The Monitor remains useful for in-window event surfacing (a
+notification per matching line during the window) but is not
+load-bearing for the final all-clear gate.
+
+§G. §M Pass 3 regex generalization — "row" form slipped through
+    initial S81 ruleset (S81)
+
+The §M Pass 3 grep regex used during in-session checks was tuned
+to the specific phrase shape from the original §B catch ("first
+.* district_admin user"). During TASK SUMMARY composition for
+this close entry, an analogous "row" form ("first district_admin
+row landing in prod") slipped past the same regex because "row"
+was not enumerated alongside "user". Caught by operator at pre-
+commit diff review, not by CC's three-pass automation.
+
+The structural class is the same: count-revealing ordinal +
+singleton-row referent during the §H gradient window. The regex
+was tuned to the noun phrase that happened to surface first,
+missing the noun-class generalization.
+
+BANKING: §M Pass 3 regex going forward should generalize the
+referent noun:
+
+  (first|only|sole|the .* in prod) .* (user|row|grant|entry|
+  access|record|tenant|district|backfill)
+
+…rather than tuning to whatever specific noun first appeared.
+Pattern: regex tuned to historical catch shape is a known anti-
+pattern; the discipline is shape-class, not token-match. Carry-
+forward action for S82 P1: ratify this generalized regex shape
+and add to the standing §M-grep toolkit.
+
+Also banks: operator-side diff review is a non-redundant
+verification gate even when CC's automated three-pass returns
+clean. The operator caught what the regex missed; the gate
+catches by independent lens. Parallel to S80 §E (planning-
+partner pre-psql SQL review as productive gate) — same
+structural lesson at a different gate.
+
+Banked from S80 / S79 / S78 / S77 / earlier (carry-forward, with
+S81 extensions)
+============================================================
+
+- S80 §A (branch-name-embedded slug as §M Pass 4 candidate) —
+  HELD in S81. The chore branch name chore/activities-log-
+  session-81 carries no slug per §A discipline, and the work
+  branch feat/district-admin-dashboard carries a generic feature
+  slug with no customer identifier. §M Pass 4 candidate continues
+  standing for future-session graduation; second confirmation
+  across S80 + S81 of the discipline holding without recurrence.
+
+- S80 §B (SQL-composition placeholder-pattern footgun) — NOT
+  EXERCISED in S81 (no operator-side SQL composition). Continues
+  standing for future SQL-composition prompts.
+
+- S80 §C (Track 2 P4 scope-expansion pattern) — Track 2 P4 is
+  COMPLETE as of S80; pattern retires from active scope but stays
+  on the standing-practice graduation watch (S79 §K → S80 §C
+  two-cycle confirmation). Promotion to catalog item ready when
+  a third unrelated scope-expansion-caught-at-planning occurrence
+  lands.
+
+- S80 §D (multi-channel §M three-pass §4B-grep) — EXTENDED at
+  S81 P1 from psql/scrollback/activities.txt three-channel
+  framing to four-channel framing with PR-body added; FIRST REAL
+  TEST at S81 §B fired cleanly. Held without recursion-trap slip
+  in S81.
+
+- S80 §E (planning-partner pre-psql SQL review as gate) — NOT
+  EXERCISED in S81 (no operator-side SQL composition). Continues
+  standing.
+
+- S80 §F (cadence-matching as planning-partner discipline) —
+  NOT DIRECTLY EXERCISED in S81 (operator did not request cadence
+  shift); CC matched operator's specified Mode-4 cadence
+  throughout. Pattern continues to apply implicitly via existing
+  Mode 4 discipline.
+
+- S80 §G (product-name change as stale-reference vector) —
+  STILL PENDING; Followup #137 in X-list. Cleanup pass not
+  scheduled for any upcoming session yet.
+
+- S80 §H (first-row-audit_id as empty-table-confirmation signal)
+  — APPLICABLE to today's §B catch. The low-id correlation-
+  richness gradient window framed by §H is the structural basis
+  for §B's catch; §B is the multi-channel application of §H's
+  awareness. Carry-forward unchanged.
+
+- S79 §A (markdown-doc forecast methodology) — NOT EXERCISED in
+  S81 (no markdown docs composed). Continues standing for future
+  docs-class PRs.
+
+- S79 §B (Vercel project-slug deviation) — operator-side
+  investigation still pending. Continues standing.
+
+- S79 §C / §D — APPLICABLE; reviewer triad ran clean in S81
+  (full three-reviewer dispatch per §C above).
+
+- S79 §E (two-reviewer convergence at 5I as clean-PR benchmark)
+  — APPLICABLE; S81 ran full three-reviewer per recommendation,
+  with three-reviewer convergence at zero-CRITICAL/HIGH/MEDIUM
+  reached as a still-stronger clean-PR signal than two-reviewer
+  convergence.
+
+- S79 §F (privacy-lens fragile-pattern engagement validated) —
+  APPLICABLE; the privacy-reviewer dispatch included reading
+  the PR body before triad ran. S81 §D extends this with a third
+  worked example of privacy-lens findings extending beyond
+  strict §4B scope.
+
+- S79 §G (external-approval-after-triad internalization) —
+  APPLICABLE; CC held for external approval before any merge
+  step despite triad clean signal. Mid-session reminders fired
+  correctly at each reversibility-tier boundary.
+
+- S79 §H — extends to TWENTY-SECOND-consecutive at S81; EIGHTH-
+  consecutive elevation candidacy.
+
+- S79 §J (§A discipline multi-session standing practice) — held
+  across S81 pauses (operator-issued explicit-proceed verbs at
+  every reversibility-tier crossing). QUINTUPLY-confirmed across
+  S77 → S78 → S79 → S80 → S81.
+
+- S79 §K (Track-2 scope-expansion-caught-at-planning) — see S80
+  §C carry-forward above.
+
+- S79 §L (substantial-session-work-without-code-behavior-change)
+  — DOES NOT APPLY this session; S81 shipped a substantive code
+  PR (#126) with new user-facing surface. Pattern continues to
+  apply to docs/data-only sessions; carry-forward unchanged.
+
+- S79 §M (three-pass §4B-grep composition checklist) — EXTENDED
+  at S80 §D from close-entry-only to multi-channel; FURTHER
+  EXTENDED at S81 P1 from three-channel (psql/scrollback/
+  activities.txt) to four-channel (+ PR body). §B is the first
+  real test of the four-channel framing; fired cleanly.
+
+NEXT SESSION SHOULD (Session 82)
+================================
+
+Priority framing: PR A (read-only district dashboard) shipped
+clean and LIVE-verified. Critical path moves to grant/revoke FE
+consumer (PR B) — consuming the existing routes/districtAccess.js
+write surface from the My District view.
+
+P1 — Master-index sync ratification (brief, ~5-10 min). Confirm
+at S82 open: S81 §A-§G catalog (above) is authoritative; §M Pass
+4 (branch-name-embedded slug) discipline second-confirmation
+ratified; multi-channel §D extension first-real-test fired
+cleanly per §B; reviewer-pre-approved-fix scope-extension pattern
+per §E catalogued; §G generalized §M Pass 3 regex shape ratified
+and added to the standing §M-grep toolkit.
+
+P2 — Session 4 Part B: grant/revoke FE consumer. Mechanically
+unblocked by PR #126 (My District landing exists; route surface
+exists at routes/districtAccess.js since the B2 PR shipped).
+Scope: extend DistrictDashboardView (or a per-school detail
+view) with grant/revoke UI affordances for user_school_access.
+Estimated 1 session. Follow the same §5 four-layer pattern
+established by PR #126 for any new read surfaces in this work;
+mutations should mirror routes/districtAccess.js for auth +
+transaction + audit-actor-capture shape.
+
+P3 — Session 5 staff CSV import. Gated on P2 completion. After
+P3 lands, district structure work is COMPLETE.
+
+X-list carry-forward: X1 #132 helper consolidation (now expanded
+to also cover Pool-instantiation extraction per PR #126
+security-reviewer LOW-1), X2 #114 redaction, X3 #134 body-shape
+validation, X4 #22 settings reset (now EIGHTH elevation
+candidacy), X5 #135 parent-link fragility guards, X6 #136
+retroactive §4B cleanup (now also covers PR #126 privacy-
+reviewer L-1 PRIVACY_REVIEW.md catalogue update), X7 Vercel
+investigation, X8 filename-on-disk forensic remediation, X9
+memory rollup (~123+ candidates now: ~116 pre-S81 plus seven new
+S81 candidates per §A-§G), X10 migration-027 Phase 2, X11
+multi-screener feat, X12 Followup #137 stale-product-name
+reference cleanup pass.
+
+========================================================================
+END SESSION 81
+========================================================================
