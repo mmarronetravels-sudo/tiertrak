@@ -26,7 +26,7 @@ This doc is the canonical home for **resolved product decisions** about how dist
 
 ### §1.2 Followup #123 — One in-progress tier1 assessment per tenant (per-school binding)
 
-**Question.** `tier1_assessments` has a "one in_progress per tenant" rule (enforced by a unique partial index in Migration 019 plus an app-layer 409 guard). Does that rule apply district-scope-wide or per-school?
+**Question.** `tier1_assessments` has a "one in_progress per tenant" rule (enforced by a unique partial index in Migration 019 — defined in `server.js` `createTables()`, see `server.js:450-500` — plus an app-layer 409 guard). Does that rule apply district-scope-wide or per-school?
 
 **Resolution.** The rule applies **per-school**, matching the #125 per-school binding semantics shipped across PR-S3-D-1 through PR-S3-D-4 (the Pattern E sweep across `student504.js`, `screener.js`, `mtssMeetings.js`, `prereferralForms.js`, `csvImport.js`, and `students.js`).
 
