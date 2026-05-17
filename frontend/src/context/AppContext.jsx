@@ -42,6 +42,7 @@ export function AppProvider({ children }) {
   const canManageInterventions = user && user.role !== 'parent';
   const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const isParent = user && user.role === 'parent';
+  const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);
 
   // === REFS (shared across components) ===
   const googleButtonRef = useRef(null);
@@ -399,7 +400,7 @@ useEffect(() => {
     mtssMeetings, setMTSSMeetings,
     
     // Derived Values
-    isAdmin, canArchive, canAddStudents, canManageInterventions, canDeleteDocs, isParent,
+    isAdmin, canArchive, canAddStudents, canManageInterventions, canDeleteDocs, isParent, isDistrictAdmin,
     
     // Constants
     API_URL,

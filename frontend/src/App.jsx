@@ -27,6 +27,7 @@ import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewMod
 import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
+import DistrictDashboardView from './views/DistrictDashboardView';
 import Section504Tab from './components/Section504/Section504Tab';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
 
@@ -414,6 +415,12 @@ const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'i
 
 // Check if user is a parent
 const isParent = user && user.role === 'parent';
+
+// District-admin landing-page gate. Parallel to isAdmin; intentionally
+// narrower (only role + non-null district_id). Hides the Admin tab from
+// this role since Admin scopes to a single users.tenant_id and would
+// silently misrepresent the district admin's scope (S81 PR A audit).
+const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);
   
 // Check URL for special pages (password setup, reset)
   useEffect(() => {
@@ -6867,7 +6874,17 @@ if (isParent) {
                 >
                   Resources
                 </button>
-                {isAdmin && (
+                {isDistrictAdmin && (
+                  <button
+                    onClick={() => setView('district')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                      view === 'district' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    My District
+                  </button>
+                )}
+                {isAdmin && !isDistrictAdmin && (
                   <button
                     onClick={() => setView('admin')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
@@ -6911,6 +6928,7 @@ if (isParent) {
         {view === 'student' && <StudentProfileView />}
         {view === 'admin' && <AdminView />}
         {view === 'resources' && <ResourcesView />}
+        {view === 'district' && <DistrictDashboardView />}
      </main>
      {/* Add Custom Intervention Modal */}
       {showAddTemplate && (
