@@ -14212,3 +14212,1201 @@ S78 close.
 ========================================================================
 END SESSION 78 — main HEAD f5b469c
 ========================================================================
+
+========================================================================
+SESSION 79 — May 16, 2026 (Saturday evening Pacific)
+========================================================================
+
+TASK SUMMARY
+============
+
+Session 79 (May 16, Saturday evening Pacific). Spanned approximately
+1 hour 15 minutes calendar elapsed from S78 close (~4:47 PM Pacific
+S78-close at PR #122 LIVE → ~6:00 PM Pacific S79-close at PR #123
+LIVE → close-entry composition). One substantive PR merged this
+session plus the close PR pending at composition time. The defining
+events were the resolution of two long-standing gating product
+decisions (Followups #122 + #123) via pure-Cowork conversation, and
+the codification of those resolutions into the repo as a new
+canonical doctrine doc (docs/ai-context/DISTRICT_STRUCTURE.md) plus
+thin pointers in route files and CLAUDE.md §5.
+
+Session flow:
+
+  P1 — Master-index sync ratification (brief, ~10-15 min). All five
+  ratification items confirmed: §A-§L catalog authoritative; §C
+  isPositiveInt sextuply-confirmed elevation to solidly-load-bearing
+  wire-contract status; §F §A discipline multi-session standing
+  practice (eight-pauses-in-S78 evidence); §D Followup #114 scope
+  at 17 sites for dedicated chore PR; §K + §L elevations alongside
+  S77 §J. Catalog stands.
+
+  P2 + P3 — Followups #122 + #123 product decisions in parallel.
+  Pure-Cowork walk-through. Operator ratified path (a) on #122
+  (cross-school parent-student links permitted by design, closed
+  as accepted-by-design) and per-school semantics on #123 (matching
+  the #125 per-school binding pattern shipped across PR-S3-D-1
+  through PR-S3-D-4). Both decisions unblock P4 (operator backfill
+  of user_school_access) at the planning/decision level — the
+  privacy mandate from PR #109 W-1 ("MUST resolve before any
+  district user is granted district_admin role") was about making
+  the call and recording it, which path (a) does.
+
+  X-now (codification chore PR) — operator-directed elevation of
+  the decision-codification chore PR from X-list-later to X-list-now.
+  Rationale: small surface, no design dependency, preserves rationale
+  at peak freshness. Became PR #123.
+
+  PR #123 (chore/followups-122-123-resolution-doctrine) — two
+  commits, full triad audit at the doctrine-prose accuracy level
+  rather than tenant-iso-grade-SQL level. Commit 1a (eb0b2b1)
+  doctrine codification across 4 files: new
+  docs/ai-context/DISTRICT_STRUCTURE.md (+45 lines), CLAUDE.md §5
+  pointer (+2 lines), routes/parentLinks.js top-of-file #122 pointer
+  comment (+8 lines), routes/tier1-assessments.js top-of-file #123
+  pointer comment with forward-looking caveat (+14 lines). Commit
+  1b (9897fc0) M019 clarification patch per tenant-iso INFO
+  observable (+1 -1 net on DISTRICT_STRUCTURE.md, inline
+  parenthetical clarifying that Migration 019 lives as boot-time
+  DDL in server.js:450-500 rather than as a numbered migration-019-
+  *.sql file). Cumulative PR diff: +70 -1 net across 4 files.
+  Two-reviewer triad APPROVED at identical 0/0/0/0/0W/5I slot
+  shape (tenant-iso + privacy, security skipped per documented
+  scope). External scholarpathsystems approval landed post-triad
+  per correctly-sequenced §2A flow. Merged f5b469c → e6c6f09 at
+  2026-05-17T00:40:37Z, LIVE ~00:41Z (~23s elapsed, 20th
+  consecutive sub-minute watch per nominal bookkeeping per S77 §K
+  no-op-deploy caveat — docs/comments-only behavioral no-op).
+
+  Track 2 P4 — operator-directed pickup of operator backfill of
+  user_school_access for first district_admin. Three Cowork-side
+  clarifications surfaced (target school tenant existence, target
+  user existence, target district mapping). Clarifications revealed
+  scope expansion from "single SQL operation" (per S78 master-index
+  framing) to multi-step first-district-admin onboarding sequence
+  (create tenant + create user + grant access + verify audit
+  trigger). Caught at planning phase before any SQL composition.
+  Operator-directed defer to S80 focused session. Rationale: first
+  real district_admin in prod is a meaningful moment that deserves
+  a fresh head with credentials in hand and audit-trail PR scope
+  decided up front, not tagged on at the end of a substantial
+  session.
+
+Net session output: 1 substantive PR (#123) plus the close PR (#124
+or whichever number lands), 2 commits on PR #123's feature branch
+(eb0b2b1 + 9897fc0), +70 -1 net code/doc lines shipped, 2 new
+Followups banked (#135 — parent-link-doctrine fragility guards;
+#136 — retroactive §4B cleanup of pre-existing slug references in
+prior session close entries, surfaced by §M discipline catch at
+close composition), 13 new discipline observations banked (§A-§M
+below), no migrations applied, two-reviewer triad APPROVED at
+convergent zero-remediable findings. Pattern E sweep COMPLETE through S78 carry-forward;
+district-structure product decisions now CODIFIED in repo doctrine;
+Track 2 P4 backfill DEFERRED to S80 with scope-expansion-caught-at-
+planning record preserved for S80 P-list framing.
+
+FILES TOUCHED
+=============
+
+PR #123 / chore/followups-122-123-resolution-doctrine (eb0b2b1 +
+9897fc0, merged at e6c6f09):
+
+  CLAUDE.md
+    +2 -0 net. Single-sentence cross-reference pointer added at
+    end of §5, between the existing "Hard rules" bullets and the
+    --- separator at the §5 boundary. Pointer text: "Resolved
+    product decisions (#122 cross-school parent-student links,
+    #123 per-school tier1-assessment in-progress scoping) are
+    codified in docs/ai-context/DISTRICT_STRUCTURE.md."
+
+  docs/ai-context/DISTRICT_STRUCTURE.md
+    NEW FILE. +45 lines (commit 1a). +1 -1 net (commit 1b M019
+    patch). Canonical in-repo doctrine home for resolved district-
+    structure product decisions. Tightly scoped to two resolutions
+    (§1.1 #122 + §1.2 #123) with future-growth note for #125
+    consolidation as a future X-list PR. Sibling to STACK_
+    ARCHITECTURE.md / SECURITY_REVIEW.md / PRIVACY_REVIEW.md in
+    docs/ai-context/ family. Uses long-paragraph convention
+    consistent with sibling docs (physical file lines, not
+    visible-wrap chunks — see §A discipline observation below).
+    §4B clean throughout: abstract role/scope/binding-shape
+    language only; no PII anchors of any §4B-catalogued shape.
+
+  routes/parentLinks.js
+    +8 -0 net. Top-of-file pointer comment block inserted between
+    initializePool closer (L14) and FORBIDDEN_BODY const (L16).
+    7 comment lines + 1 trailing blank. Pointer references #122
+    resolution + see-also pointer to docs/ai-context/DISTRICT_
+    STRUCTURE.md §1.1 + names loadLinkAndAssertTenant helper at
+    L45-61. Slim shape per Option B (doc-canonical structure):
+    doctrine prose lives in the doc, code carries thin pointer.
+
+  routes/tier1-assessments.js
+    +14 -0 net. Top-of-file pointer comment block inserted between
+    initializePool (L15) and ROLES_WHO_CAN_EDIT (L17). 13 comment
+    lines + 1 trailing blank. Pointer references #123 resolution
+    + see-also pointer to docs/ai-context/DISTRICT_STRUCTURE.md
+    §1.2 + forward-looking caveat (wire-site-specific): "this
+    handler currently binds single-tenant via req.user.tenant_id
+    at the in-progress existence-check SELECT and INSERT; PR-S3-E
+    (tier1 writes) will wire per-school binding via resolveAnd
+    BindTargetTenant matching the established Pattern E shape from
+    PR-S3-D-1 through PR-S3-D-4." Slightly larger than parentLinks
+    comment because the forward-looking caveat requires careful
+    framing to avoid over-promising what code does — banked at §C
+    of S79 (and earlier banked-as-precedent at S78 §G fragile-
+    pattern framing).
+
+Cumulative PR-S79 #123 diff: +70 -1 = +69 net across 4 files.
+
+PR #124 (close PR — chore/activities-log-session-79, pending at
+composition):
+
+  activities.txt
+    +N net (S79 close entry; expected ~600 lines). Bookend regions
+    spot-checkable per S77 §J + S78 §F discipline.
+
+MIGRATIONS RUN
+==============
+
+None. Zero migration files staged or applied this session. The new
+docs/ai-context/DISTRICT_STRUCTURE.md mentions Migration 019 by
+label (per server.js's own labeling at server.js:450 + :548) but
+does not modify Migration 019 or introduce any new schema work.
+The 9897fc0 patch added an inline parenthetical clarifying that
+Migration 019 lives as boot-time DDL in server.js:450-500 rather
+than as a numbered migration-019-*.sql file, removing a future-
+audit-grep footgun without touching the migration itself.
+
+TENANT ISOLATION REVIEW
+=======================
+
+Tenant-isolation-auditor dispatched first per documented load-
+bearing-primary-scope ordering. Subagent reviewed PR #123 at
+eb0b2b1 base (pre-9897fc0 patch).
+
+Verdict: APPROVED 0/0/0/0/0W/5I.
+
+  CRITICAL (0) — none
+  HIGH (0) — none
+  MEDIUM (0) — none
+  LOW (0) — none
+  WARN (0) — none
+  INFO (5) — corroborative + one non-blocking observable
+
+Five INFO entries:
+
+  1. routes/parentLinks.js #122 pointer comment factually matches
+     handler semantics — cross-school permitted, scoping via
+     resolveAccessibleTenantIds, loadLinkAndAssertTenant helper at
+     L45-61, no tenant_id column on parent_student_links per
+     server.js:267-275. Reviewer independently verified all 5 read
+     paths (L56-57, L75, L112, L145, L229).
+
+  2. routes/tier1-assessments.js #123 pointer + forward-looking
+     caveat accurately disclose the current single-tenant binding
+     at L64-68 (existence-check SELECT) and L80-90 (INSERT) and
+     accurately frame PR-S3-E intent against the established
+     Pattern E shape (six existing sites independently grep-
+     verified: screener.js:83, mtssMeetings.js:90, students.js:94,
+     prereferralForms.js:107, csvImport.js:111, student504.js:139).
+
+  3. docs/ai-context/DISTRICT_STRUCTURE.md doctrine prose accurate
+     end-to-end; future-growth note appropriately scoped to defer
+     #125 consolidation and Followup #132 work without scope creep.
+
+  4. Migration 019 location citation: doctrine references "Migration
+     019" without clarifying the location is boot-time DDL in
+     server.js:450-500 rather than a numbered migration-019-*.sql
+     file. Optional clarifying parenthetical suggested. Non-blocking
+     INFO; reviewer explicitly framed as "not load-bearing for the
+     resolution." Addressed in commit 9897fc0 per Option A (patch)
+     decision banked at §D below as first INFO-tier 1c remediation
+     precedent.
+
+  5. CLAUDE.md §5 pointer single-sentence accurate; placement and
+     path correct.
+
+Memory-citation discipline: reviewer paste-anchored from project_
+followup_122_cross_school_parent_link.md content rather than name-
+only citation, honoring S77 §G refinement.
+
+Cross-verification depth went substantially beyond the four
+verification asks. Reviewer independently grep-verified all 6
+Pattern E sites + the loadLinkAndAssertTenant JOIN structure +
+the partial-index DDL at server.js:497-499 + every read path's
+accessible-set scoping clause. Doctrine prose held under this
+level of scrutiny.
+
+SECURITY REVIEW
+===============
+
+SKIPPED per documented scope. Rationale: zero auth, SQL, external
+HTTP, PII-handling, error-message, or secret-handling surface
+touched. Pure doctrine prose. Dispatching would produce a "nothing
+in scope" return.
+
+This is the second sec/-class scope-skip precedent in the D-class
+lineage's broader codification follow-on (first was S73 PR #112
+chore close which skipped triad entirely; this is the first
+chore-class PR to skip security only while still running tenant-
+iso + privacy on documented prose-accuracy scope). Banked at §E
+below.
+
+PRIVACY REVIEW (§4B)
+====================
+
+Privacy-reviewer dispatched second per documented sequence.
+Subagent reviewed PR #123 at e6c6f09 base (post-9897fc0 push).
+
+Verdict: APPROVED 0/0/0/0/0W/5I.
+
+  CRITICAL (0) — none
+  HIGH (0) — none
+  MEDIUM (0) — none
+  LOW (0) — none
+  WARN (0) — none
+  INFO (5) — corroborative + two fragile-pattern future-iteration
+             risks per S78 §E invitation
+
+Five INFO entries:
+
+  1. §1.1 #122 privacy prose ACCURATE against code. "Privacy is
+     preserved by access control, not by structural same-tenant
+     assertion. Visibility into a parent-student link is gated by
+     the caller's user_school_access membership for the student's
+     school." Verified at parentLinks.js:56-57 (helper resolves
+     accessible tenants + 403s if link's student.tenant_id not in
+     caller's set) and L75, L112, L145, L229 (every read/list path
+     scopes by s.tenant_id = ANY($N::int[]) where the array is
+     the caller's resolveAccessibleTenantIds output). Prose neither
+     overstates (does not claim parent.tenant_id is ignored
+     entirely) nor understates (explicitly names the gate as
+     user_school_access membership for the STUDENT'S school, which
+     is the correct anchor since parent_student_links has no
+     tenant_id column).
+
+  2. #122 path-(a) resolution correctly interprets PR #109 W-1.
+     Original privacy concern was that cross-school link existence
+     might leak student identity across school boundaries. Path-(a)
+     resolution correctly identifies that the LINK ROW alone is
+     not the leak vector — the leak vector would be surfacing the
+     linked student to an unauthorized caller, which the
+     s.tenant_id = ANY(accessible) clauses on every read path
+     prevent. "Accepted by design" is privacy-defensible under the
+     post-backfill condition (non-empty user_school_access), which
+     is now the standing invariant per M028.
+
+  3. §1.2 forward-looking caveat ACCURATE and privacy-
+     CONSERVATIVE. Verified tier1-assessments.js POST / still
+     binds [req.user.tenant_id] at L67 (existence-check SELECT)
+     and L89 (INSERT). Per-school in-progress semantics under
+     future PR-S3-E binding do not introduce any new PII surface
+     — the partial index already keys on tenant_id, so when
+     PR-S3-E rebinds tenant_id to a per-school resolved target
+     via resolveAndBindTargetTenant, the index naturally enforces
+     per-school uniqueness without any schema change. Privacy
+     posture under future per-school binding is NEUTRAL to
+     STRENGTHENED, not weakened: a multi-school district admin
+     cannot accidentally collide an in-progress draft from school
+     A into school B's namespace, because the resolved target
+     tenant is asserted against accessible-tenant membership at
+     bind time.
+
+  4. CLAUDE.md §5 pointer accurate from privacy lens. It does not
+     assert a privacy claim; it points to the doctrine doc where
+     the privacy framing lives. No overstatement risk.
+
+  5. Fragile-pattern framing per S78 §E invitation: TWO concrete
+     future-iteration risks surfaced as non-actionable observable.
+     Risk (a): Future read path through parent_student_links that
+     forgets the resolveAccessibleTenantIds JOIN (e.g., denormalized
+     report or admin dashboard that selects directly from parent_
+     student_links without s.tenant_id = ANY(accessible) clause)
+     would turn cross-school link existence into the leak vector.
+     The "permitted by design" doctrine prose could mislead a
+     future contributor into inferring link existence is non-
+     sensitive in isolation — it is not, only the joined access-
+     control gate makes it safe. Risk (b): Future onboarding
+     pattern that creates parent users without ensuring student-
+     side user_school_access for the gating staff set could drift
+     the membership table and silently flip the gate from "deny
+     by default" to "allow because no rows." Neither actionable
+     in this PR; banked as new Followup #135.
+
+§4B PII-anchor scan: ZERO PII anchors of any §4B-catalogued shape
+across all 4 files. All role/scope/binding-shape language abstract;
+no specific anchors. Reviewer verification recorded; per
+docs/ai-context/4B_GREP_PATTERNS.md discipline, audit-trail prose
+cites that §4B was run, not what was checked for.
+
+Migration 019 line-range citation accuracy independently re-
+confirmed post-9897fc0 patch: doctrine cites server.js:450-500;
+verified at server.js:497-499 the unique partial index idx_tier1_
+assessments_one_in_progress_per_tenant is defined within the cited
+line range (surrounding tier1_assessments table block spans
+454-499, so 450-500 citation is correct).
+
+Triad convergence summary: tenant-iso 0/0/0/0/0W/5I + privacy
+0/0/0/0/0W/5I + security SKIPPED. Two-reviewer convergence at
+identical slot shape with corroborative-rather-than-fresh-findings
+character — see §E below.
+
+VERIFICATION
+============
+
+§M Mode 4 paste-anchored at every operational gate per S77 §K +
+S78 §F standing practice:
+
+  Commit 1a (eb0b2b1) — git show --stat HEAD verified 4 staged
+  files (CLAUDE.md +2, docs/ai-context/DISTRICT_STRUCTURE.md +45
+  with create mode 100644, routes/parentLinks.js +8, routes/
+  tier1-assessments.js +14); +69 -0 net; zero accidental
+  inclusions; pre-existing carryover (.claude/settings.json
+  modified + 2 untracked) excluded via explicit-file-list stage
+  (no -A / no .).
+
+  Commit 1b (9897fc0) — git show --stat HEAD verified single-file
+  change on docs/ai-context/DISTRICT_STRUCTURE.md +1 -1; only the
+  M019 parenthetical addition surface touched.
+
+  Branch state post-1b — git log main..HEAD --oneline verified
+  two commits on branch (eb0b2b1 + 9897fc0) in correct order.
+
+  Push verification — gh pr view 123 --json commits verified both
+  commits visible on the remote; eb0b2b1 + 9897fc0 in order.
+
+  Pre-merge state — gh pr view 123 --json state,mergeable,
+  reviewDecision returned {state OPEN, mergeable MERGEABLE,
+  reviewDecision APPROVED}.
+
+  Merge ceremony — gh pr merge 123 --squash --delete-branch
+  (non-auto per §11 banked from S72) returned squash-merged
+  confirmation + 4 files staged + 69 insertions + create mode
+  100644 for new doc + branch deleted confirmation.
+
+  Merge metadata — gh pr view 123 --json mergeCommit,mergedAt
+  returned {mergeCommit e6c6f091f6b2c08da4f1581ad2687ef05b9f321a,
+  mergedAt 2026-05-17T00:40:37Z}.
+
+  Local branch deletion — git branch --list returned empty output;
+  chore/followups-122-123-resolution-doctrine deleted by
+  --delete-branch.
+
+  Remote branch deletion — git ls-remote origin returned empty
+  output; remote ref cleaned.
+
+  Main HEAD verification — git fetch --prune confirmed remote-
+  tracking ref pruned; git log main -1 --oneline confirmed main
+  HEAD at e6c6f09 with PR #123 squash-merge subject.
+
+PR-body verification at PR-open used disk-verify-via-cat doctrine
+per S72 §8: body written to /tmp/pr-122-123-body.md, cat-verified
+before gh pr create --body-file, gh pr view 123 --json body --jq
+.body verified character-for-character after open (no section
+reordering, no escape issues, no rendering artifacts).
+
+All gates cleared without slippage. Pre-existing carryover
+(.claude/settings.json drift = Followup #22 TWENTIETH-consecutive-
+session, GR_SampleClass.pdf NWEA reference untracked, scripts/ops/
+2026-05-11-[tenant]-revoke-audit.sql untracked working file =
+Followup #94) correctly identified and excluded from staging at
+both commit ceremonies.
+
+Render LIVE timestamp captured operator-side via Render dashboard:
+2026-05-17T00:41Z (~23s elapsed from 00:40:37Z merge timestamp).
+20th consecutive sub-minute watch per nominal bookkeeping per S77
+§K no-op-deploy caveat (PR #123 is docs/comments-only behavioral
+no-op; Render auto-deploy fires on any main push regardless of
+content). Operator-side Vercel dashboard verification confirmed
+actual tiertrak project deploys correctly land under scholar-path-
+systems team (matching S78 carry-forward); CC-side gh-output
+Vercel project-slug observation surfaced separately at §B below.
+
+OPEN ITEMS
+==========
+
+Carry-forward from S78 unchanged in scope except where noted:
+
+  - All Followups #43, sec/progressNotes-require-auth, sec/
+    interventionLogs-require-auth, sec/interventionAssignments-
+    require-auth, sec/interventionPlans-require-auth, sec/
+    interventionBank-require-auth, sec/adminTemplates-require-auth,
+    #48, #49v2, #50, #52, #73, #74, #76, #83, #85, #95, #96, #114,
+    #116, #117, #119, #121, #124, #126, #127, #128, #129, #130,
+    #131, #132, #133, #134 carry forward unchanged.
+
+  - Followup #22 (.claude/settings.json drift): TWENTIETH
+    consecutive session of deferral. SIXTH consecutive elevation
+    candidacy. Single-commit chore PR slot worth ranking for S80
+    or S81 rather than continuing indefinite deferral. See §H
+    below.
+
+  - Followup #114 (error-message redaction): scope unchanged at
+    17 sites across 3 files (prereferralForms.js:437 + csvImport.js:
+    278/309 + students.js 10 wire-leak + 4 server-log). Ready-to-
+    ship as dedicated chore PR for S80 X-list slot.
+
+  - Followup #125 (per-school binding day-one rule): RESOLVED at
+    S78 PR #121 merge; carry-forward as historical reference for
+    S79 PR #123 doctrine codification of the per-school binding
+    pattern in DISTRICT_STRUCTURE.md.
+
+  - Followup #132 (helper consolidation chore PR): 6 file-local
+    copies of resolveAndBindTargetTenant + isPositiveInt across 6
+    consumer files. Chore PR target for S80 X-list.
+
+  - Followups #122 + #123: RESOLVED this session. Path (a) and
+    per-school respectively. Codified in repo via PR #123.
+
+NEW this session (Session 79):
+
+  - #135 (NEW S79) — parent-link-doctrine fragility guards.
+    Captures privacy-reviewer's two future-iteration risks from
+    PR #123 INFO observable. Risk (a): future denormalized read
+    path bypassing resolveAccessibleTenantIds JOIN turns cross-
+    school link existence into a leak vector; the "permitted by
+    design" doctrine prose could mislead future contributors into
+    inferring link existence is non-sensitive in isolation, when
+    only the joined access-control gate makes it safe. Risk (b):
+    future onboarding pattern creating parent users without
+    ensuring student-side user_school_access for the gating staff
+    set could drift the membership table and silently flip the
+    gate from "deny by default" to "allow because no rows." Status:
+    OPEN, LOW priority. Surfaces in PR-S3-E timeframe or sooner
+    if any new parent_student_links read path or new district-
+    admin onboarding flow lands. Banking framing per S78 §E
+    invitation pattern: forward-looking-risk framing alongside
+    enumeration produced substantive observables. See §F below.
+
+  - #136 (NEW S79) — retroactive §4B cleanup of pre-existing
+    violations in prior session close entries in activities.txt.
+    Origin: §M discipline catch at S79 close composition (three
+    pass-classes of catch in one cycle). CC's §4B-grep at pre-
+    stage surfaced three categories of violation in the S79 close
+    entry source: (1) free-prose tenant slugs inherited from
+    master-index OUTSTANDING STATE pattern; (2) filename-embedded
+    tenant slug in operator-artifact reference; (3) recursion-trap
+    enumeration of §4B categories in PRIVACY REVIEW section. All
+    three were redacted in S79 entry via source-file fix + re-
+    append. Pre-existing carryover: prior session close entries
+    in activities.txt (S78 and likely earlier) contain the same
+    three categories of violation, including the recursion-trap
+    audit-trail-enumeration shape per CC observation, and represent
+    committed §4B violations that were not caught at the time.
+    Scope TBD: first investigation pass needs to grep activities.
+    txt for (a) the set of known prod tenant slugs (operator-side
+    lookup; not enumerated in this committed artifact per §4B),
+    (b) filename-embedded slug patterns in OPEN ITEMS references,
+    and (c) recursion-trap regex matches in PRIVACY REVIEW
+    sections. Retroactive-redaction chore PR would land via the
+    same chore/activities-log-* PR class used for normal close
+    entries. Status: OPEN, MEDIUM priority (committed §4B
+    discipline-class). Discoverable via the established three-
+    pass grep regime. Sibling to Followup #114 (error-message
+    redaction) in the "historical PII drift accumulated without
+    enforcement" pattern class.
+
+Resolved this session (Session 79):
+
+  - Followups #122 + #123 product decisions — RESOLVED via Cowork
+    walk-through; codified in PR #123 at e6c6f09.
+
+  - PR #123 (chore/followups-122-123-resolution-doctrine) —
+    CLOSED by merge at e6c6f09.
+
+  - Track 2 P4 disposition decision — RESOLVED as defer-to-S80
+    with scope-expansion-caught-at-planning record preserved for
+    S80 P-list framing. See §K below.
+
+Outstanding state at session close (record-keeping; not bugs):
+
+  - .claude/settings.json drift — recurring across S62-S79
+    (TWENTIETH consecutive session). Followup #22 still pending;
+    SIXTH-consecutive elevation candidacy.
+
+  - docs/references/GR_SampleClass.pdf — still untracked. NWEA
+    vendor reference; not customer PII.
+
+  - scripts/ops/2026-05-11-[tenant]-revoke-audit.sql — still
+    untracked working file. Followup #94. Filename names a
+    customer tenant (operator artifact, not committed; abstract
+    reference only in committed artifacts per §4B discipline).
+
+  - migration-027-design.md — Phase 1 design output, S65. Cowork-
+    side planning artifact; not in repo.
+
+  - DISTRICT_STRUCTURE_DESIGN_SUMMARY.md — Phase 1 design output,
+    S66. Cowork-side planning artifact; not in repo. SUPERSEDED
+    as the canonical doctrine source by the new in-repo docs/
+    ai-context/DISTRICT_STRUCTURE.md shipped via PR #123 (though
+    the Cowork-side planning artifact retains operational value
+    for session planning).
+
+  - [tenant] welcome letter / passwords — still pending hand-
+    delivery (carry-forward from S53).
+
+  - Tenant #9 ([tenant]) revocation state — preserved.
+
+  - Stale local + remote tracking refs — non-blocking.
+
+  - Four stashes intact (carry-forward from S65/S66). Do not drop
+    casually.
+
+  - PLATFORM_ADMIN_USER_IDS env var — set on Render to operator's
+    user_id. Persistent across deploys.
+
+  - user_school_access prod state: EMPTY — no rows yet. Operator
+    backfill mechanically possible anytime now that Followups #122
+    + #123 product decisions are resolved + codified; deferred to
+    S80 focused session per Track 2 P4 disposition. Fail-closed
+    by design per S76 §K (reconfirmed S77 + S78 + S79).
+
+  - user_school_access_audit prod state: EMPTY — trigger active
+    but no writers have fired yet.
+
+  - First district_admin onboarding scope: surfaced as multi-step
+    sequence (tenant existence + user existence + access grant +
+    audit-trigger verification) rather than single-row backfill
+    per S78 master-index framing. Deferred to S80 P1 per §K below.
+
+  - Vercel project-slug observation: open question for S80 X-list
+    or interstitial — what is the meridan-global-travel Vercel
+    team in operator's account, what (if anything) is attached to
+    it, and clean up any stale integrations on the tiertrak repo.
+    Sibling observation: Vercel-side 2FA enablement nudging
+    surfaced on dashboard; smart hygiene regardless. See §B below.
+
+Memory-update candidates surfaced by S79 work (deferred to a later
+session):
+
+Thirteen new candidates from S79 (full text in §A-§M below):
+
+  - feedback_markdown_doc_forecast_physical_vs_rendered_lines
+  - feedback_vercel_project_slug_deviation_operator_partial_invest
+  - feedback_reviewer_audits_remote_not_local_at_redispatch_time
+  - feedback_info_tier_1c_remediation_precedent_extends_s77_m
+  - feedback_two_reviewer_triad_convergence_at_5i_security_skipped
+  - feedback_fragile_pattern_engagement_validated_s78_e_invitation
+  - feedback_external_approval_after_triad_no_recurrence_s78_g
+  - feedback_followup_22_twentieth_consecutive_deferral_sixth_elev
+  - feedback_pr_vs_followup_namespace_coincidence_pr_123_followup_123
+  - feedback_section_a_discipline_multi_session_standing_s79_held
+  - feedback_track_2_scope_expansion_caught_at_planning_phase
+  - feedback_substantial_session_work_without_code_behavior_change
+  - feedback_4b_grep_source_pre_append_not_only_diff_post_append
+
+Now ~108+ candidates total (~95 pre-S79 plus thirteen new S79
+candidates). Roll-up continues deferred from S65-S78; carried
+forward to S80+ X-list.
+
+NUMBERING NOTE — namespace, continued
+=====================================
+
+S79 promoted TWO new Followups (#135 + #136). Namespace now through
+#136 (S79 close). The second followup (#136) was promoted at the
+close-entry composition phase rather than during the substantive
+PR-#123 review cycle — surfaced by CC's §4B-grep at pre-stage on
+the close-entry diff per §M below.
+
+External tracker namespace decision still deferred. Twenty-third
+consecutive session of deferral. Still worth a 15-minute
+opportunity-cost talk during a calmer session.
+
+DISCIPLINE OBSERVATIONS — Session 79
+====================================
+
+§A. Markdown-doc forecast methodology gap — physical vs rendered
+    file lines (S79)
+
+CC's forecast for docs/ai-context/DISTRICT_STRUCTURE.md was ~+70
+midpoint (range +60-80). Actual landed at +45, 25 below midpoint
+and 15 below lower bound. Deviation reason surfaced honestly per
+feedback_deviation_first_line_diff_summary discipline: CC
+forecasted as if visible-wrap chunks were separate file lines,
+but actual markdown content uses paragraph-style writing (each
+prose paragraph is one physical file line, no manual wrapping).
+What reads as ~70+ rendered lines in a markdown viewer is 45
+physical lines in the file. Sibling docs in docs/ai-context/
+(PRIVACY_REVIEW.md at 359, SECURITY_REVIEW.md at 205) follow the
+same long-paragraph convention but CC didn't internalize that
+calibration when forecasting. Banking observation: future
+markdown-doc forecasts should be in physical file lines, not
+rendered/wrapped lines. Sibling-doc convention check should be
+the calibration anchor. Methodology-distinct from §I (per-file
+shape × file count for per-school binding sec/-class) — applies
+only to docs-class PRs.
+
+§B. Vercel project-slug deviation — operator-side investigation
+    partial (S79)
+
+CC's gh pr view output on PR #123 surfaced meridan-global-travel/
+tiertrak as the Vercel targetUrl, deviating from S78 PRs #121 +
+#122 which showed scholar-path-systems/tiertrak as the targetUrl.
+Operator-side dashboard verification confirms the actual tiertrak
+project lives correctly under scholar-path-systems team and all
+PR #123 deploys (two previews on eb0b2b1 + 9897fc0 + production
+on e6c6f09) are properly there. Most likely explanation: the
+targetUrl CC surfaced was for an ancillary Vercel check (Preview
+Comments or similar) routing through a different team URL, not
+the deploy itself. Operator confirms meridan-global-travel should
+not be associated with tiertrak in any capacity. Open question
+for S80 X-list or interstitial: identify what meridan-global-
+travel Vercel team is in operator's account (operator likely has
+such a team for their other business identity), what if anything
+is attached to it that might be observing the tiertrak repo, and
+clean up any stale integrations. Sibling observation: Vercel
+dashboard surfaced 2FA enablement nudging; smart account hygiene
+regardless of the team-slug question. Banking framing: Vercel
+project-slug stability between sessions is not a guarantee;
+operator-visibility surface worth attending to when CC surfaces
+unexpected URL slugs in gh-output.
+
+§C. Reviewer-audits-remote-not-local at redispatch time (S79)
+
+After the Option A patch commit (9897fc0) landed locally, CC
+flagged that PR #123 on GitHub still showed the eb0b2b1 commit;
+the remote did not yet have 9897fc0. Privacy-reviewer would have
+audited the pre-patch state if dispatched without push. Caught by
+CC's own discipline before any privacy dispatch. Push landed
+between commit and privacy-dispatch, ensuring privacy reviewed
+the patched HEAD. Banking observation: any in-PR remediation patch
+between triad reviewers requires push before re-dispatch. Distinct
+from S77 §K + S78 §F (§M Mode 4) which catch local-vs-staged
+disconnect at commit time; this catches local-vs-remote disconnect
+at review-dispatch time. New gate worth adding to triad-redispatch
+checklist alongside §M Mode 4.
+
+§D. INFO-tier 1c remediation precedent — extends S77 §M from
+    WARN-tier (S79)
+
+Tenant-iso reviewer surfaced one non-blocking INFO observable on
+PR #123 (Migration 019 location citation) with an explicit
+reviewer-suggested patch shape ("Migration 019 — defined in
+server.js createTables(), see server.js:450-500"). Two options
+considered: Option A (patch in-PR per S77 §M 1c-style remediation)
+vs Option B (defer + bank). Option A selected with three
+qualifying conditions: reviewer-suggested-patch + INFO-tier +
+trivial-shape. Patch applied as commit 9897fc0 (+1 -1 net on
+DISTRICT_STRUCTURE.md only). Tenant-iso RE-DISPATCH explicitly
+skipped: reviewer pre-cleared the patch shape by suggesting the
+exact parenthetical text; verifying "did you paste what I wrote"
+is ceremonial overhead, not substantive review. Distinct from S77
+§M D-3 1c pattern which was WARN-tier finding requiring
+substantive code-level remediation the reviewer hadn't pre-shaped
+(re-dispatch substantively justified there; not here). New
+methodology refinement: INFO-tier remediation may follow 1c
+pattern when qualifying conditions met, with skip-re-dispatch as
+the appropriate sequencing. First application this session;
+precedent banked for future INFO-tier reviewer-suggested-patch
+opportunities.
+
+§E. Two-reviewer triad-convergence at 5I with security skipped
+    (S79)
+
+PR #123 received APPROVED 0/0/0/0/0W/5I from both dispatched
+reviewers (tenant-iso + privacy), with security-reviewer skipped
+per documented scope (zero auth/SQL/external HTTP/PII-handling/
+error-message/secret-handling surface). Both reviewers landed at
+identical slot shape with substantively corroborative INFO
+observables — five each, mostly cross-verification confirmations
+rather than fresh findings. Significant pattern: when triad skips
+security per documented scope, the two-reviewer convergence at
+identical slot shape is the equivalent of S78 §A triple-
+convergence (which had all three reviewers at 0/0/0/0/0W/2I).
+Both are clean-PR signals; both indicate doctrine is mature
+enough that reviewers cycle into verify-and-confirm mode rather
+than surfacing fresh issues. Pattern banking: chore-doctrine-only
+PRs that legitimately skip security can use two-reviewer
+convergence as the clean-PR benchmark rather than requiring full
+three-reviewer convergence (which would be ceremonial when
+security has no surface). Distinct from S73 PR #112 which skipped
+triad entirely (chore close pattern); this is the first chore-
+class PR to run partial triad (tenant-iso + privacy only) on
+documented prose-accuracy scope.
+
+§F. Fragile-pattern-engagement validated — S78 §E invitation
+    produced concrete risks (S79)
+
+S78 §E established the pattern of explicitly inviting forward-
+looking-risk framing alongside enumeration in privacy reviewer
+dispatches. S79 PR #123 privacy review tested this pattern with
+explicit invitation in the dispatch prompt. Privacy reviewer
+engaged the invitation substantively: surfaced TWO concrete
+future-iteration risks (Risks (a) + (b) on parent-link doctrine
+fragility) with specific scenarios (denormalized report bypassing
+JOIN; onboarding flow drift) and explicit "non-actionable in this
+PR" framing. Outcome: new Followup #135 banked for code/
+architecture risk tracking. Banking: S78 §E invitation pattern
+validates as productive (produces substantive observables) rather
+than ceremonial (would produce vacuous "nothing to add" returns).
+Distinction worth preserving: invitation-pattern works for privacy
+lens specifically because privacy concerns frequently have schema-
+evolution or onboarding-flow latency that pure enumeration misses;
+similar invitation in tenant-iso or security may or may not
+produce comparable substantive observables (untested at S79).
+
+§G. External-approval-after-triad correctly sequenced — no
+    recurrence of S78 §G operator-side skip-ahead pattern (S79)
+
+S78 §G caught operator-side pattern of triggering scholarpathsystems
+external approval BEFORE dispatching triad subagent reviews. Catch-
+test-cleared evidence at S78 confirmed playbook efficacy. S79 was
+the first post-banking test of the corrected sequence: operator
+held the line on external-approval-after-triad-completion. Tenant-
+iso APPROVED → operator paused → patch applied → push → privacy-
+reviewer APPROVED → operator paused → external scholarpathsystems
+approval triggered → external approved → operator paused → merge
+ceremony executed. Sequence held cleanly without mid-session
+reminder needed. Banking: S78 §G pattern caught-and-corrected,
+held without recurrence in S79; pattern can be considered
+internalized rather than persistent risk. Mid-session reminders
+no longer needed by default unless specific pre-triad-approval
+signal observed.
+
+§H. Twentieth-consecutive Followup #22 deferral — sixth-
+    consecutive elevation candidacy (S79)
+
+.claude/settings.json drift recurring across S62-S79. TWENTIETH
+consecutive session of deferral. SIXTH consecutive elevation
+candidacy (S74, S75, S76, S77, S78, S79 all flagged). Pattern
+extends from "occasional drift to track" to "persistent
+operational debt accumulating without resolution." Single-commit
+chore PR slot worth ranking for S80 or S81 rather than continuing
+indefinite deferral. Operator-side decision pending: either
+schedule chore/settings-reset PR as an explicit S80 X-list item
+with target merge, or formally close Followup #22 as accepted-
+ongoing-state-not-blocking. Either resolution clears the elevation
+candidacy backlog.
+
+§I. PR-vs-Followup namespace coincidence (S79)
+
+GitHub PR #123 codified Followup #122 + Followup #123. The
+GitHub PR number happens to coincide with one of the followups
+the PR resolves. Mildly confusing in future references — "PR
+#123" means the GitHub PR; "Followup #123" means the per-school
+tier1 in-progress decision. Half-line disambiguation in future
+references ("PR #123 (Followup #122/#123 codification)" or
+similar) prevents conflation. Non-blocking; observation banking
+only. Pattern frequency: low (cumulative GitHub PR count + cumulative
+Followup count have grown roughly in parallel through 2026, increasing
+collision probability; expect to see this recur every ~50-100 PRs/
+followups). No mitigation needed beyond disambiguation discipline.
+
+§J. §A discipline multi-session standing practice held across S79
+    pauses (S79)
+
+S78 §F elevated S77 §A conditional-greenlight phrasing calibration
+to multi-session standing practice (eight-pauses-in-S78 evidence).
+S79 tested across the session's pause ceremonies: master-index
+ratification pause, audit pause, 1a stage pause, 1a commit pause,
+1b patch pause, push pause, tenant-iso dispatch pause, privacy-
+reviewer dispatch pause, external-approval pause, merge ceremony
+pause, close-entry composition pause. Approximately ten pause
+ceremonies. All held without slippage. S78 §F multi-session
+standing practice continues to hold in S79; pattern stable.
+Banking: S77 §A → S78 §F → S79 §J cumulative confirmation chain;
+pattern now triply-confirmed across three consecutive sessions.
+
+§K. Track 2 P4 scope-expansion caught at planning phase (S79)
+
+S78 master-index framing for P4 (operator backfill of user_school_
+access for first district_admin): "Single SQL operation; no PR
+needed unless we want an audit-trail chore PR around it." Track 2
+pickup in S79 surfaced three Cowork-side clarifications: target
+school tenant existence, target user existence, target district
+mapping. Clarifications revealed scope expansion from single-row
+backfill to multi-step first-district-admin onboarding sequence
+(create tenant if not exists + create user if not exists + grant
+user_school_access + verify audit trigger + redaction-clean
+activities.txt entry if audit-trail PR desired). Caught at
+planning phase BEFORE any SQL composition — preventive discipline.
+Operator-directed defer to S80 focused session per "first real
+district_admin in prod deserves a fresh head with credentials in
+hand" framing. Banking observation: master-index P-item framing
+should be re-validated at session pickup rather than treated as
+authoritative scope; sessions between framing and pickup can
+materially shift scope (e.g., target onboarding context wasn't
+specified in master index, so default "single-row backfill"
+framing was operator-implicit at framing time). Sibling to §F
+audit-first-pre-edit catch pattern (which catches structural
+deviations) and §G external-approval-before-triad catch (which
+catches sequencing skip-ahead) — preventive-discipline class.
+
+§L. Substantial-S79-work-without-code-behavior-change pattern
+    (S79)
+
+S79 shipped +69 net code/doc lines across 4 files with ZERO
+behavioral code change. Pure doctrine codification + thin code-
+side pointers + forward-looking caveat. The session's operational
+volume — P1 ratification + P2/P3 product decisions + PR #123
+audit (with one mid-PR Option A patch) + full two-reviewer triad
++ merge ceremony with §M Mode 4 paste-anchored at six gates +
+this close entry — was substantial without producing any new
+behavior in prod. Pattern banking: doctrine-codification work is
+real substantive output even with zero behavioral delta. The
+session-output measurement should account for both behavioral-
+delta sec/-class work AND zero-behavioral-delta doctrine-class
+work; both consume session time and discipline. Useful framing
+for future session pacing: a "behavioral no-op session" can still
+be high-output operationally and architecturally. Distinct from
+sessions like S65/S66 (Phase 1 design output with no PR merges
+at all) — S79 had a merge ceremony and a Render deploy (no-op);
+counts as full operational session, not a planning-only one.
+
+§M. §4B violation in close-entry source caught mid-append — slug
+    references that should not have been in committed activities.
+    txt artifact (S79)
+
+Cowork composed the S79 close entry without adequately scrubbing
+historical carry-forward state items inherited from S78 master-
+index OUTSTANDING STATE section. Two slug references slipped into
+the source file: one tenant slug in a pending-hand-delivery item
+referenced from S53 carry-forward, and one tenant slug as a
+parenthetical to a tenant_id reference in a revocation-state
+preservation item. Both contain real prod tenant slugs that
+activities.txt §4B discipline forbids per the per-entry standard.
+CC caught both via §4B-grep at pre-stage (before any commit or
+PR-open) and held the line. Cowork acknowledged the violation as
+a composition error: master-index files in the Cowork-side
+workspace folder carry slugs freely (they are not committed and
+not subject to §4B), but activities.txt is a committed in-repo
+artifact that does NOT permit slugs. Pattern-matching from master-
+index OUTSTANDING STATE section without scrubbing produces the
+violation surface. Remediation chosen via Option 1 (source-file
+fix + re-append) rather than CC-recommended Option 2 (in-tree
+remediation in activities.txt only). Rationale: Option 1
+preserves source-as-truth discipline (source file and committed
+content stay in sync, preventing divergent Cowork-side reference);
+preserves verbatim-append discipline (S78 §F bookend
+correspondence pattern); has no time-cost advantage to Option 2
+since the substitution-verification work is equivalent either way.
+Substitutes applied: both slug occurrences → "[tenant]" marker
+substitution per CC discipline catalog (preserves line shape).
+Tenant_id integer reference preserved as numeric per playbook
+explicit §4B list which names slugs but not tenant_id integer
+values. Secondary catch on second-pass scrub: the operator-
+artifact filename reference in OPEN ITEMS (untracked working file
+referenced as Followup #94) itself contained a tenant slug in its
+filename component; the entry text already documented "filename
+names a customer tenant" and the §4B rule, but the spelling-out
+of the filename itself violated the very rule the entry described.
+Same "[tenant]" marker substitution applied to the filename
+component. Tertiary catch on third-pass scrub via the recursion-
+trap regex class (per docs/ai-context/4B_GREP_PATTERNS.md known-
+false-positive shape): audit-trail prose in the PRIVACY REVIEW
+section enumerated the §4B categories that had been checked for,
+inheriting the matching strings into committed content. Per the
+discipline statement ("audit-trail prose cites that §4B was run,
+never what was checked for"), the enumeration itself is the
+violation regardless of semantic intent. Remediation: replaced
+the enumeration with abstract "no PII anchors of any §4B-
+catalogued shape" phrasing, citing the discipline doc by path.
+Three pass-classes of catch in this single composition cycle —
+slug-class (free-prose), slug-class (filename-embedded),
+recursion-trap (audit-trail enumeration of categories). New
+Followup #136 banked for retroactive cleanup of pre-existing
+slug references AND recursion-trap shapes in prior session close
+entries in activities.txt (S78 + likely earlier); scope TBD per
+first investigation pass. Banking framing: master-index
+OUTSTANDING STATE sections frequently contain Cowork-side-OK
+slugs that must NOT propagate to close-entry composition, AND
+PRIVACY REVIEW sections frequently inherit audit-trail-
+enumeration patterns that trip the recursion-trap regex.
+Composition-checklist refinement: §4B-grep should be run on
+source file pre-append, not only on appended diff post-append,
+AND multi-pass on the full source covering tenant-slug-class
++ filename-embedded-slug-class + recursion-trap-class regexes
++ explicit doc-discipline cross-reference. New gate at
+"compose → §4B-grep on source → remediate → §4B-grep second pass
+→ if clean, append → re-grep on appended → stage" rather than
+"compose → append → §4B-grep on appended → remediate if found."
+Pattern relationship: sibling to §A (markdown-doc forecast
+methodology catch — both are pre-edit/pre-stage catches that
+prevent downstream drift) and to S78 §L (template-suitability-
+review-before-paste — both are pre-content-commitment review
+patterns). Standing-practice graduation candidate: if §M holds
+across S80 + S81 composition without recurrence of master-index-
+pattern-inheritance slip, the §4B-grep-on-source-pre-append step
+joins the standing-practice catalog alongside §M Mode 4 paste-
+anchoring.
+
+Banked from S78 / S77 / S76 / earlier (carry-forward, with S79
+extensions)
+============================================================
+
+- S77 §A → S78 §F → S79 §J — §A discipline standing practice;
+  triply-confirmed across S77 + S78 + S79.
+
+- S77 §B (verbatim-vs-narrative paste latency) — held in S79;
+  literal-paste discipline upheld on Cowork-supplied content
+  (no in-paste fixes; corrections via separate edit step).
+
+- S77 §I forecast methodology (per-file shape × file count for
+  per-school binding sec/-class) — NOT EXERCISED in S79 (no sec/
+  -class work). Continues standing for future sec/-class PRs.
+
+- S77 §J (§G behavior-equivalence trace template) — NOT EXERCISED
+  in S79 (no behavior-equivalence trace needed for doctrine-only
+  PR). Continues standing for future sec/-class PRs.
+
+- S77 §K (§M Mode 4 paste-anchoring) — held across one commit
+  ceremony + one patch commit + one push + one merge ceremony in
+  S79. Cumulative gate test count continues compounding without
+  slippage.
+
+- S77 §L (audit-first pre-edit catch) — held at S79 PR #123 audit
+  (Cowork-side first audit caught DISTRICT_STRUCTURE_DESIGN_
+  SUMMARY.md repo-vs-Cowork confusion before any edits; CC-side
+  audit caught insertion-point details on both route files +
+  surfaced the M019 INFO observable that became Option A patch).
+
+- S77 §M (1c in-PR remediation pattern) — extended to INFO-tier
+  in S79 §D. WARN-tier pattern unchanged; INFO-tier sub-class
+  banked as first-application.
+
+- S75 §1 (slot-omission resolved via prompt reminder) — held
+  across S79 triad (both dispatched reviewers listed all six
+  severity slots explicitly).
+
+- S75 §2 (reviewer-discretion-to-skip-memory-citation) — partially
+  exercised in S79: tenant-iso reviewer cited memory paste-anchored;
+  privacy reviewer cited content but with paste-anchoring per S77
+  §G refinement (discipline working).
+
+- S75 §3 / S76 §J / S77 §K / S78 §C (isPositiveInt strict
+  validation) — NOT EXERCISED in S79 (no Pattern E sec/-class
+  work). Continues standing at sextuply-confirmed status from S78.
+
+- S75 §4 (trailing-newline artifact pattern) — held at S79 PR #123
+  (single chore-class PR; identify-and-skip discipline applies
+  trivially). 10th consecutive PR with no trailing-newline drift.
+
+- S75 §5 / S76 §H / S77 §E (phantom-line drift watch broader-
+  class) — held cleanly in S79. Both reviewer-side and Cowork-
+  side counter-claim checks held; no drift surfaced.
+
+- S75 §6 / S76 §M Mode 4 / S77 §K (per-action paste-anchored-
+  output requirement) — held across all operational gates in S79.
+
+- S75 §7 (sec/-class inflator 37-40% upper-band) — NOT EXERCISED
+  in S79 (no sec/-class work). Continues to apply for future sec/-
+  class PRs.
+
+- S75 §8 / S76 §I / S77 §G (memory citation discipline) — held
+  at S79 via both dispatched reviewers honoring paste-anchored-
+  content citation pattern.
+
+- S78 §A (triple-convergence at zero-remediable as clean-PR
+  benchmark for D-class-style work) — adjacent pattern extended
+  in S79 §E (two-reviewer convergence at 5I as clean-PR benchmark
+  for doctrine-only PRs with security-skip per documented scope).
+
+- S78 §B (D-1 triple-framing across reviewer lenses) — NOT
+  EXERCISED in S79 (no D-class structural rewrite); continues
+  standing as template for future §J trace templates.
+
+- S78 §C (isPositiveInt sextuply-confirmed) — see S75 §3 chain
+  above; not exercised in S79.
+
+- S78 §D (Followup #114 scope at 17 sites for chore PR) — scope
+  unchanged in S79 (no new error-message surfaces touched).
+
+- S78 §E (privacy-lens fragile-pattern framing beyond enumeration)
+  — VALIDATED in S79 §F as productive pattern (produced concrete
+  Followup #135 surface).
+
+- S78 §G (external-approval-before-triad operator-side pattern
+  caught) — no recurrence in S79 §G; pattern internalized.
+
+- S78 §H (§I methodology held on D-4) — NOT EXERCISED in S79 (no
+  per-school binding work); continues standing.
+
+- S78 §I (per-school binding wire-in with stale-comment cleanup
+  downside variance) — NOT EXERCISED in S79; continues standing
+  for future per-school-class PRs.
+
+- S78 §J (D-2 alt framing as Followup #76 body-input-layer) —
+  NOT EXERCISED in S79.
+
+- S78 §K (audit-first paste-anchoring fourth-consecutive pre-edit
+  catch) — extended at S79 §L (audit-first held at PR #123 audit).
+
+- S78 §L (template-suitability-review-before-paste) — held at S79
+  PR #123 docs/ai-context/DISTRICT_STRUCTURE.md composition (long-
+  paragraph sibling-doc convention adopted from PRIVACY_REVIEW.md
+  + SECURITY_REVIEW.md siblings per pre-paste review).
+
+NEXT SESSION SHOULD (Session 80)
+================================
+
+Priority framing: finish district structure as soon as possible.
+July 1 onboarding deadline removed per S78 close operator directive;
+unchanged in S79. Critical path paced on "ASAP but not at the
+expense of §4B / §5 / §A discipline."
+
+P1 — Master-index sync ratification (brief, ~5-10 min). Confirm
+at S80 open: S79 §A-§M catalog (above) is authoritative; §D INFO-
+tier 1c remediation precedent ratified for future application; §E
+two-reviewer convergence at 5I with security-skip pattern ratified
+as clean-PR benchmark for doctrine-only PRs; §F fragile-pattern-
+engagement validation ratified for future privacy-reviewer
+dispatch invitation language; §G external-approval-after-triad
+internalization ratified (mid-session reminders no longer needed
+by default); §K Track 2 scope-expansion-caught-at-planning ratified
+as preventive-discipline-class banking; §L substantial-session-
+work-without-code-behavior-change ratified as session-output
+framing; §M §4B-grep-on-source-pre-append composition-checklist
+refinement ratified, with standing-practice-graduation watch if
+pattern holds without recurrence in S80 + S81. Brief ratification,
+then move to P2 immediately.
+
+P2 — Track 2 P4 backfill (first district_admin onboarding). TOP
+PRIORITY POST-P1. Three clarifications outstanding (target school
+tenant existence; target user existence; target district mapping).
+Scope spans from single-row backfill (minimum case: both exist;
+single INSERT INTO user_school_access) to multi-step onboarding
+sequence (maximum case: create tenant + create user + grant access
++ verify audit trigger + audit-trail PR with §4B-redacted
+activities.txt entry). Operator should arrive at S80 with: (a)
+Render External PSQL Command credentials in hand, (b) target
+user_id or onboarding details for the first district_admin, (c)
+target school tenant_id (or new-tenant creation parameters), (d)
+audit-trail PR scope decision (yes/no audit-trail chore PR).
+Cowork-side will compose SQL block + verification queries. Per
+playbook §4B discipline: all PR-body and activities.txt content
+must follow table+row-count redaction convention; real PII (names,
+emails, slugs) lives in the psql session only, never in committed
+artifacts.
+
+P3 — Session 4 (district admin UI). Gated on P4 completion.
+Admin UI screens for district admins to manage schools + assign
+user_school_access entries. Design in Cowork-side DISTRICT_
+STRUCTURE_DESIGN_SUMMARY.md (planning artifact, S66). Estimated
+1-2 sessions depending on UI complexity. First UI work since
+S60-S62 baseline — expect some UI-class discipline patterns to
+emerge that haven't been exercised in the sec/-class sweep.
+
+P4 — Session 5 (staff CSV import). Gated on P3 completion. Multi-
+school staff onboarding via CSV. Final admin-session of district
+structure. Estimated 1-2 sessions. After this lands, district
+structure is COMPLETE.
+
+Parallel / interstitial X-list (between P-list blocks; don't delay
+critical path):
+
+  X1 — Followup #132 helper consolidation chore PR. 6 file-local
+  copies of resolveAndBindTargetTenant + isPositiveInt across
+  student504.js + screener.js + mtssMeetings.js + prereferralForms.js
+  + csvImport.js + students.js → shared middleware module. Forecast:
+  chore PR with -N net (deletions across consumer files) + +M net
+  (new shared module). Estimated 1 session. Ready post-D-class
+  completion.
+
+  X2 — Followup #114 error-message redaction chore PR. 17 sites
+  across 3 files (10 wire-leak + 4 server-log in students.js + 2
+  wire-leak in csvImport.js + 1 wire-leak in prereferralForms.js).
+  Convert error.message exposure to generic strings with structured
+  logging on the server side. Privacy-lens fragile-pattern framing
+  sharpens urgency. Estimated 1 session.
+
+  X3 — Followup #134 (students.js POST / body-shape validation).
+  Sibling of Followup #76; can batch with #76 if scheduled together.
+  Small chore.
+
+  X4 — Followup #135 (NEW S79) — parent-link-doctrine fragility
+  guards. Two risks: (a) future denormalized read path bypassing
+  resolveAccessibleTenantIds JOIN; (b) future onboarding flow
+  drift. Surfaces during PR-S3-E tier1-writes work or any future
+  parent_student_links read-path addition. Could ride along with
+  PR-S3-E as in-line hardening or land as standalone chore PR.
+
+  X5 — chore/settings-reset PR for Followup #22 (.claude/settings.
+  json drift; TWENTIETH-consecutive-session; SIXTH-consecutive
+  elevation candidacy). Single-commit chore. Should rank for S80
+  or S81 slot rather than continuing indefinite deferral. Per §H
+  above: either schedule chore/settings-reset PR with target merge,
+  or formally close Followup #22 as accepted-ongoing-state-not-
+  blocking. Either resolution clears elevation candidacy backlog.
+
+  X6 — Memory roll-up. ~108+ candidates accumulated (~95 pre-S79
+  + 13 new S79 candidates per §A-§M above). Continues deferred
+  from S65-S78.
+
+  X7 — Vercel project-slug investigation. Per §B above: identify
+  meridan-global-travel Vercel team in operator's account, what
+  if anything attached to it, clean up any stale tiertrak repo
+  integrations. Sibling: enable 2FA on Vercel account per
+  dashboard nudging. Both ~15-30 min operator-side action;
+  interstitial slot.
+
+  X8 — migration-027 Phase 2. Lower priority; can wait until
+  district structure complete.
+
+  X9 — feat/multi-screener-upload. Gated on X8.
+
+S80 opener decision (recommend Cowork pre-decision phase): P1
+master-index sync first (5-10 min, briefer than S79 P1 since
+S79's banked observations are fewer cross-references-to-earlier
+than S78's), then P2 Track 2 P4 backfill — the critical-path-
+unlocking move for district-structure completion. Operator should
+arrive with the four pre-conditions named in P2 above; resolution
+unlocks P3 + P4 directly. Don't let X-list chore work delay P2
+unless P2 is mid-clarification.
+
+Reminders for S80 opening:
+
+  - 50 users in prod, user_school_access still empty (no grants
+    yet), fail-closed by design per S76 §K (reconfirmed S77 + S78
+    + S79) — no per-PR safety worry on this state. Operator
+    backfill mechanically possible now that Followups #122 + #123
+    are RESOLVED + codified.
+
+  - First district_admin onboarding scope: multi-step sequence
+    (tenant + user + access + audit-trigger verification +
+    optional audit-trail PR) rather than single-row backfill per
+    S78 master-index framing. Pre-conditions named in P2 above.
+
+  - Thirteen S79 feedback memory candidates + ~95 from earlier
+    sessions still queued for memory roll-up (~108+ total).
+
+  - No July 1 deadline pressure (per S78 close operator directive;
+    unchanged in S79). Finish ASAP but not at the expense of §4B
+    / §5 / §A discipline.
+
+  - S79 §D (INFO-tier 1c remediation precedent), §E (two-reviewer
+    convergence at 5I as clean-PR benchmark for doctrine-only
+    PRs), §F (fragile-pattern-engagement validation), §G (external-
+    approval-after-triad internalized — mid-session reminders no
+    longer needed by default), §K (Track 2 scope-expansion-caught-
+    at-planning), §L (substantial-session-work-without-code-
+    behavior-change framing) are the load-bearing banking entries
+    for S80 dispatch prompts.
+
+Three S80 guardrails worth surfacing at session-open per S79 §G,
+§K, §L:
+
+  (a) §G external-approval-after-triad is now internalized; mid-
+      session reminders no longer needed by default unless specific
+      pre-triad-approval signal observed. The catch-test-cleared
+      evidence from S78 + S79 establishes the pattern as stable.
+
+  (b) §K master-index P-item framing should be re-validated at
+      session pickup, not treated as authoritative scope. Sessions
+      between framing and pickup can materially shift scope —
+      e.g., Track 2 P4 was framed as "single SQL operation" at
+      S78 close but clarifications at S79 pickup revealed multi-
+      step onboarding sequence. Default to clarifications-first
+      for P-item pickup rather than direct-to-execution.
+
+  (c) §L behavioral no-op sessions are still substantive operational
+      output. Don't measure session value strictly by behavioral
+      delta; doctrine codification + product-decision banking +
+      master-index ratification all consume session time and
+      discipline without producing behavioral lines of code.
+      S79's +69 net doctrine lines + 2 new Followups banked + 13
+      new discipline observations is real session output.
+
+========================================================================
+END SESSION 79
+========================================================================
