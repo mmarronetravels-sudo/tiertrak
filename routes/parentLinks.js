@@ -13,6 +13,14 @@ const initializePool = (p) => {
   pool = p;
 };
 
+// Followup #122 (resolved): cross-school parent-student links are
+// permitted by design — parent users may be linked to students across
+// schools in the same district. Tenant scoping is enforced via
+// resolveAccessibleTenantIds membership (see loadLinkAndAssertTenant
+// helper below), NOT via a structural parent.tenant_id ===
+// student.tenant_id assertion. See docs/ai-context/DISTRICT_STRUCTURE.md
+// §1.1 for full doctrine.
+
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
 // Admin-only allowlist for write routes (POST, DELETE). Counselors are

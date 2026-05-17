@@ -298,6 +298,8 @@ Hard rules:
 - Do not introduce cross-school reads/writes that bypass `user_school_access`. Do not introduce cross-district reads/writes under any circumstance.
 - Rate limiting must be preserved on any endpoint that accepts external input.
 
+Resolved product decisions (#122 cross-school parent-student links, #123 per-school tier1-assessment in-progress scoping) are codified in `docs/ai-context/DISTRICT_STRUCTURE.md`.
+
 ---
 
 ## 6) OUTPUT FORMAT REQUIREMENTS FOR CODE TASKS

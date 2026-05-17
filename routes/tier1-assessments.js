@@ -14,6 +14,20 @@ const {
 let pool;
 const initializePool = (dbPool) => { pool = dbPool; };
 
+// Followup #123 (resolved): the "one in-progress per tenant" rule
+// for tier1 assessments applies PER-SCHOOL by intent — matches the
+// #125 per-school binding semantics shipped across PR-S3-D-1 through
+// PR-S3-D-4. See docs/ai-context/DISTRICT_STRUCTURE.md §1.2 for full
+// doctrine.
+//
+// FORWARD-LOOKING CAVEAT: the POST handler below currently binds
+// single-tenant via WHERE tenant_id = $1 / [req.user.tenant_id] in
+// both the in-progress existence-check SELECT and the INSERT.
+// PR-S3-E (tier1 writes) will wire per-school binding via
+// resolveAndBindTargetTenant per the established Pattern E shape.
+// This comment documents intent — current code still enforces the
+// single-tenant shape until PR-S3-E lands.
+
 // Roles allowed to create, edit responses, and complete a Tier 1 assessment.
 // Teachers and parents can view (via GET) but cannot modify.
 const ROLES_WHO_CAN_EDIT = [
