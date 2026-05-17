@@ -34,7 +34,7 @@ export default function DistrictDashboardView() {
         const data = await res.json();
         if (!cancelled) setSchools(Array.isArray(data.schools) ? data.schools : []);
       } catch (err) {
-        logError('district-dashboard', err);
+        logError(err, 'district-dashboard');
         if (!cancelled) setError('Could not load district overview.');
       }
     })();
