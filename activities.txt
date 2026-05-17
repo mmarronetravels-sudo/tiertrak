@@ -15410,3 +15410,508 @@ Three S80 guardrails worth surfacing at session-open per S79 §G,
 ========================================================================
 END SESSION 79
 ========================================================================
+
+========================================================================
+SESSION 80 — May 17, 2026 (Sunday morning Pacific)
+========================================================================
+
+TASK SUMMARY
+============
+
+Session 80 (May 17, Sunday morning Pacific). Spanned approximately
+13 hours calendar elapsed from S79 close (S79 close
+2026-05-17T01:24Z → S80 P2 COMMIT 2026-05-17T13:57:19Z, plus
+close-entry composition time after). Zero substantive code PRs
+merged this session — only this close-entry chore PR pending at
+composition time. The defining event was the first real
+district_admin user landing in prod via operator-side psql
+backfill, mechanically unblocking Session-4 admin UI work that
+has been gated since the Migration 028 district-structure layer
+shipped.
+
+Session flow:
+
+  P1 — Master-index sync ratification (brief, ~10 min). S79
+  §A-§M catalog confirmed authoritative. All eight specific
+  banking entries explicitly ratified: §D INFO-tier 1c
+  precedent, §E two-reviewer convergence at 5I as clean-PR
+  benchmark for doctrine-only-with-security-skip work, §F
+  fragile-pattern engagement validation, §G external-approval-
+  after-triad internalization, §K Track-2 scope-expansion-
+  caught-at-planning, §L substantial-session-work-without-code-
+  behavior-change, §M three-pass §4B-grep composition checklist.
+  Catalog stands.
+
+  P2 — Track-2 P4 first real district_admin onboarding in prod.
+  Operator-side psql backfill via Render External PSQL Command.
+  ZERO code commits, ZERO SQL files committed, zero migrations
+  run — activities.txt and this close PR are the only persistent
+  repo artifacts from the session. The psql block was composed
+  in chat, copied to operator clipboard, pasted into psql,
+  executed, reviewed, COMMIT'd; the composition itself never
+  entered git.
+
+  Net rows created in P2 inside one BEGIN/COMMIT-wrapped
+  transaction with five verification SELECTs run pre-COMMIT:
+    - 1 districts row
+    - 2 tenants rows (type='school', both bound to the new
+      district via district_id)
+    - 122 tenant_intervention_bank rows (61 starter templates
+      per new tenant × 2 — replicating the auto-seed in
+      routes/tenants.js:70-84 that the API path runs but
+      direct psql does not)
+    - 1 users row (role='district_admin', null-password +
+      password_reset_token + 7-day expiry per /create-parent
+      doctrine at routes/auth.js:289; school_wide_access=true)
+    - 2 user_school_access rows (created_by = operator user_id)
+    - 2 user_school_access_audit rows (action='grant',
+      actor_user_id = operator user_id, audit_id=1 and
+      audit_id=2 — first rows ever written to this audit
+      table, confirming the empty-table state carried forward
+      from S76 §K and reconfirmed S77 / S78 / S79; see §H
+      below)
+
+  The existing sandbox district plus its sandbox tenant were
+  preserved untouched throughout. Set-password URL captured
+  from the in-block RAISE NOTICE output; pending hand-delivery
+  to the new district_admin via secure channel (token valid
+  seven days from issue).
+
+FILES TOUCHED
+=============
+
+None this PR except activities.txt itself (this close entry
+append).
+
+MIGRATIONS RUN
+==============
+
+None. P2 was pure-data backfill against existing M028 / M030 /
+M031 / M032 / M033 schema; no DDL ran.
+
+TENANT ISOLATION REVIEW
+=======================
+
+Composite-FK guards on user_school_access (M028) validated at
+insert time — the transaction would have aborted on any cross-
+district binding mismatch between user.district_id and
+tenant.district_id resolved via the composite UNIQUE indexes.
+Both grants landed without composite-FK rejection: the tenant-
+isolation invariant held mechanically at the schema level.
+
+This PR's diff is activities.txt-only; tenant-isolation-auditor
+invocation on the close PR is still appropriate (data-backfill-
+of-tenant-bound-rows class even though no new code surfaces
+shipped). Recommend dispatching the auditor at the chore-PR
+review pass.
+
+SECURITY REVIEW
+===============
+
+Decision point per S79 §E precedent: docs-only diff
+(activities.txt append). Underlying P2 operation touched the
+users.password_reset_token column (auth-adjacent surface) but
+no auth code was modified — the touch was a row INSERT under
+the existing /create-parent-class null-password + reset-token
+shape, not a code-path change. Recommend invoking security-
+reviewer anyway for first-district_admin-in-prod precedent-
+setting reasons; expected scope is "verify no auth-surface code
+change AND verify §4B redaction discipline on the entry itself."
+Differs from the S79 §E full-skip precedent because P2 has prod-
+data implications even with the diff staying docs-only.
+
+PRIVACY REVIEW (§4B)
+====================
+
+Three-pass §M §4B-grep applied at compose-stage on the source
+pre-append per S79 §M discipline, then re-run on the diff post-
+stage. Zero hits across both runs.
+
+§4B PII-anchor scan: ZERO PII anchors of any §4B-catalogued
+shape across the appended content. Per recursion-trap discipline
+(S79 §M Pass 3), audit-trail prose cites that §4B was run plus
+result count, never what was checked for.
+
+VERIFICATION
+============
+
+§M Mode 4 paste-anchored at every operational gate per S77 §K +
+S78 §F + S79 §M standing practice:
+
+  Pre-execution token generation — node -e one-liner over
+  crypto.randomBytes(32).toString('hex') produced one 64-char
+  hex string captured to operator clipboard; no filesystem
+  write, plaintext never persisted.
+
+  Preflight 0 first-execution attempt — caught at first psql-
+  execution by the preflight itself (see §B for the footgun
+  mechanics); ABORT with placeholder-still-present condition.
+  ROLLBACK acknowledgment from psql confirmed the transaction
+  unwound cleanly; no partial state.
+
+  Preflight 0 second-execution — placeholder restored in the
+  IF-check line, hex token left in the DECLARE line; all four
+  preflights cleared without ABORT.
+
+  Five verification SELECTs returned expected shapes pre-COMMIT:
+    - Combined district + tenants + user view: 4 rows total
+      (1 district, 2 tenants with type='school', 1 user with
+      role='district_admin')
+    - user_school_access: 2 rows, both created_by = operator
+      user_id
+    - user_school_access_audit: 2 rows, both action='grant',
+      audit_id=1 and audit_id=2
+    - tenant_intervention_bank: 61 starter rows per new tenant,
+      both tenants
+    - User row sanity: password_is_null=t, has_reset_token=t,
+      password_reset_expires ~ +7 days from COMMIT timestamp
+
+  COMMIT acknowledgment — psql returned COMMIT confirmation and
+  the transaction prompt indicator cleared (open-transaction
+  asterisk dropped from the prompt).
+
+  Operator \q disconnect — clean exit; no orphaned connections.
+
+  Set-password URL — captured verbatim from RAISE NOTICE stderr
+  output; held in operator memory pending secure-channel hand-
+  delivery. Not written to filesystem, not pasted into any
+  logged channel.
+
+All gates cleared without slippage past the §B first-execution
+preflight catch. Pre-existing carryover (.claude/settings.json
+drift = Followup #22 TWENTY-FIRST-consecutive-session,
+GR_SampleClass.pdf NWEA reference untracked, scripts/ops/
+2026-05-11-[tenant]-revoke-audit.sql untracked working file =
+Followup #94) correctly identified and excluded from staging at
+close-entry compose time.
+
+Render LIVE timestamp not applicable: P2 was a database backfill,
+not a code deploy. The backend service's auto-deploy did not
+fire because main HEAD did not move during P2.
+
+OPEN ITEMS
+==========
+
+Carry-forward from S79 unchanged in scope except where noted:
+
+- Followup #22 (.claude/settings.json drift) — now TWENTY-FIRST-
+  consecutive-session deferral; SEVENTH-consecutive elevation
+  candidacy. Elevation watch continues.
+
+- user_school_access prod state UPDATED: now NON-EMPTY (2 rows).
+  Carry-forward observation modified accordingly — prior framing
+  as "empty in prod" no longer holds.
+
+- user_school_access_audit prod state UPDATED: now NON-EMPTY (2
+  'grant' rows, audit_id=1 and audit_id=2). M031 cascade-trigger
+  remains dormant (no DELETE has fired against
+  user_school_access in prod).
+
+- Pending: hand-delivery of set-password URL via secure channel
+  within the 7-day token validity window. Standing open until
+  delivery confirmed and the new district_admin successfully
+  completes password setup.
+
+- X-list (#132 helper consolidation, #114 redaction, #134 body-
+  shape validation, #135 parent-link fragility, #136 retroactive
+  §4B cleanup, X7 Vercel investigation, X8 filename-on-disk, X9
+  memory rollup, X10 migration-027 Phase 2, X11 multi-screener
+  feat) all carry forward.
+
+- Stale product-name references — see §G below; new Followup
+  #137.
+
+NUMBERING NOTE — namespace, continued
+=====================================
+
+S80 promotes ONE new Followup at #137 — stale-product-name
+reference cleanup pass per §G. The §B placeholder-pattern
+footgun is banked as discipline observation only, not promoted
+to Followup status (folded into general SQL-composition
+doctrine). Namespace through #136 at session open; through #137
+at S80 close.
+
+External tracker namespace decision still deferred. Twenty-
+fourth-consecutive session of deferral. Still worth a 15-minute
+opportunity-cost talk during a calmer session.
+
+DISCIPLINE OBSERVATIONS — Session 80
+====================================
+
+§A. Planning-partner-side §4B slip on initial Phase-2 prompt
+    (S80)
+
+The Cowork-drafted Phase-2 starter prompt embedded a tenant-slug
+literal in the proposed branch name. Caught by the planning
+partner at audit-report-review (post-CC-audit, pre-SQL-
+composition). Recovery: git branch -m to the redacted form.
+Local-only — never pushed, no remote ref cleanup needed. The
+branch carried zero commits at rename time so safe-delete-via-
+git-branch-d was not relevant here; rename was the appropriate
+recovery.
+
+NEW §M PASS-CLASS CANDIDATE: branch-name-embedded slug. Distinct
+from S79 §M Pass 2 filename-embedded slug because the branch
+name lives in git refs (local + remote when pushed), which is a
+different durability surface than filenames-on-disk or filenames-
+cited-in-prose. Standing-practice graduation watch: if branch-
+naming three-pass discipline holds across S81 + S82 without
+recurrence, joins the standing-practice catalog as §M Pass 4.
+
+§B. Find-and-replace global-replace footgun on operator-side
+    SQL-placeholder substitution (S80)
+
+The placeholder string used for the password-reset-token
+substitution appeared in TWO places in the composed SQL block:
+once on the DECLARE-line literal where it expected substitution,
+and once inside the preflight 0 IF-check comparison literal
+where it intentionally needed to remain a string-match anchor.
+Operator performed a global find-and-replace at substitution
+time, replacing BOTH occurrences with the live hex token. Result:
+preflight 0's check became "if v_reset_token equals <hex token>"
+which always matched (because v_reset_token had just been set to
+the same hex token on the line above), always triggered ABORT.
+
+Caught at first psql-execution attempt by the preflight itself.
+Recovery: ROLLBACK + restore placeholder in the IF-check line +
+re-execute clean. The preflight did exactly what preflights are
+designed to do — fail loud at the boundary rather than partway
+through the transaction — so the catch was clean even though the
+cause was a substitution-mechanics slip.
+
+BANKING: SQL-composition prompts producing operator-side psql
+blocks should either (a) use DISTINCT placeholder strings in
+DECLARE versus IF-check positions, or (b) replace the string-
+equality preflight with a length-only or structural-shape
+validation (e.g., length(v_reset_token) <> 64) that does not
+depend on a placeholder literal matching itself. Option (b) is
+the cleaner doctrine because it makes the preflight robust
+against the entire class of global-replace mechanics, not just
+the specific dual-placeholder shape. Structural lesson for any
+future SQL-composition prompt that emits operator-substitutable
+placeholders.
+
+§C. Track 2 P4 scope-expansion at pickup, third consecutive
+    iteration (S80)
+
+S78 framed P4 as "single SQL operation." S79 §K caught it at
+pickup as "multi-step onboarding sequence — defer to S80." S80
+surfaced further expansion at pickup: real district and school
+names from the operator side, sandbox-preservation strategy
+choice (preserve existing sandbox tenants untouched rather than
+reuse them), and first-time-in-prod constraint (no precedent
+rows in user_school_access or user_school_access_audit). The §K
+guardrail held — all three expansions caught at planning phase
+before SQL composition began, not partway through composition.
+
+EXTENDS S79 §K to two-cycle confirmation (S79 pickup + S80
+pickup); standing-practice graduation candidate. If a third
+P-item pickup in S81 or beyond shows the same clarification-
+first benefit, promote §K from candidate to catalog item.
+
+§D. Multi-channel §M three-pass §4B-grep discipline (S80)
+
+S79 §M established the three-pass §4B-grep at close-entry
+composition. S80 extended the pattern to multi-channel
+application:
+
+  (a) SQL-block composition for psql execution — real PII
+      appropriate for this channel because the SQL never entered
+      git and never appeared in any tracked artifact; the SQL
+      block carried real identifiers as required to actually
+      execute.
+
+  (b) Verification-output review — real PII appropriate because
+      the SELECT outputs existed only in the operator's terminal
+      scrollback for the duration of review.
+
+  (c) activities.txt entry composition — real PII NOT
+      appropriate because activities.txt is tracked content that
+      persists forever. Redacted via abstract count-and-shape
+      form: row counts, role literals, column-shape descriptions,
+      never the names.
+
+Channel-separation discipline held without recursion-trap slip
+— no PII from (a) or (b) leaked into (c). Pattern: §M three-pass
+is multi-channel discipline keyed on the persistence surface of
+each channel, not a close-entry-only ritual. Banking as the
+multi-channel extension of S79 §M.
+
+§E. Planning-partner pre-psql review of operator-prepared SQL
+    as productive gate (S80)
+
+Two issues caught at final-review pass before psql execution
+began:
+
+  (1) FRONTEND_URL angle-bracket-pasted-literally — operator
+      had retained the placeholder delimiters verbatim through
+      the substitution step, which would have produced an un-
+      clickable set-password URL in the RAISE NOTICE output and
+      downstream hand-delivery. Caught pre-psql by the planning
+      partner at final-review.
+
+  (2) The §B preflight-0 global-replace footgun — placeholder-
+      pattern collision between DECLARE and IF-check positions.
+      Caught in-psql by the preflight itself, not at final-
+      review (the find-and-replace mechanics are not visible
+      from reading the substituted SQL).
+
+BANKING: planning-partner review of operator-prepared SQL
+catches substitution-mechanics errors that CC's compose-time
+audit cannot anticipate. CC composes with intent and structural
+correctness; it does not observe the substitution execution.
+The planning-partner role at this gate is structurally distinct
+from CC's compose-side audit and produces non-overlapping
+catches. Standing-practice item: pre-psql review of operator-
+prepared SQL is its own gate.
+
+§F. Cadence-matching as planning-partner discipline (S80)
+
+At the Phase-2-execution transition point, the operator
+requested simpler instruction cadence ("slow down and give me
+instructions, one at a time, in simple language"). Planning
+partner shifted from comprehensive-summary cadence to single-
+action-step cadence for the remainder of P2 execution. The
+shift was operator-initiated, planning-partner-honored, and
+held through to COMMIT.
+
+Pattern: high-stakes operational gates benefit from cadence-
+matching to operator capacity, regardless of how mature the
+planning-partner-side framing already is. Correct framing does
+not make the cadence right; cadence is its own variable.
+Standing-practice graduation candidate; if a similar cadence-
+shift signal in a later session is honored without prompting,
+promote to catalog item.
+
+§G. Product-name change as known stale-reference vector (S80)
+
+Operator clarified mid-session that the product is no longer
+named TierTrak; the current FRONTEND_URL points at a different
+domain than the historical product name. CLAUDE.md custom
+instructions, master-index files, activities.txt headers, and
+the Render psql prompt all still surface the legacy product-
+name identifier. Cleanup is non-urgent — none of the legacy
+references break anything functionally — but the references are
+stale.
+
+The Render service slug tiertrak-api is a legacy backend
+identifier sitting at a different naming layer from product
+name; leaving the service slug as-is is acceptable (renaming a
+Render service mid-flight has known operational risk and the
+slug is internal-only). Pattern: product-name change as known
+stale-reference vector; analogous to S79 §B (Vercel project-slug
+deviation) and the Render service slug — backend identifiers
+can outlive product naming with no functional cost. NEW FOLLOWUP
+#137: stale-product-name reference cleanup pass across tracked-
+content surfaces.
+
+§H. First-row-audit_id as empty-table-confirmation signal (S80)
+
+user_school_access_audit's first-ever rows landed as audit_id=1
+and audit_id=2 in S80, confirming the carry-forward observation
+from S76 §K (reconfirmed S77 / S78 / S79) that the table was
+empty in prod. Sequential identifiers starting at 1 are a
+verification-proxy for "no prior rows existed" — if the table
+had carried any history (failed migration attempts, out-of-band
+inserts, etc.), the BIGSERIAL would have surfaced a higher
+starting audit_id.
+
+BANKING: serial-id-of-first-row as a verification-proxy for
+table-emptiness in audit and log tables that use SERIAL or
+BIGSERIAL identifiers. Useful operator-side verification pattern
+at first-write moments. Limitation: the proxy is informational
+only — it does not survive any operator-side sequence reset, so
+the proxy is strongest when paired with a read of the table's
+row count at the same gate.
+
+Banked from S79 / S78 / S77 / earlier (carry-forward, with S80
+extensions)
+============================================================
+
+- S79 §A (markdown-doc forecast methodology) — NOT EXERCISED in
+  S80 (no markdown docs composed). Continues standing for future
+  docs-class PRs.
+
+- S79 §B (Vercel project-slug deviation) — operator-side
+  investigation still pending. Continues standing.
+
+- S79 §C / §D — NOT EXERCISED in S80 (no triad work this
+  session; close-PR review pending).
+
+- S79 §E (two-reviewer convergence at 5I as clean-PR benchmark)
+  — APPLICABLE to the current S80 chore PR depending on whether
+  triad runs as privacy+tenant-iso only or full three-reviewer.
+  Recommendation in SECURITY REVIEW section above defaults to
+  full three-reviewer.
+
+- S79 §F (privacy-lens fragile-pattern engagement validated) —
+  APPLICABLE; the privacy-lens fragile-pattern invitation should
+  go on this PR's privacy-reviewer dispatch per S78 §E pattern.
+
+- S79 §G (external-approval-after-triad internalization) — held
+  in S80 mid-session; mid-session reminders correctly not
+  surfaced because P2 was data backfill, not a code PR.
+
+- S79 §H — extends to TWENTY-FIRST-consecutive at S80; seventh-
+  consecutive elevation candidacy.
+
+- S79 §J (§A discipline multi-session standing practice) — held
+  across S80 pauses. Cadence change at §F shifted the pause-
+  pattern but the conditional-greenlight phrasing held on the
+  planning-partner side throughout. Quadruply-confirmed across
+  S77 → S78 → S79 → S80.
+
+- S79 §K (Track-2 scope-expansion-caught-at-planning) — EXTENDED
+  at S80 §C to two-cycle confirmation. Standing-practice
+  graduation candidate.
+
+- S79 §L (substantial-session-work-without-code-behavior-change)
+  — S80 is also code-behavior-change-zero (no code commits; only
+  data backfill via psql + activities.txt append). Pattern
+  continues to apply, now TRIPLY-confirmed across S79 + S80 + the
+  S78 doctrine-only precedent.
+
+- S79 §M (three-pass §4B-grep composition checklist) — EXTENDED
+  at S80 §D from close-entry-only to multi-channel discipline;
+  further extended at S80 §A introducing the branch-name-
+  embedded slug candidate as Pass 4.
+
+NEXT SESSION SHOULD (Session 81)
+================================
+
+Priority framing: district structure now mechanically unblocked
+through user_school_access non-empty state. Critical path moves
+from data-layer (P4) to UI-layer (admin screens).
+
+P1 — Master-index sync ratification (brief, ~5-10 min). Confirm
+at S81 open: S80 §A-§H catalog (above) is authoritative;
+proposed §M Pass 4 (branch-name-embedded slug) banking ratified;
+new Followup #137 namespace position confirmed; carry-forward
+extensions from §C / §L / §M into S80 framing acknowledged.
+
+P2 — Session 4 admin UI work begins. Mechanically unblocked by
+S80 P2 (user_school_access non-empty + first district_admin user
+row landed in prod). Scope: district-admin screens for managing
+schools within a district, plus assigning and revoking
+user_school_access. First UI work since the S60-S62 baseline.
+Estimated 1-2 sessions. The B2 grant/revoke route surface
+(routes/districtAccess.js) is in place; UI work consumes it.
+
+P3 — Session 5 staff CSV import. Gated on P2 completion. After
+P3 lands, district structure work is COMPLETE.
+
+X-list carry-forward: X1 #132 helper consolidation, X2 #114
+redaction, X3 #134 body-shape validation, X4 #22 settings reset
+(now SEVENTH elevation candidacy), X5 #135 parent-link fragility
+guards, X6 #136 retroactive §4B cleanup, X7 Vercel investigation,
+X8 filename-on-disk forensic remediation, X9 memory rollup
+(~116+ candidates now: ~108 pre-S80 plus eight new S80
+candidates per §A-§H), X10 migration-027 Phase 2, X11 multi-
+screener feat. X12 — Followup #137 stale-product-name reference
+cleanup pass (across CLAUDE.md + master-index forward
+references; historical activities.txt entries left as-is per
+don't-rewrite-history convention).
+
+========================================================================
+END SESSION 80
+========================================================================
