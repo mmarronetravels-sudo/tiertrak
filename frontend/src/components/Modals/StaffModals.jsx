@@ -27,14 +27,7 @@ credentials: 'include',
         body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
       });
       if (response.ok) {
-        // Refresh staff list
-        const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          credentials: 'include'
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (loadStaffList) loadStaffList();
-        }
+        if (loadStaffList) loadStaffList();
         onClose();
       } else {
         const err = await response.json();
@@ -107,14 +100,7 @@ credentials: 'include',
         body: JSON.stringify({ full_name: editData.full_name, role: editData.role })
       });
       if (response.ok) {
-        // Refresh staff list
-        const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          credentials: 'include'
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (loadStaffList) loadStaffList();
-        }
+        if (loadStaffList) loadStaffList();
         onClose();
       } else {
         const err = await response.json();
