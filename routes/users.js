@@ -178,6 +178,9 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const { email, password, full_name, role } = req.body;
+    if (!email || !password || !full_name || !role) {
+      return res.status(400).json({ error: 'Email, password, full name, and role are required' });
+    }
 
     // Validate role
     if (!VALID_ROLES.includes(role)) {
@@ -215,7 +218,8 @@ router.post('/', requireAuth, async (req, res) => {
     if (error.code === '23505') {
       return res.status(400).json({ error: 'A user with this email already exists for this tenant' });
     }
-    res.status(500).json({ error: error.message });
+    console.error('[users.js POST] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

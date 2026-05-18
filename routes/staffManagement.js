@@ -123,8 +123,15 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(bindError.status).json(bindError.body);
     }
 
-    // Check if email already exists
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    // Check if email already exists at the target tenant. Per-tenant
+    // scoping (rather than global) closes the cross-tenant email-
+    // enumeration oracle flagged in PR #129 triad re-review (tenant-
+    // isolation-auditor HIGH on staffManagement.js, Followup #142). The
+    // schema's UNIQUE(tenant_id, email) constraint is the source of
+    // truth; this app-layer check is a pre-INSERT early-out for the
+    // common case. The 23505 race-catch below handles concurrent
+    // same-tenant inserts.
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND tenant_id = $2', [email, targetTenantId]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'A user with this email already exists' });
     }
@@ -148,8 +155,11 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Error creating staff:', error);
-    res.status(500).json({ error: error.message });
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'A user with this email already exists' });
+    }
+    console.error('[staff:post] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
