@@ -102,9 +102,10 @@ router.post('/login', authLoginCompoundLimiter, async (req, res) => {
     
     // Find the user
     const result = await pool.query(
-      `SELECT u.*, t.name as tenant_name 
+      `SELECT u.*, t.name as tenant_name, d.name as district_name
        FROM users u
        JOIN tenants t ON u.tenant_id = t.id
+       LEFT JOIN districts d ON u.district_id = d.id
        WHERE u.email = $1`,
       [email]
     );
@@ -147,7 +148,9 @@ res.json({
     role: user.role,
     tenant_id: user.tenant_id,
     tenant_name: user.tenant_name,
-    school_wide_access: user.school_wide_access
+    school_wide_access: user.school_wide_access,
+    district_id: user.district_id,
+    district_name: user.district_name
   }
 });
 } catch (error) {
@@ -217,9 +220,10 @@ router.post('/google', async (req, res) => {
     
     // Check if user exists
     let result = await pool.query(
-      `SELECT u.*, t.name as tenant_name 
+      `SELECT u.*, t.name as tenant_name, d.name as district_name
        FROM users u
        JOIN tenants t ON u.tenant_id = t.id
+       LEFT JOIN districts d ON u.district_id = d.id
        WHERE u.email = $1`,
       [email]
     );
@@ -275,7 +279,9 @@ res.json({
     role: user.role,
     tenant_id: user.tenant_id,
     tenant_name: user.tenant_name,
-    school_wide_access: user.school_wide_access
+    school_wide_access: user.school_wide_access,
+    district_id: user.district_id,
+    district_name: user.district_name
   }
 });
 } catch (error) {
