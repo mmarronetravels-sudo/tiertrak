@@ -7035,7 +7035,7 @@ if (isParent) {
       )}
 
       {showAddStaffModal && (
-  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} />
+  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} isDistrictAdmin={isDistrictAdmin} />
 )}
 
       {/* Edit Staff Modal */}
