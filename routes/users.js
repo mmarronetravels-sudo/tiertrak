@@ -14,6 +14,39 @@ const pool = new Pool({
 // Valid roles
 const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'];
 
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
+// Per Followup #125 (per-school binding), POST handlers read an optional
+// target_tenant_id from req.body:
+//   - Absent → falls back to req.user.tenant_id (backwards-compat for
+//     legacy single-tenant users whose JWT carries their only accessible
+//     tenant).
+//   - Present but not a positive integer → 400.
+//   - Present, positive integer, but not in
+//     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+//     INSERT; a body-explicit cross-tenant probe collapses to 403, not
+//     400-FK).
+//
+// Pattern E shape mirrored from routes/student504.js. Module-local copy
+// — banked as new followup chore/consolidate-target-tenant-helper
+// alongside Followup #108.
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
+}
+
 // Get all users for a tenant
 router.get('/tenant/:tenantId', async (req, res) => {
   try {
@@ -117,18 +150,35 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create a new user
-router.post('/', async (req, res) => {
+// Create a new user. Gated by requireAuth + role authz
+// (district_admin / school_admin) + §5 target_tenant_id binding via
+// resolveAndBindTargetTenant (Pattern E shape). Closes the POST half of
+// Followup #116 for this surface. Password-required (non-SSO) identity
+// model preserved — staff onboarding via Google SSO uses POST /api/staff;
+// this surface remains the password-required path (parents, etc.).
+// Creator-of-user list (CREATE_USER_ROLES below) and createable-as-user
+// list (VALID_ROLES) are deliberately different.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { tenant_id, email, password, full_name, role } = req.body;
-    
+    const CREATE_USER_ROLES = ['district_admin', 'school_admin'];
+    if (!CREATE_USER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { email, password, full_name, role } = req.body;
+
     // Validate role
     if (!VALID_ROLES.includes(role)) {
-      return res.status(400).json({ 
-        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`
       });
     }
-    
+
+    const { targetTenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) {
+      return res.status(bindError.status).json(bindError.body);
+    }
+
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -136,7 +186,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO users (tenant_id, email, password_hash, full_name, role)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id, tenant_id, email, full_name, role, created_at`,
-      [tenant_id, email, hashedPassword, full_name, role]
+      [targetTenantId, email, hashedPassword, full_name, role]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
