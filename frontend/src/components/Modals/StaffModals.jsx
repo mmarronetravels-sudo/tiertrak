@@ -14,7 +14,10 @@ export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList, is
   const [staffError, setStaffError] = useState('');
   const [accessibleSchools, setAccessibleSchools] = useState([]);
   const [selectedSchool, setSelectedSchool] = useState(null);
-  const [schoolsLoading, setSchoolsLoading] = useState(false);
+  // Initialize loading state from mount-time props so the in-effect
+  // setSchoolsLoading(true) call isn't needed (avoids the
+  // react-hooks/set-state-in-effect cascading-render warning).
+  const [schoolsLoading, setSchoolsLoading] = useState(!!(isDistrictAdmin && user.district_id));
 
   // For district_admin: hydrate the accessible-schools picker from the
   // dashboard endpoint. Picker set is byte-for-byte identical to what
@@ -25,7 +28,6 @@ export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList, is
   useEffect(() => {
     if (!isDistrictAdmin || !user.district_id) return;
     let cancelled = false;
-    setSchoolsLoading(true);
     apiFetch(`${API_URL}/districts/${user.district_id}/dashboard`, {
       credentials: 'include'
     })
