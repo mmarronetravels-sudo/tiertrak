@@ -11,8 +11,19 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Valid roles
+// Valid roles (universe of valid role strings — used for malformed-input
+// 400 rejection).
 const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'];
+
+// Per-creator-role rules: which roles each creator can produce. Dict
+// is the single source of truth for both the caller-allowed gate
+// (Object.keys) and the per-call role-rank check. Closes role-
+// escalation gap from PR #129 triad re-review (security-reviewer
+// HIGH-1).
+const CREATE_USER_RULES = {
+  district_admin: VALID_ROLES,
+  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'parent']
+};
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -150,18 +161,19 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create a new user. Gated by requireAuth + role authz
-// (district_admin / school_admin) + §5 target_tenant_id binding via
-// resolveAndBindTargetTenant (Pattern E shape). Closes the POST half of
-// Followup #116 for this surface. Password-required (non-SSO) identity
-// model preserved — staff onboarding via Google SSO uses POST /api/staff;
-// this surface remains the password-required path (parents, etc.).
-// Creator-of-user list (CREATE_USER_ROLES below) and createable-as-user
-// list (VALID_ROLES) are deliberately different.
+// Create a new user. Gated by requireAuth + caller-role gate
+// (Object.keys(CREATE_USER_RULES)) + role-validity (VALID_ROLES → 400
+// on malformed) + role-rank gate (CREATE_USER_RULES[caller] → 403 on
+// rank-rejection) + §5 target_tenant_id binding via
+// resolveAndBindTargetTenant. district_id inherited from creator on
+// district-scoped role INSERTs. Closes POST half of Followup #116 +
+// role-escalation finding from PR #129 triad re-review. Password-
+// required (non-SSO) identity model preserved — staff onboarding via
+// Google SSO uses POST /api/staff; this surface remains the password-
+// required path (parents, etc.).
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const CREATE_USER_ROLES = ['district_admin', 'school_admin'];
-    if (!CREATE_USER_ROLES.includes(req.user.role)) {
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -174,6 +186,10 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
+    if (!CREATE_USER_RULES[req.user.role].includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const { targetTenantId, error: bindError } = await resolveAndBindTargetTenant(req);
     if (bindError) {
       return res.status(bindError.status).json(bindError.body);
@@ -182,11 +198,17 @@ router.post('/', requireAuth, async (req, res) => {
     // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // district_id binding: district-scoped roles inherit creator's
+    // district_id. The role-rank gate above ensures only district_admin
+    // (which has non-null district_id) can reach this path with role IN
+    // district-scoped roles, so districtId is non-null when needed.
+    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+
     const result = await pool.query(
-      `INSERT INTO users (tenant_id, email, password_hash, full_name, role)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (tenant_id, email, password_hash, full_name, role, district_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, tenant_id, email, full_name, role, created_at`,
-      [targetTenantId, email, hashedPassword, full_name, role]
+      [targetTenantId, email, hashedPassword, full_name, role, districtId]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {

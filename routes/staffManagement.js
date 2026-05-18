@@ -9,7 +9,8 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
-// Staff roles (not parent). Createable-as-staff list.
+// Staff roles (not parent). Createable-as-staff list (universe of
+// valid role strings).
 const STAFF_ROLES = [
   'district_admin',
   'district_tech_admin',
@@ -18,6 +19,16 @@ const STAFF_ROLES = [
   'teacher',
   'interventionist'
 ];
+
+// Per-creator-role rules: which roles each creator can produce. Dict
+// is the single source of truth for both the caller-allowed gate
+// (Object.keys) and the per-call role-rank check. Closes role-
+// escalation gap from PR #129 triad re-review (security-reviewer
+// HIGH-1).
+const CREATE_STAFF_RULES = {
+  district_admin: STAFF_ROLES,
+  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist']
+};
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -81,15 +92,16 @@ router.get('/:tenantId', async (req, res) => {
 });
 
 // POST /api/staff - Create a new staff member. Gated by requireAuth +
-// role authz (district_admin / school_admin) + §5 target_tenant_id
-// binding via resolveAndBindTargetTenant (Pattern E shape). Closes the
-// POST half of Followup #116. Creator-of-staff list (CREATE_STAFF_ROLES
-// below) and createable-as-staff list (STAFF_ROLES) are deliberately
-// different.
+// caller-role gate (Object.keys(CREATE_STAFF_RULES)) + role-validity
+// (STAFF_ROLES → 400 on malformed) + role-rank gate
+// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection) + §5
+// target_tenant_id binding via resolveAndBindTargetTenant. district_id
+// inherited from creator on district-scoped role INSERTs. Closes the
+// POST half of Followup #116 + role-escalation finding from PR #129
+// triad re-review.
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const CREATE_STAFF_ROLES = ['district_admin', 'school_admin'];
-    if (!CREATE_STAFF_ROLES.includes(req.user.role)) {
+    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -100,6 +112,10 @@ router.post('/', requireAuth, async (req, res) => {
 
     if (!STAFF_ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
+    }
+
+    if (!CREATE_STAFF_RULES[req.user.role].includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { targetTenantId, error: bindError } = await resolveAndBindTargetTenant(req);
@@ -116,12 +132,18 @@ router.post('/', requireAuth, async (req, res) => {
     // Set school_wide_access based on role
     const schoolWideAccess = ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'interventionist'].includes(role);
 
+    // district_id binding: district-scoped roles inherit creator's
+    // district_id. The role-rank gate above ensures only district_admin
+    // (which has non-null district_id) can reach this path with role IN
+    // district-scoped roles, so districtId is non-null when needed.
+    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
-      `INSERT INTO users (email, full_name, role, tenant_id, school_wide_access)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (email, full_name, role, tenant_id, school_wide_access, district_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, email, full_name, role, school_wide_access, created_at`,
-      [email.toLowerCase().trim(), full_name.trim(), role, targetTenantId, schoolWideAccess]
+      [email.toLowerCase().trim(), full_name.trim(), role, targetTenantId, schoolWideAccess, districtId]
     );
 
     res.status(201).json(result.rows[0]);
