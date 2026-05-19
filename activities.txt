@@ -16539,3 +16539,556 @@ reference cleanup pass.
 ========================================================================
 END SESSION 81
 ========================================================================
+
+========================================================================
+SESSION 82 — May 18, 2026 (Monday morning-afternoon Pacific) — STUB
+========================================================================
+
+S82 substantive work landed in three streams: PR #128
+(fix/auth-response-shape-consistency) merge closing the
+/api/auth/me response-shape inconsistency surfaced post-PR-#126
+deploy; S82 catalog ratification with §F-§J banking observations
+documented; master-index reconciliation for PR #126 deploy
+timing (LIVE-window forensic) + S80 P2 backfill accuracy
+(first-row low-id audit_id signal re-applied).
+
+This stub exists to preserve activities.txt session-number
+continuity across the S82 → S83 boundary. The authoritative S82
+close record (including the §F-§J + §G/§H/§I/§J banking section
+contents) lives in
+05_18_26_ScholarPath-Master-Index-Session83-CLOSE.md outside
+this file. Future readers reconciling the §F-§J carry-forward
+chain should cite the master-index doc by name; this stub
+intentionally pattern-mentions the banking letters rather than
+expanding them.
+
+========================================================================
+END SESSION 82 — see master-index doc for authoritative close
+========================================================================
+
+========================================================================
+SESSION 83-84 — PR #129 lifecycle close (May 18-19, 2026, Monday evening through Tuesday morning Pacific)
+========================================================================
+
+TASK SUMMARY
+============
+
+This entry covers the close-out of PR #129, which spanned
+the S83/S84 session boundary. S83 (May 18, Monday evening
+Pacific) landed initial 7 commits + external APPROVED +
+internal triad re-review surfacing 3 HIGH + 3 MEDIUM + fix
+commits 8/9/10 + PR body amendment. Branch held overnight
+at HEAD 42d1dee per fresh-head re-dispatch discipline. S84
+P1 (May 19, Tuesday morning Pacific) executed internal
+triad re-dispatch (clean) + fresh external re-review
+(APPROVED) + squash-merge + this very chore PR. Entry
+composed as single record to preserve narrative continuity
+of the cross-session triad-cycle pattern documented in §A
+below.
+
+Session 83 work (May 18, Monday evening Pacific) and S84
+P1 closure (May 19, Tuesday morning Pacific). One
+substantive code PR closed across this session-pair:
+PR #129 (sec/staff-onboarding-auth-and-116) — closes the
+POST half of Followup #116 by gating POST /api/staff and
+POST /api/users with requireAuth + role gate +
+target_tenant_id binding via the resolveAccessibleTenantIds
+helper; plus the FE half (district_admin staff-onboarding
+picker on AddStaffModal hydrated from the existing
+/api/districts/:id/dashboard endpoint).
+
+Session flow (triad-cycle shape):
+
+  1. Initial work landed across 7 commits: backend POST auth-
+     gating on /api/staff + /api/users with target_tenant_id
+     binding, AddStaffModal accessible-schools picker hydration,
+     Admin-tab Staff-sub-tab narrowing for district_admin
+     callers, lint-fix on the new useEffect, dead-fetch cleanup
+     in Add/Edit modals.
+
+  2. External re-review at commit 79e29d7 returned APPROVED.
+
+  3. Internal triad re-dispatch (privacy + security + tenant-
+     iso) at the same commit surfaced 3 HIGH + 3 MEDIUM net-
+     new findings external review had not caught:
+       - HIGH-1 (security): role-rank escalation — school_admin
+         could POST role='district_admin' and mint a higher-
+         privileged peer.
+       - HIGH-2 (security): authIpLimiter not attached to the
+         two new POST mounts; bcrypt-mass-invocation /
+         user-creation DoS surface.
+       - HIGH-3 / Followup #142 (tenant-iso): pre-INSERT email-
+         existence probe was global (WHERE email=$1), creating
+         a cross-tenant email-enumeration oracle.
+       - MEDIUM-4 (security): presence validation for
+         email/password/full_name absent on routes/users.js
+         POST; bcrypt-on-undefined leaked via generic 500.
+       - MEDIUM-5 (security): district_id never bound on
+         INSERT; new district_admin row would fail the dual-
+         path scope check at first login.
+       - MEDIUM-6 (privacy / sec/staff-log-redaction): PG
+         error.message echo from the 500 catch leaked
+         error.detail-bearing PII to the response body.
+
+  4. Fix commits 8/9/10 landed the closures (operator-greenlit
+     at each commit boundary):
+       - Commit 8 (role-rank + district_id binding):
+         CREATE_STAFF_RULES / CREATE_USER_RULES dict as single
+         source of truth for caller-allowed gate (Object.keys
+         → 403) and per-call role-rank check (dict[caller].
+         includes(role) → 403). Role-validity (400) vs role-
+         rank (403) error classes preserved. INSERT widened to
+         include district_id (5→6 cols); value = creator's
+         district_id for district-scoped roles, null otherwise.
+         RETURNING unchanged (response-shape stability per
+         privacy-reviewer flag).
+       - Commit 9 (rate-limit attachment): authIpLimiter
+         attached at the /api/staff and /api/users mounts in
+         server.js, mirroring /api/auth's pattern. Mount-level
+         coverage extends to GETs/DELETEs that Followup #116
+         GET half hasn't yet closed.
+       - Commit 10a/d/e (cleanup cluster): email-probe per-
+         tenant scope (closes HIGH-3 / #142); 23505 race-catch
+         so concurrent same-tenant inserts collapse to 409
+         instead of leaking via the generic 500 (preserves
+         cap-before-INSERT discipline from
+         feedback_cap_before_insert_collapses_error_paths);
+         error.message echo replaced with static 'Server error'
+         on both POST surfaces (closes MEDIUM-6 +
+         sec/staff-log-redaction inline — previously banked
+         as separate PR, folded into this PR per fix-scope
+         expansion); presence validation on routes/users.js
+         POST (closes MEDIUM-4).
+
+  5. Internal triad re-dispatch at fix-state HEAD 42d1dee
+     returned 3-of-3 lanes clean — zero CRITICAL/HIGH/MEDIUM
+     across privacy, security, tenant-iso. All six prior
+     closures explicitly verified by each applicable lane.
+     Two new LOW notes (email-normalization asymmetry on both
+     POST surfaces) explicitly classified by reviewers as out
+     of scope; banked as X27 chore/email-normalize-
+     consistency-cluster.
+
+  6. Fresh external re-review at HEAD 42d1dee returned
+     APPROVED. Prior approval at 79e29d7 was auto-dismissed by
+     branch protection's stale-approval rule when fix commits
+     8/9/10 landed — the cycle was mechanically enforced, not
+     procedural.
+
+  7. gh pr merge 129 --squash --delete-branch. Squash SHA:
+     35600628f77d6c76f8e7ecc782214ba72877f46c. Branch deleted
+     locally and on origin.
+
+FILES TOUCHED
+=============
+
+None this PR except activities.txt itself (this close entry
+append).
+
+In PR #129 (the substantive PR merged this session):
+  - routes/staffManagement.js — requireAuth on POST,
+    resolveAndBindTargetTenant helper, CREATE_STAFF_RULES
+    dict, per-tenant email-probe scope, 23505 race-catch,
+    district_id binding, error-body redaction
+  - routes/users.js — requireAuth on POST, second copy of
+    resolveAndBindTargetTenant helper (banked at
+    chore/consolidate-target-tenant-helper), CREATE_USER_RULES
+    dict, presence validation, district_id binding, error-body
+    redaction
+  - server.js — authIpLimiter attachment at /api/users and
+    /api/staff mounts
+  - frontend/src/components/Modals/StaffModals.jsx —
+    isDistrictAdmin prop, accessible-schools picker hydration
+    via /api/districts/:id/dashboard, target_tenant_id payload
+    binding, post-create refresh against picker selection
+  - frontend/src/App.jsx — un-gate Admin nav for
+    district_admin, default adminTab='staff', wrap non-Staff
+    Admin sub-tabs behind !isDistrictAdmin
+
+Squash diff stat: 5 files changed, +305 / -66.
+
+MIGRATIONS RUN
+==============
+
+None. PR #129 introduces no schema change. The district_id
+column added to the two INSERT statements was created in M028
+vintage.
+
+TENANT ISOLATION REVIEW
+=======================
+
+tenant-isolation-auditor dispatched at HEAD 42d1dee returned
+APPROVED with zero CRITICAL/HIGH/MEDIUM/LOW findings (four
+INFO notes only, all pre-existing GETs/PUTs out of scope
+tracked under Followup #116 router-level closure).
+
+Verification matrix confirmed §5 dual-path doctrine end-to-end
+at both POST surfaces: target_tenant_id from request body is
+validated against resolveAccessibleTenantIds(req.user) at the
+binding gate (returns 403 before any SELECT or INSERT runs);
+district_id derived from req.user.district_id (JWT-derived,
+NOT request body) only when role IN ('district_admin',
+'district_tech_admin'), null otherwise. M028 composite-FK
+(users(id, district_id) UNIQUE + user_school_access composite
+FK) makes cross-district binding structurally impossible.
+HIGH-3 closure verified — pre-INSERT email probe now
+WHERE email=$1 AND tenant_id=$2 with binding gate preceding
+the SELECT; cross-tenant probe collapses to 403 at the
+binding layer before SELECT runs.
+
+SECURITY REVIEW
+===============
+
+security-reviewer dispatched at HEAD 42d1dee returned APPROVED
+WITH NOTES — 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW (email-
+normalization asymmetry, both POST surfaces — banked X27),
+3 INFO (pre-existing non-POST error.message 500 sinks tracked
+under sec/error-redaction-sweep follow-on; 7 pre-existing
+unauthed non-POST routes tracked under Followup #116 GET half;
+staff:delete role-rank gap pre-existing under #115/#116/#121).
+
+All three HIGH closures and all three MEDIUM closures verified
+at the diff level. CREATE_*_RULES dict as single source of
+truth for both gates verified. requireAuth re-queries the
+users row on every request (no stale-JWT-claim bypass).
+
+PRIVACY REVIEW (§4B)
+====================
+
+privacy-reviewer dispatched at HEAD 42d1dee returned APPROVED
+WITH NOTES — 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (email-probe
+normalization mismatch, banked X27), 3 INFO (pre-existing 500
+sinks tracked under sec/error-redaction-sweep). All six
+operator-cited closures verified at the diff level.
+
+Multi-channel §M three-pass §4B-grep applied this session per
+S81 P1 four-channel extension:
+
+  (1) Triad re-review summary comment on PR #129 (S84 P1
+      step 2) — three-pass §M applied pre-publish; zero
+      hits across all three passes.
+  (2) Source pre-append — three-pass §M on activities.txt
+      file state before any write. Zero hits.
+  (3) Post-stage diff — three-pass §M re-run on the staged
+      diff after git add (this close entry only). Zero hits
+      after FP-pruning (see DISCIPLINE OBSERVATIONS §C below
+      for the role-token FP catalogue applied this session).
+  (4) Chore-PR body composition mid-session — three-pass §M
+      applied at gh pr create time. (Reported separately at
+      this session's report-back.)
+
+Per recursion-trap discipline (S79 §M Pass 3), audit-trail
+prose cites that §4B was run plus result count, never what
+was checked for. Per S81 §G generalized regex shape, Pass 3
+referent-noun union includes user|row|grant|entry|access|
+record|tenant|district|backfill.
+
+VERIFICATION
+============
+
+§M Mode 4 paste-anchored at every operational gate. PR #129
+merge sequence executed across the standard gates:
+
+  Step 1 — Pre-merge state. gh pr view 129 --json
+  mergeable,mergeStateStatus,reviewDecision returned
+  {"mergeable":"MERGEABLE","mergeStateStatus":"CLEAN",
+  "reviewDecision":"APPROVED"} verbatim. statusCheckRollup
+  showed 3-of-3 Vercel checks SUCCESS.
+
+  Step 2 — Squash-merge with --delete-branch. gh pr merge
+  129 --squash --delete-branch returned fast-forward
+  264ca19..3560062 with 5 files changed (+305 / -66). Squash
+  SHA: 35600628f77d6c76f8e7ecc782214ba72877f46c. mergedAt:
+  "2026-05-19T15:20:19Z".
+
+  Step 3 — Post-merge git/GH gates, all paste-anchored:
+    3a — git branch --show-current: main (gh auto-checkout)
+    3b — git branch --list sec/staff-onboarding-auth-and-116:
+         empty
+    3c — git ls-remote --heads origin
+         sec/staff-onboarding-auth-and-116: empty (remote
+         deletion confirmed)
+    3d — git rev-parse HEAD:
+         35600628f77d6c76f8e7ecc782214ba72877f46c (= squash
+         SHA)
+    3e — git status --porcelain: only the three pre-existing
+         untracked / modified P2-followup items
+         (.claude/settings.json M; docs/references/GR_Sample
+         Class.pdf; scripts/ops/2026-05-11-humble-revoke-
+         audit.sql)
+    3f — gh pr view 129 --json state,mergeCommit:
+         state="MERGED", mergeCommit.oid matching squash SHA
+
+  Step 4 — Render LIVE timestamp + post-deploy 401-spike
+  watch: DEFERRED to operator out-of-band per S81 §F
+  (background-Bash + Monitor mechanism not load-bearing for
+  final all-clear). Branch is auth-add-class per
+  feedback_auth_add_deploy_401_flag; operator-side watch is
+  standing practice.
+
+OPEN ITEMS / FOLLOW-UPS
+=======================
+
+Inline closures (NOT separately tracked — closed by PR #129):
+  - Followup #116 POST half (POST /api/staff + POST
+    /api/users requireAuth gating). GET half still open
+    (Followup #116 router-level closure remains).
+  - Followup #142 (cross-tenant email-existence probe).
+  - sec/staff-log-redaction (PG error.detail echo on 500
+    catch on the two POST surfaces only — non-POST sinks
+    stay open under sec/error-redaction-sweep).
+
+New banks (this session):
+  - Followup #143 — local-dev runbook investigation
+    (operator-noted at PR #129 fix planning). Surface for
+    investigation scoping.
+  - X26 — chore/mutation-rate-limiter. authIpLimiter is sized
+    for auth flows; mutation-route patterns may want longer-
+    term tuning of windows / per-actor budgets.
+  - X27 — chore/email-normalize-consistency-cluster. Both
+    POST surfaces have inconsistent email-normalization
+    rules: routes/staffManagement.js INSERT applies
+    .toLowerCase().trim() but the pre-INSERT SELECT uses raw
+    email; routes/users.js INSERT uses raw email entirely.
+    23505 race-catch covers the functional gap (case-variant
+    collisions collapse to consistent 409) but the
+    normalization asymmetry is a latent foot-gun. Both
+    reviewers explicitly classified as out of scope for
+    PR #129; LOW-only.
+
+Carry-forward unchanged:
+  - sec/error-redaction-sweep — 9 remaining error.message
+    500 sinks on non-POST handlers in routes/staffManagement
+    .js + routes/users.js (sibling to MEDIUM-6 redaction).
+  - Followup #116 GET half — 7 remaining unauthed non-POST
+    routes across /api/users + /api/staff. authIpLimiter
+    mount-level attachment from PR #129 mitigates at the
+    boundary but does not close the surfaces.
+
+DISCIPLINE OBSERVATIONS — Session 83
+====================================
+
+§A. Internal-triad finds what external-review missed —
+    redundancy validation under stale-approval cycling (S83)
+
+PR #129 received external APPROVED at commit 79e29d7. The
+internal triad re-dispatch at the same commit surfaced
+3 HIGH + 3 MEDIUM findings external review had not caught.
+None were §4B-strict; most were security / tenant-iso
+findings (role-rank escalation, rate-limit attachment,
+cross-tenant email-probe, log redaction, presence validation,
+district_id binding). The internal triad lens is NOT
+redundant with external review — the two lenses exercise
+different verification axes.
+
+The triad-cycle shape played out as: initial work → external
+APPROVED → internal triad finds gaps → fix commits →
+internal triad re-dispatch clean → fresh external re-review
+APPROVED → merge. Branch protection's stale-approval
+auto-dismiss rule made the cycle mechanically enforced —
+when fix commits 8/9/10 landed, the prior external approval
+was auto-dismissed and fresh re-review was required before
+the merge button re-enabled.
+
+BANKING: internal triad dispatch as a standing-practice gate
+AFTER external APPROVED, not before. The external approval
+is the entry condition; the triad lens is the second-pass
+net that catches what external review misses on §4B / §5
+surfaces. Two-pass discipline is load-bearing for security /
+tenant-iso / privacy-sensitive PRs. Parallel to
+feedback_convergent_grep_verification (S79 §C / S81 §C) —
+but applied across-lens rather than across-reviewer-within-
+lens.
+
+§B. Inline-closure pattern — fold pre-banked sec/* PR into
+    fix-scope expansion when the fix surfaces the same code
+    (S83)
+
+sec/staff-log-redaction was pre-existing in the X-list as a
+separate sec/* PR. During PR #129's fix planning for
+MEDIUM-6 (PG error.detail leak from 500-catch on the two
+POST surfaces), the operator surfaced that the fix scope
+already touched the exact two error-body sinks
+sec/staff-log-redaction would have addressed. Folded inline
+as part of commit 10e rather than landing as a separate PR.
+
+The fold preserved scope discipline: only the two POST 500-
+catch sinks were redacted; the 9 remaining non-POST sinks
+stayed banked under sec/error-redaction-sweep. The fold did
+not silently expand the redaction across the routers — only
+the lines the PR #129 fix-scope actually touched.
+
+BANKING: pre-banked sec/* PRs that overlap fix-scope on an
+in-flight PR can be folded inline IF (a) the fold preserves
+scope discipline (only the lines the in-flight fix actually
+touches), (b) the fold is operator-sanctioned at planning
+time (not silently expanded by CC), and (c) the inline
+closure is explicitly cited in the activities entry so the
+followup-list does not show a phantom open item. Parallel
+to S81 §E (reviewer-pre-approved scope-bounded fix) — same
+discipline at a different gate (operator-side instead of
+reviewer-side).
+
+§C. Role-token FP catalogue under wide-pass §M (S83)
+
+The wide-pass §M regex includes "district" as a bare-word
+alternation. This entry exercises role-token shapes
+(district_admin, district_id, district_tech_admin) and
+generic scope references ("the district", "district scope")
+extensively. Per the inline per-pattern false-positive notes
+in docs/ai-context/4B_GREP_PATTERNS.md, role-token and
+column-name shapes are FP under wide-pass — they are schema
+/ API identifiers, not customer identifiers. Same catalogue
+applies to
+"school_admin", "user_school_access", "tenant_id",
+"target_tenant_id" — none are tenant slugs.
+
+The "zero matches" criterion documented in the
+landing-the-plane skill should be read as "zero unflagged
+matches after FP-pruning". The skill's strict reading would
+make any audit-trail entry that names role tokens
+mechanically uncomposable; the practical reading is FP-prune
+with explicit citation of the FP catalogue in the entry's
+PRIVACY REVIEW section.
+
+BANKING: when audit-trail prose exercises role-token shapes
+that collide with §M wide-pass alternation literals, cite
+the FP catalogue in the PRIVACY REVIEW section explicitly.
+The pattern is not a §4B violation but the discipline of
+naming the FP keeps future reviewers from re-discovering
+the same false positive every session. Standing-practice
+candidate.
+
+Pass 1c closure note (this session): operator-supplied
+tenant-slug list (.4b-tenant-slugs.local) deferred at
+compose time; operator-confirmed non-slug for the `GR_`
+prefix in the docs/references/GR_SampleClass.pdf citation
+at pre-push gate. Pre-push diff review is the standing
+surface for Pass 1c when .4b-tenant-slugs.local is not
+present in the repo.
+
+Banked from S81 / S80 / S79 / earlier (carry-forward, S83
+extensions)
+============================================================
+
+- S81 §A (UI-class blast-radius audit standing-practice
+  candidate) — NOT EXERCISED in S83 (no new UI primitives;
+  AddStaffModal extension reused existing patterns).
+  Continues standing for next >10-session-gap UI PR.
+
+- S81 §B (multi-channel §D extension: PR-body as tracked-
+  content channel) — APPLIED in S83. The S84 P1 step 2
+  re-review summary comment on PR #129 ran three-pass §M
+  before publish; zero hits.
+
+- S81 §C (reviewer-triad convergent-grep verification) —
+  APPLIED in S83 across both triad dispatches (initial at
+  79e29d7 surfacing 3 HIGH + 3 MEDIUM, re-dispatch at
+  42d1dee converging clean). Convergence at zero-CRITICAL/
+  HIGH/MEDIUM across all three lanes confirmed closure of
+  the six prior findings.
+
+- S81 §D (privacy-lens findings beyond strict §4B scope) —
+  APPLIED in S83 in mirror image. privacy-reviewer caught
+  the email-probe normalization asymmetry (LOW-only, both
+  POST surfaces) — strictly not a §4B PII concern, but the
+  privacy lens surfaced it because case-variant collisions
+  could produce inconsistent 409 paths. Banked as X27.
+  Fourth worked example of the §F precedent.
+
+- S81 §E (reviewer-pre-approved scope-bounded fix) — NOT
+  EXERCISED in S83 (no pre-approved fix in triad reports;
+  fixes were operator-planned and operator-greenlit at each
+  reversibility boundary). Continues standing.
+
+- S81 §F (background-Bash + Monitor mechanism failure on
+  long-poll-with-final-emit) — APPLIED in S83 at Step 4 of
+  the merge sequence: Render LIVE timestamp + 401-spike
+  watch DEFERRED to operator out-of-band per the precedent.
+
+- S81 §G (generalized §M Pass 3 regex referent-noun union)
+  — APPLIED in S83 across all §M three-pass runs.
+
+- S80 §A (branch-name-embedded slug as §M Pass 4 candidate)
+  — HELD in S83. Both branch names this session
+  (sec/staff-onboarding-auth-and-116 + the upcoming
+  chore/activities-log-session-83) carry no tenant slugs.
+  Third confirmation across S80 + S81 + S83.
+
+- S80 §B through S80 §H, S79 §A through S79 §M — standing
+  observations carry forward unchanged unless explicitly
+  noted in the S83 DISCIPLINE OBSERVATIONS above. No new
+  exceptions surfaced this session.
+
+- S79 §G (external-approval-after-triad internalization) —
+  REFINED in S83. Externalized via the stale-approval
+  auto-dismiss cycle: fix commits 8/9/10 mechanically
+  invalidated the prior external APPROVED state, forcing
+  fresh external re-review at the fix-state HEAD before
+  merge could proceed. See §A above for the discipline
+  observation.
+
+- S79 §H — extends to TWENTY-THIRD-consecutive at S83;
+  NINTH-consecutive elevation candidacy.
+
+- S79 §J (§A discipline multi-session standing practice) —
+  HELD across S83 pauses (operator-issued explicit-proceed
+  verbs at every reversibility-tier crossing: triad
+  re-dispatch greenlight, fix-commit ladder, merge, chore
+  PR open). SEXTUPLY-confirmed across S77 → S78 → S79 →
+  S80 → S81 → S83.
+
+NEXT SESSION SHOULD (Session 84)
+================================
+
+Priority framing: PR #129 closed Followup #116 POST half
+and inline-closed Followup #142 + sec/staff-log-redaction.
+Remaining open items cluster around the GET half of #116,
+the error-redaction sweep, the DELETE auth gap, and the
+X-list.
+
+P1 — Master-index sync ratification (brief, ~5-10 min).
+Confirm at S84 open: S83 §A-§C catalog (above) is
+authoritative; three new banks land on master-index
+(#143, X26, X27); triad-cycle pattern documented as
+standing-practice gate per §A; role-token FP catalogue
+documented per §C.
+
+P2 — Followup #116 GET half (sec/users-staffManagement-
+require-auth-router-level). 7 remaining unauthed non-POST
+routes across /api/users + /api/staff. authIpLimiter
+mount-level attachment from PR #129 mitigates at the
+boundary but does not close the surfaces. Independent
+sec/* PR; sequence with X26 mutation-rate-limiter
+decision if that lands first.
+
+P3 — Followup #115 (sec/users-staff-delete-require-auth +
+cascade-audit hazard). CRITICAL per existing memory:
+unauthed DELETE on /api/users/:id + /api/staff/:id wipes
+user_school_access via M028 cascade. Separate sec/* PR
+following P2.
+
+X-list carry-forward: X1 #132 helper consolidation (now
+also covers the duplicate resolveAndBindTargetTenant
+helper across routes/staffManagement.js + routes/users.js
+— third copy candidate per banked chore/consolidate-
+target-tenant-helper), X2 #114 redaction (now also covers
+the 9 remaining error.message 500 sinks across the staff/
+users routers — sec/error-redaction-sweep sibling), X3
+#134 body-shape validation, X4 #22 settings reset (now
+NINTH elevation candidacy), X5 #135 parent-link fragility
+guards, X6 #136 retroactive §4B cleanup, X7 Vercel
+investigation, X8 filename-on-disk forensic remediation,
+X9 memory rollup (~125+ candidates: ~123 pre-S83 plus
+three new S83 candidates per §A-§C), X10 migration-027
+Phase 2, X11 multi-screener feat, X12 Followup #137
+stale-product-name reference cleanup pass, X26 chore/
+mutation-rate-limiter (NEW), X27 chore/email-normalize-
+consistency-cluster (NEW).
+
+Followup #143 (local-dev runbook investigation) — surface
+to operator at S84 P1 for investigation scoping.
+
+========================================================================
+END SESSION 83
+========================================================================
