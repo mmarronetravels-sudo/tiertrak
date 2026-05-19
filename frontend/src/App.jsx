@@ -563,6 +563,15 @@ fetchReferralCandidates();
 // Fetch admin templates when admin view loads
   useEffect(() => {
     if (view === 'admin') {
+      // For district_admin, default to the Staff sub-tab. Other sub-tabs
+      // (interventions/students/parents/archived/import/templates/screener)
+      // are hidden from district_admin in the sub-tab strip below because
+      // they all render data scoped to user.tenant_id (the home school),
+      // which misrepresents a district_admin's full district scope. Full
+      // district-awareness for those surfaces is banked to follow-ups.
+      if (isDistrictAdmin) {
+        setAdminTab('staff');
+      }
       fetchAdminTemplates();
       fetchFieldTypes();
     }
@@ -4728,11 +4737,12 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
 
       {/* Admin Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
+        {!isDistrictAdmin && (
         <button
   onClick={() => setAdminTab('interventions')}
   className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-    adminTab === 'interventions' 
-      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+    adminTab === 'interventions'
+      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
       : 'text-slate-600 hover:bg-slate-100'
   }`}
 >
@@ -4741,11 +4751,13 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
     Interventions
   </div>
 </button>
+        )}
+        {!isDistrictAdmin && (
 <button
   onClick={() => setAdminTab('students')}
   className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-    adminTab === 'students' 
-      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+    adminTab === 'students'
+      ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
       : 'text-slate-600 hover:bg-slate-100'
   }`}
 >
@@ -4754,11 +4766,13 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
     Students
   </div>
 </button>
+        )}
+        {!isDistrictAdmin && (
         <button
           onClick={() => { setAdminTab('parents'); fetchParentAccounts(); fetchAllParentLinks(); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'parents' 
-              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+            adminTab === 'parents'
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -4767,6 +4781,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             Parents
           </div>
         </button>
+        )}
         <button
   onClick={() => { setAdminTab('staff'); fetch(`${API_URL}/staff/${user.tenant_id}`, { credentials: 'include' }).then(r => r.json()).then(d => setStaffList(d)).catch(e => console.error(e)); }}  className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
     adminTab === 'staff' 
@@ -4779,11 +4794,12 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
     Staff
   </div>
 </button>                    
-      <button           
+      {!isDistrictAdmin && (
+      <button
         onClick={() => { setAdminTab('archived'); fetchArchivedStudents(user.tenant_id); }}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'archived' 
-              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+            adminTab === 'archived'
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -4792,11 +4808,13 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             Archived
           </div>
         </button>
+      )}
+      {!isDistrictAdmin && (
         <button
           onClick={() => setAdminTab('import')}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'import' 
-              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+            adminTab === 'import'
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -4805,11 +4823,13 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             Import CSV
           </div>
         </button>
+      )}
+      {!isDistrictAdmin && (
         <button
           onClick={() => setAdminTab('templates')}
           className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
-            adminTab === 'templates' 
-              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' 
+            adminTab === 'templates'
+              ? 'bg-white border border-b-0 border-slate-200 text-indigo-700'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -4818,6 +4838,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             Plan Templates
           </div>
         </button>
+      )}
         {['school_admin', 'counselor', 'interventionist'].includes(user.role) && (
         <button
           onClick={() => { setAdminTab('bank'); fetchBankInterventions(user.tenant_id); }}
@@ -4833,6 +4854,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
           </div>
        </button>
         )}
+        {!isDistrictAdmin && (
         <button
   onClick={() => {
     setAdminTab('screener');
@@ -4847,6 +4869,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
 >
   Screener Data
 </button>
+        )}
       </div>
    
         
@@ -6884,7 +6907,7 @@ if (isParent) {
                     My District
                   </button>
                 )}
-                {isAdmin && !isDistrictAdmin && (
+                {isAdmin && (
                   <button
                     onClick={() => setView('admin')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
@@ -7012,7 +7035,7 @@ if (isParent) {
       )}
 
       {showAddStaffModal && (
-  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} />
+  <AddStaffModal onClose={() => { setShowAddStaffModal(false); }} user={user} token={token} API_URL={API_URL} loadStaffList={loadStaffList} isDistrictAdmin={isDistrictAdmin} />
 )}
 
       {/* Edit Staff Modal */}

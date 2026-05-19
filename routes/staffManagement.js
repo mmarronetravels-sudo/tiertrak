@@ -9,13 +9,59 @@ const initializePool = (dbPool) => {
   pool = dbPool;
 };
 
-// Staff roles (not parent)
+// Staff roles (not parent). Createable-as-staff list (universe of
+// valid role strings).
 const STAFF_ROLES = [
+  'district_admin',
+  'district_tech_admin',
   'school_admin',
   'counselor',
   'teacher',
   'interventionist'
 ];
+
+// Per-creator-role rules: which roles each creator can produce. Dict
+// is the single source of truth for both the caller-allowed gate
+// (Object.keys) and the per-call role-rank check. Closes role-
+// escalation gap from PR #129 triad re-review (security-reviewer
+// HIGH-1).
+const CREATE_STAFF_RULES = {
+  district_admin: STAFF_ROLES,
+  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist']
+};
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
+
+// Per Followup #125 (per-school binding), POST handlers read an optional
+// target_tenant_id from req.body:
+//   - Absent → falls back to req.user.tenant_id (backwards-compat for
+//     legacy single-tenant users whose JWT carries their only accessible
+//     tenant).
+//   - Present but not a positive integer → 400.
+//   - Present, positive integer, but not in
+//     resolveAccessibleTenantIds(req.user) → 403 (fires before any
+//     INSERT; a body-explicit cross-tenant probe collapses to 403, not
+//     400-FK).
+//
+// Pattern E shape mirrored from routes/student504.js. Module-local copy
+// — banked as new followup chore/consolidate-target-tenant-helper
+// alongside Followup #108.
+async function resolveAndBindTargetTenant(req) {
+  const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
+  if (bodyTarget === undefined || bodyTarget === null) {
+    return { targetTenantId: req.user.tenant_id, error: null };
+  }
+  if (!isPositiveInt(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 400, body: { error: 'Invalid target_tenant_id' } } };
+  }
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (!accessible.includes(bodyTarget)) {
+    return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
+  }
+  return { targetTenantId: bodyTarget, error: null };
+}
 
 // GET /api/staff/:tenantId - List all staff for a tenant
 router.get('/:tenantId', async (req, res) => {
@@ -45,40 +91,75 @@ router.get('/:tenantId', async (req, res) => {
   }
 });
 
-// POST /api/staff - Create a new staff member
-router.post('/', async (req, res) => {
+// POST /api/staff - Create a new staff member. Gated by requireAuth +
+// caller-role gate (Object.keys(CREATE_STAFF_RULES)) + role-validity
+// (STAFF_ROLES → 400 on malformed) + role-rank gate
+// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection) + §5
+// target_tenant_id binding via resolveAndBindTargetTenant. district_id
+// inherited from creator on district-scoped role INSERTs. Closes the
+// POST half of Followup #116 + role-escalation finding from PR #129
+// triad re-review.
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const { email, full_name, role, tenant_id } = req.body;
+    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
-    if (!email || !full_name || !role || !tenant_id) {
-      return res.status(400).json({ error: 'Email, full name, role, and tenant are required' });
+    const { email, full_name, role } = req.body;
+    if (!email || !full_name || !role) {
+      return res.status(400).json({ error: 'Email, full name, and role are required' });
     }
 
     if (!STAFF_ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    // Check if email already exists
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (!CREATE_STAFF_RULES[req.user.role].includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { targetTenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) {
+      return res.status(bindError.status).json(bindError.body);
+    }
+
+    // Check if email already exists at the target tenant. Per-tenant
+    // scoping (rather than global) closes the cross-tenant email-
+    // enumeration oracle flagged in PR #129 triad re-review (tenant-
+    // isolation-auditor HIGH on staffManagement.js, Followup #142). The
+    // schema's UNIQUE(tenant_id, email) constraint is the source of
+    // truth; this app-layer check is a pre-INSERT early-out for the
+    // common case. The 23505 race-catch below handles concurrent
+    // same-tenant inserts.
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1 AND tenant_id = $2', [email, targetTenantId]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'A user with this email already exists' });
     }
 
     // Set school_wide_access based on role
-    const schoolWideAccess = ['school_admin', 'district_admin', 'counselor', 'interventionist'].includes(role);
+    const schoolWideAccess = ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'interventionist'].includes(role);
+
+    // district_id binding: district-scoped roles inherit creator's
+    // district_id. The role-rank gate above ensures only district_admin
+    // (which has non-null district_id) can reach this path with role IN
+    // district-scoped roles, so districtId is non-null when needed.
+    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
 
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
-      `INSERT INTO users (email, full_name, role, tenant_id, school_wide_access)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (email, full_name, role, tenant_id, school_wide_access, district_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, email, full_name, role, school_wide_access, created_at`,
-      [email.toLowerCase().trim(), full_name.trim(), role, tenant_id, schoolWideAccess]
+      [email.toLowerCase().trim(), full_name.trim(), role, targetTenantId, schoolWideAccess, districtId]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Error creating staff:', error);
-    res.status(500).json({ error: error.message });
+    if (error.code === '23505') {
+      return res.status(409).json({ error: 'A user with this email already exists' });
+    }
+    console.error('[staff:post] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

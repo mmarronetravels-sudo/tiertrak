@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { apiFetch } from '../../utils/apiFetch';
@@ -8,10 +8,51 @@ import { apiFetch } from '../../utils/apiFetch';
 // ADD STAFF MODAL
 // ============================================
 
-export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList }) => {
+export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList, isDistrictAdmin }) => {
 
   const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
   const [staffError, setStaffError] = useState('');
+  const [accessibleSchools, setAccessibleSchools] = useState([]);
+  const [selectedSchool, setSelectedSchool] = useState(null);
+  // Initialize loading state from mount-time props so the in-effect
+  // setSchoolsLoading(true) call isn't needed (avoids the
+  // react-hooks/set-state-in-effect cascading-render warning).
+  const [schoolsLoading, setSchoolsLoading] = useState(!!(isDistrictAdmin && user.district_id));
+
+  // For district_admin: hydrate the accessible-schools picker from the
+  // dashboard endpoint. Picker set is byte-for-byte identical to what
+  // resolveAccessibleTenantIds returns on the POST binding (same helper
+  // feeds both surfaces), so a picker selection can never collide with
+  // the auth-gate 403 path. Fires once on modal mount; cancellation
+  // guard avoids state updates after unmount.
+  useEffect(() => {
+    if (!isDistrictAdmin || !user.district_id) return;
+    let cancelled = false;
+    apiFetch(`${API_URL}/districts/${user.district_id}/dashboard`, {
+      credentials: 'include'
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('schools fetch failed');
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const schools = (data.schools || []).map((s) => ({
+          tenant_id: s.school_tenant_id,
+          name: s.school_name
+        }));
+        setAccessibleSchools(schools);
+        const homeMatch = schools.find((s) => s.tenant_id === user.tenant_id);
+        setSelectedSchool(homeMatch ? homeMatch.tenant_id : (schools[0] ? schools[0].tenant_id : null));
+        setSchoolsLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSchoolsLoading(false);
+        setStaffError('Unable to load schools. Please close and reopen this dialog.');
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleAddStaff = async () => {
     setStaffError('');
@@ -19,22 +60,27 @@ export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList }) 
       setStaffError('Email and full name are required');
       return;
     }
+    if (isDistrictAdmin && !selectedSchool) {
+      setStaffError('Please select a school for this staff member.');
+      return;
+    }
+    // For district_admin, send the picker selection as target_tenant_id.
+    // For non-district callers, omit target_tenant_id so the backend
+    // helper falls back to req.user.tenant_id (preserves legacy single-
+    // tenant behavior bit-for-bit).
+    const body = isDistrictAdmin
+      ? { ...newStaff, target_tenant_id: selectedSchool }
+      : { ...newStaff };
+    const refreshTenantId = isDistrictAdmin ? selectedSchool : user.tenant_id;
     try {
       const response = await apiFetch(`${API_URL}/staff`, {
         method: 'POST',
        headers: { 'Content-Type': 'application/json' },
 credentials: 'include',
-        body: JSON.stringify({ ...newStaff, tenant_id: user.tenant_id })
+        body: JSON.stringify(body)
       });
       if (response.ok) {
-        // Refresh staff list
-        const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          credentials: 'include'
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (loadStaffList) loadStaffList();
-        }
+        if (loadStaffList) loadStaffList(refreshTenantId);
         onClose();
       } else {
         const err = await response.json();
@@ -59,6 +105,26 @@ credentials: 'include',
           <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-sm text-rose-700">{staffError}</div>
         )}
         <div className="space-y-4">
+          {isDistrictAdmin && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">School</label>
+              {schoolsLoading ? (
+                <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">Loading schools…</p>
+              ) : accessibleSchools.length === 0 ? (
+                <p className="text-sm text-slate-500 px-3 py-2 bg-slate-50 rounded-lg">No accessible schools.</p>
+              ) : (
+                <select
+                  value={selectedSchool || ''}
+                  onChange={(e) => setSelectedSchool(parseInt(e.target.value, 10))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {accessibleSchools.map((s) => (
+                    <option key={s.tenant_id} value={s.tenant_id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
             <input type="text" value={newStaff.full_name} onChange={(e) => setNewStaff({...newStaff, full_name: e.target.value})} placeholder="Jane Smith" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
@@ -107,14 +173,7 @@ credentials: 'include',
         body: JSON.stringify({ full_name: editData.full_name, role: editData.role })
       });
       if (response.ok) {
-        // Refresh staff list
-        const listRes = await fetch(`${API_URL}/staff/${user.tenant_id}`, {
-          credentials: 'include'
-        });
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (loadStaffList) loadStaffList();
-        }
+        if (loadStaffList) loadStaffList();
         onClose();
       } else {
         const err = await response.json();
