@@ -17265,3 +17265,150 @@ Confirm PR #131 has received §2A human approval before applying
 ========================================================================
 END SESSION 86
 ========================================================================
+
+
+========================================================================
+========================================================================
+SESSION 86b — May 20, 2026 (Wednesday afternoon Pacific, continuation of S86: prod migration apply + housekeeping)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-86b
+SESSION WORK PRs: #131 (migration/add-district-auth-mode, merged); #133 (chore/gitignore-env-files, merged); #134 (chore/claude-settings-allowlist-expand, merged)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S86 continuation: applied Migration 034 (districts.auth_mode) to
+prod via the Render External PSQL workflow. Followed a staged
+Phase A–F protocol with explicit operator gates between phases.
+Followed up with housekeeping: two chore PRs to clean up settings
+drift accumulated over prior sessions and to extend gitignore
+coverage for operator-local credential files.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+.gitignore — added .env.* pattern for operator-local credential
+files (PR #133, merged).
+
+.claude/settings.json — expanded permission allowlist for Render
+CLI ops + landing-the-plane skill; removed a pre-existing cross-
+project Read entry to a sibling workspace per planning/execution
+isolation discipline (PR #134, merged).
+
+activities.txt — this entry (chore/activities-log-session-86b,
+PR pending).
+
+.env.prod was created operator-local for the Render PSQL session
+and is gitignored via PR #133; not a tracked file.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+migration-034-add-district-auth-mode.sql — applied to prod.
+3 district rows backfilled to auth_mode='sso'. The migration is
+atomic (BEGIN/COMMIT) and idempotent, with an explicit CHECK
+constraint ('sso','password','disabled') and no DEFAULT
+(fail-safe design). Pre-state COUNT=3 matched the UPDATE 3 line
+in the apply, which matched the post-state GROUP BY count of 3 —
+full chain-of-custody on the row count across reads.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+Migration 034 adds districts.auth_mode (district-level policy
+field). Scope is per-district by design; single-tenant rows
+(tenants with district_id IS NULL) are explicitly excluded per
+migration design comments lines 28–32. Phase F closed as N/A:
+the targeted row for policy correction turned out to be 1
+single-tenant school (district_id IS NULL), outside the new
+column's scope. No corrective UPDATE was issued. The two chore
+PRs touched no DB queries.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched: none. The auth_mode column is policy
+metadata (sso / password / disabled), not student or staff data.
+
+Logging audit: no application code touched; no new log sites or
+error paths introduced.
+
+Cross-tenant risk: none identified. The column lives on a parent
+(district) row; school-tenants and single-tenant rows are
+unaffected by the migration itself.
+
+§4B self-scan on this entry: narrow and wide grep passes per
+docs/ai-context/4B_GREP_PATTERNS.md run against the added-lines
+diff; all surfaced hits classified as documented false positives
+per the pattern catalog's known-false-positive notes.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Prod migration applied + verified via Phase A–E protocol
+(pre-state COUNT, atomic apply, post-state schema + distribution
+check, all matched).
+
+Local dry-run of migration 034 against localhost Postgres
+passed cleanly, including an idempotency re-run, before prod
+apply.
+
+Frontend lint: 89 pre-existing problems (72 errors, 17 warnings)
+— none introduced this session, none of today's four merged PRs
+touched frontend files. Tracked as a follow-up for a separate
+lint-fix branch.
+
+Backend tests: no suite (per Followup #73).
+
+Self-smoke: operator-driven, browser, 1 known-healthy tenant —
+passed.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+M-1 (S86 master-index): auth_mode consumer-code PR. Wire
+routes/auth.js to branch on districts.auth_mode so the new
+policy field is actually consulted at login. Resolve where
+single-tenant schools (district_id IS NULL) get their auth-
+policy decision — extend to a per-tenant column? Separate code
+path? Product decision needed.
+
+Followup #73: backend has no automated test suite; sec/ PRs
+still rely on curl-smoke only.
+
+Followup #74: backend lint not configured (ESLint + lint:backend
+script + pre-commit/CI gate proposed).
+
+Frontend lint debt: 89 pre-existing problems (72 errors, 17
+warnings). Recommend a dedicated chore/frontend-lint-fix branch.
+
+Followup #94: scripts/ops/ → .gitignore still pending. Two
+pre-existing untracked operator audit files remain in
+scripts/ops/.
+
+Stash housekeeping: 4 pre-existing stashes from prior sessions
+still in stash list; review for cleanup or commit.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Decide whether M-1 (auth_mode consumer-code PR) is the right
+next priority — the schema landed today, but no consumer reads
+it yet, so per-district auth routing is not active. If yes:
+read routes/auth.js, plan the branch on districts.auth_mode
+through the login flow, and decide policy-field location for
+single-tenant schools before writing code.
+
+========================================================================
+END SESSION 86b
+========================================================================
