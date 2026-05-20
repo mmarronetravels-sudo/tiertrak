@@ -17092,3 +17092,176 @@ to operator at S84 P1 for investigation scoping.
 ========================================================================
 END SESSION 83
 ========================================================================
+
+
+========================================================================
+========================================================================
+SESSION 86 — May 20, 2026 (Wednesday morning Pacific)
+========================================================================
+
+BRANCH (work): migration/add-district-auth-mode
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/131 (kept open, awaiting §2A human review)
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Resumed S86 work: opened PR A (migration/add-district-auth-mode,
+PR #131) for Migration 034, which adds a per-district auth-policy
+column to the districts table. The migration is schema-only; no
+application code consumes the new column in this PR.
+
+Five-SHA in-session amend cascade addressed two §4B violations
+(file comment + commit message body), corrected the git Author
+identity from a prior-tenant email to the canonical company-
+domain email via local-only git config, and applied security-
+reviewer Pass 1 recommendations (Option (a) fail-safe rewrite:
+drop DEFAULT, explicit backfill UPDATE, SET NOT NULL; added the
+'disabled' kill-switch value to the CHECK constraint; added a
+Rollback comment block to the SQL header).
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+migration-034-add-district-auth-mode.sql — new migration; 4-step
+  BEGIN/COMMIT (ADD COLUMN nullable -> UPDATE backfill -> SET NOT
+  NULL -> DROP/ADD CHECK), idempotent guards on every step,
+  Rollback block documented in the SQL header.
+
+activities.txt — this entry.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+migration-034-add-district-auth-mode.sql (Migration 034) — applied
+  on local dev DB only. Awaiting operator-driven Render-prod apply
+  via External PSQL Command + \i workflow after §2A approval and
+  PR #131 merge.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor Pass 1 (at the original commit): PASS
+  with 1 LOW finding (single-school carve-out — deferred to first
+  consumer PR) + 2 INFO findings (AccessExclusiveLock window,
+  absence of SELECT * on districts joins).
+
+tenant-isolation-auditor Pass 2 (at HEAD after security fix):
+  PASS. Carried-forward LOW unchanged. New INFO findings address
+  the new migration UPDATE + DROP/ADD CHECK surfaces, all
+  classified as correct shape for a one-shot schema-evolution
+  migration in privileged operator context (not subject to the §5
+  query-scoping rule which applies to paths reachable from
+  req.user).
+
+No new user-facing SQL queries introduced. Schema-only DDL on the
+  parent-layer table.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched: none. The new auth_mode column is an enum
+  policy field, not personal data.
+
+Logging audit: no logging changes in this PR.
+
+Cross-tenant risk: none identified. The column lives on the
+  parent-layer table, scoped by its own row primary key.
+
+In-session §4B remediation: the original local-only commit leaked
+  real customer names and numeric district row IDs in both the
+  SQL file header AND the commit message body. Both were scrubbed
+  via successive --amend cycles before any push reached origin.
+  Broader §4B grep (narrow + wide patterns) on the final commit
+  object at HEAD returns only two structural matches — the Author
+  header email shape and the Co-Authored-By trailer email shape —
+  both of which are intentional attribution metadata, not §4B
+  content. Role-token FP catalogue per S83 §C applies to the
+  prose below: column-name and schema-identifier shapes
+  ("district", "district_id", "users", "tenants") are
+  schema/API identifiers, not customer identifiers.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+npm test — N/A (backend has no test suite; Followup #73).
+npm run lint — N/A (backend has no lint config; Followup #74).
+
+Local dev DB dry-run on Postgres 16.11 — clean first apply,
+  idempotent second apply, byte-identical \d+ districts output
+  pre/post second apply.
+
+Rollback block exercise — the SQL header's documented rollback
+  transaction ran end-to-end against local dev DB and reversed
+  the migration cleanly.
+
+Populated-rows backfill test — seeded 3 test rows with non-PII
+  names, applied the migration, observed UPDATE 3 on Step 2 and
+  post-state aggregate one row at 'sso | 3', then cleaned up to
+  leave the DB in pre-migration state (column dropped, test rows
+  deleted).
+
+§4B narrow grep on file content — clean.
+§4B narrow grep on git show HEAD — only two structural false
+  positives (Author email shape, Co-Authored-By email shape).
+
+Subagent reviewers: tenant-isolation-auditor Pass 1 + Pass 2
+  PASS, security-reviewer Pass 1 PASS-WITH-CAVEATS (HIGH H-1 +
+  MEDIUM M-2 + LOW L-2 addressed in the security-fix commit),
+  security-reviewer Pass 2 PASS.
+
+PR #131 body update — body uploaded via gh pr edit --body-file;
+  round-trip diff vs source returned a single trailing-newline
+  delta (GitHub-side normalization), accepted as non-material.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #131 awaiting §2A human review. Reviewer assignment was
+  attempted against the operator's intended GitHub login but
+  GitHub returned "Could not resolve user with login" — the
+  intended reviewer login does not currently resolve to an
+  existing GitHub account. Operator deferred to handle the
+  reviewer-login question outside this session.
+
+Deferred from security-reviewer Pass 2, all targeted at the
+  first auth_mode consumer PR:
+    M-1: consumer code must handle the users.district_id IS NULL
+      case (single-school tenants have no district row to read
+      auth_mode from).
+    L-1: audit trail for auth_mode transitions.
+    L-3: VARCHAR(20) width audit (style).
+    I-1: schema.sql fresh-bootstrap path update for auth_mode.
+    I-2: migration-runner ledger entry for Migration 034.
+    I-3: DISTRICT_STRUCTURE.md documentation of auth_mode.
+
+Local-only git config now sets user.email + user.name on this
+  repo to the canonical company-domain identity; global config
+  remains the operator's prior identity. Future sessions on
+  this repo inherit the local override unless the operator
+  explicitly unsets it.
+
+Working-tree separation carried through this session unstaged
+  and not part of PR #131: 1 modified .claude/settings.json +
+  3 untracked items (1 docs/references PDF + 2 scripts/ops
+  audit SQL files). Pre-existing operator state.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Confirm PR #131 has received §2A human approval before applying
+  Migration 034 on Render Postgres via the External PSQL Command
+  + \i workflow. The reviewer-login resolution question
+  (deferred mid-session — see OPEN ITEMS) should be addressed
+  before the human-review step can complete.
+
+========================================================================
+END SESSION 86
+========================================================================
