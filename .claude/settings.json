@@ -1,5 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 30,
+  "attribution": {
+    "commit": "\n\n🤖 Generated with Claude Code\nCo-Authored-By: Claude <noreply@anthropic.com>",
+    "pr": "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  },
+  "includeGitInstructions": true,
   "permissions": {
     "allow": [
       "Bash(git status)",
@@ -40,38 +46,17 @@
       "Bash(find . -name *)",
       "Bash(grep *)",
       "Bash(rg *)",
-      "Read(./**)"
-    ],
-    "ask": [
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git push)",
-      "Bash(git push *)",
-      "Bash(git checkout *)",
-      "Bash(git merge *)",
-      "Bash(git rebase *)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr edit *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh pr comment *)",
-      "Bash(npm install *)",
-      "Bash(npm uninstall *)",
-      "Bash(npm update *)",
-      "Bash(npm ci *)",
-      "Bash(npx *)",
-      "Bash(node *)",
-      "Bash(psql *)",
-      "Edit(migration-*.sql)",
-      "Edit(schema.sql)",
-      "Edit(seed-test-data.sql)",
-      "Edit(.gitignore)",
-      "Edit(package.json)",
-      "Edit(package-lock.json)",
-      "Edit(vercel.json)",
-      "Edit(CLAUDE.md)",
-      "Edit(.claude/**)",
-      "Write(migration-*.sql)",
-      "Write(.claude/**)"
+      "Read(./**)",
+      "Read(//private/tmp/**)",
+      "Bash(render deploys *)",
+      "Bash(render services *)",
+      "Bash(python3 -c ' *)",
+      "Bash(render postgres *)",
+      "Bash(render --help)",
+      "Bash(echo \"exit:$?\")",
+      "Skill(landing-the-plane)",
+      "Skill(landing-the-plane:*)",
+      "Bash(render logs *)"
     ],
     "deny": [
       "Read(./.env)",
@@ -106,15 +91,44 @@
       "Bash(DROP DATABASE *)",
       "Bash(TRUNCATE *)",
       "WebFetch(domain:*.supabase.co)"
+    ],
+    "ask": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr edit *)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr comment *)",
+      "Bash(npm install *)",
+      "Bash(npm uninstall *)",
+      "Bash(npm update *)",
+      "Bash(npm ci *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(psql *)",
+      "Edit(migration-*.sql)",
+      "Edit(schema.sql)",
+      "Edit(seed-test-data.sql)",
+      "Edit(.gitignore)",
+      "Edit(package.json)",
+      "Edit(package-lock.json)",
+      "Edit(vercel.json)",
+      "Edit(CLAUDE.md)",
+      "Edit(.claude/**)",
+      "Write(migration-*.sql)",
+      "Write(.claude/**)"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/private/tmp"
     ]
   },
-  "attribution": {
-    "commit": "\n\n🤖 Generated with Claude Code\nCo-Authored-By: Claude <noreply@anthropic.com>",
-    "pr": "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-  },
-  "includeGitInstructions": true,
-  "autoUpdatesChannel": "stable",
-  "cleanupPeriodDays": 30,
   "enabledPlugins": {},
-  "extraKnownMarketplaces": {}
+  "extraKnownMarketplaces": {},
+  "autoUpdatesChannel": "stable"
 }
