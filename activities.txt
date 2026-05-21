@@ -17600,3 +17600,292 @@ policy-field location before code.
 ========================================================================
 END SESSION 87
 ========================================================================
+SESSION 88 — May 21, 2026 (Thursday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-88
+SESSION WORK PR: #138 (fix/teacher-dashboard-expiring-documents-scope, awaiting external review)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed a §4B cross-teacher PII leak in the Expiring Documents widget
+on the teacher dashboard — same class of within-tenant leak as PR
+#136 (Weekly Reminder scope fix, merged at e103efb in S87),
+different feature. Pre-fix the GET /api/student-documents/expiring/
+:tenantId SQL filtered only by sd.tenant_id = $1; every staff caller
+in a tenant saw every expiring student_document including IEPs, 504
+Plans, and Medical Records — regardless of whether they were the
+assigned staff for the underlying student.
+
+Two-commit fix on the work branch: (i) role-branched query in
+routes/studentDocuments.js mirroring PR #136's shape (elevated branch
+unchanged; non-elevated branch SELECT DISTINCT with INNER JOIN to
+student_interventions + intervention_assignments, ia.user_id = $me,
+ia.assignment_type = 'staff', si.status = 'active'); (ii) one-line
+column addition to middleware/authorizeDocumentAccess.js requireAuth
+SELECT (adds school_wide_access) for parity with the sibling
+middleware/authorizeInterventionAccess.js. Commit (ii) was surfaced
+by the security-reviewer first-pass INFO #1 finding ("dead-code-
+becomes-live-code" — schoolWideAccess === true was always evaluating
+false on this route under the existing requireAuth wiring) and added
+between reviewer passes. Plus a read-only blast-radius diagnostic
+SQL file committed as PR paper trail (paralleling PR #136's
+diagnostic).
+
+§4B data-minimization fix; not a §5 tenant-isolation defect. Tenant
+boundary was already intact via requireExpiringListAccess +
+resolveAccessibleTenantIds upstream of the handler; only the
+within-tenant teacher boundary was missing.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/studentDocuments.js — role-branched expiring-docs query on
+GET /expiring/:tenantId handler. +69/-15 on commit a4e6b4e. Elevated
+branch (school_admin || schoolWideAccess === true) preserved
+byte-for-byte from pre-fix; else branch is the new INNER-JOIN-to-IA
+shape with SELECT DISTINCT to defang sd row multiplication from a
+student with multiple assigned SIs.
+
+middleware/authorizeDocumentAccess.js — one-line column addition to
+requireAuth's users SELECT. +1/-1 on commit ef1f4bb. Brings this
+file's requireAuth into shape parity with
+middleware/authorizeInterventionAccess.js:33 (both now project the
+same five columns). File-level duplication of requireAuth is NOT
+closed — Followup #108 still standing.
+
+scripts/ops/2026-05-21-expiring-docs-orphan-audit.sql — pre-flight
+read-only diagnostic SQL committed as PR #138's paper trail. Four
+aggregate SELECTs grouped by tenant_id; no DDL/DML. Composite tenant
+binding on sd→s; transitive via (s.id, s.tenant_id) anchor on
+si/ia. Counts redacted from this entry per §4B discipline; full
+numbers live in PR #138's body only.
+
+activities.txt — this entry (chore/activities-log-session-88, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — users.school_wide_access already exists from Migration 010's
+boot DDL; no new column, no new index, no new constraint.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+Both new query branches retain WHERE sd.tenant_id = $1 and the
+composite sd→s tenant binding (s.id = sd.student_id AND s.tenant_id
+= sd.tenant_id). The new INNER JOINs to student_interventions and
+intervention_assignments cannot introduce a cross-tenant pathway:
+both tables lack their own tenant_id column (S87 schema lesson #7)
+and inherit tenant scope transitively via the (s.id, s.tenant_id)
+anchor — a foreign-tenant si or ia row pointing at the calling
+user's id but at a student in another tenant is structurally rejected
+by the WHERE sd.tenant_id = $1 clause. Confirmed by
+tenant-isolation-auditor on both passes (APPROVED, zero findings
+across CRITICAL/HIGH/MEDIUM/LOW on each pass).
+
+requireExpiringListAccess middleware unchanged; path :tenantId still
+validated against resolveAccessibleTenantIds(req.user) per §5 dual-
+path doctrine before the handler runs.
+
+The middleware change in ef1f4bb is a single-row PK lookup with one
+extra column projected; it does not change any tenant-scoping clause
+anywhere. Tenant boundary remains owned by
+resolveAccessibleTenantIds and the upstream
+requireExpiringListAccess check; school_wide_access is a per-user
+boolean flag (not a tenant identifier) that gates within-tenant
+branch selection only.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched: student_documents.* projection (including IEP /
+504 Plan / Medical Record categories — §4B "uploaded documents
+containing student information"). These were already returned by the
+pre-fix handler; the PR strictly NARROWS which rows a non-elevated
+staff caller sees. No new PII column is introduced on either branch.
+Privacy-reviewer second-pass framed this as "a strictly privacy-
+positive change with no privacy regression possible" — fewer rows
+leave the server post-fix, never more.
+
+users.school_wide_access added to the requireAuth users SELECT in
+ef1f4bb. The field is a per-user boolean permission flag, not
+student/staff PII per privacy-reviewer second-pass verdict. Verified
+by grep that no consumer in routes/ or middleware/ serializes
+req.user whole-object to a response body or log line; the column is
+read by exactly three call sites (routes/students.js,
+routes/weeklyProgress.js, routes/studentDocuments.js — now all three
+widgets), all of which use it only as a boolean for branch
+selection.
+
+Logging audit: zero new console.* calls introduced; pre-existing
+error-path console.error logs error.message only with no PII
+interpolation. The error response body is a static 'Server error'
+string. No PII reaches logs or response error bodies.
+
+Cross-tenant risk: none identified. See TENANT ISOLATION REVIEW.
+
+Pre-existing sd.* over-select in both branches of the expiring-docs
+query is sibling to followups #71 / #78. Pre-existing in main; not
+introduced by this PR. Banked for a future data-minimization sweep
+PR.
+
+§4B self-scan on this entry: narrow and wide grep passes per
+docs/ai-context/4B_GREP_PATTERNS.md run against the added-lines diff
+before staging.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Pre-flight prod diagnostic: read-only SQL via Render External PSQL
+Command, four aggregate SELECTs (GROUP BY tenant_id; per-Tier
+breakdown in Q3). Operator-confirmed acceptable post-deploy blast
+radius. Counts and tenant identifiers redacted from this entry per
+§4B discipline; full numbers live in PR #138's body only.
+
+Subagent triad review on PR #138 — TWO passes due to the mid-review
+ef1f4bb middleware add-on:
+  Pass 1 (commits 2c8b936 + a4e6b4e):
+    privacy-reviewer          — APPROVED (zero CRIT/HIGH/MED/LOW)
+    tenant-isolation-auditor  — APPROVED (zero CRIT/HIGH/MED/LOW)
+    security-reviewer         — APPROVED (zero CRIT/HIGH/MED/LOW)
+
+  Pass 2 (commits 2c8b936 + a4e6b4e + ef1f4bb):
+    privacy-reviewer          — APPROVED (zero CRIT/HIGH/MED/LOW; no status changes)
+    tenant-isolation-auditor  — APPROVED (zero CRIT/HIGH/MED/LOW; one new INFO for parity-only column addition)
+    security-reviewer         — APPROVED (zero CRIT/HIGH/MED/LOW; INFO #1 cleared by ef1f4bb)
+
+Aggregate across both passes: zero CRITICAL, zero HIGH, zero MEDIUM,
+zero LOW. Reviewer INFOs all carried-forward or new-and-non-blocking.
+The security-reviewer INFO #1 first-pass finding ("requireAuth
+SELECT omits school_wide_access → dead code on this route →
+counselors silently routed to assigned-only branch") was the explicit
+motivator for commit ef1f4bb; second pass confirmed INFO #1 cleared.
+
+External human review per §2A — REQUESTED on PR #138 to
+scholapathsystems (collaborator); not yet completed at session-close.
+PR is in OPEN / REVIEW_REQUIRED / mergeStateStatus=BLOCKED state.
+
+Manual smoke against local dev DB: ATTEMPTED, ABANDONED. Per
+docs/operational-notes/smoke-testing.md Section 3, passwords cannot
+flow through CC's bash tool or chat panel by design. Some of the
+needed test-user emails are not documented in any seed script in
+source (created by a prior local-dev provisioning step not in the
+repo). A curl-driven full-coverage smoke from CC was therefore not
+viable. Smoke is deferred to the external reviewer per the rephrased
+smoke-section note in PR #138's body — expected reviewer-side
+behavior: non-elevated teacher returns assigned-only; school_admin OR
+counselor with school_wide_access=TRUE returns tenant-wide (the
+counselor case is the ef1f4bb validator specifically).
+
+Local dev DB transient state during smoke prep: fixture rows under
+prefix 'Smoke ' inserted in student_interventions,
+intervention_assignments, and student_documents on the local dev DB,
+then fully removed via a transactional cleanup script in the same
+session. Post-cleanup verification confirmed no remnant rows for any
+smoke prefix pattern. No PII in fixture descriptions. Local backend
+started with NODE_ENV=development for the smoke window (in-memory
+rate-limit MemoryStore dev fallback fired as documented) and stopped
+at session-close; port 3000 free.
+
+Backend tests: no suite (per Followup #73, unchanged).
+Backend lint: not configured (per Followup #74, unchanged).
+Frontend tests/lint: N/A — no frontend code touched.
+mergeable: BLOCKED on REVIEW_REQUIRED at session-close.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+X1 / school_wide_access role-drift cleanup — convergent finding now
+spans THREE widgets (routes/students.js, routes/weeklyProgress.js,
+routes/studentDocuments.js) with the same school_admin ||
+schoolWideAccess === true predicate shape. S87's X1 banking remains
+correct; this session strengthens the case (three call sites share
+the drift-exposed surface). Same proposed scope as S87: (i) routes/
+staffManagement.js:178 PUT recalc gap, (ii) server.js:262-265
+bootstrap UPDATE narrower than POST allowlist, (iii) seed-script
+paths, (iv) proposed invariant check, (v) the fix mirrors across
+all three widgets together. Own PR + reviewer trio.
+
+X2 / district_tech_admin school_wide_access membership review —
+S87-banked finding; this session inherits the same exposure (third
+widget). No code change until product/privacy decision lands.
+
+Followup #108 / duplicate requireAuth implementations — ef1f4bb
+narrows the column-list divergence between
+middleware/authorizeDocumentAccess.js:48 and middleware/
+authorizeInterventionAccess.js:33 (both now project the same five
+columns) but does NOT close the file-level duplication. Right
+long-term fix remains a chore/dedupe-requireAuth PR. Security-
+reviewer second-pass explicitly noted this PR widens the divergence-
+recovery surface in the right direction — followup retains its
+priority but is one step less dangerous than before.
+
+Pre-existing sd.* over-select in routes/studentDocuments.js — sibling
+to followups #71 / #78. Pre-existing in main; not introduced here;
+consistent with the sibling shape in routes/weeklyProgress.js.
+Should be addressed in a separate data-minimization sweep PR, not
+bundled here.
+
+Vestigial students.teacher_id column — confirmed during S88 audit as
+schema with no live populate path (zero FE writes, zero CSV-import
+writes, zero seed-script writes; backend POST/PUT students
+destructure the field but FE never sends it) and no consulted read
+predicate anywhere (it appears only as LEFT JOIN to users for a
+display-only teacher_name alias that the FE never reads). Banked as
+a new followup candidate: either wire up homeroom-teacher visibility
+as a real third path (FE form field + CSV importer column + backfill
++ NOT NULL + index migration) OR drop the vestigial column. Either
+way, out of scope for this PR.
+
+Pre-existing secondary_area POST/PUT asymmetry on the student
+create/edit flow — FE-side, not BE. Both backend handlers in
+routes/students.js include secondary_area in their SQL (POST at
+:529-534 destructures and binds to $8 of the INSERT; PUT at
+:549-568 binds to $8 of the UPDATE). The asymmetry lives on the
+frontend: the POST body at frontend/src/App.jsx:1594-1602 omits
+secondary_area, so newly-created students always land with
+secondary_area=NULL; the PUT body at frontend/src/App.jsx:1622-1628
+correctly includes it. Net effect: secondary_area can only be
+populated via a post-create edit, never on initial create. Surfaced
+as a side-finding during the S88 students.teacher_id vestigial-
+column audit; out of scope for this PR. Data-completeness defect,
+not a §4B/§5 issue. Banked as a new followup candidate.
+
+Followup #73 (no backend test suite): still standing.
+Followup #74 (backend lint not configured): still standing.
+Followup #94 (scripts/ops/ → .gitignore): still standing. This
+session added one more file to scripts/ops/ (the expiring-docs
+diagnostic, tracked via PR #138); the pre-existing untracked ops
+files remain untouched.
+
+X-placeholders X1 and X2 await operator master-index sync for
+promotion to permanent #N. Code comment at
+routes/studentDocuments.js's non-elevated branch references X1 by
+slug ("school_wide_access role-drift cleanup followup"), matching
+routes/weeklyProgress.js's existing reference.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Watch for PR #138 review from scholapathsystems. If APPROVED, merge
+and close S88 activities-log PR. If changes requested, fix-forward
+on the work branch and re-run the §2A reviewer trio. After PR #138
+lands, the natural next priority is X1 (school_wide_access
+role-drift cleanup) — now triply convergent across three widgets, so
+the privacy/security blast radius is widest of any banked item.
+
+========================================================================
+END SESSION 88
+========================================================================
