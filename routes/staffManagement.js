@@ -239,8 +239,8 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error updating staff:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[staff:put] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
