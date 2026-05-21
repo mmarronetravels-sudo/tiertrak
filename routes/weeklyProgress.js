@@ -9,6 +9,7 @@ const {
   requireInterventionReadAccess,
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -155,9 +156,10 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
     let query;
     let params;
 
-    // Admins and users with school_wide_access see every active intervention
-    // in the tenant. Mirrors the tenant-wide branch at routes/students.js:140-148.
-    if (userRole === 'school_admin' || schoolWideAccess) {
+    // Elevated-role users (constants/roles.js ELEVATED_ROLES) or users
+    // with school_wide_access see every active intervention in the tenant.
+    // Mirrors the tenant-wide branch at routes/students.js.
+    if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
       query = `
         SELECT
           si.id,

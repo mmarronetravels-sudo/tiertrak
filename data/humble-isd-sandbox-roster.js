@@ -25,7 +25,9 @@
  *                                         'discontinued', 'archived')
  *   - parent_student_links has NO tenant_id column (known followup; do not
  *     add one here).
- *   - school_wide_access mirrors routes/staffManagement.js:68 conventions.
+ *   - school_wide_access must match the canonical ELEVATED_ROLES rule
+ *     in constants/roles.js. The seed script validates this on every
+ *     run and aborts on mismatch — see scripts/seed-humble-isd-sandbox.js.
  */
 
 const TENANT = {

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 let pool;
 
@@ -136,8 +137,9 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(409).json({ error: 'A user with this email already exists' });
     }
 
-    // Set school_wide_access based on role
-    const schoolWideAccess = ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'interventionist'].includes(role);
+    // Set school_wide_access based on role. ELEVATED_ROLES is the
+    // canonical 5-role allowlist exported from constants/roles.js.
+    const schoolWideAccess = ELEVATED_ROLES.includes(role);
 
     // district_id binding: district-scoped roles inherit creator's
     // district_id. The role-rank gate above ensures only district_admin
@@ -173,9 +175,12 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    // Recalculate school_wide_access if role changed
-    const schoolWideAccess = role 
-      ? ['school_admin', 'district_admin', 'counselor', 'interventionist'].includes(role)
+    // Recalculate school_wide_access if role changed. ELEVATED_ROLES is
+    // the canonical 5-role allowlist exported from constants/roles.js.
+    // Healing on name-only PUTs (re-check current row's role) is NOT in
+    // scope here — banked as followup.
+    const schoolWideAccess = role
+      ? ELEVATED_ROLES.includes(role)
       : undefined;
 
     const result = await pool.query(

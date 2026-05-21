@@ -56,6 +56,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const BCRYPT_ROUNDS = 10;
 const PASSWORD_BYTES = 12; // 12 random bytes → 16-char base64url string, ~96 bits entropy
@@ -451,6 +452,27 @@ function generatePassword() {
   return crypto.randomBytes(PASSWORD_BYTES).toString('base64url');
 }
 
+// Validate each account's school_wide_access against the canonical
+// ELEVATED_ROLES rule. role IN ELEVATED_ROLES must imply
+// school_wide_access = true; otherwise false. Mismatch aborts the
+// seed. Error messages identify the row by index/kind/role only — no
+// name/email/PII.
+function validateRoleAccessConsistency(accounts) {
+  for (let i = 0; i < accounts.length; i += 1) {
+    const a = accounts[i];
+    const expected = ELEVATED_ROLES.includes(a.role);
+    if (a.school_wide_access !== expected) {
+      throw new Error(
+        `Roster row ${i} (kind=${a.kind}, role=${a.role}): ` +
+        `school_wide_access=${a.school_wide_access} contradicts the ` +
+        `ELEVATED_ROLES rule (expected ${expected}). ELEVATED_ROLES = ` +
+        `[${ELEVATED_ROLES.join(', ')}]. Correct the roster value or ` +
+        `the role and re-run.`
+      );
+    }
+  }
+}
+
 // Quote a string for embedding in a single-quoted SQL literal. Doubles any
 // embedded single quotes. Bcrypt hashes contain `$`, `/`, `.`, alphanumerics
 // — never a single quote, but we still go through the same escape path so
@@ -494,6 +516,14 @@ async function buildSql(roster, rosterPath) {
       kind: 'staff',
     })),
   ];
+
+  // Hard-fail before any password work if the roster's
+  // school_wide_access values do not match the ELEVATED_ROLES rule.
+  // ADMINS get hardcoded school_wide_access=true above; the check still
+  // fires for them so a roster that overrides an admin's role outside
+  // ELEVATED_ROLES is caught (the template script allows role override
+  // on ADMINS entries via `a.role || 'district_admin'`).
+  validateRoleAccessConsistency(accounts);
 
   // Index-based variable scheme: v_user_1 ... v_user_N, in account order.
   // First admin is always v_user_1 by construction (used as activated_by

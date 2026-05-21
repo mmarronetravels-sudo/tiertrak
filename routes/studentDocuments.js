@@ -13,6 +13,7 @@ const {
   requireExpiringListAccess,
   PARENT_VISIBLE_CATEGORIES
 } = require('../middleware/authorizeDocumentAccess');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 let pool;
 
@@ -252,10 +253,11 @@ router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async 
     let query;
     let params;
 
-    // Admins and users with school_wide_access see every expiring doc
-    // in the tenant. Mirrors the tenant-wide branch at routes/students.js
-    // :140-148 and routes/weeklyProgress.js:160-184.
-    if (userRole === 'school_admin' || schoolWideAccess) {
+    // Elevated-role users (constants/roles.js ELEVATED_ROLES) or users
+    // with school_wide_access see every expiring doc in the tenant.
+    // Mirrors the tenant-wide branch at routes/students.js and
+    // routes/weeklyProgress.js.
+    if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
       query = `
         SELECT
           sd.*,
