@@ -235,24 +235,78 @@ router.delete('/:id', requireAuth, requireDocumentWriteAccess, async (req, res) 
 // Number(req.params.tenantId); middleware-membership-check validated access.
 // JOIN s.tenant_id = sd.tenant_id remains so a crafted student_id cannot
 // pull rows across tenants.
+//
+// Within-tenant teacher scope: school_admin || schoolWideAccess === true
+// see every expiring doc in the tenant; non-elevated staff see only docs
+// for students they are personally assigned to monitor via
+// intervention_assignments (assignment_type='staff', si.status='active').
+// Mirrors the role-branched shape at routes/students.js:140-178 and
+// routes/weeklyProgress.js:160-224. students.teacher_id is verified
+// vestigial and intentionally NOT consulted.
 router.get('/expiring/:tenantId', requireAuth, requireExpiringListAccess, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT
-        sd.*,
-        s.first_name || ' ' || s.last_name as student_name,
-        s.grade,
-        u.full_name as uploaded_by_name
-      FROM student_documents sd
-      JOIN students s ON sd.student_id = s.id AND s.tenant_id = sd.tenant_id
-      LEFT JOIN users u ON sd.uploaded_by = u.id
-      WHERE sd.tenant_id = $1
-        AND sd.expiration_date IS NOT NULL
-        AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
-        AND sd.expiration_date >= CURRENT_DATE
-      ORDER BY sd.expiration_date ASC
-    `, [Number(req.params.tenantId)]);
+    const pathTenantId = Number(req.params.tenantId);
+    const userRole = req.user.role;
+    const schoolWideAccess = req.user.school_wide_access === true;
 
+    let query;
+    let params;
+
+    // Admins and users with school_wide_access see every expiring doc
+    // in the tenant. Mirrors the tenant-wide branch at routes/students.js
+    // :140-148 and routes/weeklyProgress.js:160-184.
+    if (userRole === 'school_admin' || schoolWideAccess) {
+      query = `
+        SELECT
+          sd.*,
+          s.first_name || ' ' || s.last_name as student_name,
+          s.grade,
+          u.full_name as uploaded_by_name
+        FROM student_documents sd
+        JOIN students s ON sd.student_id = s.id AND s.tenant_id = sd.tenant_id
+        LEFT JOIN users u ON sd.uploaded_by = u.id
+        WHERE sd.tenant_id = $1
+          AND sd.expiration_date IS NOT NULL
+          AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
+          AND sd.expiration_date >= CURRENT_DATE
+        ORDER BY sd.expiration_date ASC
+      `;
+      params = [pathTenantId];
+    }
+    // Non-elevated staff branch. SELECT DISTINCT because a student with
+    // multiple active SIs the caller is assigned to would otherwise
+    // multiply sd rows. Composite tenant binding lives on sd→s; si and
+    // ia lack tenant_id columns (S87 schema lesson #7) so their tenant
+    // scope is transitive via the (s.id, s.tenant_id) anchor. Drift
+    // risk captured in followup X1 (school_wide_access role-drift
+    // cleanup).
+    else {
+      query = `
+        SELECT DISTINCT
+          sd.*,
+          s.first_name || ' ' || s.last_name as student_name,
+          s.grade,
+          u.full_name as uploaded_by_name
+        FROM student_documents sd
+        JOIN students s ON sd.student_id = s.id AND s.tenant_id = sd.tenant_id
+        INNER JOIN student_interventions si
+          ON si.student_id = s.id
+         AND si.status = 'active'
+        INNER JOIN intervention_assignments ia
+          ON ia.student_intervention_id = si.id
+         AND ia.user_id = $2
+         AND ia.assignment_type = 'staff'
+        LEFT JOIN users u ON sd.uploaded_by = u.id
+        WHERE sd.tenant_id = $1
+          AND sd.expiration_date IS NOT NULL
+          AND sd.expiration_date <= CURRENT_DATE + INTERVAL '30 days'
+          AND sd.expiration_date >= CURRENT_DATE
+        ORDER BY sd.expiration_date ASC
+      `;
+      params = [pathTenantId, req.user.id];
+    }
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching expiring documents:', error.message);
