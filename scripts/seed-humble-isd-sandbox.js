@@ -47,6 +47,7 @@ const BCRYPT_ROUNDS = 10;
 const PASSWORD_BYTES = 12; // 12 random bytes → 16-char base64url string, ~96 bits entropy
 
 const roster = require(path.join('..', 'data', 'humble-isd-sandbox-roster.js'));
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,6 +55,27 @@ const roster = require(path.join('..', 'data', 'humble-isd-sandbox-roster.js'));
 
 function generatePassword() {
   return crypto.randomBytes(PASSWORD_BYTES).toString('base64url');
+}
+
+// Validate each account's school_wide_access against the canonical
+// ELEVATED_ROLES rule. role IN ELEVATED_ROLES must imply
+// school_wide_access = true; otherwise false. Mismatch aborts the
+// seed. Error messages identify the row by index/kind/role only — no
+// name/email/PII.
+function validateRoleAccessConsistency(accounts) {
+  for (let i = 0; i < accounts.length; i += 1) {
+    const a = accounts[i];
+    const expected = ELEVATED_ROLES.includes(a.role);
+    if (a.school_wide_access !== expected) {
+      throw new Error(
+        `Roster row ${i} (kind=${a.kind}, role=${a.role}): ` +
+        `school_wide_access=${a.school_wide_access} contradicts the ` +
+        `ELEVATED_ROLES rule (expected ${expected}). ELEVATED_ROLES = ` +
+        `[${ELEVATED_ROLES.join(', ')}]. Correct the roster value or ` +
+        `the role and re-run.`
+      );
+    }
+  }
 }
 
 // Quote a string for embedding in a single-quoted SQL literal. Doubles any
@@ -96,6 +118,10 @@ async function buildSql() {
       kind: 'staff',
     })),
   ];
+
+  // Hard-fail before any password work if the roster's
+  // school_wide_access values do not match the ELEVATED_ROLES rule.
+  validateRoleAccessConsistency(accounts);
 
   // Generate one password + hash per account. Plaintext goes to a parallel
   // array we will print to stderr at the end. Hashes go into the SQL.
