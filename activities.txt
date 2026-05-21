@@ -17889,3 +17889,352 @@ the privacy/security blast radius is widest of any banked item.
 ========================================================================
 END SESSION 88
 ========================================================================
+
+========================================================================
+SESSION 89 — May 21, 2026 (Thursday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-89
+SESSION WORK PR: #140 (sec/school-wide-access-role-drift-cleanup, awaiting external review)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+X1 cleanup — closed the school_wide_access role-drift first banked in
+S87 (during PR #136 lifecycle) and strengthened to triply convergent
+in S88 (during PR #138 lifecycle). The same role-branched predicate
+ships at three read sites (routes/students.js,
+routes/weeklyProgress.js, routes/studentDocuments.js) and the
+underlying allowlist literal was duplicated across the POST recalc,
+PUT recalc, server bootstrap UPDATE, and two seed scripts — with
+three of those copies drifted out of sync with the canonical 5-role
+POST allowlist. PR #140 collapses all six write/read sites plus the
+seed paths onto a single shared constant (constants/roles.js
+ELEVATED_ROLES) in four commits.
+
+Locked decisions for this PR (per S88 / S89 planning):
+  - Allowlist canonicalization only. PUT recalc row-level healing on
+    name-only edits is DEFERRED (banked followup); COALESCE shape
+    preserved.
+  - server-boot DDL at server.js:262 patched here; Followup #117
+    (retire server-boot DDL entirely) supersedes later.
+  - Seed scripts VALIDATE roster school_wide_access against
+    ELEVATED_ROLES (raise on mismatch); do not silently coerce.
+  - Invariant CI check / admin observability is OUT OF SCOPE for
+    this PR; banked as a sibling chore PR.
+
+Four-commit structure on the work branch:
+  c678da5 chore(roles): extract ELEVATED_ROLES constant
+  0e46219 fix(rbac): apply ELEVATED_ROLES allowlist to tenant-wide read predicates
+  6416020 fix(rbac): close ELEVATED_ROLES drift in PUT recalc and server bootstrap
+  a4278b3 chore(seed): validate roster school_wide_access against ELEVATED_ROLES
+
+Total scope vs main: 9 files, +120/-19 per git diff --stat. Branch
+sec/school-wide-access-role-drift-cleanup pushed to origin and PR
+#140 opened against main with scholapathsystems requested as
+reviewer; PR is OPEN / REVIEW_REQUIRED / mergeStateStatus=BLOCKED /
+mergeable=MERGEABLE at session-close.
+
+Canonical-intent framing called out in PR #140's body: read-predicate
+widening at the three read sites is "users will see MORE" in some
+configurations — a user whose role is in the canonical 5-role
+allowlist but whose users.school_wide_access row value is FALSE
+today will, post-fix, enter the tenant-wide read branch via the
+role arm. Per the POST recalc canonical at
+routes/staffManagement.js:140, those roles are CANONICALLY meant to
+have tenant-wide access; the FALSE row values are drift from the
+bootstrap UPDATE allowlist gap (closed in commit 6416020) and from
+potential prior PUT-recalc shape gaps. Restoration of canonical
+intent, not new access grant. Predicate is always evaluated AFTER
+tenant scope is fixed, so no cross-tenant exposure is introduced.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+constants/roles.js — NEW. 26 lines. Single named export
+ELEVATED_ROLES with the canonical 5-role list: district_admin,
+district_tech_admin, school_admin, counselor, interventionist.
+Header comment enumerates the seven consumer sites and routes any
+future edit through the §4B/§5 reviewer pipeline (single source of
+truth).
+
+routes/staffManagement.js — +10/-5 across two commits. (i) POST
+recalc at :140 replaces the inline 5-role literal with
+ELEVATED_ROLES.includes(role) (commit c678da5; pure refactor,
+behavior identical). (ii) PUT recalc at :178 replaces the inline
+4-role literal with ELEVATED_ROLES.includes(role) (commit 6416020).
+PUT now matches POST canonical for the first time — the old literal
+was missing district_tech_admin. COALESCE($3, school_wide_access)
+shape preserved per locked decision; row-level healing on
+name-only PUTs (re-check current row's role when role is absent
+from the request body) is DEFERRED. Comment block at the PUT
+recalc site notes the deferral so a future reader doesn't
+relitigate.
+
+routes/students.js — +4/-2. Read-predicate site 1 at :143. Pre-fix:
+if (userRole === 'school_admin' || schoolWideAccess). Post-fix:
+if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess). Inline
+comment updated to reference constants/roles.js ELEVATED_ROLES.
+No SQL change; the predicate selects between two already-tenant-
+scoped query branches.
+
+routes/weeklyProgress.js — +5/-3. Read-predicate site 2 at :162.
+Identical shape change to routes/students.js. Comment updated;
+stale "Admins and users with school_wide_access" phrasing replaced
+with "Elevated-role users or users with school_wide_access".
+
+routes/studentDocuments.js — +7/-3. Read-predicate site 3 at :260.
+Identical shape change. Comment updated; cross-reference to
+routes/students.js and routes/weeklyProgress.js preserved.
+
+Post-fix predicate line is BYTE-IDENTICAL across all three read
+sites:
+  if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
+verified by grep before commit 0e46219 landed.
+
+server.js — +10/-4. Bootstrap back-fill UPDATE at :262-271
+(formerly :262-265). Pre-fix: inline SQL literal
+IN ('counselor','school_admin','interventionist') — missing both
+district roles. Post-fix: parameterized
+role = ANY($1::text[]) with ELEVATED_ROLES bound at runtime.
+Idempotent gate (school_wide_access IS NULL OR school_wide_access
+= FALSE) preserved. Comment block above the UPDATE flags that
+Followup #117 still wants to retire this server-boot DDL entirely
+in favor of migrations; this PR patched the allowlist but did not
+retire the block.
+
+scripts/seed-humble-isd-sandbox.js — +26. New
+validateRoleAccessConsistency(accounts) helper added in the
+Helpers section, plus require('../constants/roles') and a
+call-site invocation immediately after the accounts array is built
+and BEFORE password generation begins. Helper throws on roster
+mismatch; error string references the offending row by array
+index, kind, and role only — no name, email, or student identifier
+per §4B.
+
+scripts/seed-tenant-sandbox-template.js — +30. Same helper, same
+require, same pre-emission invocation. The template script also
+allows operator override of an ADMINS entry's role via
+`a.role || 'district_admin'`; the new validator catches the case
+where an operator overrides to a non-canonical role and the
+hardcoded school_wide_access=true would mismatch (comment block at
+the call site spells this out).
+
+data/humble-isd-sandbox-roster.js — +3/-1. Header-only comment
+fix: removed the stale reference to routes/staffManagement.js:68
+(that line is now the GET list SELECT, no longer the allowlist)
+and pointed at constants/roles.js plus the seed script's
+validation block.
+
+activities.txt — this entry (chore/activities-log-session-89, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no new schema, no new column, no new index, no new
+constraint. The bootstrap back-fill UPDATE at server.js:262 is the
+back-fill block from Migration 010 (users.school_wide_access);
+parameterizing it in commit 6416020 preserves semantics and is not
+a migration in its own right.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor verdict: APPROVED. 0 CRITICAL, 0 WARN, 5
+INFO. Audited 6 queries (5 tenant-scoped, 1 intentionally
+cross-tenant — the bootstrap UPDATE).
+
+All three read predicates execute downstream of tenant-membership
+verification: routes/students.js calls resolveAccessibleTenantIds
+directly at :128-131 and 403s on miss before the predicate runs;
+routes/weeklyProgress.js sits behind requireTenantStaffAccess
+middleware; routes/studentDocuments.js sits behind
+requireExpiringListAccess middleware. Both middlewares themselves
+consume resolveAccessibleTenantIds per §5 dual-path doctrine.
+Widening the role arm controls the WITHIN-tenant SQL shape
+(everyone-in-tenant vs only-my-assignments); it does not relax
+the cross-tenant gate. Each query retains WHERE s.tenant_id = $1
+/ WHERE sd.tenant_id = $1 with the path-derived tenant value.
+
+The bootstrap UPDATE at server.js:262 is INTENTIONALLY
+cross-tenant — it back-fills a non-PII boolean (school_wide_access)
+across every user in every tenant whose role is in ELEVATED_ROLES.
+Operates only on a permission column; does not read or write
+student/intervention/document data; does not surface any
+tenant-scoped row to a request session. Idempotent. Auditor
+explicitly classified this as correct cross-tenant, not a WARN.
+
+§5 helper-consumed-not-inline doctrine honored: zero new code in
+the diff branches on users.district_id. The five consumer sites
+that need accessible-tenant resolution all consume
+resolveAccessibleTenantIds (directly or transitively via
+require* middleware).
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+privacy-reviewer verdict: APPROVED. 0 CRITICAL, 0 WARN, 4 INFO.
+
+PII fields touched: none new. The three read predicates already
+returned student first_name/last_name/grade/tier/intervention_name
+to school_admin-or-schoolWideAccess callers; this PR strictly
+WIDENS who reaches that branch within the existing role allowlist
+of 5 — it does not add a new column to any response, does not
+log any new PII, and does not introduce any new error body. Parent
+branch (linked-children-only) is untouched at all three sites.
+
+Validation error string in scripts/seed-humble-isd-sandbox.js and
+scripts/seed-tenant-sandbox-template.js (commit a4278b3)
+interpolates ONLY array index, a.kind, a.role,
+a.school_wide_access, the computed expected boolean, and the
+static ELEVATED_ROLES list. privacy-reviewer confirmed §4B-
+compliant by direct inspection of both helper sources. No
+a.full_name, a.email, a.first_name, a.last_name, a.student_id,
+or any other PII field is referenced in either helper.
+
+Roster header comment fix at data/humble-isd-sandbox-roster.js is
+a pure file-path-reference change. No PII content.
+
+Commit messages: all four reviewed by privacy-reviewer. No
+student/staff names, emails, IDs, grades, tier values, or
+document titles. References are to file paths, line numbers, role
+names, column names, and followup IDs only. §4B-compliant.
+
+§4B self-scan on this entry: narrow-form PII grep run against each
+of the four commit objects before push. Only hits were author/
+co-author email metadata (git commit format) and file-path
+substring 'humble' / 'isd' in pre-existing filenames
+(data/humble-isd-sandbox-roster.js,
+scripts/seed-humble-isd-sandbox.js). Both classes are known false
+positives per the established §4B audit pattern — file paths are
+not PII content.
+
+Cross-tenant risk: none identified. See TENANT ISOLATION REVIEW.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad review on PR #140 — single pass, parallel dispatch:
+  privacy-reviewer          — APPROVED (0 CRITICAL, 0 WARN, 4 INFO)
+  security-reviewer         — APPROVED WITH NOTES
+                              (0 CRITICAL, 2 WARN, 6 INFO)
+  tenant-isolation-auditor  — APPROVED (0 CRITICAL, 0 WARN, 5 INFO)
+
+Aggregate: zero CRITICAL across all three reports. Two WARN
+findings from security-reviewer are PRE-EXISTING on
+routes/staffManagement.js:167 PUT route — not introduced by this
+PR. (See OPEN ITEMS for the banked follow-up PR.) All INFO
+findings are either canonical-intent confirmations or net-positive
+deltas (e.g., the bootstrap UPDATE injection surface IMPROVED by
+moving from inline SQL literal to parameterized ANY($1::text[])).
+
+Pre-push §4B grep pass (narrow form) executed across all four
+commit objects with `git show <sha> | grep -niE ...`. All hits
+classified as git author/co-author metadata or file-path
+references to pre-existing humble-isd-sandbox-* files. No PII
+content in diff. Documented in PR #140 body.
+
+Post-push state verification:
+  PR #140 — OPEN / REVIEW_REQUIRED / mergeStateStatus=BLOCKED /
+  mergeable=MERGEABLE / reviewRequests=[scholapathsystems]
+
+Branch protection ruleset is mechanically blocking merge until
+formal review submitted via gh pr review --approve. Self-merge of
+a §4B/§5 PR is mechanically prevented (per Followup J/#95 lessons
+codified in CLAUDE.md §2A enforcement section).
+
+Manual smoke: NONE attempted this session. The PR is a refactor +
+drift closure with no FE state change visible to a tenant user;
+the value proposition is "elevated-role users currently locked
+out of tenant-wide read by drifted booleans regain canonical
+access" — that case is exactly the failure pattern S87/S88
+documented for PR #136 / PR #138 (counselor with
+school_wide_access=FALSE), so no new failure mode is testable
+beyond what the PR closes. Reviewer trio + read-only audit +
+node -c syntax check are the quality gates. Same constraint that
+carried PR #138.
+
+node -c syntax check passed on both modified seed scripts
+(scripts/seed-humble-isd-sandbox.js,
+scripts/seed-tenant-sandbox-template.js) and on the modified
+roster (data/humble-isd-sandbox-roster.js).
+
+Backend tests: no suite (per Followup #73, unchanged).
+Backend lint: not configured (per Followup #74, unchanged).
+Frontend tests/lint: N/A — no frontend code touched.
+mergeable: BLOCKED on REVIEW_REQUIRED at session-close.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+sec/staffmanagement-put-hardening (next-or-near-next priority) —
+new follow-up PR banked from security-reviewer WARN-1 and WARN-2
+on PR #140. WARN-1: routes/staffManagement.js:167 PUT
+/api/staff/:id is mounted WITHOUT requireAuth — an unauthenticated
+caller can promote any user to district_admin or
+district_tech_admin and flip school_wide_access TRUE. PRE-EXISTING
+in main; this PR's marginal contribution is one additional role
+string (district_tech_admin) reachable via the same path. WARN-2:
+the same handler's catch returns
+res.status(500).json({ error: error.message }) — raw pg error
+text leakage. Fix is one focused PR: add requireAuth + role-rank
+gate (mirror POST gate at :104-119) AND redact the 500 body to
+'Server error' (match POST :162). Full reviewer trio + §2A.
+Cluster sibling of Followup #116.
+
+PUT recalc row-level healing on name-only edits — DEFERRED per
+S89 locked decision. routes/staffManagement.js:178 COALESCE
+preserves the existing row value when role is absent from the
+request; if that existing value is itself drifted (legacy row
+born before this PR's bootstrap fix), the name-only PUT does not
+heal it. Healing would require an explicit
+schoolWideAccess = ELEVATED_ROLES.includes(currentRoleFromRow)
+recompute on every PUT regardless of body content, which is
+broader scope than this PR's "allowlist canonicalization only"
+remit. Banked as separate follow-up.
+
+Invariant CI check / admin observability — banked sibling chore
+PR. The check is a SELECT against users WHERE school_wide_access
+= TRUE AND role NOT IN (ELEVATED_ROLES list), expected to return
+zero rows in steady state; non-zero indicates drift to
+investigate. Plus a parallel SELECT WHERE school_wide_access =
+FALSE AND role IN (ELEVATED_ROLES). Surfaces drift before users
+notice. Out of scope for the drift-closure PR itself; deserves a
+focused chore PR with its own reviewer pass.
+
+Followup #117 (retire server-boot DDL for users role check) —
+still standing. This session's commit 6416020 patched the inline
+allowlist in the server.js back-fill block but did NOT retire the
+block. #117 supersedes later; the block is patched-but-marked.
+
+Followup #73 (no backend test suite): still standing.
+Followup #74 (backend lint not configured): still standing.
+Followup #94 (scripts/ops/ → .gitignore): still standing.
+Untracked file count in scripts/ops/ unchanged this session (two
+files; same as S88-close inventory).
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Watch for PR #140 review from scholapathsystems. If APPROVED,
+merge and close the S89 activities-log PR. If changes requested,
+fix-forward on the work branch and re-run the §2A reviewer trio.
+After PR #140 lands, the natural next priority is
+sec/staffmanagement-put-hardening (WARN-1 + WARN-2 from this
+session's security-reviewer pass) — focused, well-bounded, and
+closes a real pre-existing privilege-escalation exposure that
+exists in main today regardless of this PR.
+
+========================================================================
+END SESSION 89
+========================================================================
