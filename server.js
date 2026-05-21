@@ -6,6 +6,7 @@ require('dotenv').config();
 const { Resend } = require('resend');
 const { initializeRateLimitStore, getLogIpPepper, getLogUserPepper, authIpLimiter, contactLimiter, csvImportLimiter } = require('./middleware/rateLimiters');
 const { csrfProtection, getCsrfSecret } = require('./middleware/csrfProtection');
+const { ELEVATED_ROLES } = require('./constants/roles');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Boot-time eager validation. Each call exits(1) on missing prod config
@@ -259,10 +260,15 @@ const createTables = async () => {
       ADD COLUMN IF NOT EXISTS school_wide_access BOOLEAN DEFAULT FALSE
     `);
     
-    await pool.query(`
-      UPDATE users SET school_wide_access = TRUE 
-      WHERE role IN ('counselor', 'school_admin', 'interventionist') AND (school_wide_access IS NULL OR school_wide_access = FALSE)
-    `);
+    // Bootstrap back-fill: any user whose role is in the canonical
+    // elevated-roles allowlist (constants/roles.js ELEVATED_ROLES) gets
+    // school_wide_access = TRUE if not already set. Idempotent.
+    await pool.query(
+      `UPDATE users SET school_wide_access = TRUE
+       WHERE role = ANY($1::text[])
+         AND (school_wide_access IS NULL OR school_wide_access = FALSE)`,
+      [ELEVATED_ROLES]
+    );
     
     await pool.query(`
       CREATE TABLE IF NOT EXISTS parent_student_links (

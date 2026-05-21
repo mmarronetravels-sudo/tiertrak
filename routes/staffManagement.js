@@ -175,9 +175,12 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    // Recalculate school_wide_access if role changed
-    const schoolWideAccess = role 
-      ? ['school_admin', 'district_admin', 'counselor', 'interventionist'].includes(role)
+    // Recalculate school_wide_access if role changed. ELEVATED_ROLES is
+    // the canonical 5-role allowlist exported from constants/roles.js.
+    // Healing on name-only PUTs (re-check current row's role) is NOT in
+    // scope here — banked as followup.
+    const schoolWideAccess = role
+      ? ELEVATED_ROLES.includes(role)
       : undefined;
 
     const result = await pool.query(
