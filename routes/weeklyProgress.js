@@ -182,13 +182,18 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
       `;
       params = [pathTenantId, currentWeek];
     }
-    // Teachers see only interventions they are personally assigned to monitor.
-    // Mirrors the per-teacher branch at routes/students.js:162-178 by joining
-    // intervention_assignments on (student_intervention_id, user_id) with
-    // assignment_type='staff'. The parent role is intentionally not handled
-    // here: requireTenantStaffAccess (middleware/authorizeInterventionAccess.js)
-    // rejects parents upstream, so this branch only ever sees non-elevated
-    // staff (i.e. teacher). Treat the omission as a documented decision.
+    // Non-elevated staff (school_wide_access !== true) see only interventions
+    // they are personally assigned to monitor via intervention_assignments
+    // (assignment_type='staff'). Mirrors the per-teacher branch at
+    // routes/students.js:162-178. In practice the role landing here is
+    // teacher, plus any district_admin / district_tech_admin / counselor /
+    // interventionist row whose school_wide_access flag was not set by the
+    // bootstrap (server.js:262-265) or staff-management paths
+    // (routes/staffManagement.js:140, :178) — banked as the
+    // school_wide_access role-drift cleanup followup. Parent role is
+    // rejected upstream by requireTenantStaffAccess
+    // (middleware/authorizeInterventionAccess.js:223), so this branch never
+    // receives parents — that omission is a documented decision.
     else {
       query = `
         SELECT
