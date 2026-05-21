@@ -148,28 +148,78 @@ router.get('/intervention/:interventionId', requireAuth, requireInterventionRead
 router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
     const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
-    const result = await pool.query(`
-      SELECT
-        si.id,
-        si.intervention_name,
-        si.student_id,
-        si.log_frequency,
-        s.first_name,
-        s.last_name,
-        s.tier
-      FROM student_interventions si
-      JOIN students s ON si.student_id = s.id
-      WHERE s.tenant_id = $1
-        AND si.status = 'active'
-        AND s.archived = false
-        AND si.no_progress_monitoring_required IS NOT TRUE
-        AND NOT EXISTS (
-          SELECT 1 FROM weekly_progress wp
-          WHERE wp.student_intervention_id = si.id
-          AND wp.week_of = $2
-        )
-      ORDER BY s.last_name, s.first_name
-    `, [Number(req.params.tenantId), currentWeek]);
+    const pathTenantId = Number(req.params.tenantId);
+    const userRole = req.user.role;
+    const schoolWideAccess = req.user.school_wide_access === true;
+
+    let query;
+    let params;
+
+    // Admins and users with school_wide_access see every active intervention
+    // in the tenant. Mirrors the tenant-wide branch at routes/students.js:140-148.
+    if (userRole === 'school_admin' || schoolWideAccess) {
+      query = `
+        SELECT
+          si.id,
+          si.intervention_name,
+          si.student_id,
+          si.log_frequency,
+          s.first_name,
+          s.last_name,
+          s.tier
+        FROM student_interventions si
+        JOIN students s ON si.student_id = s.id
+        WHERE s.tenant_id = $1
+          AND si.status = 'active'
+          AND s.archived = false
+          AND si.no_progress_monitoring_required IS NOT TRUE
+          AND NOT EXISTS (
+            SELECT 1 FROM weekly_progress wp
+            WHERE wp.student_intervention_id = si.id
+            AND wp.week_of = $2
+          )
+        ORDER BY s.last_name, s.first_name
+      `;
+      params = [pathTenantId, currentWeek];
+    }
+    // Teachers see only interventions they are personally assigned to monitor.
+    // Mirrors the per-teacher branch at routes/students.js:162-178 by joining
+    // intervention_assignments on (student_intervention_id, user_id) with
+    // assignment_type='staff'. The parent role is intentionally not handled
+    // here: requireTenantStaffAccess (middleware/authorizeInterventionAccess.js)
+    // rejects parents upstream, so this branch only ever sees non-elevated
+    // staff (i.e. teacher). Treat the omission as a documented decision.
+    else {
+      query = `
+        SELECT
+          si.id,
+          si.intervention_name,
+          si.student_id,
+          si.log_frequency,
+          s.first_name,
+          s.last_name,
+          s.tier
+        FROM student_interventions si
+        JOIN students s ON si.student_id = s.id
+        INNER JOIN intervention_assignments ia
+          ON ia.student_intervention_id = si.id
+         AND ia.user_id = $3
+         AND ia.assignment_type = 'staff'
+        WHERE s.tenant_id = $1
+          AND si.status = 'active'
+          AND s.archived = false
+          AND si.no_progress_monitoring_required IS NOT TRUE
+          AND NOT EXISTS (
+            SELECT 1 FROM weekly_progress wp
+            WHERE wp.student_intervention_id = si.id
+            AND wp.week_of = $2
+          )
+        ORDER BY s.last_name, s.first_name
+      `;
+      params = [pathTenantId, currentWeek, req.user.id];
+    }
+
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching missing logs:', err.message);
