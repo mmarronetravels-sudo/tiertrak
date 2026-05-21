@@ -11595,6 +11595,228 @@ NEXT SESSION SHOULD (P-ish queue for S70)
 ================================================================================
 
 ================================================================================
+SESSION: 2026-05-14T11:00:00-07:00
+BRANCH:  main (session-open) → chore/trigger-actor-capture-via-current-setting (PR #103, merged) → sec/district-structure-session-2b-grant-revoke (PR #104, merged) → main (session-close)
+DISPOSITION: merged — PR #103 squash-merged at commit b5e8f48 (2026-05-14T14:20:56Z); PR #104 squash-merged at commit f245a9a (2026-05-14T16:47:01Z); both branches deleted via --delete-branch. PR #102 (S69 close activities-log entry) confirmed merged at session open at commit 28efaab.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closed two scoped sec/chore items in the district-structure layered-tenant
+  project. PR #103 completed Followup #118: actor_user_id capture on
+  user_school_access_audit cascade-event rows via M032's transaction-local
+  app.actor_user_id GUC, plumbed at the two existing DELETE-FROM-users
+  handlers (routes/users.js + routes/staffManagement.js) using the explicit-
+  txn shape from PR #101. PR #104 shipped Session 2b of the district-structure
+  project: the grant/revoke/list surface at /api/districts/:id/users/:userId/
+  access[/:schoolTenantId] (GET/POST/DELETE) gated by DQ2 three-guard authz
+  (district_admin + path-district equality + helper-resolved school scope),
+  plus M033 extending M032's GUC doctrine so the M031 trigger reads
+  app.audit_action with 'cascade_user_delete' default, plus an idempotent
+  CTE-based operator-template backfill at scripts/ops/. user_school_access
+  has its first production writer surface; the two-GUC contract (actor +
+  action) is complete; single trigger emits correctly-labeled audit rows for
+  all three writer profiles (B2 explicit-revoke, PR #101 cascade-from-users,
+  direct DBA psql).
+
+FILES TOUCHED
+  PR #103:
+    migration-032-cascade-audit-actor-capture.sql — NEW (CREATE OR REPLACE
+      FUNCTION extending M031 trigger body to read app.actor_user_id GUC)
+    routes/users.js — explicit-txn wrap on DELETE handler + set_config
+      app.actor_user_id + actorId belt-and-suspenders before BEGIN
+    routes/staffManagement.js — same shape as routes/users.js
+  PR #104:
+    migration-033-trigger-audit-action-via-guc.sql — NEW (CREATE OR REPLACE
+      FUNCTION extending trigger body to read app.audit_action GUC with
+      cascade default via COALESCE-NULLIF)
+    routes/districtAccess.js — NEW (three handlers; explicit-txn shape on
+      POST + DELETE; GET uses pool; DQ2 three-guard authz; SQLSTATE 23503/
+      23505 mapping; helper-consumed against pool not client)
+    server.js — +2 lines (require + app.use mount at /api/districts)
+    scripts/ops/backfill-user-school-access-template.sql — NEW (idempotent
+      CTE-with-RETURNING template; created_by + actor_user_id both GUC-
+      driven; placeholder-named for operator fill-in)
+
+MIGRATIONS RUN
+  migration-032-cascade-audit-actor-capture.sql — applied to prod via
+    Render External PSQL by operator between PR #103 merge and PR #104
+    deploy; trigger body verified via \sf to include actor_user_id capture.
+  migration-033-trigger-audit-action-via-guc.sql — applied to prod via
+    Render External PSQL by operator post-PR-#104-merge; trigger body
+    verified via \sf to include both GUC reads (COALESCE app.audit_action,
+    NULLIF app.actor_user_id). Both migrations are CREATE OR REPLACE
+    FUNCTION; idempotent; no table-shape changes; no GRANT/REVOKE/EXECUTE
+    privilege changes; no new FKs.
+
+TENANT ISOLATION REVIEW
+  PR #103 — APPROVED by tenant-isolation-auditor (primary, secondary scope,
+    agentId a69cc8c81993cb195). Cascade chain (DELETE FROM users →
+    user_school_access ON DELETE CASCADE → M031 trigger → user_school_
+    access_audit) verified tenant-scoped end-to-end. Helper-consumed-
+    against-pool pattern preserved per S69 doctrine. Composite-FK
+    structural backstop intact.
+  PR #104 — APPROVED by tenant-isolation-auditor (primary, first
+    production writer to user_school_access, agentId ac66281eb7b90d132).
+    11 queries audited, 11 tenant-scoped, 0 non-scoped. Three guards
+    (role+district equality, target user district equality, helper-
+    resolved school scope) verified to fire in front of every write
+    across GET/POST/DELETE. Composite-FK (user_id, district_id) and
+    (school_tenant_id, district_id) → REFERENCES preserved as defense-
+    in-depth; SQLSTATE 23503 → 404 mapping closes the existence-leak
+    surface. Two writer profiles for M033 trigger (explicit-revoke,
+    cascade-from-users, direct DBA) all tenant-safe via OLD.*-sourced
+    column writes — no SELECT/JOIN inside trigger body.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. All columns written or returned by the new
+    surfaces are integer identifiers (user_id, district_id, school_
+    tenant_id, audit.actor_user_id, audit.action, created_by) or non-
+    PII operational timestamps (created_at, occurred_at). No name,
+    email, student-data, or staff-data fields touched.
+  Logging audit: verified no PII in logs across all changed log sites
+    by privacy-reviewer on both PRs (PR #103 agentId ad39af050c1b9a689
+    [design-consultation scope]; PR #104 agentId a7dca9f24d15f4dda
+    [full primary-scope diff review]). The actorId-guard 500 path
+    in PR #103 + PR #104 uses tagged console.error with static literal
+    only; the bad req.user.id value itself is never logged. Catch-block
+    err.message logs surface PG error context (integer-ID error frames),
+    not name/email PII.
+  Cross-tenant risk: none identified. The 404-on-cross-district existence-
+    leak prevention doctrine (PR #101 origin) is consistently applied
+    across all three PR #104 handlers and both PR #103 handlers. GUC
+    scope (app.actor_user_id, app.audit_action) is transaction-local;
+    dies at COMMIT/ROLLBACK; cannot leak to subsequent transactions on
+    the same pooled client. Response data-minimization preserved (GET
+    on /api/districts/:id/users/:userId/access excludes created_by per
+    DQ6+privacy concurrence).
+
+  Triad triple-pass §4B verification:
+    PR #103: privacy ✓ + security ✓ + tenant-isolation ✓ (3-of-3 APPROVED)
+    PR #104: privacy ✓ APPROVED WITH NOTES (1 WARN pre-existing #120,
+             3 INFO no-action) + security ✓ APPROVED + tenant-isolation
+             ✓ APPROVED (3-of-3 APPROVED, 0 blockers, 8 INFO no-action)
+  Two-layer §4B per S68 §3 banked doctrine: this entry self-grepped
+    before paste; operator independent grep cleared before commit.
+
+VERIFICATION
+  PR #103:
+    node --check routes/users.js — PASS
+    node --check routes/staffManagement.js — PASS
+    npm test — N/A (Followup #73, no backend test suite)
+    npm run lint — N/A (Followup #74, no backend lint configured)
+    Operator-side post-merge verification (Render External PSQL):
+      Pre-flight SELECT COUNT(*) FROM user_school_access_audit — 0.
+      \i migration-032-cascade-audit-actor-capture.sql — clean output
+        (BEGIN / CREATE FUNCTION / COMMIT); no errors.
+      \sf user_school_access_audit_cascade — body verified to include
+        actor_user_id capture via NULLIF(current_setting('app.actor_
+        user_id', true), '')::int.
+      Post-apply SELECT COUNT(*) FROM user_school_access_audit — 0.
+        (CREATE OR REPLACE FUNCTION writes no rows; expected.)
+    Render auto-deploy of b5e8f48:
+      LIVE 2026-05-14T14:21Z (~4s post-merge — cached-build deploy).
+    Post-deploy smoke (route-mounted + protected check):
+      curl -X DELETE [prod-url]/api/users/9999 → 403 'Invalid CSRF
+        token'. Confirms CSRF middleware firing + route mounted; auth
+        logic not exercised (CSRF gate is upstream of requireAuth).
+  PR #104:
+    node --check routes/districtAccess.js — PASS
+    node --check server.js — PASS
+    EXPLAIN ANALYZE local DB:
+      GET path uses user_school_access_pkey (Index Scan, cost 0.15..12.50,
+        district_id post-index Filter); planning 1.233 ms / execution
+        0.310 ms.
+      DELETE path uses user_school_access_pkey (Index Scan, cost 0.15..
+        8.17); planning 0.280 ms / execution 4.050 ms.
+      Both paths PK-indexed; no seq-scan on any handler.
+    Operator-side post-merge verification (Render External PSQL):
+      Pre-flight SELECT COUNT(*) FROM user_school_access_audit — 0;
+        SELECT COUNT(*) FROM user_school_access — 0.
+      \i migration-033-trigger-audit-action-via-guc.sql — clean output
+        (BEGIN / CREATE FUNCTION / COMMIT); no errors.
+      \sf user_school_access_audit_cascade — body verified to include
+        BOTH GUC reads: COALESCE(NULLIF(current_setting('app.audit_
+        action', true), ''), 'cascade_user_delete') AS the action
+        column source AND NULLIF(current_setting('app.actor_user_id',
+        true), '')::int AS the actor_user_id column source.
+      Post-apply SELECT COUNT(*) FROM user_school_access_audit — 0;
+        SELECT COUNT(*) FROM user_school_access — 0.
+    Render auto-deploy of f245a9a:
+      LIVE 2026-05-14T16:47Z (~instantaneous — cached-build deploy,
+        third consecutive sub-minute LIVE).
+    Post-deploy smoke (route-mounted + protected check):
+      curl -X POST [prod-url]/api/districts/1/users/27/access → 403
+        'Invalid CSRF token'. Confirms CSRF middleware firing + new
+        /api/districts mount live + route reachable. POST-without-CSRF
+        is upstream-gated; requireAuth + DQ2 guards not exercised by
+        this smoke.
+
+OPEN ITEMS / FOLLOW-UPS
+  Followup #120 (re-size required at S71 open): privacy-reviewer WARN
+    on PR #104 — PRIVACY_REVIEW.md still lacks coverage of
+    user_school_access + user_school_access_audit + the two-GUC
+    contract (app.actor_user_id + app.audit_action) + the three writer
+    profiles (B2 explicit-revoke; PR #101 cascade-from-users; direct
+    DBA psql). S69-banked but scope must now grow to cover M031 + M032
+    + M033 unified, since the doctrine completed in S70. Doc-only
+    chore PR; not blocking.
+  Followup #73 (recurring): no backend test suite. Sec/chore PRs
+    continue to fall back to node --check + curl smoke + EXPLAIN
+    ANALYZE local. Investment needed for B2-scale test surface (three
+    handlers, txn semantics, GUC propagation, SQLSTATE mapping) before
+    next district-structure phase.
+  Followup #74 (recurring): no backend lint. Sibling of #73. Same
+    fallback discipline.
+  Operator backfill needed before /api/districts grant/revoke surface
+    can bootstrap any district. user_school_access remains empty in
+    prod as of S70 close; bootstrap is operator step 5 in PR #104 body
+    §10.1 apply plan. Until backfill runs, GET returns {grants:[]}
+    for everyone, POST 404s because caller has no accessible set, DELETE
+    has nothing to revoke.
+  FE Session 4 (deferred per B2 scope decision): wire the three handlers
+    into the district-admin UI. Will need GET response shape adjusted
+    if additional fields (e.g., resolved school name) are wanted —
+    that's a separate sec/ PR per privacy data-minimization doctrine.
+  Render LIVE cadence observation: third consecutive PR with sub-minute
+    Render LIVE on cached builds (PR #101 ≈3s, PR #103 ≈4s, PR #104
+    ≈instantaneous). New normal for post-deploy cadence assumptions on
+    this service; future PR apply plans can budget against it.
+  Pre-existing untracked / modified files carried over from prior
+    sessions (.claude/settings.json modification — Followup #22
+    territory; one pre-existing operator-side ops audit script;
+    one PDF reference) — not in S70 scope; carry to S71 disposition.
+  Privacy INFO from PR #104 (banked, not blocking):
+    - Backfill template silent on "do not commit filled copies."
+      Consider one-line header addition in a future chore commit.
+    - actorId validation duplication across routes/users.js +
+      routes/staffManagement.js + routes/districtAccess.js (now 3
+      sites). If B2-followup adds more DELETE-FROM-users-or-user-
+      school-access writers, extract to middleware/requireValidActor.js.
+
+NEXT SESSION SHOULD
+  Re-size Followup #120 scope to cover M031+M032+M033+two-GUC contract
+    +three writer profiles, then draft the PRIVACY_REVIEW.md update
+    PR as a doc-only chore (privacy-reviewer single-pass review).
+  Plan and ship Session 3 — the 91-callsite dual-path helper-consumption
+    sweep across ~12 route files. Recommended S71 P1 candidate. Needed
+    before July 1 onboarding to make the district-shape user dual-path
+    actually functional across the codebase. Existing single-tenant
+    scoping in legacy route handlers does not consume
+    resolveAccessibleTenantIds; until swept, a district-shape user
+    landing on those routes either reads cross-school data or reads
+    nothing, depending on the handler. Sweep needs careful per-file
+    triage (some handlers may need design decisions, not mechanical
+    swaps).
+  Coordinate with operator on first-district backfill: copy scripts/ops/
+    backfill-user-school-access-template.sql to a per-district + dated
+    name, fill placeholder triples (user_id, district_id, school_
+    tenant_id) per district_admin being bootstrapped, optionally set
+    app.actor_user_id GUC for self-attribution, \i the renamed file
+    via Render External PSQL. Verify via the audit-table query in the
+    template header. Operator artifact; not committed.
+  Track FE Session 4 sequencing — backfill must precede first FE-driven
+    grant for a district_admin to have a non-empty accessible set.
+  Customer onboarding deadline (July 1, 2026) still within window —
+    Session 3 sweep is the gating dependency.
 SESSION: 2026-05-14T12:00:00-07:00
 BRANCH:  main (session-open) → docs/privacy-review-doctrine-trail (PR #106, merged) → main (session-close)
 DISPOSITION: merged — PR #106 squash-merged at commit b1c95e7 (2026-05-14T18:32:31Z); branch deleted via --delete-branch.
