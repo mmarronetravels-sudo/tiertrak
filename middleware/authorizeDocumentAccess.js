@@ -45,7 +45,7 @@ const requireAuth = async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      'SELECT id, role, tenant_id, district_id FROM users WHERE id = $1',
+      'SELECT id, role, tenant_id, district_id, school_wide_access FROM users WHERE id = $1',
       [decoded.id]
     );
     if (rows.length === 0) return res.status(401).json({ error: 'Not authenticated' });
