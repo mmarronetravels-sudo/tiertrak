@@ -17412,3 +17412,191 @@ single-tenant schools before writing code.
 ========================================================================
 END SESSION 86b
 ========================================================================
+========================================================================
+========================================================================
+SESSION 87 — May 20, 2026 (Wednesday evening Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-87
+SESSION WORK PR: #136 (fix/weekly-reminder-scope-by-assignment, merged)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Narrowed Weekly Reminder visibility on the GET
+/api/weekly-progress/missing/:tenantId handler (routes/weeklyProgress.js)
+to interventions the calling user is personally assigned to monitor via
+intervention_assignments. Role-branched query mirroring the existing
+pattern at routes/students.js:140-178: school_admin and
+school_wide_access=true roles keep tenant-wide visibility; non-elevated
+staff (effectively teacher, with caveats — see OPEN ITEMS) get an
+INNER JOIN intervention_assignments filter on (student_intervention_id,
+user_id, assignment_type='staff'). §4B data-minimization fix; not a §5
+tenant-isolation defect. Two commits on the branch (original fix +
+post-review comment correction), preserved via merge commit not squash.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/weeklyProgress.js — role-branched query on GET /missing/:tenantId
+handler. +72/-22 on the original commit (c632913); +12/-7 on the
+follow-on docs commit (2ca2582) that corrected the teacher-branch
+comment per reviewer feedback.
+
+scripts/ops/2026-05-20-weekly-reminder-orphan-si-audit.sql — pre-flight
+read-only diagnostic SQL committed as the PR's paper trail. Three
+aggregate SELECTs grouped by tenant_id; no DDL/DML.
+
+activities.txt — this entry (chore/activities-log-session-87, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+The role-branched query preserves WHERE s.tenant_id = $1 on BOTH
+branches. The new INNER JOIN intervention_assignments cannot introduce
+a cross-tenant pathway because intervention_assignments has no
+tenant_id column but inherits tenant scope transitively via
+student_intervention_id → student_interventions → students → tenant_id.
+A foreign-tenant ia row pointing at the calling user's id but at an SI
+in another tenant is structurally rejected by the WHERE s.tenant_id =
+$1 clause. Defense-in-depth confirmed by tenant-isolation-auditor.
+
+requireTenantStaffAccess middleware unchanged; the path :tenantId is
+still validated against resolveAccessibleTenantIds(req.user) per §5
+dual-path doctrine before the handler runs.
+
+Pre-existing schema gap surfaced: intervention_assignments lacks the
+M021-style composite-FK tenant binding. Read paths under review are
+safe regardless because they bind tenant via students. Banked for a
+separate future migration.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched: students.first_name, students.last_name,
+students.tier. These were already returned by the pre-fix handler.
+The PR strictly NARROWS which rows a non-elevated staff user sees; no
+new PII column is introduced on either branch.
+
+Logging audit: error-path console.error line is unchanged; no
+interpolation of req.user, req.params, or row data. The error response
+body is a static string. No PII reaches logs or response error bodies.
+
+Cross-tenant risk: none identified. See TENANT ISOLATION REVIEW.
+
+§4B self-scan on this entry: narrow and wide grep passes per
+docs/ai-context/4B_GREP_PATTERNS.md run against the added-lines diff
+before staging.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Pre-flight prod diagnostic: read-only SQL via Render External PSQL
+Command, three aggregate SELECTs (GROUP BY tenant_id). Confirmed
+expected orphan-SI distribution; operator-confirmed acceptable
+post-deploy behavior. Counts redacted from this entry per §4B
+discipline; full numbers live in the PR body only.
+
+Subagent triad review on PR #136 HEAD (commit 2ca2582), all three
+reports posted as PR comments:
+  privacy-reviewer            — APPROVED
+                                (0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, 0 WARN)
+  tenant-isolation-auditor    — APPROVED
+                                (0 CRITICAL through LOW, 1 WARN)
+  security-reviewer           — APPROVED WITH WARNINGS
+                                (0 CRITICAL through LOW, 2 WARN)
+
+Aggregate: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW, 3 WARN. All WARNs are
+pre-existing pattern issues NOT introduced by this PR. Tenant-iso F5
+and security WARN-2 are convergent on the same root cause
+(school_wide_access role-drift) — counted as separate findings per
+operator instruction but tracked as one followup.
+
+External human review obtained per §2A — reviewer scholapathsystems
+(COLLABORATOR), state APPROVED against commit 2ca2582 (current HEAD,
+not stale). Author cannot self-review; gh pr view 136 --json
+reviewDecision returned APPROVED before merge.
+
+Backend tests: no suite (per Followup #73).
+Backend lint: not configured (per Followup #74).
+Frontend tests/lint: N/A — no frontend code touched.
+mergeable: MERGEABLE; mergeStateStatus: CLEAN at merge time.
+
+Merged via gh pr merge --merge --delete-branch. Merge commit on main:
+e103efb. Both individual commits (c632913 + 2ca2582) preserved in
+main's history (merge commit, not squash) so the post-review comment
+correction stays visible.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+X1 / school_wide_access role-drift cleanup — convergent finding from
+tenant-isolation-auditor F5 + privacy-reviewer 2.3 + security-reviewer
+WARN-2 (one root cause, three faces). Covers (i)
+routes/staffManagement.js:178 PUT recalc gap when role omitted from
+body (COALESCE preserves stale school_wide_access), (ii)
+server.js:262-265 bootstrap UPDATE narrower than the live POST
+allowlist at routes/staffManagement.js:140 (omits district_admin,
+district_tech_admin), (iii) seed-script paths that can write
+school_wide_access=TRUE for non-allowlisted roles, (iv) proposed
+invariant check (SELECT id, role, school_wide_access FROM users WHERE
+school_wide_access = TRUE AND role NOT IN (allowlist) → expect zero),
+(v) the fix needs to mirror in routes/weeklyProgress.js AND
+routes/students.js together. Own PR + full reviewer trio.
+
+X2 / district_tech_admin school_wide_access membership review —
+security-reviewer WARN-1. Product/privacy decision: confirm or revoke
+district_tech_admin membership in the routes/staffManagement.js:140
+allowlist. Pre-existing exposure mirrored in routes/students.js:141
+and inherited (not introduced) by this PR. No code change until
+decision lands. Document outcome in docs/ai-context/PRIVACY_REVIEW.md
+per reviewer recommendation.
+
+Two additional followups proposed in PR body (not from triad review):
+- Orphan-SI admin observability — surface to admins when an active SI
+  has zero assignment_type='staff' rows so it doesn't silently fall
+  off all dashboards.
+- Tier-1 filter endpoint scope (routes/students.js:230-245) — product
+  decision pending on whether teacher-scoped filtering applies to the
+  per-tier filter endpoint.
+
+Followup #73 (no backend test suite): still standing.
+Followup #74 (backend lint not configured): still standing.
+Followup #94 (scripts/ops/ → .gitignore): still standing. This session
+added one more file to scripts/ops/ (the orphan-SI diagnostic, now
+tracked via PR #136); the two pre-existing untracked files remain
+untouched.
+
+X-placeholders X1 and X2 await operator master-index sync for
+promotion to permanent #N. Code comment at
+routes/weeklyProgress.js:191 references X1 by slug ("school_wide_access
+role-drift cleanup followup"), not by number, to remain stable across
+renumbering.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Decide between X1 (school_wide_access role-drift cleanup — sec/ PR
+with reviewer trio) and the prior session's M-1 (auth_mode consumer-
+code PR) as the next priority. X1 has clear scope and three convergent
+reviewer signals; M-1 needs a product decision on single-tenant
+policy-field location before code.
+
+========================================================================
+END SESSION 87
+========================================================================
