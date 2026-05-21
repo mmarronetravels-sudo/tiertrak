@@ -165,14 +165,54 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// PUT /api/staff/:id - Update a staff member's role or name
-router.put('/:id', async (req, res) => {
+// PUT /api/staff/:id - Update a staff member's role or name. Gated by
+// requireAuth + caller-role gate (Object.keys(CREATE_STAFF_RULES)) +
+// self-PUT block + role-validity (STAFF_ROLES → 400) + role-rank gate
+// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection). Closes the PUT
+// half of Followup #116 and PR #140 security-reviewer WARN-1.
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
+    if (id === req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const { full_name, role } = req.body;
 
     if (role && !STAFF_ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
+    }
+
+    if (role && !CREATE_STAFF_RULES[req.user.role].includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
+    // not inlined, per the §5 dual-path doctrine (legacy single-tenant
+    // users vs district users on user_school_access). 404 'Not found'
+    // rather than 403 for probe-resistance, matching DELETE :249 / :257.
+    // Parents are not staff and are deletable/editable via /api/users/:id.
+    const target = await pool.query(
+      'SELECT id, tenant_id, role FROM users WHERE id = $1',
+      [id]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (target.rows[0].role === 'parent') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(target.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     // Recalculate school_wide_access if role changed. ELEVATED_ROLES is
@@ -199,8 +239,8 @@ router.put('/:id', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error updating staff:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[staff:put] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
