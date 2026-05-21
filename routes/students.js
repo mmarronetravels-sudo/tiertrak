@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 require('dotenv').config();
 const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -137,8 +138,9 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     let query;
     let params;
 
-    // Admin and users with school_wide_access see all students
-    if (userRole === 'school_admin' || schoolWideAccess) {
+    // Elevated-role users (constants/roles.js ELEVATED_ROLES) or users
+    // with school_wide_access see all students in the tenant.
+    if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
       query = `
         SELECT s.*, u.full_name as teacher_name
         FROM students s
