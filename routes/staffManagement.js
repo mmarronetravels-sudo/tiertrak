@@ -195,6 +195,26 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
+    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
+    // not inlined, per the §5 dual-path doctrine (legacy single-tenant
+    // users vs district users on user_school_access). 404 'Not found'
+    // rather than 403 for probe-resistance, matching DELETE :249 / :257.
+    // Parents are not staff and are deletable/editable via /api/users/:id.
+    const target = await pool.query(
+      'SELECT id, tenant_id, role FROM users WHERE id = $1',
+      [id]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (target.rows[0].role === 'parent') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(target.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     // Recalculate school_wide_access if role changed. ELEVATED_ROLES is
     // the canonical 5-role allowlist exported from constants/roles.js.
     // Healing on name-only PUTs (re-check current row's role) is NOT in
