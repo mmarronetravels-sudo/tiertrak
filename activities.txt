@@ -18238,3 +18238,313 @@ exists in main today regardless of this PR.
 ========================================================================
 END SESSION 89
 ========================================================================
+
+========================================================================
+SESSION 90 — May 21, 2026 (Thursday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-90
+SESSION WORK PR: #142 (sec/staffmanagement-put-hardening, MERGED)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed the two WARN findings from PR #140's security-reviewer pass on
+routes/staffManagement.js (banked at S89 close as the natural next
+priority): WARN-1 the PUT /:id handler was mounted without requireAuth
+and without any role gate, enabling an unauthenticated caller to
+promote any user to district_admin or district_tech_admin; WARN-2 the
+same handler's catch returned res.status(500).json({ error:
+error.message }) — raw pg error text leakage to the FE. A pre-flight
+read-only audit of the file surfaced a third gap not called out by PR
+#140's reviewer: the same handler's UPDATE ran with no §5
+tenant-scoping clause, a textbook IDOR enabling cross-tenant writes
+on the users table (and, via the RETURNING clause, cross-tenant PII
+reads). Operator decision: close all three in one PR; keep
+sec/staff-list-require-auth on the unauthed GET /:tenantId banked as
+a separate branch.
+
+Three-commit structure on the work branch sec/staffmanagement-put-
+hardening:
+  b55f3d2 sec(staff-put): add requireAuth + caller-role + role-rank
+                          + self-PUT gates
+  e879e3e sec(staff-put): scope target row to caller's accessible-
+                          tenant set (§5)
+  ae631bc sec(staff-put): redact catch block — generic body +
+                          structured log
+
+Locked decisions for the work PR:
+  - PUT-only scope. GET /:tenantId stays banked as
+    sec/staff-list-require-auth (separate sec/ PR, S91-or-later).
+  - Block all self-PUT, not just self-role-mutation — mirror DELETE's
+    posture exactly (id === req.user.id → 403).
+  - UPDATE WHERE clause stays at id = $4 (no defense-in-depth
+    AND tenant_id = ANY(...)); SELECT-gate + accessible-set membership
+    check is the §5 scope boundary. Mirrors DELETE :257 byte-for-byte.
+    Justification captured verbatim in Commit B body so reviewers do
+    not have to spelunk.
+  - school_wide_access healing on name-only PUTs remains deferred per
+    S89 locked decision (banked followup; pre-existing behavior
+    preserved).
+
+Total work-PR scope vs origin/main: 1 file, +45/-5 per git diff
+--stat. Reviewer-trio dispatched single-pass, sequential at operator
+direction (with a fix-forward pivot reserved for any CRITICAL drop).
+Zero CRITICAL across all three reports. PR #142 opened against main
+with scholapathsystems requested as reviewer; formally APPROVED via
+gh pr review --approve at 2026-05-21T20:23:15Z (review id
+PRR_kwDOQ9IrzM8AAAABArUc_w) and merged at 2026-05-21T20:23:25Z (merge
+commit 13b2941) by scholapathsystems. §2A formal-review gate cleanly
+cleared.
+
+A process lesson surfaced mid-session and was banked: the first §4B
+pre-commit grep pass on the work PR's three staged diffs used a
+self-rolled 5/6-pattern set rather than the canonical catalog at
+docs/ai-context/4B_GREP_PATTERNS.md, which the operator flagged.
+Re-ran the catalog narrow pass against each of the three commits;
+clean. The self-rolled set happened to cover the same leak shapes,
+but the audit-trail discipline was wrong — catalog is source of truth,
+read it first.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/staffManagement.js — +45/-5 across three commits on the work
+branch. (i) Auth gates added in canonical order at the PUT handler:
+requireAuth at the router.put mount; caller-role gate
+(Object.keys(CREATE_STAFF_RULES) → 403 for non-admin callers); id
+parse + 32-bit range check; self-PUT block (id === req.user.id → 403);
+STAFF_ROLES validity (pre-existing, preserved); role-rank gate
+(CREATE_STAFF_RULES[caller].includes(role) → 403 on
+rank-rejection). Mirrors POST :103-119 byte-for-byte and DELETE
+:212-224 for the parse + self-target block. (ii) §5 tenant-scope
+check added BEFORE the existing recalc/UPDATE: SELECT id, tenant_id,
+role FROM users WHERE id = $1; 404 'Not found' if target.role ===
+'parent'; resolveAccessibleTenantIds(req.user) consumed not inlined;
+404 'Not found' if !accessible.includes(target.rows[0].tenant_id) —
+404 for probe-resistance, matching DELETE :249/:257. Mirrors DELETE
+:237-254 shape sans the BEGIN/COMMIT (no PUT-side actor-capture
+trigger to plumb, unlike DELETE's M032 cascade). (iii) Catch block
+redacted: console.error('[staff:put] error code:', error.code) +
+res.status(500).json({ error: 'Server error' }) — both lines mirror
+POST :162-163 byte-for-byte. UPDATE statement, COALESCE shape, and
+RETURNING column list untouched; post-UPDATE result.rows.length === 0
+check left as defensive code for the SELECT→UPDATE deletion race.
+
+activities.txt — this entry (chore/activities-log-session-90, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no new schema, no new column, no new index, no new constraint,
+no DDL. The work PR is pure handler-shape rewrite.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor verdict: APPROVED. 0 CRITICAL, 0 WARN, 3
+INFO. Audited 2 queries in the PUT handler (1 SELECT-gate at :203,
+1 UPDATE at :226 — both tenant-scoped via the pre-flight check, 0
+non-scoped, 0 admin-cross-tenant).
+
+§5 dual-path access contract honored: resolveAccessibleTenantIds is
+*consumed* at routes/staffManagement.js:213, never inlined. Verified
+the helper at middleware/resolveAccessibleTenantIds.js:62-71 branches
+on user.district_id (legacy single-tenant returns [tenant_id]; district
+user returns user_school_access membership filtered by both user_id
+AND district_id). A district_admin in district A cannot reach a user
+in district B (user_school_access rows are district-scoped); a
+school_admin scoped to school X cannot mutate a user in school Y
+within the same district (helper returns only the school_admin's
+explicit M028 grants).
+
+UPDATE WHERE clause stays at id = $4 (no AND tenant_id = ANY(...)
+defense-in-depth). Auditor disposition: INFO not WARN, matching the
+security-reviewer's independently-raised convergent finding. The
+SELECT-then-UPDATE TOCTOU is real but unweaponizable in the current
+code — no application path mutates users.tenant_id post-creation, so
+the race window has no real attack surface. Both reviewers
+recommended chore/staff-put-defense-in-depth-tenant-clause as a
+banked follow-up (low priority).
+
+Cross-tenant read/write paths through this PUT: closed. The previous
+handler accepted req.params.id and ran UPDATE without any tenant
+predicate — IDOR. Post-PR the four-layer authz (caller-role,
+self-PUT, role-rank, §5 scope) + parent guard + probe-resistant 404
+collapse leaves no cross-tenant exposure surface.
+
+Probe-resistance: missing-row (line 207), parent-row (line 210), and
+out-of-scope-row (line 214) all collapse to the same 404 'Not found'
+body. Tenant-membership signal is hidden — a caller cannot
+distinguish "doesn't exist" from "exists in another tenant" from
+"exists but is a parent."
+
+0 new tables; 0 schema changes; 0 new foreign keys; 0 composite-FK
+audit requirements. No JOIN traversal in the changed queries.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent verdict: APPROVED. 0 CRITICAL, 0 WARN, 3
+INFO.
+
+PII fields touched in the work-PR diff: none new. The UPDATE's
+RETURNING clause (id, email, full_name, role, school_wide_access) is
+unchanged from pre-diff and is required for the FE staff-management
+surface to refresh the edited row. The four-layer authz upstream
+guarantees the recipient is an authorized same-tenant admin acting
+on a staff row inside their accessible-tenant set; acceptable under
+§4B data-minimization-is-per-feature standard.
+
+Logging audit: catch block now emits only error.code (a pg SQLSTATE
+like '23505'), not error.message and not the full error object. The
+prior shape would have serialized error.detail, which on UNIQUE/FK
+violations can contain row values referencing staff PII. One log
+surface tightened; zero new PII log surfaces introduced.
+
+Error-response audit: catch returns the generic body 'Server error';
+no error.message / error.detail / error.stack anywhere in the PUT
+handler's response paths. The four non-200 paths return generic
+envelopes only ('Forbidden', 'Not found', 'User not found',
+'Invalid user id', 'Invalid role'). WARN-2 redaction is complete.
+
+Cross-tenant risk: closed. Privacy-reviewer characterization quoted
+verbatim in PR #142 body: "previous PUT was a textbook IDOR;
+cross-tenant read/write risk: closed."
+
+§4B grep on this entry's diff against origin/main: catalog narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md ran against added-lines-
+only (^+ excluding ^+++). Zero hits across both runnable patterns.
+The third operator-supplied pattern (tenant slugs) remains skipped
+pending the S90 banked followup .4b-tenant-slugs.local sourced from
+the prod tenants table — the gap is acknowledged, not silently
+treated as a pass. §4B grep also ran against each of the three
+work-PR commits' staged diffs pre-commit (per
+feedback_4b_per_entry_standard.md per-entry standard); narrow pass
+clean across all three commits. Receipts are visible in the work-PR's
+git-show history and in PR #142's body for reviewer audit.
+
+Per the S89 recursion-trap lesson, this entry does not enumerate
+which categories the grep checked for; it cites only acts and
+results. The pattern catalog is the source of truth.
+
+A mid-session process correction: the first §4B pre-commit pass on
+the work PR's commits used a self-rolled 5/6-regex set rather than
+the canonical catalog. Operator flagged; re-ran the catalog narrow
+pass on each commit; clean. The self-rolled set happened to cover
+the same leak shapes, but the audit-trail discipline was wrong —
+catalog is source of truth.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad review on PR #142 — single pass, sequential dispatch
+at operator direction (fix-forward pivot reserved for any CRITICAL
+drop; not triggered):
+  privacy-reviewer          — APPROVED          (0 CRITICAL, 0 WARN, 3 INFO)
+  security-reviewer         — APPROVED W/ NOTES (0 CRITICAL, 0 WARN, 3 INFO)
+  tenant-isolation-auditor  — APPROVED          (0 CRITICAL, 0 WARN, 3 INFO)
+
+Aggregate: 0 CRITICAL, 0 WARN, 9 INFO across all three reports. The
+INFOs cluster around three observations, none merge-blocking:
+  1. SELECT-then-UPDATE TOCTOU on the UPDATE WHERE clause
+     (independently raised by security-reviewer + tenant-isolation-
+     auditor — convergent finding; banked as
+     chore/staff-put-defense-in-depth-tenant-clause).
+  2. school_wide_access healing on name-only PUTs (deferred per S89
+     locked decision; pre-existing behavior preserved).
+  3. Post-UPDATE result.rows.length === 0 check is structurally
+     near-unreachable post-§5 SELECT-gate; retained as defensive code
+     for the SELECT→UPDATE deletion race.
+
+Pre-commit §4B grep on each work-PR commit's staged diff: narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md across added-lines-only;
+clean across all three. Mid-session: rerun on the catalog narrow
+pass after operator flagged the first pass was self-rolled rather
+than catalog-sourced; still clean.
+
+node -c routes/staffManagement.js — clean (pre-push at S90 work
+close and post-merge at S90 landing).
+
+§2A formal-review gate: PR #142 received a formal APPROVED review
+from scholapathsystems via gh pr review --approve at
+2026-05-21T20:23:15Z. reviewDecision transitioned BLOCKED → APPROVED,
+mergeStateStatus BLOCKED → CLEAN. Merged at 2026-05-21T20:23:25Z by
+scholapathsystems (merge commit 13b2941). The mechanical gate
+described in CLAUDE.md §2A "What counts as a review" was honored —
+no commit-message-as-review, no LGTM-as-review, no reviewer-subagent-
+as-review substitute.
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+Frontend tests/lint: N/A — no frontend code touched.
+mergeable: CLEAN at merge time.
+
+Manual smoke: NONE attempted this session. The PR adds authz gates
+where there were none; the failure mode the PR closes (unauthed PUT,
+cross-tenant write) is not safely reproducible on a real tenant
+without disabling the gates again. Reviewer trio + read-only audit +
+node -c are the quality gates. Same constraint pattern that carried
+S89 PR #140.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+sec/staff-list-require-auth — banked from the S90 pre-flight audit's
+full-router enumeration. GET /api/staff/:tenantId at
+routes/staffManagement.js:67-92 is mounted without requireAuth, has
+no §5 scope check on req.params.tenantId (caller-controlled tenant
+identifier sourced directly from the URL), and the catch block leaks
+raw error.message — same WARN-2 shape closed on PUT here. Tenant-
+isolation-auditor's scope-exclusion note quoted verbatim: "would be
+CRITICAL on the GET PR." Top priority post-merge. Same-shape fix as
+PUT — focused, well-bounded sec/ PR; reviewer-trio expected to
+APPROVE single-pass.
+
+chore/staff-put-defense-in-depth-tenant-clause — banked from
+convergent security-reviewer + tenant-isolation-auditor INFO. Add
+AND tenant_id = ANY($N) to the PUT UPDATE WHERE, passing
+`accessible` as $N. Closes the SELECT→UPDATE TOCTOU independent of
+the SELECT pre-check. Low priority — no current attack surface
+because no application path mutates users.tenant_id post-creation.
+
+S90 workflow capture (operator-only) — create
+`.4b-tenant-slugs.local` at the TierTrak repo root, gitignored,
+populated one-slug-per-line from the prod `tenants` table per the
+mechanism in docs/ai-context/4B_GREP_PATTERNS.md lines 82-89. Enables
+future sessions to run the catalog narrow pass third pattern (tenant
+slugs) without prod read access from the session itself. Banked in
+CC memory as project_s90_tenant_slug_local_file.md.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. 2 untracked
+scripts/ops/ SQL audit files unchanged this session; a tracked-out
+PDF in docs/references/ also carried (same as S89 close).
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Open sec/staff-list-require-auth as the next session's work PR. It
+is the explicit "would-be-CRITICAL" surface from S90's tenant-
+isolation-auditor scope-exclusion note: GET /api/staff/:tenantId is
+unauthed, unscoped against the caller's accessible-tenant set, and
+leaks raw error.message — every gate added to PUT in PR #142 is
+absent on this GET. Same-shape fix; reviewer-trio dispatched single-
+pass with fix-forward pivot reserved as in S90. After that,
+chore/staff-put-defense-in-depth-tenant-clause if no higher-priority
+work has been queued.
+
+========================================================================
+END SESSION 90
+========================================================================
