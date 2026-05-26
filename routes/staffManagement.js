@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { ELEVATED_ROLES } = require('../constants/roles');
+const { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 let pool;
 
@@ -64,14 +64,27 @@ async function resolveAndBindTargetTenant(req) {
   return { targetTenantId: bodyTarget, error: null };
 }
 
-// GET /api/staff/:tenantId - List all staff for a tenant
-router.get('/:tenantId', async (req, res) => {
+// GET /api/staff/:tenantId - List all staff for a tenant. Gated by
+// requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES — every
+// non-parent staff role; mirrors the FE's canManageInterventions
+// consumer surface in AssignmentManager + Admin Panel Staff tab) +
+// positive-int validation on :tenantId. Closes the GET half of
+// Followup #116.
+router.get('/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
     const result = await pool.query(
       `SELECT id, email, full_name, role, school_wide_access, google_id,
               created_at
-       FROM users 
+       FROM users
        WHERE tenant_id = $1 AND role != 'parent'
        ORDER BY 
          CASE role
