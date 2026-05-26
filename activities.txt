@@ -18770,3 +18770,377 @@ work has been queued.
 ========================================================================
 END SESSION 90
 ========================================================================
+========================================================================
+SESSION 91 — May 26, 2026 (Tuesday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-91
+SESSION WORK PR: #144 (sec/staff-list-require-auth, awaiting external review)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed the cross-tenant read oracle on GET /api/staff/:tenantId at
+routes/staffManagement.js:67-92 — the last unauthed handler in
+routes/staffManagement.js, banked at S90 close as the explicit
+"would-be-CRITICAL" follow-on from PR #142's pre-flight tenant-
+isolation-auditor scope-exclusion note. Pre-fix, the GET handler
+mounted with no requireAuth, took the URL :tenantId param directly
+into a WHERE clause with no §5 scope check, and the catch leaked raw
+error.message — every gate added to PUT in PR #142 was absent on this
+GET. Same-shape fix as PUT, adapted for the URL-param shape (no
+target-row SELECT — the param IS the scope target).
+
+Three-commit structure on the work branch sec/staff-list-require-auth:
+  0a4da7d sec(staff-list): add requireAuth + caller-role gate
+  27d1393 sec(staff-list): scope :tenantId to caller's accessible-
+                            tenant set (§5)
+  9916638 sec(staff-list): redact catch block — generic body +
+                            structured log
+
+Locked decisions for the work PR:
+  - Caller-role allowlist: new exported constant
+    INTERVENTION_MANAGER_ROLES in constants/roles.js (six non-parent
+    staff roles). Chosen via FE consumer-scope grep on staffList —
+    locking tighter to Object.keys(CREATE_STAFF_RULES) (two-role
+    write-side mirror) or to ELEVATED_ROLES (five-role mirror) would
+    silently 403 teacher/counselor/interventionist callers on their
+    login-time loadStaffList fetch and break the AssignmentManager
+    workflow. Read-access broader than write-access by design — read
+    of staff PII to peer staff is FERPA-covered ("school official"
+    doctrine) while write is admin-only. Constant named by semantic
+    intent (mirrors FE canManageInterventions predicate at
+    frontend/src/App.jsx:411) per S89 centralization lesson.
+  - §5 placement BEFORE the SELECT (lines 95-98) — no PII query runs
+    for out-of-scope :tenantId values. 404 'Not found' on miss for
+    probe-resistance, matching PUT :226-229.
+  - Empty-array contract preserved — no special-casing of district-
+    user-with-no-grants; collapses to same 404 as out-of-scope probe.
+  - Inline comment framing tightened to "staffManagement.js GET route
+    in Followup #116" in commit 3's already-amending edit (not a
+    separate cleanup commit) — operator agreement during commit-2
+    review.
+  - DELETE catch sibling (logs err.message rather than error.code)
+    NOT folded in — banked as separate chore per "spot it, surface
+    it, don't fold it in" discipline.
+
+Total work-PR scope vs origin/main: 2 files, +59/-8 per git diff
+--stat (constants/roles.js +24/-2, routes/staffManagement.js +35/-6).
+Reviewer-trio dispatched single-pass, parallel at operator direction.
+Zero CRITICAL across all three reports. PR #144 opened against main
+with scholapathsystems requested as reviewer; awaiting formal §2A
+approval. reviewDecision: REVIEW_REQUIRED. mergeStateStatus: BLOCKED.
+That is the gate working correctly, not a bug.
+
+Two process slips surfaced mid-session, both surfaced-and-banked
+rather than papered over:
+(a) Pre-stage commit-message previews on commits 1 and 2 omitted the
+    Co-Authored-By trailer from the shown text but the actually-
+    committed messages included it. Preview-vs-committed-state drift
+    caught by the operator when commit 3's preview included the
+    trailer that the earlier previews had hidden. Resolution: keep
+    the trailer (matches both this branch's prior commits and PR
+    #142's precedent); lesson banked for feedback-memory.
+(b) Phase-5 reviewer-add invocation hit a GitHub user-resolution
+    error — the operator's prompt named the canonical-spelling form
+    (with an "r") but PR #142's actual approver login is the
+    typo-shaped form (without the "r"). Surfaced before retry rather
+    than silently substituting; operator confirmed the typo-shaped
+    form is operational truth (the clean target is held by another
+    GitHub account) and the body's §2A note was edited to match in
+    the same edit cycle (single body revision after create, confirmed
+    via GraphQL userContentEdits totalCount).
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+constants/roles.js — +24/-2. New exported INTERVENTION_MANAGER_ROLES
+constant: six-element array of non-parent staff role strings, with a
+seven-line header comment grounding the naming rationale in the FE's
+canManageInterventions consumer-scope analysis and noting the §4B/§5
+PR-routing requirement for future modifications. module.exports
+extended to include the new constant alongside the pre-existing
+ELEVATED_ROLES (five-element). No edit to ELEVATED_ROLES itself.
+
+routes/staffManagement.js — +35/-6 across three commits on the work
+branch. (i) Import line 5 extended to destructure
+INTERVENTION_MANAGER_ROLES alongside ELEVATED_ROLES from
+constants/roles.js. (ii) GET /:tenantId handler signature
+(formerly router.get('/:tenantId', async ...)) now mounts requireAuth
+per-handler matching the POST/PUT/DELETE convention; handler header
+comment block rebuilt across three commits to enumerate the
+five-clause gate stack (requireAuth + caller-role +
+positive-int :tenantId + §5 scope check + redacted catch). (iii)
+Inside the try: caller-role gate (INTERVENTION_MANAGER_ROLES.includes
+→ 403) fires immediately; positive-int validation on :tenantId
+(parseInt + Number.isInteger + > 0 + ≤ INT32 max → 400 on malformed)
+mirrors PUT :208-211 and DELETE :286-289 byte-for-byte; §5 scope
+check via resolveAccessibleTenantIds(req.user) consumed (not inlined
+per §5 dual-path doctrine), placed BEFORE the SELECT, 404 'Not found'
+on miss for probe-resistance matching PUT :226-229. (iv) Catch block
+redacted: console.error('[staff:list] error code:', error.code) +
+res.status(500).json({ error: 'Server error' }) — both lines mirror
+POST :190-191 / PUT :269-270 byte-for-byte. SELECT column list,
+ORDER BY, and parameter binding untouched.
+
+activities.txt — this entry (chore/activities-log-session-91, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no new schema, no new column, no new index, no new constraint,
+no DDL. The work PR is pure handler-shape rewrite plus a single
+exported-constant addition.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor verdict: APPROVED W/ NOTES. 0 CRITICAL, 0
+HIGH, 0 WARN, 5 INFO. Audited 1 changed query in the GET handler
+(SELECT on the users table at routes/staffManagement.js:100-116,
+scoped via WHERE tenant_id = $1 where $1 is the post-§5-check
+tenantId local).
+
+§5 dual-path access contract honored: resolveAccessibleTenantIds is
+consumed at routes/staffManagement.js:95, never inlined. The full
+dual-path resolution (legacy single-tenant returns [user.tenant_id];
+district user returns user_school_access membership filtered by both
+user_id AND district_id) lives in the helper. Pattern matches PUT
+(post-PR-#142 §5 line) and DELETE shape byte-for-byte.
+
+Placement BEFORE the SELECT confirmed: scope-miss returns 404 at
+line 97 with the SELECT structurally unreachable. No PII query runs
+for out-of-scope :tenantId values. Same 404 envelope as a non-
+existent-tenant probe — tenant-ID enumeration cannot distinguish
+"tenant doesn't exist" from "tenant exists but I have no access."
+
+Empty-array contract collapses to same 404 with no special-casing:
+Array.prototype.includes on [] returns false for every input. A
+district user with no user_school_access grants yet (legitimate
+pre-onboarding state per helper docstring) sees the same 404 as any
+out-of-scope tenant — no information disclosure differentiates the
+two failure modes.
+
+No defense-in-depth AND tenant_id = ANY($2::int[]) added to the
+SELECT WHERE. Acceptable for this read-shape: single SELECT (no
+SELECT-then-mutation TOCTOU as in PUT), zero awaits interleaved
+between the §5 gate at line 95 and the pool.query at line 100, local
+const tenantId cannot mutate. Auditor disposition: INFO (not WARN).
+Banked as chore/staff-list-defense-in-depth-precondition-comment.
+
+Cross-tenant read paths through this GET: closed. The previous
+handler accepted req.params.tenantId and ran SELECT without any
+scope check — textbook IDOR enabling cross-tenant staff-PII reads
+(name, email, google_id row counts in the SELECT column list,
+returned across all tenants). Post-PR the five-gate stack
+(requireAuth + caller-role + positive-int + §5-scope + redacted-
+catch) plus the probe-resistant 404 collapse leaves no cross-tenant
+exposure surface on this route.
+
+0 new tables; 0 schema changes; 0 new foreign keys; 0 composite-FK
+audit requirements. No JOIN traversal in the changed query.
+
+After this PR merges, routes/staffManagement.js is 4/4 §5-compliant
+(POST via resolveAndBindTargetTenant, PUT via PR #142, DELETE via
+earlier work under Followup #115, GET via this PR).
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent verdict: PASS, ship as-is. 0 CRITICAL, 1
+WARN, 4 INFO. The single WARN (over-fetch on the GET's SELECT column
+list) is pre-existing in main — the SELECT was the same when the
+endpoint had no auth at all — and is banked as a separate
+data-minimization PR. The reviewer explicitly rubber-stamps the
+gate-addition fix, not the over-fetch column list.
+
+PII fields touched in the work-PR diff: none new. The SELECT's column
+list returns seven columns per row; the column list is unchanged
+from pre-diff. Every caller reaching this endpoint after the PR
+lands is a §5-accessible-tenant staff member with role in
+INTERVENTION_MANAGER_ROLES — a peer staff member at the same school
+the data describes. FERPA "school official" doctrine covers same-
+school staff-roster visibility; the exposure is intra-tenant over-
+fetch to teacher-role callers (specifically, the AssignmentManager
+dropdown which uses only three of the seven columns and therefore
+over-fetches the other four), not cross-tenant leakage.
+
+Logging audit: catch block now emits only error.code (a pg SQLSTATE
+like '23505'), not error.message and not the full error object. The
+prior shape would have serialized error.detail, which on UNIQUE/FK
+violations can contain row values referencing staff PII. One log
+surface tightened; zero new PII log surfaces introduced.
+
+Error-response audit: catch returns the generic body 'Server error';
+no error.message / error.detail / error.stack anywhere in the GET
+handler's response paths. The four non-200 paths return generic
+envelopes only ('Forbidden', 'Invalid tenant id', 'Not found',
+'Server error'). Both leak surfaces (response body and log) closed
+atomically per S90 schema lesson 14.
+
+Cross-tenant risk: closed. Privacy-reviewer's verdict on the §5 fix:
+the PR is a net-positive §4B fix — it closes an unauthenticated
+cross-tenant staff-roster oracle (CRITICAL pre-fix exposure) and
+redacts a pre-existing error.message PII-leak surface.
+
+§4B grep on this entry's diff against origin/main: catalog narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md ran against added-lines-
+only (^+ excluding ^+++). Patterns 1 and 2 clean against added-lines-
+only on this entry's diff. Pattern 2's tolerance for §5 dual-path-
+doctrine references (the architectural-token usage in §5 dual-path comments)
+applies — second consecutive session encountering the shape, banked
+as chore/4b-grep-fp-class-dual-path-doctrine to formalize the FP
+class in the catalog's Known-FP section. Pattern 3 (tenant slugs)
+remains gap-acknowledged per S90 precedent — .4b-tenant-slugs.local
+not provisioned this session; the gap is acknowledged, not silently
+treated as a pass.
+
+§4B grep also ran against each of the three work-PR commits' staged
+diffs pre-commit (per feedback_4b_per_entry_standard.md per-entry
+standard); narrow pass clean across all three commits. The
+architectural-token hits in commit 2's new inline §5-doctrine comment
+were classified per the same FP class above; reviewer trio's
+privacy-reviewer independently confirmed the classification (INFO
+finding).
+
+Per the S89 recursion-trap lesson, this entry does not enumerate
+which categories the grep checked for; it cites only acts and
+results.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad review on PR #144 — single pass, parallel dispatch at
+operator direction (fix-forward pivot reserved for any CRITICAL drop;
+not triggered):
+  privacy-reviewer          — PASS, ship as-is        (0 CRITICAL, 1 WARN, 4 INFO)
+  security-reviewer         — APPROVED W/ NOTES       (0 CRITICAL, 0 HIGH, 0 WARN, 6 INFO)
+  tenant-isolation-auditor  — APPROVED W/ NOTES       (0 CRITICAL, 0 HIGH, 0 WARN, 5 INFO)
+
+Aggregate: 0 CRITICAL, 0 HIGH, 1 WARN, 15 INFO across all three
+reports. Single-pass clean — third consecutive sec/ PR to clear
+single-pass (PR #140, PR #142, PR #144). The single WARN
+(privacy-reviewer's over-fetch finding on the SELECT column list) is
+pre-existing in main and banked as a data-minimization follow-up;
+the reviewer explicitly rubber-stamps the gate-addition fix, not the
+over-fetch column list.
+
+Pre-commit §4B grep on each work-PR commit's staged diff: narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md across added-lines-only;
+clean across all three. Patterns 1 + 2 clean per-commit.
+Architectural-token hits in commit 2's new inline comment classified
+as known FP per §5 dual-path-doctrine carve-out.
+
+node -c routes/staffManagement.js — clean per commit. node -c
+constants/roles.js — clean.
+
+§2A formal-review gate: PR #144 awaiting formal APPROVED review from
+the §2A reviewer via gh pr review --approve. reviewDecision:
+REVIEW_REQUIRED. mergeStateStatus: BLOCKED. Expected initial state —
+the branch-protection gate working correctly. No self-merge attempt.
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+Frontend tests/lint: N/A — no frontend code touched.
+
+Manual smoke: NONE attempted this session. The PR adds authz gates
+where there were none (and a §5 scope check on the URL :tenantId
+param); the failure mode the PR closes (unauthed GET, cross-tenant
+read) is not safely reproducible on a real tenant without disabling
+the gates again. Reviewer trio + read-only audit + node -c are the
+quality gates. Same constraint pattern that carried S89 PR #140 and
+S90 PR #142.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Nine follow-ups banked from this work (by branch name, full detail
+in PR #144 body):
+  1. sec/users-require-auth — 7 routes on routes/users.js (6 GET +
+     1 PUT) remain under Followup #116. Natural next sec/ PR.
+  2. fix/login-flow-staff-fetch-fail-loud — login-time loadStaffList
+     calls silently swallow non-2xx responses; newly observable now
+     that parent-role users correctly 403.
+  3. chore/staff-list-projection-split-by-consumer — data-min sweep
+     on the GET's SELECT column list (this PR's WARN-1).
+  4. chore/staff-list-callsite-dedupe — two inline-fetch FE callsites
+     duplicate the loadStaffList wrapper.
+  5. fix/assignment-manager-staff-dropdown-name-field — FE field-
+     name mismatch in the AssignmentManager dropdown render.
+  6. chore/4b-grep-fp-class-dual-path-doctrine — formalize the §5
+     dual-path-doctrine FP class in the §4B catalog.
+  7. chore/staff-delete-log-error-code-parity — DELETE catch logs
+     err.message rather than error.code; widened scope to include
+     adding error.name for non-pg observability.
+  8. chore/dedupe-staff-roles-constant — INTERVENTION_MANAGER_ROLES
+     and the file-local STAFF_ROLES in routes/staffManagement.js are
+     now identical 6-string arrays.
+  9. chore/staff-list-defense-in-depth-precondition-comment — inline
+     comment about when defense-in-depth AND tenant_id = ANY(...)
+     would become necessary if any await gets interleaved between
+     the §5 gate and the SELECT in the future.
+
+Followup #116 progression (cross-router):
+  POST /api/staff/                — closed by PR #129
+  PUT /api/staff/:id              — closed by PR #142
+  DELETE /api/staff/:id           — closed earlier under #115
+  GET /api/staff/:tenantId        — closed by PR #144 (this session)
+  After PR #144 merges, routes/staffManagement.js is 4/4 gated.
+  7 routes on routes/users.js (6 GET + 1 PUT) remain open under
+  Followup #116.
+
+Two process lessons banked for the S91 master-index land:
+  (a) Pre-stage commit-message previews must be byte-identical to
+      what `git commit -m` will receive, including any trailers.
+      Owner should not have to inspect post-commit state to verify
+      trailer presence. Banked for the feedback-memory library as
+      e.g., feedback_commit_preview_byte_identical.
+  (b) When the operator's prompt references a real-world handle
+      that differs from the canonical-spelling reading (typo-shaped
+      vs. natural-spelling), the typo-shaped form is operational
+      truth — the clean-spelling target is held by another GitHub
+      account. Surface, do not silently substitute. Banked for the
+      feedback-memory library.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. 2 untracked
+scripts/ops/ SQL audit files unchanged this session; the still-untracked
+PDF in docs/references/ also carried (same as S89, S90 close).
+S90 followup .4b-tenant-slugs.local: STANDS. No S91 work touched
+the operator-side slug-file setup.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Open sec/users-require-auth as the next session's work PR. Seven
+unauthed routes remain on routes/users.js (6 GET + 1 PUT) under
+Followup #116 — the natural next priority after this session's
+closure of the staffManagement.js side. Per-route caller-role-
+allowlist decision required (don't reflexively reuse
+INTERVENTION_MANAGER_ROLES — each route's FE consumer-scope grep
+should drive the choice). §5 path shape differs per route
+(:tenantId URL params mirror this PR; :id URL params mirror PR
+#142). §2A applies (touches §4B and §5). Reviewer trio dispatched
+single-pass with fix-forward pivot reserved as in S89/S90/S91.
+
+After that, the next sec/ priority is the cluster around #114
+(sec/auth-error-message-redaction on routes/auth.js) — same
+WARN-2-shape redaction work, parent-email PII surface.
+
+If higher-priority operational work has been queued (e.g., a
+production incident), defer the above.
+
+========================================================================
+END SESSION 91
+========================================================================
