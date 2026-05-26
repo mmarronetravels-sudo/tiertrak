@@ -143,7 +143,9 @@ router.get('/tenant/:tenantId/role/:role', async (req, res) => {
 });
 
 // Get a single user by ID. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation.
+// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation +
+// §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
+// found' on miss).
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
@@ -155,9 +157,24 @@ router.get('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid user id' });
     }
 
+    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
+    // not inlined, per the §5 dual-path doctrine. 404 'Not found' on
+    // miss for probe-resistance, matching DELETE :290-303 / PR #142.
+    const target = await pool.query(
+      'SELECT tenant_id FROM users WHERE id = $1',
+      [id]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(target.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
-       FROM users 
+      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at
+       FROM users
        WHERE id = $1`,
       [id]
     );
@@ -233,7 +250,10 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // Update a user. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation.
+// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation +
+// self-PUT block + role-validity (VALID_ROLES → 400) + role-rank gate
+// (CREATE_USER_RULES[caller] → 403) + §5 tenant-scope check via
+// resolveAccessibleTenantIds (404 'Not found' on miss).
 router.put('/:id', requireAuth, async (req, res) => {
   try {
     if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
@@ -245,19 +265,42 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid user id' });
     }
 
+    if (id === req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const { email, full_name, role } = req.body;
     
     // Validate role if provided
     if (role && !VALID_ROLES.includes(role)) {
-      return res.status(400).json({ 
-        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` 
+      return res.status(400).json({
+        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`
       });
     }
-    
+
+    if (role && !CREATE_USER_RULES[req.user.role].includes(role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
+    // not inlined, per the §5 dual-path doctrine. 404 'Not found' on
+    // miss for probe-resistance, matching DELETE :290-303 / PR #142.
+    const target = await pool.query(
+      'SELECT tenant_id FROM users WHERE id = $1',
+      [id]
+    );
+    if (target.rows.length === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(target.rows[0].tenant_id)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `UPDATE users 
+      `UPDATE users
        SET email = $1, full_name = $2, role = $3, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4 
+       WHERE id = $4
        RETURNING id, tenant_id, email, full_name, role, updated_at`,
       [email, full_name, role, id]
     );
