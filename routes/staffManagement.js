@@ -68,8 +68,9 @@ async function resolveAndBindTargetTenant(req) {
 // requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES — every
 // non-parent staff role; mirrors the FE's canManageInterventions
 // consumer surface in AssignmentManager + Admin Panel Staff tab) +
-// positive-int validation on :tenantId. Closes the GET half of
-// Followup #116.
+// positive-int validation on :tenantId + §5 tenant scope check via
+// resolveAccessibleTenantIds (404 'Not found' on miss). Closes the
+// GET half of Followup #116.
 router.get('/:tenantId', requireAuth, async (req, res) => {
   try {
     if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
@@ -79,6 +80,19 @@ router.get('/:tenantId', requireAuth, async (req, res) => {
     const tenantId = parseInt(req.params.tenantId, 10);
     if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
       return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
+    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
+    // not inlined, per the §5 dual-path doctrine (legacy single-tenant
+    // users vs district users on user_school_access). 404 'Not found'
+    // rather than 403 for probe-resistance, matching PUT :226-229.
+    // Placed BEFORE the SELECT so no PII query runs for out-of-scope
+    // tenants. Empty-array return (legitimate for a district user
+    // with no school grants yet) collapses to the same 404 — no
+    // special-casing.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const result = await pool.query(
