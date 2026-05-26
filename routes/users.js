@@ -142,10 +142,19 @@ router.get('/tenant/:tenantId/role/:role', async (req, res) => {
   }
 });
 
-// Get a single user by ID
-router.get('/:id', async (req, res) => {
+// Get a single user by ID. Gated by requireAuth + caller-role gate
+// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation.
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
     const result = await pool.query(
       `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
        FROM users 
@@ -223,10 +232,19 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// Update a user
-router.put('/:id', async (req, res) => {
+// Update a user. Gated by requireAuth + caller-role gate
+// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation.
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0 || id > 2147483647) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+
     const { email, full_name, role } = req.body;
     
     // Validate role if provided
