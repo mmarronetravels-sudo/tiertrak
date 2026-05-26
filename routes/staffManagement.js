@@ -69,8 +69,10 @@ async function resolveAndBindTargetTenant(req) {
 // non-parent staff role; mirrors the FE's canManageInterventions
 // consumer surface in AssignmentManager + Admin Panel Staff tab) +
 // positive-int validation on :tenantId + §5 tenant scope check via
-// resolveAccessibleTenantIds (404 'Not found' on miss). Closes the
-// GET half of Followup #116.
+// resolveAccessibleTenantIds (404 'Not found' on miss) + redacted
+// catch (generic 'Server error' body + structured '[staff:list] error
+// code:' log). Closes the staffManagement.js GET route in Followup
+// #116.
 router.get('/:tenantId', requireAuth, async (req, res) => {
   try {
     if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
@@ -114,8 +116,8 @@ router.get('/:tenantId', requireAuth, async (req, res) => {
     );
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching staff:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[staff:list] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
