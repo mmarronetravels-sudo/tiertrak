@@ -183,7 +183,8 @@ router.get('/:id', requireAuth, async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:get] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -309,7 +310,8 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:put] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
