@@ -19562,3 +19562,215 @@ incident, etc.), defer the above.
 ========================================================================
 END SESSION 92
 ========================================================================
+========================================================================
+SESSION 93 — May 27, 2026 (Wednesday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-93
+SESSION WORK PR: #148 (fix/parents-fetch-credentials-include, awaiting external review)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed S92-banked Followup #1 (fix/parents-fetch-credentials-include).
+This is the FE prerequisite for PR A
+(sec/users-tenant-reads-require-auth) per the S92 master-index split:
+without credentials: 'include' on the /users/parents callsites,
+fetchParentsList will silently 401 for every authenticated caller the
+moment requireAuth lands on the backend route.
+
+Audit ahead of edit confirmed the S92 master-index banking shape
+needed adjustment. The banking item framed 3 callsites needing the
+fix; full grep of frontend/src/ for /users/parents returned 3 hits
+but only 2 were real edits — AppContext.jsx:282 already had
+credentials: 'include' (with cosmetically mangled whitespace, but
+functionally correct). Operator decision: leave AppContext.jsx:282
+alone per scope discipline; the master-index annotation on that
+function marked it "likely dead" so cosmetic-only churn was not
+worth a third edited file.
+
+Mid-session correction: an early read of
+feedback_activities_log_separate_pr.md returned a strict
+"opened AFTER work-PR merges" interpretation that would have
+deferred this very entry. Verbatim evidence-pull (the memory file
+body + S92 PR-creation timestamps via gh pr view) showed the strict
+reading contradicts actual practice: PR #147 (S92 activities log)
+was opened 24 minutes BEFORE PR #146 (S92 work) merged. Memory
+file rewritten this session to match practice: parallel-open
+allowed; only the merge-order constraint is hard. Description
+field AND body both updated.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+frontend/src/App.jsx — +6/-2 across one commit on the work branch
+(PR #148, 916101a). (i) fetchParentAccounts (line 622): added
+{ credentials: 'include' } option object to the fetch call against
+${API_URL}/users/parents. Style matches the fetchStudents block 30
+lines down (existing same-file precedent). (ii) fetchParentsList
+(line 667 — the App.jsx copy of this function): same edit, same
+shape. The third hit on /users/parents in the frontend
+(AppContext.jsx:282, the live copy of fetchParentsList) was left
+alone — already had credentials: 'include'.
+
+activities.txt — this entry (chore/activities-log-session-93, PR
+pending).
+
+memory/feedback_activities_log_separate_pr.md (operator memory
+outside the repo) — rewrote the description field and body to the
+looser merge-order-only framing. Verified inline against the S92
+PR #146/#147 timing precedent.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no DB changes at all. FE-only fetch-option additive change.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+no DB changes — FE-only fetch-options edit. The /users/parents
+endpoint and its backend scoping are untouched by this PR. Sending
+the existing httpOnly auth cookie does not introduce a new tenant-
+scoped data path: the backend currently does not consult the cookie
+on this route, and PR A (still in planning) is what will add the
+requireAuth gate. This PR is the FE half of a two-PR §5-hardening
+choreography.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched in the work-PR diff: none. The change only causes
+an existing httpOnly auth cookie to be transmitted to an endpoint
+that was previously ignoring it. No PII columns added to any
+response, no new fields stored, no log lines added or modified.
+
+Logging audit: no logging code added or modified. The two existing
+console.error catch lines (one per edited function) were untouched.
+
+Cross-tenant risk: none identified. Same-origin cookie transmission;
+no new fields read, written, or logged.
+
+§4B grep on the work-PR diff: catalog narrow + wide passes per
+docs/ai-context/4B_GREP_PATTERNS.md ran against added-lines-only
+(^+ excluding ^+++) on git diff main -- frontend/src/App.jsx,
+pre-commit. Both passes returned zero matches. For this activities-
+log entry, the same patterns were rerun against the new entry's
+added lines; results disclosed in VERIFICATION below.
+
+Per the S89 recursion-trap lesson, this entry does not enumerate
+which categories the grep checked for; it cites only acts and
+results.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad: NOT dispatched. FE-only fetch-option additive change
+in the auth-strengthening direction; no §4B fields, no §5 surface,
+no auth logic change. Operator approved skipping the trio
+pre-commit.
+
+Pre-commit lint (frontend): cd frontend && npm run lint returned
+89 problems (72 errors, 17 warnings) — matches the pre-existing
+baseline exactly. Stashed-vs-unstashed cross-check on App.jsx alone
+produced 89 in both states, confirming the two edits introduce zero
+new lint findings.
+
+Pre-commit §4B grep on git diff main -- frontend/src/App.jsx
+(narrow + wide passes per docs/ai-context/4B_GREP_PATTERNS.md
+against added-lines-only): both passes returned zero matches.
+
+Pre-commit diff inspection: git diff --cached --stat returned
+frontend/src/App.jsx | 8 ++++++--, matching the audited two-
+callsite scope exactly (+6 lines for the two option objects, -2
+lines for the prior bare-URL fetch calls).
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+Frontend lint: clean against baseline as above.
+
+Manual smoke: NONE attempted. The fix is observable only
+post-PR-A-merge (when requireAuth on the backend makes credentials:
+'include' load-bearing). Pre-PR-A, the cookie is sent but ignored
+by the backend, which is structurally indistinguishable from the
+pre-fix shape from the FE's perspective.
+
+§2A formal-review gate: PR #148 opened against main with
+scholapathsystems requested as reviewer (verbatim spelling per
+operator standing instruction). Awaiting formal review.
+reviewDecision: REVIEW_REQUIRED at PR-open.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Cadence change established this session (operator + planning-side
+Claude): the S92 master-index open question on chore-PR-BLOCKED is
+resolved. Operator investigated GitHub Settings → Branches and
+confirmed classic branch protection is not configured, but three
+rulesets are active — including "Require a pull request before
+merging" applying to all PRs to main. No CODEOWNERS file.
+Operator's decision: keep the gate on (Option A — accept the
+friction) rather than carve a path-based exception for
+activities.txt. Practical implication going forward: every PR
+including the activities-log chore PR requires scholapathsystems
+as reviewer before merging. Session-close routine updated
+accordingly.
+
+Memory-file update (banked above and load-bearing for the rest of
+this skill run): the strict "opened AFTER work-PR merges" reading
+of feedback_activities_log_separate_pr.md is replaced by the looser
+"merge-order is the hard constraint" reading. Both the description
+field and body have been rewritten to match the S92 PR #147 / #146
+timing precedent, verified inline.
+
+S92 master-index banking item #1 closed by PR #148, but with one
+unit of scope adjustment: 2 callsites edited, not 3. AppContext.jsx
+:282 unchanged (already credentials: 'include'; marked "likely
+dead" in the master index; cosmetic-only fix not worth a third
+edited file).
+
+When PR A (sec/users-tenant-reads-require-auth) lands and the
+backend route gains requireAuth, run the post-deploy 401 watch per
+feedback_auth_add_deploy_401_flag.md.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. 2 untracked
+scripts/ops/ SQL audit files + 1 untracked docs/references/ PDF
+carried over from S92, unchanged this session.
+S90 followup .4b-tenant-slugs.local: STANDS. No S93 work touched
+the operator-side slug-file setup.
+
+PR #146 (sec/users-target-id-require-auth) merged 2026-05-27
+13:20Z; PR #147 (chore/activities-log-session-92) merged 13:30Z —
+confirms S92 close completed before S93 work started.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Watch for PR #148 review and merge. Once #148 merges, request
+scholapathsystems as reviewer on this activities-log PR per the
+new ruleset cadence (all PRs to main require approval), then
+merge after approval.
+
+After both PRs land, proceed to PR A
+(sec/users-tenant-reads-require-auth), the 5-route sec/ work-PR for
+the FE-dead GET routes on routes/users.js still open under Followup
+#116. The FE prerequisite (this session's work) is now satisfied
+for /users/parents.
+
+If higher-priority operational work has been queued (production
+incident, etc.), defer the above.
+
+========================================================================
+END SESSION 93
+========================================================================
