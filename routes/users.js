@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -92,26 +93,39 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   }
 });
 
-// GET staff members for assignment dropdown (excludes parents)
-router.get('/staff', async (req, res) => {
+// GET staff members for assignment dropdown (excludes parents). Gated
+// by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES,
+// semantic peer of PR #144 /api/staff) + positive-int tenant_id
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss). FE-dead near-duplicate of /api/staff —
+// see banked chore/delete-routes-users-staff-dead-duplicate.
+router.get('/staff', requireAuth, async (req, res) => {
   try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.query.tenant_id, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const result = await pool.query(`
       SELECT id, full_name as name, email, role
-      FROM users 
+      FROM users
       WHERE tenant_id = $1 AND role != 'parent'
       ORDER BY full_name
-    `, [tenant_id]);
-    
+    `, [tenantId]);
+
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching staff:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[users:staff] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
