@@ -30,6 +30,7 @@ CREATE TABLE students (
     tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
+    external_id TEXT,
     grade VARCHAR(20) NOT NULL,
     teacher_id INTEGER REFERENCES users(id),
     tier INTEGER DEFAULT 1 CHECK (tier IN (1, 2, 3)),
@@ -38,6 +39,14 @@ CREATE TABLE students (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Per-tenant partial UNIQUE on students.external_id. Added by
+-- Migration 035. Different districts can legitimately have colliding
+-- SIS IDs cross-tenant; uniqueness is per-tenant. WHERE external_id
+-- IS NOT NULL allows multiple NULL rows.
+CREATE UNIQUE INDEX idx_students_tenant_external_id
+  ON students (tenant_id, external_id)
+  WHERE external_id IS NOT NULL;
 
 -- Intervention templates (customizable per tenant)
 CREATE TABLE intervention_templates (
