@@ -5,6 +5,7 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -58,53 +59,103 @@ async function resolveAndBindTargetTenant(req) {
   return { targetTenantId: bodyTarget, error: null };
 }
 
-// Get all users for a tenant
-router.get('/tenant/:tenantId', async (req, res) => {
+// Get all users for a tenant. Gated by requireAuth + caller-role
+// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss).
+router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
-       FROM users 
-       WHERE tenant_id = $1 
+      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at
+       FROM users
+       WHERE tenant_id = $1
        ORDER BY full_name`,
       [tenantId]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// GET staff members for assignment dropdown (excludes parents)
-router.get('/staff', async (req, res) => {
+// GET staff members for assignment dropdown (excludes parents). Gated
+// by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES,
+// semantic peer of PR #144 /api/staff) + positive-int tenant_id
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss). FE-dead near-duplicate of /api/staff —
+// see banked chore/delete-routes-users-staff-dead-duplicate.
+router.get('/staff', requireAuth, async (req, res) => {
   try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.query.tenant_id, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const result = await pool.query(`
       SELECT id, full_name as name, email, role
-      FROM users 
+      FROM users
       WHERE tenant_id = $1 AND role != 'parent'
       ORDER BY full_name
-    `, [tenant_id]);
-    
+    `, [tenantId]);
+
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching staff:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[users:staff] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// GET parents for a tenant (for parent assignment dropdown)
-router.get('/parents', async (req, res) => {
+// GET parents for a tenant (for parent assignment dropdown). Gated
+// by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES — FE-
+// consumer-scope-grep finding: actual consumers are intervention-
+// assignment parent-picker [App.jsx:6093] and admin parent-link
+// management [App.jsx:5274]; both are staff/admin surfaces) +
+// positive-int tenant_id validation + §5 tenant-scope check via
+// resolveAccessibleTenantIds (404 'Not found' on miss).
+//
+// Expected 403 noise floor: fetchParentsList [App.jsx:665] fires
+// unconditionally on every login including parent role; parent users
+// will hit 403 here on login (catch-only console.error, no UI
+// breakage). Cleanup tracked in chore/skip-fetchParentsList-for-
+// parent-role (sibling FE PR, lands shortly after this).
+router.get('/parents', requireAuth, async (req, res) => {
   try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.query.tenant_id, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const result = await pool.query(`
@@ -117,28 +168,53 @@ router.get('/parents', async (req, res) => {
       WHERE u.tenant_id = $1 AND u.role = 'parent'
       GROUP BY u.id
       ORDER BY u.full_name
-    `, [tenant_id]);
-    
+    `, [tenantId]);
+
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching parents:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[users:parents] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
-// Get users by role for a tenant
-router.get('/tenant/:tenantId/role/:role', async (req, res) => {
+// Get users by role for a tenant. Gated by requireAuth + caller-role
+// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// validation + :role validation against VALID_ROLES (400 on malformed)
+// + §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
+// found' on miss).
+router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
   try {
-    const { tenantId, role } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const { role } = req.params;
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`
+      });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
-       FROM users 
+      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at
+       FROM users
        WHERE tenant_id = $1 AND role = $2
        ORDER BY full_name`,
       [tenantId, role]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant-role] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -384,20 +460,39 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Get all teachers for a tenant (convenience route for dropdowns)
-router.get('/tenant/:tenantId/teachers', async (req, res) => {
+// Get all teachers for a tenant (convenience route for dropdowns).
+// Gated by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES
+// — minimal-field-set teacher dropdown, natural consumer is
+// intervention/student assignment surface) + positive-int :tenantId
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss).
+router.get('/tenant/:tenantId/teachers', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, full_name 
-       FROM users 
+      `SELECT id, full_name
+       FROM users
        WHERE tenant_id = $1 AND role = 'teacher'
        ORDER BY full_name`,
       [tenantId]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant-teachers] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
