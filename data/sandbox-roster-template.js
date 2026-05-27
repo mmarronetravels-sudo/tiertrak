@@ -60,10 +60,13 @@
  *   Cross-reference rules
  * ---------------------------------------------------------------------------
  *
- *   - STUDENTS[].external_id is a roster-only identifier. It does NOT round-
- *     trip into the database (the students table has no external_id column).
- *     It is used solely to cross-reference INTERVENTIONS, PROGRESS_NOTES,
- *     and PARENT_LINK back to a student.
+ *   - STUDENTS[].external_id is the SIS-issued student identifier (formerly
+ *     roster-only; as of Migration 035 also persisted to the students table).
+ *     Values round-trip into the database via the CSV importer and POST/PUT
+ *     /students routes (commits 9f5c415, a9e791d). The seed scripts in
+ *     scripts/seed-*.js still discard external_id at INSERT time — separate
+ *     follow-up. Within this roster the field is also used to cross-reference
+ *     INTERVENTIONS, PROGRESS_NOTES, and PARENT_LINK back to a student.
  *   - external_ids must be unique within STUDENTS.
  *   - Emails must be unique across ADMINS ∪ STAFF.
  *   - Every assigned_by_email / author_email / parent_email must match an
