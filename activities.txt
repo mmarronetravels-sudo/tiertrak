@@ -19144,3 +19144,421 @@ production incident), defer the above.
 ========================================================================
 END SESSION 91
 ========================================================================
+========================================================================
+SESSION 92 — May 26, 2026 (Tuesday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-92
+SESSION WORK PR: #146 (sec/users-target-id-require-auth, awaiting external review)
+DISPOSITION: pr-opened
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed 2 of the 7 unauthed routes on routes/users.js under Followup
+#116 — GET /api/users/:id and PUT /api/users/:id. Pre-PR, both routes
+mounted with no auth middleware, no caller-role gate, no §5 tenant
+scope check on the URL :id parameter, and raw error.message body leak
+in their catch blocks. The PUT specifically allowed unauthenticated
+UPDATE on the users table including the role column — the
+cross-tenant role-escalation primitive across tenants.
+
+Phase 1 read-only audit shape: full route-table audit on routes/users.js
+(9 routes total, 7 unauthed remaining post-PR-#129-and-#115) + FE
+consumer-scope grep on each unauthed route. Audit confirmed the S91-
+banked working assumption (6 GET + 1 PUT remain) and surfaced two
+significant findings that drove the planning-time split decision:
+(a) 6 of 7 unauthed routes are FE-dead — only /parents has live FE
+callsites; (b) PUT /:id is the highest-severity unauthed route in the
+codebase (unauthed UPDATE with role-mutation surface = cross-tenant
+role-escalation primitive). Operator-approved split: PR B (this
+session) handles the 2 routes using the PR #142 SELECT-target-then-
+check pattern. PR A (banked as sec/users-tenant-reads-require-auth)
+handles the remaining 5 FE-dead GET routes using the PR #144
+URL-or-query-string-IS-scope-target pattern. PR B chosen first
+because of PUT /:id severity.
+
+Three-commit structure on the work branch sec/users-target-id-require-
+auth (PR #146):
+  8325690 sec(users-target): add requireAuth + caller-role gate
+                              + int validation
+  3144f25 sec(users-target): scope target row to caller's accessible-
+                              tenant set (§5)
+  a255d80 sec(users-target): redact catch block — generic body
+                              + structured log
+
+Headline security delta — all four pre-PR exposures CLOSED:
+  - Cross-tenant read oracle on GET /:id (unauthed read of arbitrary
+    user PII by ID) — closed by commit 1's auth + commit 2's §5
+  - Cross-tenant write oracle on PUT /:id (unauthed UPDATE on the
+    users table across tenants) — closed by commit 1's auth + commit
+    2's §5
+  - Role-escalation primitive on PUT /:id (mutate own role or
+    another admin's role) — closed by commit 2's self-PUT block +
+    role-rank gate
+  - Catch-block body leak on both routes ({ error: error.message }
+    returning raw pg error text) — closed by commit 3's redacted
+    body + structured error.code-only log
+
+Locked decisions for the work PR:
+  - Caller-role allowlist for both routes: Object.keys(CREATE_USER_
+    RULES) = ['district_admin', 'school_admin']. Semantic consistency
+    with POST and DELETE on the same file. FE-dead means zero UX
+    regression risk from the tight allowlist.
+  - PR #142's parent-row 404 block deliberately omitted because
+    routes/users.js IS the parent-edit surface (staffManagement.js
+    documents this at its own L249). Parents legitimately have a
+    tenant_id and pass through the §5 scope check like any other
+    user role.
+  - Approach A (two-SELECT pre-check) for GET /:id §5 — slim
+    SELECT tenant_id first → §5 check → full SELECT only if scope
+    OK. Mirrors PR #142 byte-for-byte rather than the alternative
+    one-SELECT-post-check shape.
+  - 3-commit cadence preserved (not split to 4) — commit 2 came in
+    at +52/-9, under the 60-line split threshold.
+
+Total work-PR scope vs origin/main: 1 file, +78/-15 per git diff
+--stat. Reviewer-trio dispatched single-pass, parallel at operator
+direction. Zero CRITICAL across all three reports. PR #146 opened
+against main with scholapathsystems requested as reviewer; awaiting
+formal §2A approval. reviewDecision: REVIEW_REQUIRED.
+mergeStateStatus: BLOCKED.
+
+Three workflow lessons surfaced mid-session, all banked rather than
+papered over:
+(a) Verbatim-disclosure quotes in PR bodies must be truly verbatim
+    — no paraphrasing, no trimming, and (extension caught this
+    session) no additions either. The §2A external reviewer reads
+    the PR body, not the underlying reviewer reports; trimmed or
+    embellished content means they make their merge-or-block call
+    without the source material's full framing. Banked as
+    feedback_verbatim_quotes_must_be_truly_verbatim with the
+    no-additions extension explicit. The specific catch this session
+    was a parenthetical added to the W-1 Recommendation paragraph
+    that was not in the original privacy-reviewer report —
+    informationally a no-op but still paraphrase-shaped.
+(b) Count-things-by-bytes-not-by-mental-model: the whitespace
+    deviation count drifted 5 → 6 → 7 across three operator
+    corrections during this PR. The 5-count missed a blank-line
+    cleanup; the 6-count missed one role-validity template edit.
+    Mental-model counting fails on byte-level deviation disclosures
+    — count by bytes (the actual + and - lines in the diff), not
+    by category.
+(c) Claim-without-write is the same shape as see-tool-output-above
+    paste discipline (S91): in S91 close I claimed to have "banked"
+    a memory file via mention in the response body but had not
+    actually written the file. Caught this session when operator
+    asked to update it and the file did not exist. Banking-via-
+    mention is paraphrase of actual banking; the file write is the
+    load-bearing artifact.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/users.js — +78/-15 across three commits on the work branch
+(PR #146). (i) GET /:id handler signature (formerly
+router.get('/:id', async ...)) now mounts requireAuth per-handler;
+handler header comment block rebuilt across three commits to
+enumerate the four-clause gate stack (requireAuth + caller-role +
+positive-int :id + §5 SELECT-target check). (ii) Inside the GET try:
+caller-role gate (Object.keys(CREATE_USER_RULES).includes → 403);
+positive-int validation on :id (parseInt + Number.isInteger + > 0 +
+≤ INT32 max → 400); slim §5 SELECT (SELECT tenant_id FROM users
+WHERE id = $1) → resolveAccessibleTenantIds(req.user) consumed (not
+inlined) → 404 'Not found' on missing or out-of-scope; then existing
+full SELECT proceeds. Catch redacted to console.error('[users:get]
+error code:', error.code) + res.status(500).json({ error: 'Server
+error' }). (iii) PUT /:id handler signature now mounts requireAuth
+per-handler; header comment rebuilt to enumerate the seven-clause
+gate stack (requireAuth + caller-role + positive-int :id + self-PUT
++ role-validity + role-rank + §5). Inside the PUT try: same auth +
+caller-role + positive-int gates as GET; self-PUT block (id ===
+req.user.id → 403); existing role-validity (VALID_ROLES → 400)
+preserved; new role-rank gate (CREATE_USER_RULES[caller].includes
+→ 403, fires only when role is being mutated); slim §5 SELECT → 404;
+then UPDATE proceeds. Catch redacted same shape (with [users:put]
+prefix). 7 whitespace normalizations across the SQL string literals
+and one blank line.
+
+activities.txt — this entry (chore/activities-log-session-92, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no new schema, no new column, no new index, no new constraint,
+no DDL. The work PR is pure handler-shape rewrite.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor verdict: APPROVED. 0 CRITICAL, 0 HIGH, 0
+WARN, 8 INFO. Audited 4 changed queries (2 slim §5-scope-check
+SELECTs + 2 unchanged-body queries: GET full SELECT and PUT UPDATE,
+both gated by the §5 helper before the operational query fires).
+
+§5 dual-path access contract honored: resolveAccessibleTenantIds is
+consumed at both call sites, never inlined. Both routes branch
+through the helper (legacy single-tenant returns [user.tenant_id];
+district user returns user_school_access membership filtered by both
+user_id AND district_id). No inline branching at the call sites.
+
+Placement BEFORE the operational query confirmed: scope-miss returns
+404 at the §5 check, with the data query structurally unreachable.
+For GET, no PII column (email, full_name, role) is read from the
+full SELECT for an out-of-scope :id. For PUT, no UPDATE executes for
+an out-of-scope :id.
+
+Empty-array contract collapses to same 404 with no special-casing:
+Array.prototype.includes on [] returns false for every input. A
+district user with no user_school_access grants yet (legitimate
+pre-onboarding state per helper docstring) sees the same 404 as any
+out-of-scope tenant — no information disclosure differentiates the
+two failure modes.
+
+No defense-in-depth AND tenant_id = ANY($N::int[]) added to the
+GET full SELECT or PUT UPDATE WHERE clauses. Acceptable for this
+read+write shape: no PII column is fetched for out-of-scope reads
+(§5 SELECT runs first and returns only tenant_id); no UPDATE
+executes for out-of-scope writes; users.tenant_id is never mutated
+post-creation in the codebase (so the TOCTOU race window between §5
+SELECT and operational query is unweaponizable). Auditor
+disposition: INFO not WARN. Same rationale as PR #142.
+
+Cross-tenant read/write paths through these handlers: closed.
+Pre-PR, both routes accepted req.params.id and ran SELECT or UPDATE
+without any tenant predicate — textbook IDOR + role-escalation
+primitive. Post-PR the four-gate stack on GET (requireAuth +
+caller-role + positive-int + §5) and seven-gate stack on PUT
+(adds self-PUT + role-validity + role-rank) plus the probe-resistant
+404 collapse leaves no cross-tenant exposure surface on either
+handler.
+
+Probe-resistance: missing-row (slim SELECT empty), out-of-scope
+(slim SELECT row's tenant_id not in accessible), and theoretical
+TOCTOU-deleted (full SELECT/UPDATE returns 0 rows after §5 passed)
+all collapse to 404 responses. The trailing 404 uses 'User not
+found' rather than 'Not found' — banked as
+chore/users-target-id-404-body-harmonize per security-reviewer
+INFO-1 finding; structurally unreachable in single-request flow so
+not load-bearing as a finding.
+
+0 new tables; 0 schema changes; 0 new foreign keys; 0 composite-FK
+audit requirements. No JOIN traversal in the changed queries.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent verdict: APPROVED WITH NOTES. 0 CRITICAL,
+1 WARN, 6 INFO. The single WARN (W-1, parent-edit surface lacks an
+explicit FERPA / 'school official' doctrine note) is a product/legal
+question banking, not a §4B fix-in-this-PR ask — the role-rank gate
+already prevents school_admin → district_admin escalation, and the
+§5 tenant scope check prevents cross-tenant mutation. Banked as
+chore/users-put-parent-role-mutation-policy, sibling to Followup
+#122.
+
+PII fields touched in the work-PR diff: none new. GET's existing
+SELECT column list (id, tenant_id, email, full_name, role,
+created_at, updated_at) is unchanged from pre-diff and is required
+for the admin-management surface the now-gated caller set
+(district_admin/school_admin within accessible-tenant scope) needs
+to render. PUT's existing UPDATE column list (email, full_name,
+role) is unchanged.
+
+Logging audit: both catch blocks now emit only error.code (a pg
+SQLSTATE like '23505'), not error.message and not the full error
+object. The prior shape (zero log line + body-leak only) added a
+new structured log line — net-positive observability AND net-zero
+PII exposure, since error.code is a fixed-cardinality protocol
+value. Both new log lines (lines 186 and 313 in post-PR file)
+confirmed PII-safe.
+
+Error-response audit: both catches now return generic 'Server
+error' body; no error.message / error.detail / error.stack in any
+response path. The four non-200 paths return generic envelopes only
+('Forbidden', 'Invalid user id', 'Not found', 'Server error', and
+the pre-existing 'User not found' on the trailing 404). Pre-fix
+body-leak ({ error: error.message }) PII surface — which would
+have echoed row values from pg error text on UNIQUE/FK violations —
+is fully closed.
+
+Cross-tenant risk: closed per the §5 check.
+
+§4B grep on this entry's diff against origin/main: catalog narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md ran against added-
+lines-only (^+ excluding ^+++). Patterns 1 (emails) and 2
+(school-type tokens) clean against added-lines-only on this entry's
+diff. Pattern 3 (tenant slugs) remains gap-acknowledged per S90
+precedent — .4b-tenant-slugs.local not provisioned this session.
+
+§4B grep also ran on each of the three work-PR commits' staged
+diffs pre-commit (per feedback_4b_per_entry_standard.md per-entry
+standard); narrow pass clean across all three commits AND against
+the aggregate git diff main...HEAD diff. Reviewer-trio's
+privacy-reviewer independently confirmed the per-commit posture
+(INFO findings I-1 through I-3).
+
+Per the S89 recursion-trap lesson, this entry does not enumerate
+which categories the grep checked for; it cites only acts and
+results.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad review on PR #146 — single pass, PARALLEL dispatch at
+operator direction (fix-forward pivot reserved for any CRITICAL
+drop; not triggered):
+  privacy-reviewer          — APPROVED WITH NOTES   (0 CRITICAL, 1 WARN, 6 INFO)
+  security-reviewer         — APPROVED WITH NOTES   (0 CRITICAL, 0 HIGH, 0 WARN, 5 INFO)
+  tenant-isolation-auditor  — APPROVED              (0 CRITICAL, 0 HIGH, 0 WARN, 8 INFO)
+
+Aggregate: 0 CRITICAL, 0 HIGH, 1 WARN, 19 INFO across all three
+reports. FOURTH consecutive sec/ PR to clear single-pass (PR #140,
+PR #142, PR #144, PR #146). The single WARN (privacy-reviewer's
+parent-edit-surface FERPA-doctrine-note finding) is a product/legal
+question banking, not a fix-in-this-PR ask.
+
+Pre-commit §4B grep on each work-PR commit's staged diff: narrow
+pass per docs/ai-context/4B_GREP_PATTERNS.md across added-lines-
+only; clean across all three commits. Patterns 1 + 2 clean
+per-commit AND aggregate.
+
+node -c routes/users.js — clean per commit. Same de facto quality
+gate as PR #138/#140/#142/#144 (Followup #73 + #74 STAND: no
+automated backend test suite, no backend lint configured).
+
+§2A formal-review gate: PR #146 awaiting formal APPROVED review
+from the §2A reviewer via gh pr review --approve. reviewDecision:
+REVIEW_REQUIRED. mergeStateStatus: BLOCKED. Expected initial state
+— the branch-protection gate working correctly. No self-merge
+attempt. Reviewer's GitHub login preserved per S91 lesson — the
+typo-shaped form is operational truth (the clean-spelling form is
+held by another GitHub account).
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+Frontend tests/lint: N/A — no frontend code touched.
+
+Manual smoke: NONE attempted this session. The PR adds authz gates
+where there were none (and a §5 scope check on a target-user shape);
+the failure mode the PR closes (unauthed GET, unauthed PUT
+cross-tenant write with role mutation) is not safely reproducible
+on a real tenant without disabling the gates again. Reviewer trio +
+read-only audit + node -c are the quality gates. Same constraint
+pattern that carried S89 PR #140, S90 PR #142, S91 PR #144.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Five follow-ups banked from this work (by branch name, full detail
+in PR #146 body):
+  1. fix/parents-fetch-credentials-include — FE-only fix; 3
+     callsites on /parents fetch without credentials: 'include';
+     will 401 at login post-hardening when
+     sec/users-tenant-reads-require-auth lands. PRE-REQUISITE to
+     that follow-up PR.
+  2. chore/remove-dead-users-routes — investigate removal of 6
+     FE-dead routes on routes/users.js (separate planning after the
+     sibling sec/ PR lands).
+  3. chore/users-delete-log-error-code-parity — widen S91 banked
+     item #7 to cover this file's DELETE catch as well (err.message
+     log shape sibling on routes/users.js).
+  4. chore/users-put-parent-role-mutation-policy — privacy-reviewer
+     W-1 follow-up; sibling to Followup #122.
+  5. chore/users-target-id-404-body-harmonize — collapse 'Not
+     found' vs 'User not found' body string drift on the trailing
+     404 paths (security INFO-1).
+
+Followup #116 progression (cross-router):
+  POST /api/users/                  — closed by PR #129
+  GET /api/users/:id                — closed by PR #146 (this session)
+  PUT /api/users/:id                — closed by PR #146 (this session)
+  DELETE /api/users/:id             — closed earlier under #115
+  GET /api/users/tenant/:tenantId   — open, banked as PR A
+  GET /api/users/staff              — open, banked as PR A
+  GET /api/users/parents            — open, banked as PR A
+  GET /api/users/tenant/:tenantId/role/:role — open, banked as PR A
+  GET /api/users/tenant/:tenantId/teachers — open, banked as PR A
+  After PR #146 merges, routes/users.js has 5 routes remaining open
+  under #116; all 5 are FE-dead GETs banked as
+  sec/users-tenant-reads-require-auth (PR A of the planning-time
+  split decision).
+
+Three workflow lessons banked for the S92 master-index land:
+  (a) feedback_verbatim_quotes_must_be_truly_verbatim (this
+      session) — verbatim disclosure quotes in PR bodies must be
+      truly verbatim, with no paraphrasing, no trimming, AND no
+      additions. Only absolute filesystem paths may be stripped.
+      Markdown formatting (bold, code fences) is welcome for
+      readability. Memory file written this session at
+      memory/feedback_verbatim_quotes_must_be_truly_verbatim.md.
+  (b) feedback_count_things_by_bytes_not_mental_model (this
+      session) — count whitespace deviations / diff-byte changes
+      by actual + and - lines, not by mental category. Caught
+      across three operator corrections this PR (5 → 6 → 7).
+      Pairs with the verbatim discipline above.
+  (c) feedback_claim_without_write (this session) — claiming to
+      have "banked" a memory file via mention in the response body
+      is paraphrase of actual banking; the file write is the
+      load-bearing artifact. Same shape as see-tool-output-above
+      paste discipline (S91). Caught this session when operator
+      asked to update feedback_verbatim_quotes_must_be_truly_
+      verbatim and the file did not exist despite my earlier claim
+      of banking.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. 2 untracked
+scripts/ops/ SQL audit files unchanged this session; the
+still-untracked PDF in docs/references/ also carried (same as
+S89, S90, S91 close).
+S90 followup .4b-tenant-slugs.local: STANDS. No S92 work touched
+the operator-side slug-file setup.
+
+PR #144 (sec/staff-list-require-auth, opened in S91) status at S92
+session start: per the S92 branch-base note,
+chore/activities-log-session-92 branched from f02c43c, which
+predates a hypothetical PR #144 merge — so PR #144 had NOT merged
+at S92 session start. UNTOUCHED by S92 work. PR #145
+(chore/activities-log-session-91, opened in S91) status at S92
+session start: unknown — also UNTOUCHED by S92 work. Operator-side
+verification of PR #144 and PR #145 current status at S92 close
+pending.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Open sec/users-tenant-reads-require-auth as the next session's work
+PR (PR A of the planning-time split). Five FE-dead GET routes
+remain on routes/users.js under Followup #116:
+/tenant/:tenantId, /staff, /parents, /tenant/:tenantId/role/:role,
+/tenant/:tenantId/teachers. All use the URL-or-query-string-IS-
+scope-target pattern (PR #144 shape), not this PR's
+SELECT-target-then-check shape. Per-route caller-role-allowlist
+decision required (don't reflexively reuse Object.keys(
+CREATE_USER_RULES) — each route's FE consumer-scope grep should
+drive the choice; /parents in particular has live FE callsites
+that need the credentials-include fix as a pre-requisite, per
+banked follow-up #1).
+
+After PR A lands, the next sec/ priority is the cluster around
+Followup #114 (sec/auth-error-message-redaction on routes/auth.js)
+— same WARN-2-shape redaction work, parent-email PII surface. The
+verbatim-disclosure lesson from this session applies there too if
+the privacy-reviewer flags anything that needs PR-body quoting.
+
+If higher-priority operational work has been queued (production
+incident, etc.), defer the above.
+
+========================================================================
+END SESSION 92
+========================================================================
