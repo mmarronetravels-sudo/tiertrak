@@ -129,13 +129,33 @@ router.get('/staff', requireAuth, async (req, res) => {
   }
 });
 
-// GET parents for a tenant (for parent assignment dropdown)
-router.get('/parents', async (req, res) => {
+// GET parents for a tenant (for parent assignment dropdown). Gated
+// by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES — FE-
+// consumer-scope-grep finding: actual consumers are intervention-
+// assignment parent-picker [App.jsx:6093] and admin parent-link
+// management [App.jsx:5274]; both are staff/admin surfaces) +
+// positive-int tenant_id validation + §5 tenant-scope check via
+// resolveAccessibleTenantIds (404 'Not found' on miss).
+//
+// Expected 403 noise floor: fetchParentsList [App.jsx:665] fires
+// unconditionally on every login including parent role; parent users
+// will hit 403 here on login (catch-only console.error, no UI
+// breakage). Cleanup tracked in chore/skip-fetchParentsList-for-
+// parent-role (sibling FE PR, lands shortly after this).
+router.get('/parents', requireAuth, async (req, res) => {
   try {
-    const { tenant_id } = req.query;
-    
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.query.tenant_id, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
     }
 
     const result = await pool.query(`
@@ -148,12 +168,12 @@ router.get('/parents', async (req, res) => {
       WHERE u.tenant_id = $1 AND u.role = 'parent'
       GROUP BY u.id
       ORDER BY u.full_name
-    `, [tenant_id]);
-    
+    `, [tenantId]);
+
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching parents:', error);
-    res.status(500).json({ error: error.message });
+    console.error('[users:parents] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 // Get users by role for a tenant
