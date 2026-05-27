@@ -176,20 +176,45 @@ router.get('/parents', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
-// Get users by role for a tenant
-router.get('/tenant/:tenantId/role/:role', async (req, res) => {
+// Get users by role for a tenant. Gated by requireAuth + caller-role
+// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// validation + :role validation against VALID_ROLES (400 on malformed)
+// + §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
+// found' on miss).
+router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
   try {
-    const { tenantId, role } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const { role } = req.params;
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}`
+      });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
-       FROM users 
+      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at
+       FROM users
        WHERE tenant_id = $1 AND role = $2
        ORDER BY full_name`,
       [tenantId, role]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant-role] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
