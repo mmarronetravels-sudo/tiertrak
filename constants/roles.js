@@ -23,4 +23,26 @@ const ELEVATED_ROLES = [
   'interventionist',
 ];
 
-module.exports = { ELEVATED_ROLES };
+// Canonical list of roles authorized to manage interventions — every
+// staff role except `parent`. Semantically mirrors the FE's
+// `canManageInterventions` predicate (frontend/src/App.jsx:411).
+// Consumed as the read-gate allowlist on staff-roster surfaces (e.g.,
+// GET /api/staff/:tenantId) whose consumer scope is the full
+// intervention-management surface — both the per-intervention staff-
+// picker dropdown in AssignmentManager (teacher-reachable) and the
+// Admin Panel Staff Management table are subsets of this set.
+//
+// Named by semantic intent rather than by list-of-uses so the constant
+// stays reusable if a second route surfaces the same scope. Adding or
+// removing a role here changes who can read tenant-wide staff rosters
+// — route as a §4B / §5 PR with all three reviewer subagents.
+const INTERVENTION_MANAGER_ROLES = [
+  'district_admin',
+  'district_tech_admin',
+  'school_admin',
+  'counselor',
+  'teacher',
+  'interventionist',
+];
+
+module.exports = { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES };
