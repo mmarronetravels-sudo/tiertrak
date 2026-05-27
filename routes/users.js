@@ -460,20 +460,39 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Get all teachers for a tenant (convenience route for dropdowns)
-router.get('/tenant/:tenantId/teachers', async (req, res) => {
+// Get all teachers for a tenant (convenience route for dropdowns).
+// Gated by requireAuth + caller-role gate (INTERVENTION_MANAGER_ROLES
+// — minimal-field-set teacher dropdown, natural consumer is
+// intervention/student assignment surface) + positive-int :tenantId
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss).
+router.get('/tenant/:tenantId/teachers', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, full_name 
-       FROM users 
+      `SELECT id, full_name
+       FROM users
        WHERE tenant_id = $1 AND role = 'teacher'
        ORDER BY full_name`,
       [tenantId]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant-teachers] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
