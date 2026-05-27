@@ -1123,7 +1123,9 @@ const handleGoogleSignIn = async (response) => {
   fetchInterventionTemplates(data.user.tenant_id);
   fetchLogOptions();
   loadStaffList(data.user.tenant_id);
-  fetchParentsList(data.user.tenant_id);
+  if (data.user.role !== 'parent') {
+    fetchParentsList(data.user.tenant_id);
+  }
 } else {
   setLoginError(data.error || 'Google sign-in failed');
     }
@@ -1260,7 +1262,9 @@ useEffect(() => {
     fetchInterventionTemplates(data.user.tenant_id);
     fetchLogOptions();
     loadStaffList(data.user.tenant_id);
-    fetchParentsList(data.user.tenant_id);
+    if (data.user.role !== 'parent') {
+      fetchParentsList(data.user.tenant_id);
+    }
       } else {
         setLoginError(data.error || 'Login failed');
       }
