@@ -19774,3 +19774,292 @@ incident, etc.), defer the above.
 ========================================================================
 END SESSION 93
 ========================================================================
+========================================================================
+SESSION 94 — May 27, 2026 (Wednesday Pacific)
+========================================================================
+
+BRANCH (this entry): chore/activities-log-session-94
+SESSION WORK PR: #150 (sec/users-tenant-reads-require-auth, approved by scholapathsystems and merged in-session)
+DISPOSITION: pr-merged
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Closed the GET half of Followup #116 (sec/users-tenant-reads-require-
+auth, PR A from the S92 master-index split). Gated the 5 remaining
+unauthed GET routes in routes/users.js with requireAuth + caller-role
+allowlist + §5 tenant-scope check via resolveAccessibleTenantIds +
+PR #146 catch-block redaction. R4 additionally gained
+VALID_ROLES.includes(role) 400 validation.
+
+With this PR plus PR #146 plus PR #144, all 9 routes in
+routes/users.js are now requireAuth-gated; the users.js auth-coverage
+initiative is complete.
+
+Sequenced 5 commits one-per-route in file order: R1
+GET /tenant/:tenantId, R2 GET /staff, R3 GET /parents, R4
+GET /tenant/:tenantId/role/:role, R5 GET /tenant/:tenantId/teachers.
+Operator-side explicit-commit-verb gating at each boundary per memory
+feedback_explicit_verb_at_each_boundary. Diff + node --check + §4B
+grep on each commit's added lines before the verb was given.
+
+Per-route caller-role-allowlist heuristic decisions:
+  R1 + R4: Object.keys(CREATE_USER_RULES) — peer of GET /:id + POST +
+    PUT + DELETE in same file; routes return full user record incl.
+    email; tightest semantic peer.
+  R2 + R3 + R5: INTERVENTION_MANAGER_ROLES — peer of PR #144
+    /api/staff (R2 same field shape; R3 FE-consumer-scope-grep
+    finding; R5 minimal-field teacher dropdown).
+
+Pre-edit audit deliberately deviated from "assume the same allowlist
+for all 5" — R3's allowlist decision specifically came from grepping
+the actual FE consumers of parentsList and parentAccounts in
+App.jsx, not from reflexively mirroring R1's choice.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+routes/users.js — +135/-40 across 5 commits on the work branch (PR
+#150 commits 87a0e21, a85f2a0, 37bd8c4, 688fee6, 70a3c96). All 5
+edits follow the same chain shape: requireAuth → role gate →
+positive-int validation on tenant identifier → resolveAccessibleTenantIds
+with 404-on-miss probe-resistance → SELECT → redacted catch
+(console.error of error.code + generic 'Server error' body). R2's
+commit also added the INTERVENTION_MANAGER_ROLES import (reused by
+R3 + R5). Incidental trailing-whitespace stripping on SELECT lines
+in all 5 commits (cosmetic; flagged in each diff summary).
+
+activities.txt — this entry (chore/activities-log-session-94, PR
+pending).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+none — no DB changes at all. Pure auth + scope-check hardening +
+response-body redaction.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+§5 dual-path doctrine: all 5 newly-gated routes consume
+resolveAccessibleTenantIds (5/5); zero inline branching on the
+helper's input field; zero inline user_school_access queries.
+Confirmed independently by tenant-isolation-auditor subagent. Per
+memory feedback_helper_consume_dont_inline_5_branch.
+
+Probe-resistance: all 5 routes return 404 'Not found' on §5 miss
+(not 403), matching DELETE :400-453 / GET /:id :225-265 / PUT /:id
+:334-392 / PR #142. Body shape uniform. Convergent confirmation
+across all 3 trio reviewers.
+
+Cross-scope pathway: structurally impossible per M028 composite-FK
++ helper's defense-in-depth predicate on the parent-scope column.
+Independently re-verified by security-reviewer.
+
+WARN-1 disposition: tenant-isolation-auditor surfaced one WARN on
+R3 LEFT JOIN against parent_student_links. The JOIN aggregates a
+foreign-key column from a table without a tenant-scoping column,
+scoped only on the parent's tenant. If a row exists where the
+parent's tenant ≠ the linked student's tenant, R3 returns the
+foreign foreign-key in the aggregate. Pre-existing latent behavior,
+unchanged from main (verified via git show main:routes/users.js).
+PR A *narrows* the surface from unauthenticated to authenticated
+INTERVENTION_MANAGER_ROLES callers within the requested tenant —
+strictly better than baseline. Tracked under Followup #122
+(cross-school parent-student link product decision); must resolve
+before multi-school user_school_access onboards.
+
+Router enumeration: grep on the route-decl line in routes/users.js
+filtered to non-requireAuth returns ZERO. All 9 routes in the file
+are gated. Re-verified independently by security-reviewer and
+tenant-isolation-auditor.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (Section 4B)
+------------------------------------------------------------------------
+
+PII fields touched in the work-PR diff: response field shapes
+unchanged from pre-PR — the diff narrows access to existing fields
+rather than introducing new ones. R5 returns the minimal id +
+full-name-column-only pair (data-minimization positive flagged by
+privacy-reviewer); R1/R4 return the full user record (admin-panel
+surface); R2/R3 return assignment-dropdown shapes.
+
+Logging audit: all 5 catch blocks redacted to log only error.code
+(Postgres SQLSTATE — 5-char taxonomy code) and respond with generic
+'Server error'. Pre-PR baseline returned error.message, which on pg
+errors echoes column names and offending values. PR is a strict
+redaction upgrade for the affected surfaces.
+
+Cross-tenant risk: none identified beyond the pre-existing WARN-1
+captured under TENANT ISOLATION REVIEW above. Not a regression.
+
+§4B grep on the work-PR diff: catalog narrow + wide passes per
+docs/ai-context/4B_GREP_PATTERNS.md ran against added-lines-only
+(^+ excluding ^+++) on git diff per-commit, pre-each-commit. All 5
+commits' grep results returned zero matches. For this activities-
+log entry, the same patterns were rerun against the new entry's
+added lines; results disclosed in VERIFICATION below.
+
+Per the S89 recursion-trap lesson, this entry does not enumerate
+which categories the grep checked for; it cites only acts and
+results.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Subagent triad: dispatched in parallel single-pass after all 5
+commits landed. Verdicts:
+  privacy-reviewer: PASS (12 findings — 10 INFO + 2 LOW; both LOWs
+    are pre-existing over-fetch notes not bundled).
+  security-reviewer: PASS (15 findings — 10 INFO + 5 LOW; all
+    bankable as separate chores).
+  tenant-isolation-auditor: PASS-WITH-NOTES (4 findings — 1 WARN +
+    3 INFO; WARN is pre-existing per TENANT ISOLATION REVIEW above).
+
+This is the fifth consecutive sec/ PR to clear the trio on a
+single-pass with no re-review iteration needed. Pattern
+attribution: audit-before-edit discipline + per-commit-boundary
+explicit-verb gating + pre-anchoring on canonical PR #142 / PR #144
+/ PR #146 auth-chain shape so reviewers verify by convergent grep
+rather than re-derive.
+
+Convergent cross-reviewer confirmations (load-bearing per memory
+feedback_convergent_grep_verification):
+  3/3 confirmed §5 helper consumed (not inlined) at 5/5 routes
+  3/3 confirmed 404-on-miss probe-resistance at 5/5 routes
+  3/3 confirmed catch-block redaction (error.code only, generic
+    body)
+  2/3 independently re-ran the router-enum grep — zero unauthed
+    remain
+
+Pre-commit syntax check: node --check routes/users.js after each of
+5 edits — all 5 OK.
+
+Pre-commit §4B grep on git diff per-commit (narrow + wide passes
+per docs/ai-context/4B_GREP_PATTERNS.md against added-lines-only):
+zero matches on all 5 commits.
+
+Pre-commit diff inspection: git diff --stat after each Edit,
+verbatim inline-pasted in response body, operator-approved before
+commit verb.
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+Frontend: not touched.
+
+§2A formal-review gate: PR #150 opened against main with
+scholapathsystems requested as reviewer (verbatim spelling per
+operator standing instruction). scholapathsystems submitted formal
+APPROVED review at 2026-05-27T18:26:18Z; PR merged at
+2026-05-27T18:34:03Z (8 minutes later). Merge SHA: 6a0c23f.
+reviewDecision: APPROVED. §2A "formal `gh pr review --approve`
+recorded in the PR's reviews array" requirement satisfied.
+
+New cadence data point worth flagging: PR #150 was reviewed and
+merged in-session, vs the S93-established wait-for-async pattern
+where the work PR sits between sessions waiting for review. The
+in-session merge collapses the work-PR → activities-PR sequence
+into a single session's close; previously the activities-PR opened
+mid-session and waited for the work-PR to merge before merging
+itself. Watch over the next few sessions whether in-session merge
+becomes the new norm or remains a one-off; if it becomes the norm,
+the "open chore PR after work-PR merges" rationale weakens since
+both can sequence cleanly in one session.
+
+URL: https://github.com/mmarronetravels-sudo/tiertrak/pull/150
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Five net-new follow-ups surfaced by the trio review, deferred to
+session-close housekeeping per operator instruction; not bundled
+into PR #150:
+
+  (a) chore/extract-admin-user-read-roles-constant — LOW; from
+      security-reviewer. Make R1/R4 allowlist explicit; currently
+      Object.keys(CREATE_USER_RULES) implicitly couples read access
+      to the write surface.
+  (b) chore/consolidate-pg-pools — LOW, pre-existing; from
+      security-reviewer. Module-local pg.Pool duplication across
+      routes/ and middleware/.
+  (c) chore/consolidate-valid-roles-constant — LOW, pre-existing;
+      from security-reviewer. VALID_ROLES drift risk vs
+      constants/roles.js.
+  (d) R1/R4 timestamp over-fetch (created_at/updated_at in list
+      view) — LOW, pre-existing; from privacy-reviewer. Bundle with
+      Followups #78/#79 in future data-min sweep.
+  (e) Followup #122 intersection on R3 JOIN aggregate — WARN,
+      pre-existing; from tenant-isolation-auditor. See TENANT
+      ISOLATION REVIEW WARN-1 disposition above.
+
+Already pre-banked from the audit phase, confirmed by reviewers:
+  chore/delete-routes-users-staff-dead-duplicate — R2 is
+    functionally redundant with /api/staff post-PR-#144.
+  chore/skip-fetchParentsList-for-parent-role — sibling FE PR to
+    eliminate the documented parent-role 403 noise floor on R3
+    (see next item).
+
+Parent-role 403 noise floor on R3: documented in-code at
+routes/users.js:140-144. fetchParentsList in App.jsx:665 fires
+unconditionally on every login including the parent role; parent
+users will hit 403 on login post-PR-#150-merge. Catch-only
+console.error in App.jsx:673 — no UI breakage, no toast, no
+functional regression. Sibling FE PR
+chore/skip-fetchParentsList-for-parent-role will eliminate the
+noise; per security-reviewer's LOW finding, should land within ~1
+session of PR #150's merge to avoid 403 alarm-budget masking.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. Same 2 untracked
+scripts/ops/ SQL audit files + 1 untracked docs/references/ PDF
+carried over from S92 + S93, unchanged this session.
+S90 followup .4b-tenant-slugs.local: STANDS. No S94 work touched
+the operator-side slug-file setup.
+
+PR #148 (fix/parents-fetch-credentials-include) merged 2026-05-27
+per git log ca15ad8; PR #149 (chore/activities-log-session-93)
+merged 2026-05-27 per git log b8d9297. S93 close completed before
+S94 work started.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Request scholapathsystems as reviewer on this activities-log PR
+per the S93-established cadence (all PRs to main require approval),
+then merge after approval. PR #150 already merged in-session at
+6a0c23f; this activities-log PR is the only outstanding S94
+artifact.
+
+After this PR lands, proceed to
+chore/skip-fetchParentsList-for-parent-role as the immediate
+sibling FE PR — eliminates the documented parent-role 403 noise
+floor on R3 (now live in prod post-PR-#150-merge). Should land
+within ~1 session per security-reviewer's LOW finding to avoid
+403 alarm-budget masking.
+
+Then proceed to the next sec/ priority cluster: Followup #114
+(sec/auth-error-message-redaction on routes/auth.js) — same
+WARN-2-shape redaction work, parent-email PII surface. The pattern
+established by PR #146 + PR #150 (error.code log + generic body)
+is now the canonical shape; routes/auth.js:89, 388, 391, 406, 407
+all need the same treatment.
+
+The five net-new banked follow-ups (a)-(e) from this session's
+trio review are queued for operator-side master-index numbering
+and cross-reference reconciliation.
+
+If higher-priority operational work has been queued (production
+incident, etc.), defer the above.
+
+========================================================================
+END SESSION 94
+========================================================================
