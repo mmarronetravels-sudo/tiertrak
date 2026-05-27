@@ -20063,3 +20063,180 @@ incident, etc.), defer the above.
 ========================================================================
 END SESSION 94
 ========================================================================
+========================================================================
+SESSION 95 — 2026-05-27
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Frontend-only chore PR (#152) eliminating the documented login-
+time 403 noise floor that PR #150's role-gated /users/parents
+endpoint introduced for the family-facing user role. Two
+unconditional fetchParentsList call sites in App.jsx (the Google
+login and password login flows) now skip the call when the just-
+authenticated user belongs to the family-facing role. Net diff:
++6/−2, single file (frontend/src/App.jsx).
+
+Session opened against a freshly-pulled main that already carried
+both S94 artifacts: PR #150 (sec/users-tenant-reads-require-auth,
+merged 6a0c23f) and PR #151 (chore/activities-log-session-94,
+merged 5dead2b). No outstanding S94 carryovers; this session is
+the immediate sibling FE cleanup queued by S94's close note.
+
+Two design decisions documented in PR #152 body:
+
+  (1) Guard PLACEMENT: call-site, not function-entry. A function-
+      entry guard would read `user` from closure (potentially
+      stale relative to the just-executed setUser(data.user)),
+      while call-site guards read the role attribute directly off
+      the auth-response object. Function contract preserved — any
+      future staff-facing surface that calls fetchParentsList
+      still gets the unguarded fetch.
+
+  (2) Guard FORM: negative-list against the family-facing role,
+      not positive-list against the staff allowlist. If a future
+      BE-allowed role is added to INTERVENTION_MANAGER_ROLES
+      (e.g., a new specialist role), positive-list would silently
+      fail to fetch; negative-list lets new staff roles fetch
+      automatically and only surfaces a benign console error if a
+      newly-excluded role is added. Aligns with the dominant
+      App.jsx pattern (10+ pre-existing negative-and-positive
+      checks against the family-facing role at module scope; zero
+      positive-list role allowlists at module scope).
+
+AppContext.jsx:280 — the duplicate fetchParentsList that S93
+banking flagged as "likely dead" — left untouched per scope
+discipline. Documented in PR #152 body as out-of-scope.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+frontend/src/App.jsx
+  Lines 1126 (handleGoogleSignIn) and 1263 (handleLogin): wrap
+  fetchParentsList(data.user.tenant_id) in a single-condition
+  guard that skips the call when the auth-response role attribute
+  matches the family-facing role enum value. Indentation matches
+  each enclosing block's pre-existing style (2-space for the
+  Google flow, 4-space for the password flow).
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None. FE-only change; no SQL, no schema, no backend.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+No §5 surface. No SQL, no new endpoints, no changes to scope
+resolution or to user_school_access consumption. The diff narrows
+when an existing call fires; it does not introduce any data path.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+§4B narrow + wide grep on diff (-U10): zero matches. The added
+guard tests a role enum attribute on the auth-response object;
+no identifier, name, contact, or assignment field is read,
+logged, or transmitted. Net effect on PII flow: reduction — the
+family-facing role no longer triggers a 403'd request for the
+staff-side parents list, so the FE no longer surfaces that error
+on every family-facing login.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Pre-commit:
+  - git diff --stat: frontend/src/App.jsx | 8 ++++++-- (+6/−2)
+  - Full unified diff inline-pasted in response body, operator-
+    approved before commit verb.
+  - npm run lint (frontend): 89 problems (72 errors, 17 warnings)
+    — exactly matches the 89-baseline. Zero new lint issues
+    introduced.
+  - §4B narrow + wide grep on diff: zero matches on the added
+    lines and on the -U10 hunk context.
+
+Backend tests: no suite (Followup #73, unchanged).
+Backend lint: not configured (Followup #74, unchanged).
+
+§2A formal-review gate: PR #152 opened against main with
+scholapathsystems requested as reviewer (verbatim spelling).
+reviewDecision at activities-log composition time:
+REVIEW_REQUIRED, state OPEN. URL:
+https://github.com/mmarronetravels-sudo/tiertrak/pull/152
+PR #152 is the second data point on the S94 in-session-merge
+cadence observation; final merge timing relative to this
+activities-log PR will inform whether the in-session pattern is
+durable or whether PR #150 was a one-off.
+
+If PR #152 receives in-session approval before this activities-
+log PR opens, the timing will be captured in an inline addendum
+beneath this section. As of composition, PR #152 sits at the §2A
+formal-review gate.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Net-new banked follow-up from this session:
+
+  chore/consolidate-fe-role-constants — no canonical FE role
+    constant exists today; ROLES_WHO_CAN_EDIT_TIER1
+    (App.jsx:2208) is locally scoped inside a single render
+    function. Worth consolidating in a future session so guards
+    like the one landed in PR #152 can reference a single
+    source rather than duplicating the role-string literal at
+    each guard site. Confirmed via repo-wide grep for
+    STAFF_ROLES / INTERVENTION_MANAGER_ROLES / MANAGER_ROLES /
+    `const \w*ROLE\w* =` at session start: only the locally-
+    scoped Tier 1 array exists.
+
+AppContext.jsx:280 duplicate fetchParentsList — STANDS as
+"likely dead" (S93 banking). Not deleted in PR #152 per scope
+discipline. Worth a confirm-then-delete chore in a future
+session once it's confirmed no surface consumes the export
+exposed at AppContext.jsx:426.
+
+Followup #73 (no backend test suite): STANDS.
+Followup #74 (backend lint not configured): STANDS.
+Followup #94 (scripts/ops/ → .gitignore): STANDS. Same 2
+  untracked scripts/ops/ SQL audit files + 1 untracked
+  docs/references/ PDF carried over from S92/S93/S94,
+  unchanged this session.
+S90 followup .4b-tenant-slugs.local: STANDS. No S95 work
+  touched the operator-side slug-file setup.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+If PR #152 has not yet merged at S96 open, check its review
+status and proceed once approved. The S94 → S95 cadence data
+point (PR #150 reviewed and merged in-session in 8 minutes)
+makes in-session merge of PR #152 plausible but not guaranteed.
+
+After PR #152 lands, proceed to the next sec/ priority queued by
+S94's close: Followup #114 (sec/auth-error-message-redaction on
+routes/auth.js). The canonical redaction pattern established by
+PR #146 + PR #150 (error.code log + generic 500 body) should be
+applied to the routes/auth.js auth-failure paths at lines 89,
+388, 391, 406, 407.
+
+Alternatively, if cleanup-cycle continuation is preferred, the
+net-new banked chore/consolidate-fe-role-constants from this
+session is a small, FE-only, no-PII follow-up that would let
+future guards like the one landed in PR #152 reference a single
+source.
+
+If higher-priority operational work has been queued (production
+incident, etc.), defer the above.
+
+========================================================================
+END SESSION 95
+========================================================================
