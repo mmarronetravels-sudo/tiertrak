@@ -278,10 +278,11 @@ router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT 
+      SELECT
         s.id,
         s.first_name,
         s.last_name,
+        s.external_id,
         s.grade,
         s.area,
         s.tier,
@@ -292,17 +293,17 @@ router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
         pf.id AS prereferral_id,
         pf.status AS prereferral_status
       FROM students s
-      INNER JOIN student_interventions si 
+      INNER JOIN student_interventions si
         ON s.id = si.student_id AND si.status = 'active'
-      LEFT JOIN weekly_progress wp 
+      LEFT JOIN weekly_progress wp
         ON si.id = wp.student_intervention_id
-      LEFT JOIN prereferral_forms pf 
+      LEFT JOIN prereferral_forms pf
         ON s.id = pf.student_id AND pf.status IN ('draft', 'submitted', 'approved')
       WHERE s.tenant_id = $1
         AND s.tier = 1
         AND s.archived = false
         AND s.id NOT IN (SELECT student_id FROM referral_monitoring)
-      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier, pf.id, pf.status
+      GROUP BY s.id, s.first_name, s.last_name, s.external_id, s.grade, s.area, s.tier, pf.id, pf.status
       HAVING
         COUNT(DISTINCT si.id) >= 3
         OR (COUNT(DISTINCT wp.id) >= 4 AND AVG(wp.rating) <= 2.0)
@@ -323,6 +324,7 @@ router.get('/referral-candidates/:tenantId', requireAuth, async (req, res) => {
         id: s.id,
         first_name: s.first_name,
         last_name: s.last_name,
+        external_id: s.external_id,
         grade: s.grade,
         area: s.area,
         active_interventions: parseInt(s.active_interventions),
@@ -351,10 +353,11 @@ router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const result = await pool.query(`
-      SELECT 
+      SELECT
         s.id,
         s.first_name,
         s.last_name,
+        s.external_id,
         s.grade,
         s.area,
         s.tier,
@@ -368,14 +371,14 @@ router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
       FROM referral_monitoring rm
       INNER JOIN students s ON rm.student_id = s.id
       LEFT JOIN users u ON rm.monitored_by = u.id
-      LEFT JOIN student_interventions si 
+      LEFT JOIN student_interventions si
         ON s.id = si.student_id AND si.status = 'active'
-      LEFT JOIN weekly_progress wp 
+      LEFT JOIN weekly_progress wp
         ON si.id = wp.student_intervention_id
       WHERE rm.tenant_id = $1
         AND s.tier = 1
         AND s.archived = false
-      GROUP BY s.id, s.first_name, s.last_name, s.grade, s.area, s.tier,
+      GROUP BY s.id, s.first_name, s.last_name, s.external_id, s.grade, s.area, s.tier,
                rm.id, rm.notes, rm.created_at, u.full_name
       ORDER BY COALESCE(AVG(wp.rating), 0) ASC
     `, [pathTenantId]);
@@ -386,6 +389,7 @@ router.get('/referral-monitoring/:tenantId', requireAuth, async (req, res) => {
         id: s.id,
         first_name: s.first_name,
         last_name: s.last_name,
+        external_id: s.external_id,
         grade: s.grade,
         area: s.area,
         monitoring_id: s.monitoring_id,
@@ -528,12 +532,17 @@ router.post('/', requireAuth, async (req, res) => {
     }
     const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
     if (bindError) return res.status(bindError.status).json(bindError.body);
-    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id } = req.body;
+    // external_id: trim, empty-after-trim → null. Matches the normalize shape
+    // used by routes/csvImport.js parse loop in commit 9f5c415.
+    const externalIdNormalized = (typeof external_id === 'string' && external_id.trim() !== '')
+      ? external_id.trim()
+      : null;
     const result = await pool.query(
-      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, archived)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
+      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id, archived)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE)
        RETURNING *`,
-      [tenantId, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low']
+      [tenantId, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low', externalIdNormalized]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -549,6 +558,25 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     const { id } = req.params;
     const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+    // external_id uses DIFFERENT semantics than the fields destructured above.
+    // The other fields are NOT NULL constrained on the students table — an
+    // omitted field in req.body destructures to undefined, pg writes NULL,
+    // and PG's NOT NULL constraint raises a visible error. external_id is
+    // nullable (Migration 035 — partial UNIQUE, NULL allowed), so the same
+    // null-on-omit pattern would SILENTLY clear the column on every PUT that
+    // doesn't include it (e.g., any pre-035 FE code path that doesn't yet
+    // know about external_id). Preserve-on-omit guards that data-loss
+    // hazard via CASE-WHEN in the UPDATE: undefined → keep existing value;
+    // null or empty-string in body → clear; non-empty string → trimmed value.
+    // Any future nullable PUT field should follow this pattern — null-on-omit
+    // is unsafe for nullable columns. See fix/students-put-null-on-omit-
+    // broader-investigation followup for the broader audit.
+    const hasExternalId = Object.prototype.hasOwnProperty.call(req.body, 'external_id');
+    const externalIdValue = hasExternalId
+      ? (typeof req.body.external_id === 'string' && req.body.external_id.trim() !== ''
+          ? req.body.external_id.trim()
+          : null)
+      : null;
     // Pre-flight tenant scope: 404 for both not-found and not-in-accessible
     // (leak-resistance, mirrors tier1-assessments.js:251 post-PR-S3-C).
     // Tenant-bound UPDATE WHERE is belt-and-suspenders against the
@@ -564,10 +592,12 @@ router.put('/:id', requireAuth, async (req, res) => {
     const result = await pool.query(
       `UPDATE students
        SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4,
-           tier = $5, area = $6, risk_level = $7, secondary_area = $8, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $9 AND tenant_id = ANY($10::int[])
+           tier = $5, area = $6, risk_level = $7, secondary_area = $8,
+           external_id = CASE WHEN $9::boolean THEN $10::text ELSE external_id END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $11 AND tenant_id = ANY($12::int[])
        RETURNING *`,
-      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, id, accessible]
+      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, hasExternalId, externalIdValue, id, accessible]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Student not found' });
