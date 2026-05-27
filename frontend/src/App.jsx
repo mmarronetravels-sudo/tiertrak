@@ -619,7 +619,9 @@ useEffect(() => {
   // Fetch all parent accounts
 const fetchParentAccounts = async () => {
   try {
-    const res = await fetch(`${API_URL}/users/parents?tenant_id=${user.tenant_id}`);
+    const res = await fetch(`${API_URL}/users/parents?tenant_id=${user.tenant_id}`, {
+      credentials: 'include'
+    });
     if (res.ok) {
       const data = await res.json();
       setParentAccounts(data);
@@ -664,7 +666,9 @@ const fetchAllParentLinks = async () => {
 
 const fetchParentsList = async (tenantId) => {
   try {
-    const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`);
+    const response = await fetch(`${API_URL}/users/parents?tenant_id=${tenantId}`, {
+      credentials: 'include'
+    });
     if (response.ok) {
       const data = await response.json();
       setParentsList(data);
