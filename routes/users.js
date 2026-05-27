@@ -58,20 +58,37 @@ async function resolveAndBindTargetTenant(req) {
   return { targetTenantId: bodyTarget, error: null };
 }
 
-// Get all users for a tenant
-router.get('/tenant/:tenantId', async (req, res) => {
+// Get all users for a tenant. Gated by requireAuth + caller-role
+// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// validation + §5 tenant-scope check via resolveAccessibleTenantIds
+// (404 'Not found' on miss).
+router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    const { tenantId } = req.params;
+    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = parseInt(req.params.tenantId, 10);
+    if (!Number.isInteger(tenantId) || tenantId <= 0 || tenantId > 2147483647) {
+      return res.status(400).json({ error: 'Invalid tenantId' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     const result = await pool.query(
-      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at 
-       FROM users 
-       WHERE tenant_id = $1 
+      `SELECT id, tenant_id, email, full_name, role, created_at, updated_at
+       FROM users
+       WHERE tenant_id = $1
        ORDER BY full_name`,
       [tenantId]
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('[users:tenant] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
