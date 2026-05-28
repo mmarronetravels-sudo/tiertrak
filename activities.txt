@@ -20240,3 +20240,324 @@ incident, etc.), defer the above.
 ========================================================================
 END SESSION 95
 ========================================================================
+========================================================================
+SESSION 96 — 2026-05-28
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Multi-commit feature PR (#154) closing the S94-identified
+schema-audit priority: the customer-facing roster upload template
+documented an SIS-issued student-identifier column as optional,
+but the students table lacked the field and the importer
+discarded the value. PR #154 round-trips that identifier
+end-to-end via Migration 035 (per-tenant partial UNIQUE) plus
+the CSV importer, manual POST/PUT, two explicit-projection
+referral GETs, a CSV-template help-text update, seed-roster
+comment catchup, and a 23505→409 collision-response translation.
+Five commits, ordered by dependency: migration → importer →
+routes → docs → reviewer-driven correctness fix. Net diff:
++212/−35 across 8 files.
+
+Session opened against a freshly-pulled main that already carried
+both S95 artifacts: PR #152 (chore/skip-fetchParentsList-for-
+parent-role, merged 8a219cd) and PR #153 (chore/activities-log-
+session-95, merged 1b0e76b). No outstanding S95 carryovers.
+
+PR #154 state at session close: OPEN, reviewDecision
+REVIEW_REQUIRED, mergeStateStatus BLOCKED per the §2A ruleset.
+Awaiting scholapathsystems review. This is the first session
+where a work PR did NOT merge in-session — the 5-commit scope
+and the trio + smoke-test load-bearing review surface warranted
+explicit external review before merge per established cadence.
+
+------------------------------------------------------------------------
+FIVE-COMMIT BRANCH STATE
+------------------------------------------------------------------------
+
+dfcf38a  migration 035: add external_id column to students table
+9f5c415  feat(csv-import): accept external_id column for student bulk-import
+a9e791d  feat(students-routes): wire external_id through POST, PUT, and referral GETs
+e4ac13d  docs(external-id): FE help-text + seed-roster comments for Migration 035
+01dbb7f  fix(external-id): 23505→409 translation + privacy-doc entry
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+migration-035-students-external-id.sql — new file. Migration 035
+  adds 1 nullable TEXT column to the students table; creates a
+  partial UNIQUE INDEX on (tenant_id, field) WHERE the field IS
+  NOT NULL. Per-tenant uniqueness; cross-tenant collisions are
+  by design allowed. Mirrors Migration 025's referral_monitoring
+  (tenant_id, student_id) shape.
+
+schema.sql — sync. Added the new column definition + the partial
+  UNIQUE INDEX. Per Followup #110 doctrine: schema.sql kept in
+  sync with the migration in the same commit.
+
+routes/csvImport.js — extended GET /template + GET /template/
+  download to advertise the new column as optional with realistic
+  sample values; extended parse loop to accept the column with
+  trim + empty→null normalization; added pre-INSERT within-upload
+  dedup map keyed by value with first-occurrence row tracking;
+  extended INSERT to 8 columns; added 23505→409 translation in
+  the dbError catch path scoped strictly to the new constraint.
+
+routes/students.js — extended POST + PUT to accept the new
+  column. POST uses null-on-omit semantics (trim + empty→null).
+  PUT uses preserve-on-omit via 'field in req.body' check + CASE-
+  WHEN in UPDATE — asymmetric with other PUT fields by design
+  (data-loss prevention; the new column is the first nullable
+  PUT field on this route). Extended GET /referral-candidates
+  and GET /referral-monitoring with explicit SELECT + GROUP BY
+  + response-map projections of the new column (these two are
+  explicit-projection routes, not s.* auto-flow). Added 23505→
+  409 translation in POST + PUT catch paths scoped strictly to
+  the new constraint. 3 catch blocks total across 2 files
+  carrying the same operator-facing message.
+
+frontend/src/App.jsx — single-line addition to the CSV-format
+  help-text optional-columns list (+1/−0). New column documented
+  with parenthetical matching sibling format. No edit-modal, no
+  list-table, no detail-page display — those are explicit follow-
+  up scope.
+
+data/sandbox-roster-template.js — comment-only flip: the stale
+  "does NOT round-trip" claim updated to honestly document the
+  API-yes-seed-no asymmetry. The seed scripts at scripts/seed-*.js
+  still discard the value at INSERT time (separate follow-up).
+
+data/[per-tenant-sandbox-seed-roster].js — same comment-only flip with
+  the file's narrative-prose voice preserved.
+
+docs/ai-context/PRIVACY_REVIEW.md — new "Students roster — SIS-
+  issued identifier (FERPA)" section between the §504 entry and
+  the screener_results entry. Documents the full writer surface
+  (POST/PUT with preserve-on-omit asymmetry; CSV importer with
+  within-upload dedup), full reader surface (staff GETs via s.*
+  and via explicit projection; parent surface via parentLinks.js),
+  per-tenant uniqueness invariant, §4B error-response policy
+  (dual narrowing for dedup vs 23505), and deferred-display
+  caveats.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+migration-035-students-external-id.sql — applied locally to
+project_local_dev_db; column shape (TEXT, nullable, no default)
+and partial unique index verified post-apply via
+information_schema.columns + pg_indexes queries. NOT yet applied
+to prod; prod apply is a §2A merge-time operator step.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor subagent: APPROVED with 0 findings
+(0 CRITICAL / 0 HIGH / 0 WARN / 2 INFO confirmatory). 5 queries
+audited, all tenant-scoped:
+  - referral-candidates SELECT — tenant_id = $1 with upstream
+    accessible-set check
+  - referral-monitoring SELECT — same shape
+  - POST INSERT — tenant_id bound via resolveAndBindTargetTenant
+  - PUT UPDATE — pre-flight + WHERE id=$ AND tenant_id = ANY($)
+  - CSV-import INSERT — tenant_id via resolveAndBindTargetTenant
+
+Migration 035's partial UNIQUE INDEX on (tenant_id, field) is
+per-tenant; cross-tenant ON CONFLICT pathways structurally
+impossible at SQL layer. Mirrors Migration 025's referral_
+monitoring composite shape. Schema design confirmed correct
+for §5 by the auditor.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent (WI8 initial): APPROVED WITH NOTES
+(0 CRITICAL / 0 HIGH / 3 WARN / 2 INFO).
+  - WARN-1: PRIVACY_REVIEW.md missing entry for the new field
+    — folded into the PR via commit 01dbb7f.
+  - WARN-2: parent-portal surface now projects the new column
+    via SELECT s.* in parentLinks.js — operator product/legal
+    judgment call per the PR body Reviewer Attention section.
+  - WARN-3: s.* over-fetch to non-elevated staff in list/detail
+    GETs — deferred-display trip-wire; flagged in the new
+    PRIVACY_REVIEW.md entry's deferred-display caveats.
+
+privacy-reviewer subagent (WI8.5 re-review of 01dbb7f): APPROVED
+(0 CRITICAL / 0 HIGH / 0 WARN / 3 INFO confirmatory). The doc
+entry matches the §504 and screener_results per-table-entry
+pattern; writer/reader inventory matches code 1:1; new 409
+response body contains zero PII (no PG constraint name, no
+index name, no tenant_id integer, no field values, no stack
+traces); net data minimization improvement on the collision
+path vs the pre-translation 500 + raw error.message pathway.
+
+------------------------------------------------------------------------
+SECURITY REVIEW
+------------------------------------------------------------------------
+
+security-reviewer subagent (WI8 initial): APPROVED WITH NOTES
+(0 CRITICAL / 0 HIGH / 2 WARN / 3 INFO).
+  - Both WARNs targeted the same surface: raw PG message echo
+    on partial-UNIQUE-index violation in 3 catch blocks
+    (csvImport.js dbError path + students.js POST/PUT). Reviewer
+    flagged the surface as load-bearing post-Migration-035 and
+    recommended either folding the 23505 translation into the
+    PR pre-merge OR shipping immediately after as a sibling PR.
+  - Folded in pre-merge via commit 01dbb7f scoped strictly to
+    constraint = idx_students_tenant_external_id. Other 23505
+    paths (users (tenant_id, email), screener_results composite,
+    future UNIQUEs) correctly fall through to the existing
+    500 + raw error.message pathway — broader translation
+    remains banked as fix/api-dberror-translation.
+
+security-reviewer subagent (WI8.5 re-review of 01dbb7f):
+APPROVED (0 CRITICAL / 0 HIGH / 0 WARN / 3 INFO confirmatory).
+Exact-match constraint gate verified at all three sites; no
+PG metadata interpolation in 409 response bodies; other 23505
+paths confirmed correctly falling through.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Smoke test against project_local_dev_db, end-to-end via running
+server with auth + CSRF, fabricated test tenant only (no real
+customer data):
+
+WI7 matrix (against e4ac13d): 16/16 PASS.
+  - 1a-1e CSV importer: template download, valid upload, within-
+    upload dedup, upload-vs-existing collision, empty-string-to-
+    NULL normalization
+  - 2a-2c POST: with field, without field, collision rejection
+  - 3a-3e PUT (critical CASE-WHEN preserve-on-omit): omit
+    preserves, null clears, empty clears, value updates,
+    whitespace trims
+  - 4a-4c GET: s.* auto-flow, explicit projection + GROUP BY
+    non-collapse on 2 referral routes
+  - 5a FE static review
+
+WI8.5 re-tests (against 01dbb7f): 3/3 PASS.
+  - 1d: CSV collision surfaces the new clean message via
+    insertErrors; no PG internals; other rows still insert
+  - 2c: POST collision returns HTTP 409 (was 500 pre-WI8.5);
+    body is the sanitized literal
+  - 3f (new): PUT changing the field to a value already held
+    by another student in same school returns HTTP 409;
+    pre-state preserved on PUT subject (PG rolled back)
+
+No test data left in dev DB after either run. Cleanup CASCADE
+verified clean (zero stray test rows by external_id prefix
+match, zero stray test users by email match, zero stray test
+tenant by subdomain match).
+
+Environment note (pre-existing, NOT introduced by S96): local
+dev DB was missing the secondary_area column though prod has
+it. Banked previously as migration/capture-out-of-band-columns.
+Applied locally ALTER TABLE ADD COLUMN IF NOT EXISTS to unblock
+smoke testing. No schema.sql change committed.
+
+Backend test command: not configured (Followup #73). N/A for
+this PR's scope — verification was end-to-end smoke test against
+running server with DB ground-truth check per case.
+
+Backend lint command: not configured (Followup #74). node
+--check passed on all modified backend files.
+
+Frontend lint: not run; FE change is +1 line in repo root's
+App.jsx and the project's lint config lives in frontend/. The
+addition is a static <li> with <code> tag, no user-input
+interpolation. No XSS surface introduced per security-reviewer.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Three net-new follow-ups banked this session:
+
+  (a) fix/students-put-null-on-omit-broader-investigation —
+      audit whether teacher_id, tier, area, secondary_area,
+      risk_level have the same null-on-omit hazard as the new
+      field, hidden today by FE always sending full document.
+      Banked at WI4 from PUT semantics finding. Code-quality;
+      not a tenant-isolation concern per tenant-isolation-
+      auditor (WI8 INFO-1).
+
+  (b) fix/api-dberror-translation — broader pg-error-code →
+      clean HTTP translation across the API surface. S96
+      lands a strictly-scoped partial fix in 01dbb7f for the
+      new constraint only; the broader scope (other 23505
+      constraints, 23503 FK violations, 22P02 invalid-input,
+      etc.) remains. Banked at WI4; reviewer-confirmed as
+      load-bearing for the new constraint and resolved
+      in-PR for that constraint only.
+
+  (c) fix/csv-import-fe-renders-error-response — newly
+      banked from WI7 verification finding. The FE captures
+      the CSV importer's response into csvResult state and
+      never reads it; per-row errors (validation, dedup, DB)
+      are silently discarded. Operator sees "successful
+      upload" UI feedback while rows fail invisibly. HIGH-ish
+      priority because S96's new dedup pathway and 23505
+      translation produce well-formed insertErrors entries —
+      the gap is on the FE rendering side and the gap
+      becomes more visible.
+
+Pre-existing follow-ups carrying through this session:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured): STANDS.
+  Followup #94 (scripts/ops/ → .gitignore): STANDS. Same 2
+    untracked scripts/ops/ SQL audit files + 1 untracked
+    docs/references/ PDF carried over from S92-S95, unchanged
+    this session.
+  migration/capture-out-of-band-columns: STANDS — flagged
+    explicitly in WI7 environment note for next session's
+    reproducibility context.
+
+PR #152 (chore/skip-fetchParentsList-for-parent-role) merged
+2026-05-27 per git log 8a219cd; PR #153 (chore/activities-log-
+session-95) merged 2026-05-27 per git log 1b0e76b. S95 close
+completed before S96 work started.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Monitor PR #154 (feat/external-student-id) for scholapathsystems
+review. PR is OPEN / REVIEW_REQUIRED / BLOCKED at S96 close —
+this is the first session where a work PR did NOT merge
+in-session, per the trio-review-load-bearing surface size of
+the change. Awaiting external reviewer approval per §2A
+ruleset.
+
+If scholapathsystems approves, merge PR #154 and answer the
+two product/legal judgment calls surfaced in the PR body
+Reviewer Attention section:
+  - Parent visibility of the new SIS-issued field via
+    parentLinks.js (defensible position documented; explicit
+    yes/restrict/defer decision needed).
+  - s.* over-fetch deferred-display trip-wire — flagged in
+    PRIVACY_REVIEW.md for future-PR review when staff display
+    actually ships.
+
+After PR #154 merges (or in parallel if cleanup-cycle is
+preferred), proceed to one of:
+  - fix/csv-import-fe-renders-error-response (newly banked,
+    HIGH-ish priority — operators currently can't see CSV
+    import errors at all)
+  - fix/api-dberror-translation broader scope (medium-priority
+    pre-existing pattern)
+  - fix/students-put-null-on-omit-broader-investigation
+    (LOW priority code-quality cleanup)
+
+If higher-priority operational work has been queued
+(production incident, etc.), defer the above.
+
+========================================================================
+END SESSION 96
+========================================================================
