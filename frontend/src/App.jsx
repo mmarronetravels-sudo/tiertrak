@@ -5903,6 +5903,36 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                     No rows imported. {csvResult.errors.length} of {csvResult.summary.totalRows} failed.
                   </h3>
                 </div>
+                {csvResult.errors.length > 0 && (
+                  <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
+                    {csvResult.errors.map((err, i) => {
+                      // SHAPE B (within-upload dedup) intentionally narrows data to {external_id} only per §4B.
+                      // The fallback ladder below handles this — do NOT widen shape B in routes/csvImport.js
+                      // to align with shape C. See PRIVACY_REVIEW.md entry for commit 01dbb7f.
+                      let suffix = null;
+                      if (err.data?.first_name && err.data?.last_name) {
+                        suffix = `${err.data.first_name} ${err.data.last_name}`;
+                      } else if (err.data?.external_id) {
+                        suffix = `ID: ${err.data.external_id}`;
+                      }
+                      return (
+                        <div
+                          key={`${err.row}-${i}`}
+                          className="flex items-center justify-between p-2 bg-white rounded-lg border border-red-100"
+                        >
+                          <div>
+                            <span className="font-medium text-slate-800">Row {err.row}</span>
+                            <span className="text-slate-400 mx-2">—</span>
+                            <span className="text-slate-600">{err.error}</span>
+                          </div>
+                          {suffix !== null && (
+                            <span className="text-xs text-slate-500">{suffix}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : csvResult.summary && csvResult.summary.imported > 0 && csvResult.errors.length > 0 ? (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -5912,6 +5942,36 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                     Imported {csvResult.summary.imported} of {csvResult.summary.totalRows} rows. {csvResult.errors.length} failed.
                   </h3>
                 </div>
+                {csvResult.errors.length > 0 && (
+                  <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
+                    {csvResult.errors.map((err, i) => {
+                      // SHAPE B (within-upload dedup) intentionally narrows data to {external_id} only per §4B.
+                      // The fallback ladder below handles this — do NOT widen shape B in routes/csvImport.js
+                      // to align with shape C. See PRIVACY_REVIEW.md entry for commit 01dbb7f.
+                      let suffix = null;
+                      if (err.data?.first_name && err.data?.last_name) {
+                        suffix = `${err.data.first_name} ${err.data.last_name}`;
+                      } else if (err.data?.external_id) {
+                        suffix = `ID: ${err.data.external_id}`;
+                      }
+                      return (
+                        <div
+                          key={`${err.row}-${i}`}
+                          className="flex items-center justify-between p-2 bg-white rounded-lg border border-amber-100"
+                        >
+                          <div>
+                            <span className="font-medium text-slate-800">Row {err.row}</span>
+                            <span className="text-slate-400 mx-2">—</span>
+                            <span className="text-slate-600">{err.error}</span>
+                          </div>
+                          {suffix !== null && (
+                            <span className="text-xs text-slate-500">{suffix}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ) : csvResult.summary && csvResult.errors.length === 0 ? (
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
