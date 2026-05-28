@@ -20561,3 +20561,295 @@ If higher-priority operational work has been queued
 ========================================================================
 END SESSION 96
 ========================================================================
+
+
+========================================================================
+SESSION 97 — 2026-05-28
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Single-purpose FE PR (#156) closing WI7 banked from S96: the CSV
+importer's response body had carried per-row insertErrors and a
+summary block since 9f5c415 (S96), but the FE captured the
+response into csvResult state and never read it. Operators saw
+no feedback distinguishing "all rows imported" from "K of N
+failed silently" — the gap became more visible after S96's new
+within-upload dedup pathway and 23505→409 translation produced
+well-formed insertErrors entries.
+
+PR #156 renders csvResult inside the Import tab via a 4-state
+banner + a per-row error list with defensive PII handling.
+Two commits, ordered by surface:
+  - 304b152: summary banner with success / partial-failure /
+    total-failure / hard-error states. Integer-only summary
+    line per §4B.
+  - 52464fe: per-row error list inside total-failure +
+    partial-failure branches. Defensive ladder reads the
+    operator-uploaded name fields first, falls back to
+    err.data?.external_id, else renders no suffix.
+    §4B-narrowing of within-upload dedup shape (S96 9f5c415)
+    is preserved — FE conforms to the narrowest shape and
+    degrades gracefully on the others.
+
+Net diff: +101/-0, 1 file (frontend/src/App.jsx).
+
+Session opened against a freshly-pulled main carrying both
+S96 artifacts: PR #154 (feat/external-student-id, merged
+a1ac8fe) and PR #155 (chore/activities-log-session-96, merged
+cf333e9). No outstanding S96 carryovers.
+
+PR #156 state at session close: OPEN, awaiting external review
+per §2A ruleset. Author cannot self-merge on a PII-touching PR.
+
+------------------------------------------------------------------------
+TWO-COMMIT BRANCH STATE
+------------------------------------------------------------------------
+
+304b152  feat: render csvResult banner with success/partial/failure framing
+52464fe  feat: render per-row csv import errors with defensive PII ladder
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+frontend/src/App.jsx — single-file change in the Import tab
+  JSX block. Banner block inserted after the Import button at
+  ~L5887; renders conditionally on csvResult !== null with
+  four mutually-exclusive states branched in a single nested
+  ternary. Per-row list block sits inside the total-failure
+  and partial-failure branches only, gated belt-and-suspenders
+  on errors.length > 0. Visual conventions match the Missing
+  Logs Alert sibling pattern at L2418-2470 (bg-X-50 border
+  border-X-200 rounded-xl p-4; space-y-2 mt-3 max-h-48
+  overflow-y-auto on the list container; bg-white rounded-lg
+  border border-X-100 per row). No new Tailwind utilities
+  introduced. No new dependencies, no new icon imports
+  (AlertCircle and CheckCircle pre-imported). React keys use
+  `${err.row}-${i}` so collisions on row number (shape B can
+  produce two errors referencing the same dup'd row) remain
+  unique.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None. Pure FE rendering change.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor: SKIPPED. Skip-reason documented in
+PR body verbatim: pure FE rendering change, no SQL, no new
+route, no middleware change, rendered data is the operator's
+own POST body echoed back through the existing tenant-bound
+POST handler at routes/csvImport.js:163 (resolveAndBind-
+TargetTenant). Zero data-access surface modified.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent: APPROVED
+(0 CRITICAL / 0 HIGH / 0 WARN / 2 INFO confirmatory).
+  - INFO-1: §4B comment block is duplicated across the
+    total-failure and partial-failure branches. Defensive,
+    not a privacy issue.
+  - INFO-2: csvResult.error hard-error path interpolates a
+    string that on the 500 path comes from routes/csvImport.js:
+    341 res.status(500).json({error: error.message}). Current
+    source is thrown JS errors (parser/multer), not DB row
+    values — no PII reaches that banner today. Tracked by
+    the existing fix/api-dberror-translation follow-up if
+    that path is ever widened to echo a pg row value.
+
+Reviewer-confirmed data minimization:
+  - Summary line: integers only (csvResult.summary.imported,
+    .totalRows, csvResult.errors.length). Three branches
+    verified (L5903, L5942, L5982).
+  - Per-row line: renders {err.row} (integer), {err.error}
+    (server-constructed operator-facing string), and a
+    suffix from a guarded ladder. Never destructures err.data,
+    never calls Object.keys(err.data), never JSON.stringifies.
+  - Shape B (within-upload dedup) narrowing preservation:
+    confirmed at routes/csvImport.js:257-261. FE ladder falls
+    back to external_id when the name fields are absent, so
+    the FE does not pressure the API to widen shape B.
+  - Authorization context: per-row PII is rendered to the
+    operator who just uploaded the CSV, viewing the response
+    within their own tenant context. No new exposure.
+
+------------------------------------------------------------------------
+SECURITY REVIEW
+------------------------------------------------------------------------
+
+security-reviewer subagent: APPROVED
+(0 CRITICAL / 0 HIGH / 0 WARN / 3 INFO).
+  - INFO-1: csvResult.error may carry raw dbError.message
+    or error.message from the backend 500 path. Rendered as
+    a JSX text node — no XSS. Backend-internals leak is a
+    server-side translation concern tracked by the existing
+    fix/api-dberror-translation follow-up.
+  - INFO-2: Two per-row .map blocks are byte-identical aside
+    from one Tailwind border color. DRY observation. Out of
+    scope per CLAUDE.md §3 "surgical changes only."
+  - INFO-3: New rendering surface displays student PII to
+    the upload operator. Flagged for privacy-reviewer cross-
+    confirmation; that reviewer independently approved.
+
+Reviewer-confirmed XSS safety:
+  - dangerouslySetInnerHTML count in App.jsx is 0 (unchanged
+    from pre-PR baseline of 0).
+  - No innerHTML writes, no eval, no Function() constructor,
+    no document.write, no markdown parser, no HTML parser
+    applied to error strings.
+  - All user-controllable strings (csvResult.error, err.error,
+    the err.data fields read by the defensive ladder) are
+    rendered as JSX text-node children. React auto-escapes
+    — a CSV cell containing <script>alert(1)</script> renders
+    as the literal string.
+  - React keys are `${err.row}-${i}` (integer + integer). No
+    attacker-controlled string in the key.
+  - No new external HTTP calls, no new dependencies. Confirmed
+    via git diff --name-only showing only frontend/src/App.jsx.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73). Surfaced
+again this session — see OPEN ITEMS.
+
+Frontend test command: not configured (Followup #73 sibling
+on the frontend). No vitest / jest / testing-library in
+frontend/package.json. This PR adds a PII-rendering surface
+with no automated regression net. Followup surfaced.
+
+Frontend lint: npx eslint src/App.jsx returned 54 problems
+(43 errors, 11 warnings) — exact match against the pre-PR
+baseline. Acceptance bar (zero net new from this PR) met.
+Nearest pre-existing hits are at lines 5602 and 6075; the
+PR's insertion (L5887-5986) introduces zero new hits.
+
+4-grep XSS / safe-shape audit pre-commit (commit 2):
+  - dangerouslySetInnerHTML: 0 hits (unchanged baseline)
+  - Object.keys(err.data): 0 hits
+  - JSON.stringify(err: 0 hits
+  - Unguarded ladder-field access (regex over bare
+    err.data.<field>): matched 4 lines (5914, 5916, 5953,
+    5955), all four inside the consequent of the optional-
+    chaining guard above them. Substantively zero unguarded
+    access.
+
+Manual 4-branch trace pre-commit (commit 2):
+  - Branch 1 (hard error): header-only JSX, no list, no
+    err data access. ✓
+  - Branch 2 (total failure): header + guarded list. ✓
+  - Branch 3 (partial failure): header + guarded list. ✓
+  - Branch 4 (full success): header-only JSX, no list. ✓
+  - Defensive ladder verified against shape A (validation,
+    full normalizedRow), shape B (dedup-narrowed
+    {external_id}), shape C (DB error full student). None
+    crash the renderer.
+
+§4B comment block at App.jsx:5909-5911 and 5948-5950
+(identical 3-line block in both rendering branches):
+  // SHAPE B (within-upload dedup) intentionally narrows
+  // data to {external_id} only per §4B.
+  // The fallback ladder below handles this — do NOT widen
+  // shape B in routes/csvImport.js to align with shape C.
+  // See PRIVACY_REVIEW.md entry for commit 01dbb7f.
+
+No smoke test performed. End-to-end smoke against a running
+server with auth + CSRF would require a fabricated tenant +
+operator + crafted bad CSV; deferred because the change is
+covered by reviewer-pair static analysis + branch trace, and
+the rendering surface has no DB side effect to verify.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+Three follow-ups surfaced or re-surfaced this session:
+
+  (a) chore/app-jsx-lint-cleanup — 54 pre-existing lint
+      hits in App.jsx (43 errors, 11 warnings). Mostly
+      unused-vars on err destructures, missing useEffect
+      deps, and react-hooks/rules-of-hooks violations on
+      conditional useState calls around line 1913-1920.
+      The conditional-hook violations are the highest-
+      severity items and may indicate a latent bug worth
+      separate triage. Newly banked.
+
+  (b) chore/frontend-test-infra — sibling to Followup #73.
+      No vitest / jest / testing-library in frontend/
+      package.json; this PR adds a PII-rendering surface
+      with no automated regression net. The defensive
+      ladder + branch gating + §4B comment block depend
+      on continued maintenance — a regression that widens
+      shape B or removes the ladder guards would silently
+      break §4B compliance. Newly banked.
+
+  (c) feat/csv-import-error-categorization — Path Y from
+      audit decision tree, deferred from this PR. Add a
+      category field to the API insertErrors entries
+      (e.g., 'validation' / 'within_upload_dedup' /
+      'db_constraint') and a corresponding badge per row
+      on the FE. Avoided in this PR to keep it FE-only
+      and to prevent fragile error-string sniffing on the
+      FE (the alternative Path Z chosen here). Newly
+      banked.
+
+Pre-existing follow-ups carrying through this session:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured): STANDS.
+  Followup #94 (scripts/ops/ → .gitignore): STANDS. Same 2
+    untracked scripts/ops/ SQL audit files + 1 untracked
+    docs/references/ PDF carried over from S92-S96, unchanged
+    this session.
+  fix/api-dberror-translation: STANDS. Both reviewer INFOs
+    on the 500-path leak surface this PR re-confirm the
+    follow-up's load-bearing role for the import response
+    pathway specifically.
+  fix/students-put-null-on-omit-broader-investigation:
+    STANDS.
+
+PR #154 (feat/external-student-id) merged 2026-05-28 per
+git log a1ac8fe; PR #155 (chore/activities-log-session-96)
+merged 2026-05-28 per git log cf333e9. S96 close completed
+before S97 work started.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Monitor PR #156 (fix/csv-import-fe-renders-error-response)
+for scholapathsystems review. PR is OPEN at S97 close,
+awaiting external reviewer approval per §2A ruleset. Author
+cannot self-merge on a PII-touching PR.
+
+If scholapathsystems approves, merge PR #156. Then proceed
+to one of the next-priority items:
+  - feat/csv-import-error-categorization (Path Y deferred
+    from S97 — adds backend category field + FE badges;
+    medium-priority UX polish)
+  - fix/api-dberror-translation broader scope (medium-
+    priority pre-existing pattern; load-bearing for the
+    import response pathway per S97 reviewer INFOs)
+  - chore/frontend-test-infra (high-impact infra; would
+    cover the §4B-critical ladder against regression)
+  - chore/app-jsx-lint-cleanup (LOW priority unless the
+    conditional-hook violations at L1913-1920 turn up as
+    a latent bug)
+  - fix/students-put-null-on-omit-broader-investigation
+    (LOW priority code-quality)
+
+If higher-priority operational work has been queued
+(production incident, etc.), defer the above.
+
+========================================================================
+END SESSION 97
+========================================================================
