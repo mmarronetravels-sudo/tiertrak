@@ -20853,3 +20853,282 @@ If higher-priority operational work has been queued
 ========================================================================
 END SESSION 97
 ========================================================================
+
+
+========================================================================
+SESSION 98 — 2026-05-28
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+Followup from S97's lint output on PR #156: the seven
+react-hooks/rules-of-hooks errors at App.jsx:1913-1920 were
+banked as chore/app-jsx-lint-cleanup. S98 opened an audit
+of those lines to determine real-bug vs false-positive vs
+dead-code disposition.
+
+Audit found the seven hooks lived inside an unreachable
+conditional block. App.jsx had two parallel implementations
+of the parent password-set / password-reset flow:
+  - 4c1e59d (2026-01-31 08:39): live implementation using
+    top-scope passwordResetMode state, URL-check useEffect
+    at L1191-1215, JSX early-return at L1822-1906.
+  - 910dbcf (2026-01-31 09:44, 65 minutes later): shadow
+    implementation using currentPage state, a second URL-
+    check useEffect at L425-437, and a conditional block
+    at L1908-2052 that re-declared six pieces of UI state
+    via useState inside the conditional and rendered
+    duplicate JSX.
+
+Both URL-check useEffects fire on mount. React 18 batches
+their state updates into a single re-render, after which
+the passwordResetMode early-return at L1822 always wins
+and the currentPage === 'set-password' branch at L1908 is
+never entered. The shadow block had been dead code since
+the day it was committed.
+
+PR #158 deletes all three coupled shadow regions in one
+atomic commit (5f4f7db). Net +0/-160 in frontend/src/
+App.jsx. Live implementation untouched.
+
+------------------------------------------------------------------------
+SINGLE-COMMIT BRANCH STATE
+------------------------------------------------------------------------
+
+5f4f7db  chore: remove dead set-password shadowed implementation
+
+Three coupled regions removed atomically:
+  - L283-284: useState declaration for currentPage /
+    setCurrentPage (the shadow path's state variable)
+  - L425-437: URL-check useEffect writing 'set-password'
+    or 'reset-password' to currentPage (shadow path's
+    trigger)
+  - L1908-2052: conditional block reading currentPage,
+    re-declaring six pieces of shadow UI state inside
+    the conditional, rendering duplicate JSX (shadow
+    path's render branch)
+
+Initial plan called for a two-commit split (delete the
+useEffect first, then the conditional block). The split
+was abandoned mid-session when post-edit lint surfaced
+a +1 no-unused-vars cascade on setCurrentPage —
+deleting the only consumer orphaned the declaration,
+leaving commit 1 in a state where reviewers would ask
+"why is this state declared if nothing writes it." The
+coupling argument fully justified collapsing to a single
+atomic deletion. Surfaced and confirmed before extending
+the edit.
+
+------------------------------------------------------------------------
+FILES TOUCHED
+------------------------------------------------------------------------
+
+frontend/src/App.jsx — single-file deletion, +0/-160
+  across three regions. No insertions. No new state, no
+  new effects, no new JSX. Live block at L1807-1891
+  (post-deletion numbering) is the sole password-reset
+  render path; verified the live URL-check effect at
+  L1176-1200 and fetchUserInfo's setLoading(false) at
+  L582 still drive the route's loading exit.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None. Pure FE deletion.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor: SKIPPED. Skip-reason documented
+in PR #158 body verbatim: pure FE code deletion, no SQL
+change, no new route, no middleware change, no per-
+tenant logic touched. Password-reset is per-user single-
+token-scoped, not per-tenant. The deleted block's only
+backend interactions were duplicate calls to the same
+/auth/verify-token/:token and /auth/set-password
+endpoints the live block already calls.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent: APPROVED
+(0 CRITICAL / 0 WARN / 2 INFO confirmatory).
+  - INFO-1: live block renders the parent's email
+    (tokenEmail) under the password-set form. Same
+    behavior the deleted shadow block had. PII surface
+    unchanged by this diff; flagged INFO only because
+    the diff brings the live block under review.
+  - INFO-2: live URL-check effect fetches /auth/verify-
+    token/:token; token in URL path. Existing transport
+    for the reset link, not introduced by this diff.
+
+§4B grep against the diff vs origin/main: 0 matches on
+both narrow and wide passes. §4B grep against the PR
+body: 0 matches on both passes. §4B grep against this
+activities entry: 0 matches on both passes (verified
+pre-stage).
+
+security-reviewer subagent: APPROVED
+(0 CRITICAL / 0 WARN / 3 INFO confirmatory).
+  - INFO-1: pure deletion confirmed (+0/-160, one file).
+  - INFO-2: zero remaining references to currentPage /
+    setCurrentPage post-deletion (App.jsx-local state).
+  - INFO-3: shadow-only state names (passwordError,
+    passwordSuccess, tokenValid, userEmail) have zero
+    remaining references; the two shared names
+    (newPassword, confirmPassword) remain backed by
+    top-scope declarations at L280-281 that drive the
+    live block's controlled inputs.
+  - Security control removal: none, because the deleted
+    code was unreachable and could not have been
+    enforcing any control.
+  - Auth side effects: grep of deleted lines for
+    localStorage / sessionStorage / document.cookie /
+    Cookie / Bearer / Authorization / credentials
+    returned empty. Deleted code wrote only to React
+    component state local to the unreachable block.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73). No
+backend code touched this session.
+
+Frontend lint (npm run lint, repo root):
+  Pre-edit baseline (main):       88 problems (71 errors, 17 warnings)
+  Post-commit 1 (interim):        89 problems (72 errors, 17 warnings)
+                                  — +1 setCurrentPage unused-var cascade
+  Post-final-commit (collapsed): 79 problems (62 errors, 17 warnings)
+                                  — -9 vs baseline
+Composition of the -9:
+  - -7 react-hooks/rules-of-hooks (6 useState + 1 useEffect
+    at the old L1913-1920 range)
+  - -2 no-unused-vars 'err' bindings on the catch handlers
+    inside the deleted block (old L1932 + L1964)
+  - 0 net for setCurrentPage (declaration removed alongside
+    consumer)
+Acceptance bar (post-edit < pre-edit, zero new hits): MET.
+Every post-edit lint line maps to a line-number-shifted
+version of a pre-edit line; no genuinely new lint hits
+introduced.
+
+Pre-edit verification greps (read-only):
+  - setCurrentPage callers: only L431 + L434, both inside
+    the about-to-be-deleted useEffect. Zero external
+    callers. Confirmed safe to delete.
+  - State variable declarations for the six dead-block
+    names: newPassword and confirmPassword have top-scope
+    declarations at L280-281; passwordError, password
+    Success, tokenValid, userEmail are dead-block-only.
+    Live block at L1822-1906 has zero references to the
+    four dead-only names. Deletion strands nothing.
+  - loading exit path for /set-password and /reset-
+    password after deleting the L425-437 useEffect:
+    fetchUserInfo's useEffect at L440-443 still fires on
+    mount, calls /auth/me, hits the 401 else-branch, then
+    unconditionally calls setLoading(false) at L597
+    (outside the try/catch). Loading still exits.
+
+Post-deletion verification greps:
+  - currentPage / setCurrentPage: 0 hits in file. ✓
+  - passwordError / passwordSuccess / tokenValid /
+    userEmail: 0 hits each. ✓
+  - newPassword / confirmPassword: 5 / 3 hits respectively
+    (top-scope decl + live JSX refs). ✓
+
+Manual trace of /set-password?token=... load (post-
+deletion line numbers):
+  1. Mount. loading=true → loading-screen early-return.
+  2. fetchUserInfo useEffect at L425-428 fires;
+     fetchUserInfo() called.
+  3. /auth/me returns 401 (parent has no session yet) →
+     else { setToken(null); } at L577 → setLoading(false)
+     at L582 (outside try/catch).
+  4. Live URL-check useEffect at L1176-1200 also fires
+     on mount; setPasswordResetMode('set') and
+     setPasswordToken(token).
+  5. React 18 batches all mount-phase setState; single
+     re-render with loading=false, passwordResetMode=
+     'set', passwordToken=<token>.
+  6. Re-render skips the loading early-return, hits
+     if (passwordResetMode) at L1807, returns the live
+     JSX. Live path renders. ✓
+
+No smoke test performed. Deletion is unreachable-code
+removal verified by reviewer-pair static analysis +
+greps + manual trace; rendering surface unchanged so
+visual smoke against a running server would re-test
+the live block that wasn't modified.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #158 state at session close: OPEN, awaiting external
+review per §2A ruleset. Author cannot self-merge on an
+auth-adjacent PR (the live password-reset flow remains
+auth-adjacent even though this diff doesn't touch its
+auth semantics).
+
+Branch hygiene at session start: 32 merged-local branches
+pruned via git branch --merged main; chore/activities-log-
+session-97 deleted from origin (post-merge cleanup). No
+new branch backlog created this session.
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured): STANDS.
+  Followup #94 (scripts/ops/ → .gitignore): STANDS. Same
+    2 untracked scripts/ops/ SQL audit files + 1 untracked
+    docs/references/ PDF carried over from S97, unchanged
+    this session.
+  chore/frontend-test-infra (S97-banked): STANDS. The S98
+    deletion is reviewer-static-analysis only; would have
+    been covered by a regression test net if one existed.
+  fix/api-dberror-translation: STANDS.
+  fix/students-put-null-on-omit-broader-investigation:
+    STANDS.
+
+S97-banked chore/app-jsx-lint-cleanup: PARTIALLY
+RESOLVED by S98. The seven react-hooks/rules-of-hooks
+violations at the old L1913-1920 are gone; the
+remaining 47 App.jsx lint hits (37 errors after the -9,
+including catch-handler unused-vars, missing useEffect
+deps, and a handful of unused state declarations at
+L314-335) are independent of the shadow-block deletion
+and remain banked under chore/app-jsx-lint-cleanup.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Monitor PR #158 (chore/remove-dead-set-password-branch)
+for external review. PR is OPEN at S98 close. If
+external reviewer approves, merge PR #158.
+
+After PR #158 merges, proceed to one of:
+  - PR #156 carryover from S97 if still OPEN (check
+    state first; would merge with high priority since
+    it's the PII-rendering surface for csvResult)
+  - chore/frontend-test-infra (high-impact infra,
+    sibling to Followup #73)
+  - chore/app-jsx-lint-cleanup remainder (37 App.jsx
+    errors post-S98; LOW priority unless a specific
+    hit blocks other work)
+  - fix/api-dberror-translation broader scope (medium-
+    priority pre-existing pattern)
+  - fix/students-put-null-on-omit-broader-investigation
+    (LOW priority code-quality)
+
+If higher-priority operational work has been queued
+(production incident, etc.), defer the above.
+
+========================================================================
+END SESSION 98
+========================================================================
