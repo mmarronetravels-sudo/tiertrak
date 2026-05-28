@@ -546,6 +546,12 @@ router.post('/', requireAuth, async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
+    // Translate the partial UNIQUE index from Migration 035 into a clean
+    // 409. Scoped STRICTLY to this constraint — broader pg-error-code
+    // translation is deferred to fix/api-dberror-translation.
+    if (error.code === '23505' && error.constraint === 'idx_students_tenant_external_id') {
+      return res.status(409).json({ error: 'A student with this external_id already exists in this school.' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -604,6 +610,12 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (error) {
+    // Translate the partial UNIQUE index from Migration 035 into a clean
+    // 409. Scoped STRICTLY to this constraint — broader pg-error-code
+    // translation is deferred to fix/api-dberror-translation.
+    if (error.code === '23505' && error.constraint === 'idx_students_tenant_external_id') {
+      return res.status(409).json({ error: 'A student with this external_id already exists in this school.' });
+    }
     res.status(500).json({ error: error.message });
   }
 });

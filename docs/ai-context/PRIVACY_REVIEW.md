@@ -81,6 +81,30 @@ Cross-cutting notes:
   - Gated-tier health document handling (Forms D, E in the ODE handbook — schema not yet defined)
 - No data-minimization exceptions are added by PR 1. Every persisted column in the 504 schema is feature-required; no fields are stored beyond what the workflow uses.
 
+### Students roster — SIS-issued identifier (FERPA)
+
+The `students` table holds the canonical roster of every student tracked in TierTrak. Tenant-scoped via `tenant_id INTEGER REFERENCES tenants(id) ON DELETE CASCADE`. Every column on this table identifies a single student and is treated as PII at all times per CLAUDE.md §4B. This entry documents `students.external_id` specifically, added by Migration 035.
+
+**`students.external_id`** — SIS-issued student identifier (PowerSchool, Skyward, Infinite Campus, Aeries, etc.). Free-form TEXT, nullable. Same sensitivity tier as `first_name` / `last_name` — a school-issued identifier sufficient to single out a student within their district's SIS. Not elevated PII (not medical, not §504, not behavioral) but absolutely identifying; treat as PII at all times.
+
+**Writers (persist external_id)**:
+- `POST /api/students/` — manual add by `ADMIN_ROLES`. Trim, empty-after-trim → null.
+- `PUT /api/students/:id` — manual edit by `ADMIN_ROLES`. **Preserve-on-omit semantics**: omitted field preserves existing value; explicit `null` or empty-string clears; non-empty string trims and writes. Asymmetric with the other PUT fields by design — data-loss prevention for the first nullable PUT field on this route. CASE-WHEN inline; see commit `a9e791d` rationale.
+- `POST /api/csv/students/:tenantId` (CSV bulk-import) — trim at parse, empty→null, pre-INSERT within-upload dedup map keyed by external_id value with first-occurrence row tracking.
+
+**Readers (project external_id)**:
+- Staff: `GET /tenant/:tenantId`, `GET /tenant/:tenantId/tier/:tier`, `GET /:studentId`, `GET /referral-candidates/:tenantId`, `GET /referral-monitoring/:tenantId`. First three project via `SELECT s.*`; latter two added explicit `s.external_id` projections + GROUP BY in commit `a9e791d`.
+- Parent: `routes/parentLinks.js` parent-of-own-child view projects via `SELECT s.*` and therefore surfaces external_id to the parent of the linked student. **Pending product decision** on whether SIS IDs should be parent-visible; sibling concern to Followup #79. Privacy-reviewer flagged in WI8 review.
+
+**Cross-cutting notes**:
+
+- **Tenant scoping invariant**: per-tenant partial UNIQUE INDEX `idx_students_tenant_external_id (tenant_id, external_id) WHERE external_id IS NOT NULL` (Migration 035). Different districts can legitimately reuse the same SIS-issued ID; cross-tenant collisions are by design allowed at the data layer and blocked from cross-tenant writes at the SQL layer via the composite key. Mirrors Migration 025's `referral_monitoring (tenant_id, student_id)` shape.
+- **Error-response policy** (§4B narrowing):
+  - **Within-upload dedup errors** in the CSV importer surface only `{row, data: {external_id}, error}` — `first_name`/`last_name` are NOT included in the dedup error envelope. Reason: the operator already knows their own row content; including additional PII columns in the error would compound the §4B surface without operator value.
+  - **DB-level UNIQUE-violation responses** (POST/PUT/CSV-import) translate the PG `23505` error from `idx_students_tenant_external_id` into HTTP 409 with a sanitized message: `"A student with this external_id already exists in this school."` No PG constraint name, no index name, no `tenant_id` integer in the response body. Scoped to this index only; broader pg-error-code translation is deferred to `fix/api-dberror-translation`.
+- **Implementation rule for read surfaces**: GETs that use `SELECT s.*` automatically project external_id; GETs with explicit column lists (`referral-candidates`, `referral-monitoring`) must explicitly include `s.external_id` in both SELECT and GROUP BY. Future GETs that add new explicit projections of student identity columns should include external_id alongside `first_name`/`last_name`.
+- **FE surface footprint** (as of `e4ac13d`): external_id is documented in the CSV-template help-text at `App.jsx:5812` only. Display in student card, edit modal, and list tables is deferred. Staff GET responses already include the field via `s.*` projection but it is not yet rendered. Future PRs adding visible display will need their own privacy review of the staff and parent surfaces.
+
 ### Universal screener records (FERPA)
 
 The `screener_results` table stores universal screener (benchmark assessment) results — STAR, MAP Growth, DIBELS, DIBELS Spelling, iReady, with STAAR deferred. Reconciled into the repo by Migration 024. Tenant-scoped via `tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE`. Per-tenant backfill and explicit-projection discipline added in PR #47.

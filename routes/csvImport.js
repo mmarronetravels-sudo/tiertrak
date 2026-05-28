@@ -297,10 +297,17 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
           student: result.rows[0]
         });
       } catch (dbError) {
+        // Translate the partial UNIQUE index from Migration 035 into a clean
+        // operator-facing message. Same text as POST/PUT 409 path in
+        // routes/students.js. Scoped STRICTLY to this constraint — broader
+        // pg-error-code translation is deferred to fix/api-dberror-translation.
+        const errorMessage = (dbError.code === '23505' && dbError.constraint === 'idx_students_tenant_external_id')
+          ? 'A student with this external_id already exists in this school.'
+          : dbError.message;
         insertErrors.push({
           row: student.row,
           data: student,
-          error: dbError.message
+          error: errorMessage
         });
       }
     }
