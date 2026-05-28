@@ -5809,6 +5809,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
               <div>
                 <p className="font-medium text-slate-700 mb-1">Optional Columns:</p>
                 <ul className="list-disc list-inside text-slate-600">
+                  <li><code className="bg-slate-200 px-1 rounded">external_id</code> (your SIS-issued student ID — e.g., STU-12345)</li>
                   <li><code className="bg-slate-200 px-1 rounded">tier</code> (1, 2, or 3 — default: 1)</li>
                   <li><code className="bg-slate-200 px-1 rounded">area</code> (Academic, Behavior, Social-Emotional)</li>
                   <li><code className="bg-slate-200 px-1 rounded">risk_level</code> (low, moderate, high — default: low)</li>

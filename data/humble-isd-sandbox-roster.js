@@ -10,10 +10,12 @@
  * uses the email domain `humble.edu` — that domain is intentionally fictional
  * (the real Humble ISD uses humbleisd.net). No real PII is stored here.
  *
- * The TX-DEMO-NNN external IDs do NOT round-trip into the database — the
- * `students` table has no external_id column. They are kept here only as a
- * cross-reference comment so future operators can match this roster to the
- * Texas screener CSVs at upload time.
+ * As of Migration 035 the `students` table has an external_id column; the
+ * TX-DEMO-NNN IDs round-trip via the CSV importer and POST/PUT /students
+ * routes (commits 9f5c415, a9e791d). The seed scripts in scripts/seed-*.js
+ * still discard external_id at INSERT time — separate follow-up. The IDs
+ * remain in this roster as a cross-reference so future operators can match
+ * this roster to the Texas screener CSVs at upload time.
  *
  * Schema constraints honored:
  *   - users.role         CHECK ('district_admin', 'counselor', 'teacher',

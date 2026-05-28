@@ -126,9 +126,9 @@ async function resolveAndBindTargetTenant(req) {
 // Get CSV template info
 router.get('/template', requireAuth, (req, res) => {
   res.json({
-    columns: ['first_name', 'last_name', 'grade', 'tier', 'area', 'risk_level'],
+    columns: ['first_name', 'last_name', 'grade', 'external_id', 'tier', 'area', 'risk_level'],
     required: ['first_name', 'last_name', 'grade'],
-    optional: ['tier', 'area', 'risk_level'],
+    optional: ['external_id', 'tier', 'area', 'risk_level'],
     defaults: {
       tier: 1,
       area: null,
@@ -140,15 +140,15 @@ router.get('/template', requireAuth, (req, res) => {
       risk_level: ['low', 'moderate', 'high']
     },
     exampleRows: [
-      { first_name: 'John', last_name: 'Smith', grade: '3rd', tier: 1, area: 'Academic', risk_level: 'low' },
-      { first_name: 'Jane', last_name: 'Doe', grade: '5th', tier: 2, area: 'Behavior', risk_level: 'moderate' }
+      { first_name: 'John', last_name: 'Smith', grade: '3rd', external_id: 'STU-12345', tier: 1, area: 'Academic', risk_level: 'low' },
+      { first_name: 'Jane', last_name: 'Doe', grade: '5th', external_id: 'STU-67890', tier: 2, area: 'Behavior', risk_level: 'moderate' }
     ]
   });
 });
 
 // Download CSV template
 router.get('/template/download', requireAuth, (req, res) => {
-  const csvContent = 'first_name,last_name,grade,tier,area,risk_level\nJohn,Smith,3rd,1,Academic,low\nJane,Doe,5th,2,Behavior,moderate';
+  const csvContent = 'first_name,last_name,grade,external_id,tier,area,risk_level\nJohn,Smith,3rd,STU-12345,1,Academic,low\nJane,Doe,5th,STU-67890,2,Behavior,moderate';
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=student_import_template.csv');
   res.send(csvContent);
@@ -168,6 +168,11 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
 
   const results = [];
   const errors = [];
+  const insertErrors = [];
+  // Within-upload dedup tracker: external_id value → first-occurrence row number.
+  // Used to reject a second row that re-claims a non-null external_id before any
+  // INSERT runs (mirrors scripts/seed-tenant-sandbox-template.js:288-315 shape).
+  const externalIdFirstRow = new Map();
   let rowNumber = 1; // Start at 1 for header
 
   try {
@@ -240,6 +245,25 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
             }
           }
 
+          // external_id is optional, free-form text (no enum). Normalize step
+          // already trimmed the value; empty-after-trim coerces to null. A
+          // non-null value that re-appears within this upload is rejected
+          // pre-INSERT with both row numbers surfaced so the operator can
+          // correct the source.
+          const externalId = normalizedRow.external_id || null;
+          if (externalId !== null) {
+            if (externalIdFirstRow.has(externalId)) {
+              const firstRow = externalIdFirstRow.get(externalId);
+              insertErrors.push({
+                row: rowNumber,
+                data: { external_id: externalId },
+                error: `Row ${rowNumber}: duplicate external_id '${externalId}' (also appears in row ${firstRow})`
+              });
+              return;
+            }
+            externalIdFirstRow.set(externalId, rowNumber);
+          }
+
           results.push({
             row: rowNumber,
             first_name: normalizedRow.first_name,
@@ -247,7 +271,8 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
             grade: normalizedRow.grade,
             tier: tier,
             area: area,
-            risk_level: riskLevel
+            risk_level: riskLevel,
+            external_id: externalId
           });
         })
         .on('end', () => resolve())
@@ -258,25 +283,31 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
 
     // Insert valid students into database
     const inserted = [];
-    const insertErrors = [];
 
     for (const student of results) {
       try {
         const result = await pool.query(
-          `INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level, external_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *`,
-          [tenantId, student.first_name, student.last_name, student.grade, student.tier, student.area, student.risk_level]
+          [tenantId, student.first_name, student.last_name, student.grade, student.tier, student.area, student.risk_level, student.external_id]
         );
         inserted.push({
           row: student.row,
           student: result.rows[0]
         });
       } catch (dbError) {
+        // Translate the partial UNIQUE index from Migration 035 into a clean
+        // operator-facing message. Same text as POST/PUT 409 path in
+        // routes/students.js. Scoped STRICTLY to this constraint — broader
+        // pg-error-code translation is deferred to fix/api-dberror-translation.
+        const errorMessage = (dbError.code === '23505' && dbError.constraint === 'idx_students_tenant_external_id')
+          ? 'A student with this external_id already exists in this school.'
+          : dbError.message;
         insertErrors.push({
           row: student.row,
           data: student,
-          error: dbError.message
+          error: errorMessage
         });
       }
     }
