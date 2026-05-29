@@ -375,6 +375,12 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
 
+  // Staff CSV Import state — mirrors student CSV state, separate so the
+  // two upload surfaces don't collide on shared state.
+  const [staffCsvFile, setStaffCsvFile] = useState(null);
+  const [staffCsvUploading, setStaffCsvUploading] = useState(false);
+  const [staffCsvResult, setStaffCsvResult] = useState(null);
+
   // Archive state
   const [showArchiveModal, setShowArchiveModal] = useState(false);
   const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
@@ -1711,6 +1717,72 @@ const handleUnlinkParent = async (linkId) => {
   const downloadCsvTemplate = () => {
     window.open(`${API_URL}/csv/template/download`, '_blank');
   };
+
+  // Staff CSV Import — mirrors handleCsvUpload, posts to /api/csv/staff/:tenantId.
+  const handleStaffCsvUpload = async () => {
+    if (!staffCsvFile) return;
+
+    setStaffCsvUploading(true);
+    setStaffCsvResult(null);
+
+    const formData = new FormData();
+    formData.append('file', staffCsvFile);
+
+    try {
+      const res = await apiFetch(`${API_URL}/csv/staff/${user.tenant_id}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setStaffCsvResult(data);
+        // Refresh staffList — same fetch shape used by the tab nav at L4634.
+        fetch(`${API_URL}/staff/${user.tenant_id}`, { credentials: 'include' })
+          .then(r => r.json())
+          .then(d => setStaffList(d))
+          .catch(e => console.error(e));
+        setStaffCsvFile(null);
+        const fileInput = document.getElementById('staff-csv-file-input');
+        if (fileInput) fileInput.value = '';
+      } else {
+        setStaffCsvResult({ error: data.error || 'Upload failed' });
+      }
+    } catch (error) {
+      setStaffCsvResult({ error: 'Upload failed. Is the server running?' });
+    }
+
+    setStaffCsvUploading(false);
+  };
+
+  // Download staff CSV template
+  const downloadStaffCsvTemplate = () => {
+    window.open(`${API_URL}/csv/staff/template/download`, '_blank');
+  };
+
+  // 5-state machine for staff CSV import result rendering. Tailwind-safe
+  // class strings (Tailwind purges dynamic `bg-${color}-50` constructions).
+  // emailErrors superset framing per the c.3 design.
+  function getStaffImportResultState(result) {
+    if (!result || result.error) return null;
+    const imported = result.summary?.imported ?? 0;
+    const errs = result.errors?.length ?? 0;
+    const emailErrs = result.emailErrors?.length ?? 0;
+    if (imported > 0 && errs === 0 && emailErrs === 0) {
+      return { kind: 'success', bannerClass: 'bg-emerald-50 border-emerald-200', textClass: 'text-emerald-800', rowBorderClass: 'border-emerald-100' };
+    }
+    if (imported > 0 && errs === 0 && emailErrs > 0) {
+      return { kind: 'partial-email', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
+    }
+    if (imported > 0 && errs > 0 && emailErrs === 0) {
+      return { kind: 'partial-insert', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
+    }
+    if (imported > 0 && errs > 0 && emailErrs > 0) {
+      return { kind: 'partial-both', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
+    }
+    return { kind: 'failure', bannerClass: 'bg-red-50 border-red-200', textClass: 'text-red-800', rowBorderClass: 'border-red-100' };
+  }
 
   // Update student tier
   const handleTierChange = async (studentId, newTier) => {
@@ -5303,6 +5375,187 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
             </table>
           </div>
           <p className="text-sm text-slate-400 mt-4">Total: {staffList.length} staff members</p>
+
+          {/* Bulk import section */}
+          <div className="mt-8 pt-8 border-t border-slate-200">
+            <div className="flex items-center gap-2 mb-4">
+              <FileSpreadsheet size={20} className="text-indigo-600" />
+              <h3 className="text-lg font-semibold text-slate-800">Bulk Import Staff from CSV</h3>
+            </div>
+
+            <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <h4 className="font-medium text-slate-800 mb-2">CSV Format Requirements</h4>
+              <p className="text-sm text-slate-600 mb-3">
+                Your CSV file must include the following columns:
+              </p>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="font-medium text-slate-700 mb-1">Required Columns:</p>
+                  <ul className="list-disc list-inside text-slate-600">
+                    <li><code className="bg-slate-200 px-1 rounded">email</code></li>
+                    <li><code className="bg-slate-200 px-1 rounded">full_name</code></li>
+                    <li><code className="bg-slate-200 px-1 rounded">role</code> (district_admin, district_tech_admin, school_admin, counselor, teacher, interventionist)</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-slate-700 mb-1">Optional Columns:</p>
+                  <ul className="list-disc list-inside text-slate-600">
+                    <li><code className="bg-slate-200 px-1 rounded">school_wide_access</code> (TRUE or FALSE — if omitted, derived from role)</li>
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-3">Limit: 100 rows per upload. Split larger rosters into multiple files.</p>
+              <button
+                onClick={downloadStaffCsvTemplate}
+                className="mt-4 flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
+              >
+                <Download size={18} />
+                Download Staff CSV Template
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+                <Upload size={48} className="mx-auto mb-4 text-slate-400" />
+                <p className="text-slate-600 mb-4">Select a CSV file to import staff</p>
+                <input
+                  id="staff-csv-file-input"
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setStaffCsvFile(e.target.files[0])}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="staff-csv-file-input"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors cursor-pointer"
+                >
+                  <FileSpreadsheet size={18} />
+                  Choose CSV File
+                </label>
+                {staffCsvFile && (
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <FileText size={18} className="text-indigo-600" />
+                    <span className="text-slate-800">{staffCsvFile.name}</span>
+                    <button
+                      onClick={() => {
+                        setStaffCsvFile(null);
+                        const fileInput = document.getElementById('staff-csv-file-input');
+                        if (fileInput) fileInput.value = '';
+                      }}
+                      className="p-1 text-slate-400 hover:text-red-600"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {staffCsvFile && (
+              <div className="flex justify-center mb-6">
+                <button
+                  onClick={handleStaffCsvUpload}
+                  disabled={staffCsvUploading}
+                  className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  {staffCsvUploading ? (
+                    <>
+                      <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={20} />
+                      Import Staff
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Upload result banner — 5-state machine per c.3 design */}
+            {staffCsvResult !== null && staffCsvResult.error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  <h3 className="font-semibold text-red-800">
+                    Upload failed: {staffCsvResult.error}
+                  </h3>
+                </div>
+              </div>
+            )}
+            {(() => {
+              const state = getStaffImportResultState(staffCsvResult);
+              if (!state) return null;
+              const totalRows = staffCsvResult.summary.totalRows;
+              const importedCount = staffCsvResult.summary.imported;
+              const errs = staffCsvResult.errors || [];
+              const emailErrs = staffCsvResult.emailErrors || [];
+              return (
+                <div className={`${state.bannerClass} border rounded-xl p-4`}>
+                  <div className="flex items-center gap-2">
+                    {state.kind === 'success'
+                      ? <CheckCircle className="w-5 h-5 text-emerald-600" />
+                      : <AlertCircle className={`w-5 h-5 ${state.kind === 'failure' ? 'text-red-600' : 'text-amber-600'}`} />}
+                    <h3 className={`font-semibold ${state.textClass}`}>
+                      {state.kind === 'success' && `Imported ${importedCount} of ${totalRows} staff members.`}
+                      {state.kind === 'partial-insert' && `Imported ${importedCount} of ${totalRows} staff. ${errs.length} failed to import.`}
+                      {state.kind === 'partial-email' && `Imported ${importedCount} of ${totalRows} staff. ${emailErrs.length} setup emails failed to send.`}
+                      {state.kind === 'partial-both' && `Imported ${importedCount} of ${totalRows} staff. ${errs.length} failed to import, ${emailErrs.length} setup emails failed to send.`}
+                      {state.kind === 'failure' && `No staff imported. ${errs.length} of ${totalRows} failed.`}
+                    </h3>
+                  </div>
+                  {state.kind === 'success' && (
+                    <p className="mt-2 text-sm text-emerald-700">Staff have 7 days to set their password before the link expires.</p>
+                  )}
+                  {(state.kind === 'partial-insert' || state.kind === 'partial-both' || state.kind === 'failure') && errs.length > 0 && (
+                    <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
+                      {errs.map((err, i) => {
+                        // SHAPE A/B/C superset ladder — staff fields. emailErrors entries
+                        // do NOT route here; they render in the emailErrors block below.
+                        // §4B doctrine: data is operator's own upload, rendered back to
+                        // the same operator session.
+                        let suffix = '';
+                        if (err.data?.email && err.data?.full_name) {
+                          suffix = `${err.data.full_name} (${err.data.email})`;
+                        } else if (err.data?.email) {
+                          suffix = err.data.email;
+                        }
+                        return (
+                          <div key={`err-${err.row}-${i}`} className={`flex items-center justify-between p-2 bg-white rounded-lg border ${state.rowBorderClass}`}>
+                            <div>
+                              <span className="font-medium text-slate-800">Row {err.row}</span>
+                              <span className="text-slate-400 mx-2">—</span>
+                              <span className="text-slate-600">{err.error}</span>
+                            </div>
+                            {suffix && <span className="text-xs text-slate-500">{suffix}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {(state.kind === 'partial-email' || state.kind === 'partial-both') && emailErrs.length > 0 && (
+                    <div className="mt-4">
+                      <h4 className="font-medium text-amber-700 mb-2">Emails failed to send ({emailErrs.length}):</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {emailErrs.map((entry, i) => (
+                          <div key={`email-${entry.row}-${i}`} className={`flex items-center justify-between p-2 bg-white rounded-lg border ${state.rowBorderClass}`}>
+                            <div>
+                              <span className="font-medium text-slate-800">Row {entry.row}</span>
+                              <span className="text-slate-400 mx-2">—</span>
+                              <span className="text-slate-600">{entry.email}</span>
+                            </div>
+                            <span className="text-xs text-slate-500">{entry.error}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-amber-600 mt-2">Manually trigger a password reset for these users.</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 
