@@ -8,6 +8,7 @@ const path = require('path');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { STAFF_ROLES } = require('./staffManagement');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -151,6 +152,35 @@ router.get('/template/download', requireAuth, (req, res) => {
   const csvContent = 'first_name,last_name,grade,external_id,tier,area,risk_level\nJohn,Smith,3rd,STU-12345,1,Academic,low\nJane,Doe,5th,STU-67890,2,Behavior,moderate';
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=student_import_template.csv');
+  res.send(csvContent);
+});
+
+// Get staff CSV template info
+router.get('/staff/template', requireAuth, (req, res) => {
+  res.json({
+    columns: ['email', 'full_name', 'role', 'school_wide_access'],
+    required: ['email', 'full_name', 'role'],
+    optional: ['school_wide_access'],
+    defaults: {},
+    validValues: {
+      role: STAFF_ROLES,
+      school_wide_access: [true, false]
+    },
+    helpText: {
+      school_wide_access: 'TRUE for district_admin, district_tech_admin, school_admin, counselor, interventionist. FALSE for teacher. If omitted, derived from role automatically. Setting TRUE on a teacher row or FALSE on an elevated-role row will be rejected as inconsistent with the role.'
+    },
+    exampleRows: [
+      { email: 'jane.smith@example.edu', full_name: 'Jane Smith', role: 'teacher', school_wide_access: false },
+      { email: 'alex.lee@example.edu', full_name: 'Alex Lee', role: 'counselor', school_wide_access: true }
+    ]
+  });
+});
+
+// Download staff CSV template
+router.get('/staff/template/download', requireAuth, (req, res) => {
+  const csvContent = 'email,full_name,role,school_wide_access\njane.smith@example.edu,Jane Smith,teacher,FALSE\nalex.lee@example.edu,Alex Lee,counselor,TRUE';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=staff_import_template.csv');
   res.send(csvContent);
 });
 
