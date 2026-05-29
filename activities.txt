@@ -21229,8 +21229,9 @@ privacy-reviewer subagent: APPROVED WITH NOTES
   - WARN-1: raw pg dbError.message echoed on the per-
     row 23505 fall-through branch. Driver messages can
     echo column values; potential PII surfacing in a
-    future log capture. FIXED in-PR by the post-trio
-    redaction commit.
+    future log capture. FIXED in follow-up PR #162;
+    PR #160's merge commit captured the 5 WI commits
+    only — post-trio redaction re-landed via PR #162.
   - WARN-2: third-party data egress to the sanctioned
     email provider for setup-link delivery. No fix
     required — sanctioned channel per §2.
@@ -21248,7 +21249,8 @@ security-reviewer subagent: APPROVED WITH NOTES
 (0 CRITICAL / 0 HIGH / 1 MEDIUM / 2 WARN / 2 INFO).
   - MEDIUM-1: same finding as privacy WARN-1 (raw pg
     dbError.message echo on 23505 fall-through).
-    Convergent across reviewers. FIXED in-PR.
+    Convergent across reviewers. FIXED in follow-up
+    PR #162 (see WARN-1 above).
   - WARN-1: email SDK constructed at module load
     without a missing-env-var boot guard. Banked as
     chore/csv-import-resend-api-key-boot-guard.
@@ -21285,7 +21287,9 @@ primitive per repo doctrine.
 Redaction fix: mechanical, matches in-file precedent
 (generic operator-facing error string + server-side
 error-code + constraint log). +12/-6 net change on
-the single hunk. No re-trio invoked per scope.
+the single hunk. No re-trio invoked per scope. Re-land
+via PR #162 due to merge-race on PR #160 — same diff,
+no scope change.
 
 No smoke test performed against a running server. The
 trio review + convergence-driven redaction is
