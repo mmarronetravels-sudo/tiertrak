@@ -21132,3 +21132,222 @@ If higher-priority operational work has been queued
 ========================================================================
 END SESSION 98
 ========================================================================
+
+
+========================================================================
+SESSION 99 — 2026-05-29
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S99 took up the staff CSV importer (bulk-create
+endpoint mirroring the canonical student-importer
+shape) plus the FE result renderer for it. Five work
+items (WI-1 through WI-5) shipped across five commits
+on feat/staff-csv-importer.
+
+Reviewer trio ran on the cumulative diff at PR open.
+Convergence: one finding flagged by privacy-reviewer
+(WARN) and security-reviewer (MEDIUM) on the per-row
+23505 fall-through branch — raw pg dbError.message
+was echoed to the FE. Fixed in-PR with a sixth commit:
+strict-equality branch keeps its translated message,
+all other pg errors redact to a generic operator-
+facing string, code + constraint logged server-side
+only. Matches the in-file redaction precedent at the
+route's 500-handler.
+
+------------------------------------------------------------------------
+BRANCH STATE
+------------------------------------------------------------------------
+
+feat/staff-csv-importer — 6 commits total, opened as
+PR #160. Branch composition:
+  - WI-1: exported 2 constants from staff routes module
+  - WI-2: added 2 staff template GET endpoints
+  - WI-3: added 1 csv staff importer endpoint
+  - WI-4: per-row email send loop folded into the
+    importer endpoint
+  - WI-5: added 1 fe renderer for csv staff import
+  - post-trio: redacted 1 pg-error fall-through in csv
+    staff importer
+
+chore/activities-log-session-99 — this entry, branched
+from fresh main after the feature-branch work landed.
+
+------------------------------------------------------------------------
+SURFACES TOUCHED
+------------------------------------------------------------------------
+
+  - added 1 csv staff importer endpoint
+  - added 2 staff template GET endpoints
+  - added 1 fe renderer for csv staff import
+  - exported 2 constants from staff routes module
+  - redacted 1 pg-error fall-through in csv staff
+    importer
+
+No new tables. No new DB columns. Reuses existing
+password-reset-token columns established by the
+parent-creation precedent.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+tenant-isolation-auditor subagent: APPROVED
+(0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW / 3 INFO).
+  - INFO-1: §5 dual-path resolver consumed via the
+    centralized helper, not inlined; satisfies the
+    helper-consume-don't-inline rule.
+  - INFO-2: per-tenant email pre-check correctly bound
+    to the resolved target tenant; closes the cross-
+    tenant email-enumeration oracle per prior doctrine.
+  - INFO-3: per-row INSERT uses the resolved target
+    tenant id, not the caller's tenant id. The tenant-
+    scoping district column is derived from the
+    caller's session, NEVER read from the uploaded CSV
+    row.
+
+§5 grep against the diff vs origin/main: 0 hits on
+cross-tenant patterns. 3 audited queries, all tenant-
+scoped, zero non-scoped reads or writes introduced.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent: APPROVED WITH NOTES
+(0 CRITICAL / 2 WARN / 3 INFO).
+  - WARN-1: raw pg dbError.message echoed on the per-
+    row 23505 fall-through branch. Driver messages can
+    echo column values; potential PII surfacing in a
+    future log capture. FIXED in-PR by the post-trio
+    redaction commit.
+  - WARN-2: third-party data egress to the sanctioned
+    email provider for setup-link delivery. No fix
+    required — sanctioned channel per §2.
+  - INFO-1: send-loop error log redaction matches WI-4
+    spec exactly (status code or error name only;
+    never the full SDK error object).
+  - INFO-2: emailErrors entries shaped {row, email,
+    error} with first-line + 200-char sanitization on
+    the error field.
+  - INFO-3: FE defensive ladder reads only email +
+    full_name from the operator's echoed row; tolerant
+    to all three error shapes; no token field touched.
+
+security-reviewer subagent: APPROVED WITH NOTES
+(0 CRITICAL / 0 HIGH / 1 MEDIUM / 2 WARN / 2 INFO).
+  - MEDIUM-1: same finding as privacy WARN-1 (raw pg
+    dbError.message echo on 23505 fall-through).
+    Convergent across reviewers. FIXED in-PR.
+  - WARN-1: email SDK constructed at module load
+    without a missing-env-var boot guard. Banked as
+    chore/csv-import-resend-api-key-boot-guard.
+  - WARN-2: insertErrors[].data echoes the operator's
+    full row; narrowest-field-set would tighten to
+    {email, full_name}. Same-session echo, non-
+    blocking under §4B.
+  - INFO entries: dependency reuse only (no new deps);
+    FE renders via auto-escaping text nodes.
+
+§4B grep against this activities entry: 0 hits on the
+narrow-pass and the wide-pass enumeration.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73).
+No backend test run.
+
+Frontend lint: not run this session. FE renderer added
+in line with the existing import-result shape; lint
+delta deferred to chore/app-jsx-lint-cleanup if it
+appears at next merge.
+
+Trio convergence verification: privacy WARN-1 and
+security MEDIUM-1 independently surfaced the same
+fall-through branch, independently recommended the
+same redaction shape, and independently cited the
+same in-file redaction precedent at the route's 500-
+handler. Convergence load-bears as the verification
+primitive per repo doctrine.
+
+Redaction fix: mechanical, matches in-file precedent
+(generic operator-facing error string + server-side
+error-code + constraint log). +12/-6 net change on
+the single hunk. No re-trio invoked per scope.
+
+No smoke test performed against a running server. The
+trio review + convergence-driven redaction is
+reviewer-static-analysis only; the importer surface
+is brand-new and not exercised by any pre-existing
+test net.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #160 state at session close: MERGED via external
+review per §2A ruleset.
+
+Branch hygiene at session start: no merged-local
+branch pruning performed this session.
+
+7 follow-ups banked this session (branch names only):
+  - chore/consolidate-target-tenant-helper
+  - chore/csv-import-result-component
+  - chore/csv-import-resend-rate-limit-aware-abort
+  - ops/staff-csv-setup-link-ttl-runbook-note
+  - chore/student-csv-template-helptext
+  - chore/parent-creation-resend-error-log-redaction
+  - chore/csv-import-resend-api-key-boot-guard
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured): STANDS.
+  Followup #94 (untracked operational artifacts not
+    yet gitignored): STANDS. Same set carried over
+    from S97/S98, unchanged this session.
+  chore/frontend-test-infra (S97-banked): STANDS.
+  chore/app-jsx-lint-cleanup (S97-banked, S98
+    partial): STANDS for the remaining FE lint errors.
+  fix/api-dberror-translation: STANDS. The S99
+    redaction fix narrows the staff-importer's catch
+    but does not sweep the broader pre-existing
+    pattern; broader branch remains banked.
+  fix/students-put-null-on-omit-broader-investigation:
+    STANDS.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+PR #160 merged. Pick next work from the 7 newly-
+banked chores or the standing pre-existing items:
+  - chore/frontend-test-infra (high-impact infra,
+    sibling to Followup #73)
+  - chore/app-jsx-lint-cleanup remainder (LOW
+    priority unless a specific hit blocks other work)
+  - fix/api-dberror-translation broader scope
+    (medium-priority pre-existing pattern; the S99
+    staff-importer redaction is one localized
+    instance of it)
+  - fix/students-put-null-on-omit-broader-
+    investigation (LOW priority code-quality)
+
+If higher-priority operational work has been queued
+(production incident, etc.), defer the above.
+
+========================================================================
+END SESSION 99
+========================================================================
