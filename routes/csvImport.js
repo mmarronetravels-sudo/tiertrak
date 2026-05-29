@@ -6,6 +6,7 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Resend } = require('resend');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
@@ -16,6 +17,8 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -544,7 +547,8 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
         );
         inserted.push({
           row: staff.row,
-          user: result.rows[0]
+          user: result.rows[0],
+          setupToken
         });
       } catch (dbError) {
         // 23505 strict-equality on users_tenant_id_email_key. Other 23505
@@ -561,6 +565,54 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
       }
     }
 
+    // Send setup-link email per successfully-inserted staff row. Per the
+    // c.3 design: keep sending on per-row failure, no rate-limit-aware
+    // abort (banked as chore/csv-import-resend-rate-limit-aware-abort).
+    // Mirrors the parent-creation Resend pattern at routes/auth.js:364-400.
+    // Sanitization: err.message → first line → 200-char cap. Full SDK
+    // error object is never serialized into emailErrors or logs.
+    const emailErrors = [];
+    for (const staff of inserted) {
+      const setupUrl = `${process.env.FRONTEND_URL}/set-password?token=${staff.setupToken}`;
+      try {
+        const { error: sendError } = await resend.emails.send({
+          from: 'ScholarPath Intervention Management <noreply@scholarpathsystems.org>',
+          to: staff.user.email,
+          subject: 'Set up your ScholarPath account',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Welcome to ScholarPath</h1>
+              </div>
+              <div style="padding: 30px; background: #f9fafb;">
+                <p>Hello ${staff.user.full_name},</p>
+                <p>An account has been created for you in ScholarPath Intervention Management. To get started, set up your password using the link below.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${setupUrl}" style="background: #6366f1; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">Set Up My Password</a>
+                </div>
+                <p style="color: #6b7280; font-size: 14px;">This link will expire in 7 days.</p>
+                <p style="color: #6b7280; font-size: 14px;">If you didn't expect this email, please ignore it.</p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+                  ScholarPath Intervention Management by ScholarPath Systems<br>
+                  FERPA Compliant • Student Data Protected
+                </p>
+              </div>
+            </div>
+          `
+        });
+        if (sendError) {
+          const sanitized = (sendError.message || 'Unknown error').split('\n')[0].slice(0, 200);
+          emailErrors.push({ row: staff.row, email: staff.user.email, error: sanitized });
+          console.error('[csv:staff-import] resend error:', sendError.statusCode || sendError.name || 'unknown');
+        }
+      } catch (err) {
+        const sanitized = (err.message || 'Unknown error').split('\n')[0].slice(0, 200);
+        emailErrors.push({ row: staff.row, email: staff.user.email, error: sanitized });
+        console.error('[csv:staff-import] resend exception:', err.statusCode || err.name || 'unknown');
+      }
+    }
+
     fs.unlink(req.file.path, (err) => {
       if (err) console.error('Error deleting temp file:', err);
     });
@@ -572,7 +624,7 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
         imported: inserted.length,
         validationErrors: errors.length,
         insertErrors: insertErrors.length,
-        emailErrors: 0
+        emailErrors: emailErrors.length
       },
       imported: inserted.map(i => ({
         row: i.row,
@@ -580,7 +632,7 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
         id: i.user.id
       })),
       errors: [...errors, ...insertErrors],
-      emailErrors: []
+      emailErrors
     });
 
   } catch (error) {
