@@ -551,12 +551,18 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
           setupToken
         });
       } catch (dbError) {
-        // 23505 strict-equality on users_tenant_id_email_key. Other 23505
-        // constraints fall through to dbError.message per
-        // fix/api-dberror-translation doctrine.
-        const errorMessage = (dbError.code === '23505' && dbError.constraint === 'users_tenant_id_email_key')
-          ? 'A user with this email already exists at this school.'
-          : dbError.message;
+        // 23505 strict-equality on users_tenant_id_email_key keeps the
+        // translated message. All other pg errors redact to a generic
+        // operator-facing string; code + constraint are logged
+        // server-side only — pg messages can echo column values and
+        // would surface row context to the FE.
+        let errorMessage;
+        if (dbError.code === '23505' && dbError.constraint === 'users_tenant_id_email_key') {
+          errorMessage = 'A user with this email already exists at this school.';
+        } else {
+          errorMessage = 'Failed to create user';
+          console.error('[csv:staff-import] insert error code:', dbError.code, 'constraint:', dbError.constraint);
+        }
         insertErrors.push({
           row: staff.row,
           data: staff,
