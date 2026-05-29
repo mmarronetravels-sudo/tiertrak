@@ -5,14 +5,20 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { Resend } = require('resend');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { STAFF_ROLES, CREATE_STAFF_RULES } = require('./staffManagement');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -76,6 +82,13 @@ const VALID_RISK_LEVELS = ['low', 'moderate', 'high'];
 const blockParentRole = (req, res, next) => {
   if (req.user.role === 'parent') {
     return res.status(403).json({ error: 'Not authorized' });
+  }
+  next();
+};
+
+const blockNonStaffCreator = (req, res, next) => {
+  if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
   next();
 };
@@ -151,6 +164,35 @@ router.get('/template/download', requireAuth, (req, res) => {
   const csvContent = 'first_name,last_name,grade,external_id,tier,area,risk_level\nJohn,Smith,3rd,STU-12345,1,Academic,low\nJane,Doe,5th,STU-67890,2,Behavior,moderate';
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=student_import_template.csv');
+  res.send(csvContent);
+});
+
+// Get staff CSV template info
+router.get('/staff/template', requireAuth, (req, res) => {
+  res.json({
+    columns: ['email', 'full_name', 'role', 'school_wide_access'],
+    required: ['email', 'full_name', 'role'],
+    optional: ['school_wide_access'],
+    defaults: {},
+    validValues: {
+      role: STAFF_ROLES,
+      school_wide_access: [true, false]
+    },
+    helpText: {
+      school_wide_access: 'TRUE for district_admin, district_tech_admin, school_admin, counselor, interventionist. FALSE for teacher. If omitted, derived from role automatically. Setting TRUE on a teacher row or FALSE on an elevated-role row will be rejected as inconsistent with the role.'
+    },
+    exampleRows: [
+      { email: 'jane.smith@example.edu', full_name: 'Jane Smith', role: 'teacher', school_wide_access: false },
+      { email: 'alex.lee@example.edu', full_name: 'Alex Lee', role: 'counselor', school_wide_access: true }
+    ]
+  });
+});
+
+// Download staff CSV template
+router.get('/staff/template/download', requireAuth, (req, res) => {
+  const csvContent = 'email,full_name,role,school_wide_access\njane.smith@example.edu,Jane Smith,teacher,FALSE\nalex.lee@example.edu,Alex Lee,counselor,TRUE';
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=staff_import_template.csv');
   res.send(csvContent);
 });
 
@@ -339,6 +381,266 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
       fs.unlink(req.file.path, () => {});
     }
     res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /staff/:tenantId — bulk import staff from CSV.
+// Gate stack mirrors single-create POST at staffManagement.js: caller-role
+// gate (router-level) → required-field/role-validity/role-rank/SWA gates →
+// within-upload dedup → per-tenant email pre-check → INSERT → 23505 strict-
+// equality on users_tenant_id_email_key. district_id derived from
+// req.user.district_id, NEVER read from CSV (§5). Token + 7-day expires
+// mirror routes/auth.js:338-339. password_hash omitted; google_id explicit
+// NULL strengthens the parent-creation precedent which omits it.
+router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+  if (bindError) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(bindError.status).json(bindError.body);
+  }
+
+  const results = [];
+  const errors = [];
+  const insertErrors = [];
+  // Within-upload dedup tracker: email → first-occurrence row number.
+  // Narrowed data shape per §4B doctrine cited at App.jsx:5749-5751.
+  const emailFirstRow = new Map();
+  let rowNumber = 1; // Start at 1 for header
+
+  try {
+    const parsePromise = new Promise((resolve, reject) => {
+      fs.createReadStream(req.file.path)
+        .pipe(csv())
+        .on('data', (row) => {
+          rowNumber++;
+
+          const normalizedRow = {};
+          Object.keys(row).forEach(key => {
+            normalizedRow[key.trim().toLowerCase().replace(/\s+/g, '_')] = row[key]?.trim();
+          });
+
+          if (!normalizedRow.email || !normalizedRow.full_name || !normalizedRow.role) {
+            errors.push({
+              row: rowNumber,
+              data: normalizedRow,
+              error: 'Missing required fields (email, full_name, role).'
+            });
+            return;
+          }
+
+          if (!STAFF_ROLES.includes(normalizedRow.role)) {
+            errors.push({
+              row: rowNumber,
+              data: normalizedRow,
+              error: `Invalid role "${normalizedRow.role}". Must be one of: ${STAFF_ROLES.join(', ')}.`
+            });
+            return;
+          }
+
+          if (!CREATE_STAFF_RULES[req.user.role].includes(normalizedRow.role)) {
+            errors.push({
+              row: rowNumber,
+              data: normalizedRow,
+              error: `Role "${normalizedRow.role}" cannot be created by ${req.user.role}.`
+            });
+            return;
+          }
+
+          // school_wide_access consistency guard. Only fires if the column
+          // was provided non-empty; omitted/empty falls through to derivation.
+          const expectedSwa = ELEVATED_ROLES.includes(normalizedRow.role);
+          if (normalizedRow.school_wide_access) {
+            const upper = normalizedRow.school_wide_access.toUpperCase();
+            if (upper !== 'TRUE' && upper !== 'FALSE') {
+              errors.push({
+                row: rowNumber,
+                data: normalizedRow,
+                error: `Invalid school_wide_access "${normalizedRow.school_wide_access}". Must be TRUE or FALSE.`
+              });
+              return;
+            }
+            const providedSwa = upper === 'TRUE';
+            if (providedSwa !== expectedSwa) {
+              errors.push({
+                row: rowNumber,
+                data: normalizedRow,
+                error: `Role "${normalizedRow.role}" requires school_wide_access=${expectedSwa ? 'TRUE' : 'FALSE'} (provided ${upper}).`
+              });
+              return;
+            }
+          }
+          const schoolWideAccess = expectedSwa;
+
+          // Within-upload dedup on email. SHAPE B — narrowed data.
+          const emailLower = normalizedRow.email.toLowerCase();
+          if (emailFirstRow.has(emailLower)) {
+            const firstRow = emailFirstRow.get(emailLower);
+            insertErrors.push({
+              row: rowNumber,
+              data: { email: normalizedRow.email },
+              error: `Row ${rowNumber}: duplicate email '${normalizedRow.email}' (also appears in row ${firstRow})`
+            });
+            return;
+          }
+          emailFirstRow.set(emailLower, rowNumber);
+
+          // district_id derivation — NEVER read from CSV. Derived from
+          // req.user.district_id only for district-scoped roles per §5.
+          const districtId = ['district_admin', 'district_tech_admin'].includes(normalizedRow.role)
+            ? req.user.district_id
+            : null;
+
+          results.push({
+            row: rowNumber,
+            email: emailLower,
+            full_name: normalizedRow.full_name,
+            role: normalizedRow.role,
+            school_wide_access: schoolWideAccess,
+            district_id: districtId
+          });
+        })
+        .on('end', () => resolve())
+        .on('error', (error) => reject(error));
+    });
+
+    await parsePromise;
+
+    // 100-row cap. Fires AFTER parse, BEFORE any DB write.
+    if (rowNumber - 1 > 100) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'Staff CSV upload limited to 100 rows. Split larger uploads into multiple files.' });
+    }
+
+    const inserted = [];
+
+    for (const staff of results) {
+      // Per-tenant email-existence pre-check. Closes the cross-tenant
+      // email-enumeration oracle (PR #129 doctrine). Race with concurrent
+      // single-create POST is caught by the 23505 catch below.
+      const existing = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+        [staff.email, tenantId]
+      );
+      if (existing.rows.length > 0) {
+        insertErrors.push({
+          row: staff.row,
+          data: staff,
+          error: 'A user with this email already exists at this school.'
+        });
+        continue;
+      }
+
+      // Token + 7-day expires mirror routes/auth.js:338-339 verbatim.
+      const setupToken = crypto.randomBytes(32).toString('hex');
+      const setupTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      try {
+        const result = await pool.query(
+          `INSERT INTO users (tenant_id, email, full_name, role, school_wide_access, district_id, password_reset_token, password_reset_expires, google_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL)
+           RETURNING id, email, full_name, role, school_wide_access`,
+          [tenantId, staff.email, staff.full_name, staff.role, staff.school_wide_access, staff.district_id, setupToken, setupTokenExpires]
+        );
+        inserted.push({
+          row: staff.row,
+          user: result.rows[0],
+          setupToken
+        });
+      } catch (dbError) {
+        // 23505 strict-equality on users_tenant_id_email_key. Other 23505
+        // constraints fall through to dbError.message per
+        // fix/api-dberror-translation doctrine.
+        const errorMessage = (dbError.code === '23505' && dbError.constraint === 'users_tenant_id_email_key')
+          ? 'A user with this email already exists at this school.'
+          : dbError.message;
+        insertErrors.push({
+          row: staff.row,
+          data: staff,
+          error: errorMessage
+        });
+      }
+    }
+
+    // Send setup-link email per successfully-inserted staff row. Per the
+    // c.3 design: keep sending on per-row failure, no rate-limit-aware
+    // abort (banked as chore/csv-import-resend-rate-limit-aware-abort).
+    // Mirrors the parent-creation Resend pattern at routes/auth.js:364-400.
+    // Sanitization: err.message → first line → 200-char cap. Full SDK
+    // error object is never serialized into emailErrors or logs.
+    const emailErrors = [];
+    for (const staff of inserted) {
+      const setupUrl = `${process.env.FRONTEND_URL}/set-password?token=${staff.setupToken}`;
+      try {
+        const { error: sendError } = await resend.emails.send({
+          from: 'ScholarPath Intervention Management <noreply@scholarpathsystems.org>',
+          to: staff.user.email,
+          subject: 'Set up your ScholarPath account',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Welcome to ScholarPath</h1>
+              </div>
+              <div style="padding: 30px; background: #f9fafb;">
+                <p>Hello ${staff.user.full_name},</p>
+                <p>An account has been created for you in ScholarPath Intervention Management. To get started, set up your password using the link below.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${setupUrl}" style="background: #6366f1; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">Set Up My Password</a>
+                </div>
+                <p style="color: #6b7280; font-size: 14px;">This link will expire in 7 days.</p>
+                <p style="color: #6b7280; font-size: 14px;">If you didn't expect this email, please ignore it.</p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+                  ScholarPath Intervention Management by ScholarPath Systems<br>
+                  FERPA Compliant • Student Data Protected
+                </p>
+              </div>
+            </div>
+          `
+        });
+        if (sendError) {
+          const sanitized = (sendError.message || 'Unknown error').split('\n')[0].slice(0, 200);
+          emailErrors.push({ row: staff.row, email: staff.user.email, error: sanitized });
+          console.error('[csv:staff-import] resend error:', sendError.statusCode || sendError.name || 'unknown');
+        }
+      } catch (err) {
+        const sanitized = (err.message || 'Unknown error').split('\n')[0].slice(0, 200);
+        emailErrors.push({ row: staff.row, email: staff.user.email, error: sanitized });
+        console.error('[csv:staff-import] resend exception:', err.statusCode || err.name || 'unknown');
+      }
+    }
+
+    fs.unlink(req.file.path, (err) => {
+      if (err) console.error('Error deleting temp file:', err);
+    });
+
+    res.json({
+      success: true,
+      summary: {
+        totalRows: rowNumber - 1,
+        imported: inserted.length,
+        validationErrors: errors.length,
+        insertErrors: insertErrors.length,
+        emailErrors: emailErrors.length
+      },
+      imported: inserted.map(i => ({
+        row: i.row,
+        email: i.user.email,
+        id: i.user.id
+      })),
+      errors: [...errors, ...insertErrors],
+      emailErrors
+    });
+
+  } catch (error) {
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, () => {});
+    }
+    console.error('[csv:staff-import] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

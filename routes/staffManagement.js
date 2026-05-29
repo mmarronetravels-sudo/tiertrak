@@ -348,4 +348,6 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 router.initializePool = initializePool;
+router.STAFF_ROLES = STAFF_ROLES;
+router.CREATE_STAFF_RULES = CREATE_STAFF_RULES;
 module.exports = router;
