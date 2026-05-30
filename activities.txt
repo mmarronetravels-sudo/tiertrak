@@ -21838,3 +21838,255 @@ queued, defer the above.
 ========================================================================
 END SESSION 101
 ========================================================================
+
+
+========================================================================
+SESSION 102 — 2026-05-29
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S102 shipped the misattribution check on the
+landing-the-plane skill — the S99-class protection
+that head-SHA equality (the merge-SHA gate added in
+S100) explicitly does not cover.
+
+Mechanism is Design A from the design walk:
+required FIXES: block inside OPEN ITEMS, parseable
+as <finding-id> → PR #<N> @ <40-char SHA>; for each
+parsed pair, exact-SHA membership check against
+gh pr view N --json commits -q .commits[].oid.
+SHA-only end-to-end — commit headlines visible
+interactively at auto-fill time but never written
+to activities.txt.
+
+Also adds a SHA-only Design B supplement:
+WORK-PR COMMITS section auto-appended between
+VERIFICATION and OPEN ITEMS, listing each logged
+PR's commit OIDs. SHAs and PR numbers only; same
+output discipline as the merge-SHA gate.
+
+Honest residual called out in skill prose + a
+Guardrails bullet: the check verifies CONTAINMENT
+not CORRECTNESS. A wrong-but-present commit cited
+as the fix would still PASS. The auto-fill UX —
+which presents the cited PR's own commits for the
+operator to pick from — is the behavioral
+mitigation, not a mechanical one.
+
+------------------------------------------------------------------------
+BRANCH STATE
+------------------------------------------------------------------------
+
+chore/activities-log-misattribution-check — 1
+commit (7d98682), opened as PR #169, merged via
+merge-commit + admin bypass at commit 3891beb.
+
+chore/activities-log-session-102 — this entry,
+branched from fresh main after the work PR landed.
+
+------------------------------------------------------------------------
+SURFACES TOUCHED
+------------------------------------------------------------------------
+
+  - 1 skill markdown file modified
+    (.claude/skills/landing-the-plane/SKILL.md,
+    +107 / -3):
+      - new #### Misattribution check subsection
+        between the merge-SHA gate and the §4B
+        grep gate (~80 lines)
+      - FIXES: placeholder added to OPEN ITEMS
+        section of the entry template
+      - merge-SHA "doesn't catch" bullet updated
+        to forward-reference the new check
+      - Step 3 intro updated to three-gate ordering
+      - §4B grep intro updated to "after both"
+        prior gates
+      - one Guardrails bullet on misattribution
+        non-optionality + the containment-vs-
+        correctness residual + WORK-PR COMMITS
+        SHA-only discipline
+
+No code surfaces touched. Markdown-only change to
+session-close tooling.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+No DB queries, schema, or query-touching code
+modified. No tenant-isolation surface.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+PII fields touched: none. Markdown-only skill
+change.
+
+The new gate's output rules are explicitly SHA-
+only: the HALT block prints finding-id + PR# +
+40-char SHAs only; never commit headlines, PR
+titles, or subject lines. The auto-populate flow
+shows headlines interactively at SHA-pick time
+but writes only the 40-char OID to the file.
+WORK-PR COMMITS section append is SHA-only.
+
+§4B grep against this activities entry: 0 hits on
+narrow patterns (email, school-type, PII-column-
+name, name-field).
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73).
+No backend test run.
+
+Frontend lint: dirty with pre-existing, unrelated
+errors (state per S100: 63 errors / 17 warnings
+across 16 files). This session's code change was
+markdown-only (.claude/skills/landing-the-plane/
+SKILL.md); not lint-scanned. Backend lint is not
+configured (Followup #74). The dirty state is
+unchanged by this session.
+
+merge-SHA verification gate — fourth live run
+against PR #169:
+  state         = MERGED
+  HEAD_OID      = 7d98682d19625859287491c01a0fa89f
+                  8d821735
+  MERGE_OID     = 3891bebdd27e84e46817d5814e2dc18a
+                  f6a5d94f
+  PARENT_COUNT  = 2 (true merge commit)
+  PARENT2       = 7d98682d19625859287491c01a0fa89f
+                  8d821735
+  Result        = MATCH, silent continue
+
+misattribution check — silent no-op (correctly):
+  Entry has NO FIXES: block (no fix-of-finding
+  claims this session — S102 shipped a new
+  protection, did not "fix" a previously logged
+  finding). Per spec, the gate silently continues
+  when the FIXES: block is absent. The gate
+  correctly does not false-trigger on entries
+  without fix-claims.
+
+S99 trace validation (pre-deploy, executed live
+against the real PR data before commit):
+  - Lie path: FIXES: ... → PR #160 @
+    6d110082142fc972213cbb85fbdbd23eafdf2dba
+      gh pr view 160 commits: 5 OIDs, none match
+      grep -Fxq exit: 1
+      Result: HALT (caught the S99 misattribution)
+  - Truth path: FIXES: ... → PR #162 @
+    752a6cbc439d2199c2bbdec12e1773aded251019
+      gh pr view 162 commits: 1 OID, match
+      grep -Fxq exit: 0
+      Result: PASS
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #169 commit OIDs at merge time:
+  7d98682d19625859287491c01a0fa89f8d821735
+
+(This is the new section the misattribution check
+auto-appends per Design B. SHAs and PR numbers
+only; no headlines, no subjects. This entry is
+also the first session to include the section —
+S99, S100, S101 entries pre-date it.)
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #169 state at session close: MERGED via admin
+bypass per §2A chore exception.
+
+Branch hygiene at session start: 3 untracked
+operational artifacts present on main, unchanged
+from S101 (Followup #94 STANDS).
+
+Follow-ups banked this session: NONE NEW.
+The S100-banked chore/activities-log-misattribution-
+check is now SHIPPED (this session's work PR
+#169). Closes out the S99-protection trilogy
+(merge-SHA gate in S100 + misattribution check
+this session).
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured):
+    STANDS.
+  Followup #94 (scripts/ops/ + untracked PDF not
+    yet gitignored): STANDS. Same set carried
+    over from S101, unchanged this session.
+  Followup #144 (S101 staff-csv setup-link
+    runbook): STANDS as shipped.
+  chore/frontend-test-infra (S97-banked): STANDS.
+  chore/app-jsx-lint-cleanup (S97-banked): STANDS
+    (S100 master-index accuracy note about
+    recorded count vs current count still open).
+  chore/frontend-lint-cleanup-broader-scope
+    (S100-banked): STANDS. Sibling to chore/app-
+    jsx-lint-cleanup, broader scope across 14
+    non-App.jsx files.
+  fix/api-dberror-translation: STANDS.
+  fix/students-put-null-on-omit-broader-
+    investigation: STANDS.
+
+Master-index accuracy items still open from S100:
+  - S99 "merge race" misframing — actual git
+    shows PR #160 merged faithfully; the real
+    issue was prose misattribution (the very
+    failure mode this session's check now
+    prevents structurally).
+  - chore/app-jsx-lint-cleanup count drift.
+
+Remaining S99-banked items not yet shipped (per
+S101's standing list):
+  - chore/consolidate-target-tenant-helper
+  - chore/csv-import-result-component
+  - chore/csv-import-resend-rate-limit-aware-abort
+  - chore/parent-creation-resend-error-log-
+    redaction
+  - chore/csv-import-resend-api-key-boot-guard
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+S102's work merged. The misattribution check is
+now live; together with the merge-SHA gate (S100)
+and the §4B grep gate (long-standing), all three
+landing-the-plane gates are in place. The S99
+failure mode is now structurally impossible to
+repeat under the FIXES: block contract.
+
+Next session candidates ranked by value:
+
+  - operator-side master-index reconciliation
+    (S99 misframing correction + chore/app-jsx-
+    lint-cleanup count drift); both have been
+    standing since S100
+  - One of the remaining S99-banked chores per
+    operator priority
+  - chore/frontend-lint-cleanup-broader-scope
+    (MEDIUM)
+
+If higher-priority operational work has been
+queued, defer the above.
+
+========================================================================
+END SESSION 102
+========================================================================
