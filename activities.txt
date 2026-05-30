@@ -22369,3 +22369,135 @@ queued, defer the above.
 ========================================================================
 END SESSION 103
 ========================================================================
+================================================================================
+SESSION: 2026-05-30T07:24:24-07:00
+BRANCH:  migration/discipline-referral-schema
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/172 (merged to main; feature head fb999d04e6167e59a828a4b71d02648c4fa3d3f4; merge commit b4367e125990a4e0608a5315eb46f54ba48e87f9)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  First PR of the discipline-referral feature; schema-only — no routes, no UI.
+  Added 9 new school-scoped tables (1 referral table, 1 join, 7 tenant-
+  customizable vocab tables) and seeded the 7 vocab tables with default rows
+  for every existing school-tenant in the local dev DB. M021 composite-FK
+  pattern enforces cross-tenant rejection at the schema layer for every
+  referral → vocab and referral → student reference.
+
+FILES TOUCHED
+  migration-036-discipline-referrals-foundation.sql — new migration (+560/-0)
+
+MIGRATIONS RUN
+  migration-036-discipline-referrals-foundation.sql — adds discipline_referrals,
+    discipline_referral_consequences join, and 7 vocab tables
+    (discipline_locations, discipline_motivations, discipline_others_involved,
+    discipline_consequences, discipline_harassment_subtypes,
+    discipline_weapon_subtypes, discipline_behaviors). Applied to local dev DB
+    cleanly. Re-applied on top of itself with INSERT 0 0 on every seed clause →
+    partial-index ON CONFLICT inference validated end-to-end.
+
+TENANT ISOLATION REVIEW
+  Every new school-scoped table carries tenant_id NOT NULL REFERENCES tenants(id)
+  + an index on tenant_id. M021 composite-FK pattern applied throughout:
+  UNIQUE (id, tenant_id) on every parent; all 7 referral → vocab FKs are
+  composite (child_id, tenant_id) → parent(id, tenant_id), and the join table
+  uses composite FKs on both sides. Seeding scoped to WHERE t.type = 'school'.
+  Cross-tenant rows rejected at the SQL layer regardless of route bugs. Staff
+  FKs (referring_staff_id, reviewing_admin_id) are scalar REFERENCES users(id),
+  matching M021 precedent; user-tenant boundary enforced at app layer via
+  user_school_access + the §5 resolveAccessibleTenantIds helper. No route code
+  in this PR.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: schema introduces two new free-text PII sinks on
+    discipline_referrals — staff_notes and admin_notes (both TEXT, nullable).
+    Schema-only PR; no PII reads/writes happen in this PR's diff.
+  Logging audit: 0 console.* statements in the diff; no logging code at all.
+  Cross-tenant risk: none — composite-FK pattern enforces rejection at schema
+    layer for all student + vocab references.
+  IEP/504/BIP discipline: no IEP/504/BIP column on discipline_referrals (D9
+    spec note honored; downstream surfaces look those facts up from the student
+    record at read time).
+  §4B grep on the migration file diff vs origin/main: narrow + wide passes
+    both clean (per docs/ai-context/4B_GREP_PATTERNS.md). Belt-and-suspenders
+    pair-shape hits all triaged as vocabulary labels (location names, SWIS
+    motivation categories).
+
+VERIFICATION
+  npm test (backend) — N/A; pre-existing repo state (Followup #73)
+  npm run lint (backend) — N/A; pre-existing repo state (Followup #74)
+  Local smoke test — applied migration to localhost dev DB; verified all 9
+    tables, 8 composite UNIQUE constraints, 7 per-tenant partial-unique label
+    indexes; per-tenant seed row counts 16/7/7/22/8/4/20 (locations,
+    motivations, others_involved, consequences, harassment_subtypes,
+    weapon_subtypes, behaviors) confirmed for 2 school tenants in the dev DB.
+  Targeted is_restorative SELECT against dev DB — 6 distinct TRUE labels × 2
+    tenants = 12 rows; the 6: Community service, Conference with student,
+    Individualized instruction, Request for additional support, Restitution,
+    Restorative practice (chat / impromptu circle).
+  Clean-rebuild test — rolled back via header DROP block (pre-flight confirmed
+    only 9 discipline_* tables targeted, 0 inbound FKs, 0 dependent views);
+    fresh re-apply produced identical verification block output.
+  Idempotency test — re-applied on top of applied state without rollback;
+    INSERT 0 0 on every seed clause, row counts unchanged → retires security-
+    reviewer LOW finding #2 (first-use partial-index ON CONFLICT inference).
+  merge-sha verification: MATCH — PR #172 head ==
+    fb999d04e6167e59a828a4b71d02648c4fa3d3f4; merge commit
+    b4367e125990a4e0608a5315eb46f54ba48e87f9 second parent ==
+    fb999d04e6167e59a828a4b71d02648c4fa3d3f4.
+  §4B grep on this entry's diff vs origin/main: narrow + wide passes both
+    clean (run before staging per landing-the-plane gate).
+  misattribution check: N/A — no FIXES: block in this entry.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #172 commit OIDs at merge time:
+  fb999d04e6167e59a828a4b71d02648c4fa3d3f4
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+F1 — chore/discipline-referrals-new-tenant-vocab-seeding (HIGH): wire the
+  per-tenant default vocabularies into the tenant-creation route so tenants
+  created after M036 inherit the defaults instead of seeing empty pickers.
+  Currently M036 only seeds existing school-tenants; the route needs to be
+  updated to INSERT…SELECT against the same VALUES lists on new-tenant POST.
+  Flagged by all three reviewer subagents on PR #172. Must land before any
+  new school-tenant is provisioned post-M036.
+
+F2 — docs/privacy-review-staff-notes-admin-notes (MEDIUM): add
+  PRIVACY_REVIEW.md entry documenting discipline_referrals.staff_notes +
+  admin_notes as new free-text PII sinks — (a) staff-authored, may include
+  third-party names / incident narrative PII; (b) admin-authored, same
+  posture; (c) explicit-projection discipline applies to any parent-visible
+  read surface (cf. §504 / screener Phase-2 rule already documented). Also
+  note the conditional-subtype application-layer rule for harassment +
+  weapon FKs. Land alongside the route/UI PR or as a paired docs PR.
+  (privacy-reviewer WARN-1 on PR #172.)
+
+F3 — discipline-referrals ON DELETE asymmetry: DOCUMENTED AS INTENTIONAL
+  fails-closed design. discipline_referrals.tenant_id and
+  discipline_referral_consequences.tenant_id use default NO ACTION on the
+  tenant FK while the 7 vocab tables use ON DELETE CASCADE. Rationale: vocab
+  is configuration (cascade-safe on tenant deletion); referral data is PII-
+  bearing audit history (blocks tenant deletion until an operator deliberately
+  handles it). Matches M021 / 504-foundation precedent. Convergent LOW
+  finding from tenant-isolation-auditor + security-reviewer on PR #172.
+  Optional follow-up: add inline header comment to M036 documenting the
+  rationale so the next reviewer doesn't re-flag.
+
+Stashed work to process:
+  - stash@{0} = parked session-103 activities-log entry + 2 Followup #94 ops
+    audit SQL files + 1 GR sample PDF. Plan: pop onto
+    chore/activities-log-session-103, stage activities.txt by name only
+    (NOT git add -A) so the ops SQL + PDF stay untracked per Followup #94,
+    then PR the session-103 entry separately.
+
+NEXT SESSION SHOULD
+  Process the parked session-103 stash via chore/activities-log-session-103
+  PR (operator-driven quick-win #1). Then work F1 (highest priority; gates
+  new-tenant provisioning) before moving to the discipline-referral route/UI
+  PRs. F2 can ride with the route PR. F3 is documentation-only and can ride
+  with any future M036-adjacent change.
+================================================================================
