@@ -22501,3 +22501,180 @@ NEXT SESSION SHOULD
   PRs. F2 can ride with the route PR. F3 is documentation-only and can ride
   with any future M036-adjacent change.
 ================================================================================
+================================================================================
+SESSION: 2026-05-30T09:44:57-07:00
+BRANCH:  chore/discipline-referrals-new-tenant-vocab-seeding
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/175 (merge commit 877cf7fb2522cf57673d697fb9f55557a379c677; feature head 5a3cfd17fdd5c2622c17afe3bb3ef29abe4809b5)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closed Followup F1 (per session 104's NEXT SESSION SHOULD) by wiring the 7
+  discipline-referral default vocabularies into the operator-only POST
+  /api/tenants tenant-creation route so school-tenants created after M036
+  inherit the same defaults instead of starting with empty pickers. Bundled
+  a pre-existing latent-bug fix: the route's existing intervention-bank
+  starter seed had no transactional boundary, so a bank-insert failure could
+  leave a tenant row committed without its starter bank. The new transaction
+  closes both gaps in one wrapper. Then applied M036 to prod (operator-
+  driven; previously only applied to dev) and verified all 8 school-tenants
+  were seeded.
+
+FILES TOUCHED
+  data/discipline-vocab-seeds.js (new, 232 lines) — canonical source of
+    truth for the 7 vocab lists + seedDisciplineVocabsForTenant(client,
+    tenantId) helper. DRIFT-RISK header documents that the JS module is
+    canonical going forward and M036's VALUES blocks are historical.
+  routes/tenants.js — POST handler wrapped in pool.connect() / BEGIN /
+    COMMIT / ROLLBACK / finally release(); intervention-bank seed switched
+    from pool.query to client.query (folded into the same transaction);
+    new call to seedDisciplineVocabsForTenant after the bank seed; ROLLBACK
+    guarded with try/catch per security-reviewer WARN.
+  migration-036-discipline-referrals-foundation.sql — header comment only;
+    replaces the obsolete "follow-up PR pending" paragraph with a DRIFT-
+    RISK NOTE pointing at the JS module. Executable SQL byte-identical to
+    the version applied via PR #172 / this session's prod-apply.
+
+MIGRATIONS RUN
+  migration-036-discipline-referrals-foundation.sql — applied M036 to prod;
+    seeded 8 school-tenants, 672 rows (locations 128 + motivations 56 +
+    others_involved 56 + consequences 176 + harassment_subtypes 64 +
+    weapon_subtypes 32 + behaviors 160). Transaction shape: BEGIN → 9
+    CREATE TABLE + 28 CREATE INDEX → 7 INSERT cross-joined across the 8
+    school-tenants → COMMIT. Verification block confirmed 9 tables, 8
+    composite UNIQUE constraints, 7 per-tenant partial-unique label
+    indexes, per-tenant counts all at 16/7/7/22/8/4/20. Render PITR (3-day
+    floor) confirmed in dashboard pre-apply.
+
+TENANT ISOLATION REVIEW
+  Every new INSERT in seedDisciplineVocabsForTenant is parameterized to
+  tenantId = $1 sourced from RETURNING * on the in-transaction tenant
+  INSERT. No FROM-clause join to another tenant's data, no subquery, no
+  path for a request-supplied tenant id to redirect the seed. The
+  composite-FK pattern from M021/M036 (UNIQUE(id, tenant_id) on each
+  vocab parent + composite child FKs from discipline_referrals) is
+  preserved end-to-end; future referral rows for a given tenant can only
+  reference that tenant's vocab. §5 dual-path (resolveAccessibleTenantIds)
+  is not applicable — POST /api/tenants is operator-only via
+  requireAuth + platformAdminOnly, not a school-scoped staff path.
+  tenant-isolation-auditor: APPROVED, 0 findings at CRITICAL/HIGH/MEDIUM,
+  3 INFO notes (textbook-correct scoping, transaction strengthens
+  isolation, auth chain intact).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. The 7 vocab arrays are domain-taxonomy lookup
+    strings (location names, motivation categories, behavior labels, etc.);
+    no student/staff identifiers, no intervention history, no meeting
+    notes, no referral data linked to a person. 84 entries across the 7
+    arrays per-tenant § 4B-checked at compose time.
+  Logging audit: verified — the only changed console.error site
+    ([tenants:create]) interpolates only a static tag + err.message after
+    23514/23505 redirects fire, and tenant-row name / subdomain are
+    operator-supplied org strings, not student/staff PII per §4B. Error
+    response bodies remain the pre-PR generics.
+  Cross-tenant risk: none identified. tenant id flows from a server-
+    generated RETURNING * inside the same BEGIN/COMMIT; no request-
+    supplied tenant id reaches the helper.
+  privacy-reviewer: APPROVED, 0 findings at CRITICAL/WARN, 3 INFO notes.
+
+VERIFICATION
+  npm test (backend) — N/A; pre-existing repo state (Followup #73).
+  npm run lint (backend) — N/A; pre-existing repo state (Followup #74).
+  npm run lint (frontend) — N/A; this session touched no frontend code.
+  Local smoke test (dev DB) — happy-path: POST flow seeded all 7 vocabs at
+    expected per-tenant counts (16/7/7/22/8/4/20) and committed tenant +
+    bank + vocab atomically. Negative-path: forced mid-seed failure →
+    ROLLBACK left zero tenant rows and zero partial-seed rows. Atomicity
+    confirmed before and re-confirmed after the ROLLBACK-guard fix
+    (5a3cfd1).
+  Label-equality check vs M036 reference tenant — both-direction EXCEPT on
+    label returns 0 rows for all 7 vocab tables. Per-label sort_order,
+    is_restorative, severity_level, and managed_by also match exactly
+    (both directions, 0 rows). JS module and M036 VALUES blocks produce
+    byte-identical seeds.
+  Prod-apply verification — all 9 tables present, 8 composite UNIQUE
+    constraints, 7 per-tenant partial-unique label indexes, seed total
+    672 rows, per-tenant counts 16/7/7/22/8/4/20 across all 8 school-
+    tenants. Output captured in session transcript.
+  Three reviewer subagents on PR #175 — tenant-isolation-auditor APPROVED
+    (0/0/0 + 3 INFO), security-reviewer APPROVED (0/0/0 + 1 WARN on
+    unguarded ROLLBACK + 2 INFO), privacy-reviewer APPROVED (0/0 + 3
+    INFO). Security-reviewer's WARN was addressed inline (see FIXES
+    block); no merge blocks.
+  merge-sha verification: MATCH — PR #175 head ==
+    5a3cfd17fdd5c2622c17afe3bb3ef29abe4809b5; merge commit
+    877cf7fb2522cf57673d697fb9f55557a379c677 second parent ==
+    5a3cfd17fdd5c2622c17afe3bb3ef29abe4809b5.
+  §4B grep on this entry's diff vs origin/main: narrow + wide passes both
+    clean (run before staging per landing-the-plane gate).
+  misattribution check: PASS — 1 FIXES line; cited SHA confirmed via
+    `gh pr view 175 --json commits` membership test.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #175 commit OIDs at merge time:
+  f604361a38001ee11f841d395bbd74c1097f887e
+  5a3cfd17fdd5c2622c17afe3bb3ef29abe4809b5
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+F2 — docs/privacy-review-staff-notes-admin-notes (MEDIUM, carried from
+  session 104): add PRIVACY_REVIEW.md entry documenting
+  discipline_referrals.staff_notes + admin_notes as new free-text PII
+  sinks plus the conditional-subtype application-layer rule for harassment
+  + weapon FKs. Land alongside the route/UI PR that introduces those
+  free-text writes (not introduced in this session — PR #175 added no
+  referral-writing routes), or as a paired docs PR.
+
+F3 — discipline-referrals ON DELETE rationale comment (LOW, carried from
+  session 104): documented-as-intentional fails-closed design where
+  discipline_referrals.tenant_id and discipline_referral_consequences.
+  tenant_id use default NO ACTION on the tenant FK while the 7 vocab
+  tables use ON DELETE CASCADE. Optional follow-up: add an inline header
+  comment to M036 (now applied to prod, so comment-only edit only — same
+  shape as this session's DRIFT-RISK NOTE addition) documenting the
+  rationale so the next reviewer doesn't re-flag.
+
+F4 — chore/tenants-create-activity-log (MEDIUM, new this session): POST
+  /api/tenants is an operator-only mutation that creates a new school-
+  tenant and seeds 7 vocabularies + the intervention-bank, but writes no
+  activity_log row capturing actor user_id + new tenant id. Surfaced by
+  security-reviewer on PR #175 as a pre-existing gap. Out-of-scope here;
+  worth a small chore/ PR.
+
+F5 — chore/sandbox-seeds-discipline-vocab-wiring (MEDIUM, new this
+  session): 3 sandbox/seed scripts that INSERT INTO tenants also need
+  wiring to seedDisciplineVocabsForTenant:
+    1. scripts/seed-tier1-local-test.js (local dev fixture, pg client)
+    2. a district-named sandbox SQL-emitter script (see scripts/ dir)
+    3. scripts/seed-tenant-sandbox-template.js (SQL-emitter)
+  Sequence note: the sandbox-template script (#3) should land BEFORE the
+  discipline-referral create-flow PR (the route/UI PR for actually filing
+  referrals) so any test tenants spun up from the template during that
+  PR's QA have working pickers. #1 and #2 are lower urgency.
+
+F6 — a sandbox seed script's filename embeds a real district name (§4B
+  in a committed path). Decide rename-to-generic vs. documented exception;
+  if renamed, the new name should carry no real tenant identifier.
+
+FIXES:
+  security-reviewer WARN — unguarded ROLLBACK at routes/tenants.js:104 → PR #175 @ 5a3cfd17fdd5c2622c17afe3bb3ef29abe4809b5
+
+  Note: addressed INLINE in PR #175 as a follow-up commit on the same
+  branch, not deferred. ROLLBACK wrapped in try/catch so a dead
+  connection during rollback cannot mask the original error, skip the
+  23514/23505 redirects, or fall through to Express's default error
+  handler. Smoke tests re-run after the fix — both happy and negative
+  paths still pass; tenant row + partial-seed rows still removed on
+  rollback. This is NOT a deferred follow-up.
+
+NEXT SESSION SHOULD
+  F4 and F5 are both small chore/ PRs and either can ship next. If the
+  discipline-referral create-flow PR (referral-writing routes + UI) is
+  next on the operator's queue, sequence F5 #3 (sandbox-template wiring)
+  before that PR so QA test tenants have working pickers. F2 lands
+  alongside that route/UI PR. F3 can ride with any future M036-adjacent
+  comment-only edit.
+================================================================================
