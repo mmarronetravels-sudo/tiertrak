@@ -101,7 +101,11 @@ router.post('/', async (req, res) => {
     await client.query('COMMIT');
     res.status(201).json(newTenant);
   } catch (err) {
-    await client.query('ROLLBACK');
+    // Swallow ROLLBACK errors so a dead connection during rollback can't
+    // mask the original error, skip the 23514/23505 redirects, or fall
+    // through to Express's default error handler. The finally block
+    // releases the client regardless.
+    try { await client.query('ROLLBACK'); } catch (_) { /* swallow */ }
     if (err.code === '23514') return res.status(400).json({ error: 'Invalid tenant type' });
     if (err.code === '23505') return res.status(409).json({ error: 'Subdomain already in use' });
     console.error('[tenants:create]', err.message);
