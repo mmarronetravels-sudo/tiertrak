@@ -57,6 +57,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { ELEVATED_ROLES } = require('../constants/roles');
+const {
+  LOCATIONS,
+  MOTIVATIONS,
+  OTHERS_INVOLVED,
+  CONSEQUENCES,
+  HARASSMENT_SUBTYPES,
+  WEAPON_SUBTYPES,
+  BEHAVIORS,
+} = require('../data/discipline-vocab-seeds');
 
 const BCRYPT_ROUNDS = 10;
 const PASSWORD_BYTES = 12; // 12 random bytes → 16-char base64url string, ~96 bits entropy
@@ -490,6 +499,30 @@ function sqlInt(n) {
   return String(parseInt(n, 10));
 }
 
+// Emit a single discipline-vocab INSERT inside the DO $tag$ block, mirroring
+// the shape of seedDisciplineVocabsForTenant in data/discipline-vocab-seeds.js.
+// `cols` is an array of { name, type, values } where each `values` array is
+// the same length and is sourced from the canonical arrays in that module —
+// the single source of truth — so a future content edit there is picked up
+// automatically here. Supported `type` values: 'text', 'int', 'boolean',
+// 'varchar'.
+function emitDisciplineVocabBlock(lines, table, cols) {
+  const colList = cols.map((c) => c.name).join(', ');
+  lines.push(`  INSERT INTO ${table} (tenant_id, ${colList})`);
+  lines.push(`  SELECT v_tenant_id, ${colList}`);
+  const arrayClauses = cols.map((c) => {
+    const lits = c.values.map((v) => {
+      if (c.type === 'int') return sqlInt(v);
+      if (c.type === 'boolean') return sqlBool(v);
+      return sqlString(v);
+    }).join(', ');
+    return `ARRAY[${lits}]::${c.type}[]`;
+  }).join(', ');
+  lines.push(`  FROM unnest(${arrayClauses}) AS v(${colList})`);
+  lines.push('  ON CONFLICT (tenant_id, lower(label)) WHERE is_active = TRUE DO NOTHING;');
+  lines.push('');
+}
+
 // ---------------------------------------------------------------------------
 // Build SQL
 // ---------------------------------------------------------------------------
@@ -744,6 +777,43 @@ async function buildSql(roster, rosterPath) {
   lines.push('  WHERE tenant_id IS NULL AND is_starter = TRUE');
   lines.push('  ON CONFLICT (tenant_id, template_id) DO NOTHING;');
   lines.push('');
+  lines.push('  -- ----- Discipline-referral default vocabularies (mirror routes/tenants.js:95-99) -----');
+  lines.push('  -- POST /api/tenants seeds these 7 lists via seedDisciplineVocabsForTenant inside');
+  lines.push('  -- the same atomic transaction as the tenant row. We are bypassing that endpoint by');
+  lines.push('  -- inserting the tenant directly, so we mirror those 7 INSERTs here. The label /');
+  lines.push('  -- sort_order / etc lists are imported from data/discipline-vocab-seeds.js — the');
+  lines.push('  -- single source of truth — so a future content edit there flows here automatically.');
+  emitDisciplineVocabBlock(lines, 'discipline_locations', [
+    { name: 'label', type: 'text', values: LOCATIONS.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: LOCATIONS.map((r) => r.sort_order) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_motivations', [
+    { name: 'label', type: 'text', values: MOTIVATIONS.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: MOTIVATIONS.map((r) => r.sort_order) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_others_involved', [
+    { name: 'label', type: 'text', values: OTHERS_INVOLVED.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: OTHERS_INVOLVED.map((r) => r.sort_order) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_consequences', [
+    { name: 'label', type: 'text', values: CONSEQUENCES.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: CONSEQUENCES.map((r) => r.sort_order) },
+    { name: 'is_restorative', type: 'boolean', values: CONSEQUENCES.map((r) => r.is_restorative) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_harassment_subtypes', [
+    { name: 'label', type: 'text', values: HARASSMENT_SUBTYPES.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: HARASSMENT_SUBTYPES.map((r) => r.sort_order) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_weapon_subtypes', [
+    { name: 'label', type: 'text', values: WEAPON_SUBTYPES.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: WEAPON_SUBTYPES.map((r) => r.sort_order) },
+  ]);
+  emitDisciplineVocabBlock(lines, 'discipline_behaviors', [
+    { name: 'label', type: 'text', values: BEHAVIORS.map((r) => r.label) },
+    { name: 'sort_order', type: 'int', values: BEHAVIORS.map((r) => r.sort_order) },
+    { name: 'severity_level', type: 'int', values: BEHAVIORS.map((r) => r.severity_level) },
+    { name: 'managed_by', type: 'varchar', values: BEHAVIORS.map((r) => r.managed_by) },
+  ]);
   lines.push(`  RAISE NOTICE 'Sandbox tenant ''${t.name.replace(/'/g, "''")}'' provisioned. Tenant id: %', v_tenant_id;`);
   lines.push('END');
   lines.push(`$${safeTag}$;`);
