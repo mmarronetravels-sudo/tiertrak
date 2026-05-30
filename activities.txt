@@ -22678,3 +22678,159 @@ NEXT SESSION SHOULD
   alongside that route/UI PR. F3 can ride with any future M036-adjacent
   comment-only edit.
 ================================================================================
+SESSION: 2026-05-30T10:45:00-07:00
+BRANCH:  chore/sandbox-seeds-discipline-vocab-wiring
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/177
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closed item #3 of session 105's F5 (sandbox-seeds discipline-vocab
+  wiring) by wiring the 7 discipline-referral default vocabularies into
+  the local-only SQL emitter scripts/seed-tenant-sandbox-template.js.
+  The emitter bypasses POST /api/tenants — file header L26-53 guarantees
+  no pg import, no DATABASE_URL read, no network — so PR #175's
+  seedDisciplineVocabsForTenant call never ran for sandboxes provisioned
+  via this path. Mirror approach (not call): the 7 canonical vocab
+  arrays from data/discipline-vocab-seeds.js are imported and rendered
+  as inline SQL INSERTs inside the existing DO $tag$ block, alongside
+  the pre-existing tenant_intervention_bank mirror. Single commit, +70/0.
+  PR #177 is open and awaiting §2A human review.
+
+FILES TOUCHED
+
+  +/- lines    File                                            Reason
+  ---------    --------------------------------------------    -----------------
+  +70/-0       scripts/seed-tenant-sandbox-template.js         require of 7 vocab
+                                                               arrays; new
+                                                               emitDisciplineVocab
+                                                               Block(lines, table,
+                                                               cols) helper; 7
+                                                               emit calls inside
+                                                               buildSql() after
+                                                               the bank mirror,
+                                                               before RAISE
+                                                               NOTICE / COMMIT.
+
+MIGRATIONS RUN
+  none.
+
+TENANT ISOLATION REVIEW
+  Every emitted INSERT carries tenant_id sourced from v_tenant_id,
+  bound from the tenant INSERT's RETURNING id INTO v_tenant_id earlier
+  in the same DO block. No cross-tenant pathway: each new INSERT is
+  `SELECT v_tenant_id, ... FROM unnest(ARRAY[...])` of in-script literal
+  arrays; no SELECT from any tenant-scoped table; no other tenant id
+  source exists in scope. All 7 INSERTs land inside the single
+  BEGIN/COMMIT wrapping the tenant row — a failure rolls back the
+  tenant alongside the partial vocab seed. The emitted
+  ON CONFLICT (tenant_id, lower(label)) WHERE is_active = TRUE DO
+  NOTHING matches M036's per-tenant partial-unique label index for all
+  7 tables, so conflict resolution stays scoped to the inserting tenant
+  (a re-run on tenant A cannot suppress an insert into tenant B).
+  tenant-isolation-auditor on the diff vs main: PASS — APPROVED, 0
+  CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW, 3 INFO confirmations.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. The 7 imported arrays are static reference
+    content (location labels, motivation categories, behavior labels,
+    severity levels, sort_orders, restorative flags, managed-by enum) —
+    no individual identifiers.
+  Logging audit: no new logging surfaces introduced. The script writes
+    SQL to stdout and a password table to stderr; both are pre-existing
+    behaviors, neither modified this session.
+  Cross-tenant risk: none identified. The emitter still creates exactly
+    one tenant per run, scoped by a server-generated id via
+    RETURNING ... INTO v_tenant_id; no other id source reaches the seed.
+
+VERIFICATION
+  npm test (backend) — N/A; pre-existing repo state (Followup #73).
+    Output: "Error: no test specified".
+  npm run lint (backend) — N/A; pre-existing repo state (Followup #74).
+    Output: npm error 'Missing script: "lint"'.
+  node --check scripts/seed-tenant-sandbox-template.js — syntax OK.
+  Smoke test — `node scripts/seed-tenant-sandbox-template.js --roster
+    data/sandbox-roster-template.js > /tmp/seed-smoke.sql`; exit 0.
+
+      Vocab table                          Rows in emitted SQL    M036 spec
+      --------------------------------     -------------------    ---------
+      discipline_locations                                  16           16
+      discipline_motivations                                 7            7
+      discipline_others_involved                             7            7
+      discipline_consequences                               22           22
+      discipline_harassment_subtypes                         8            8
+      discipline_weapon_subtypes                             4            4
+      discipline_behaviors                                  20           20
+
+    All 7 row counts match data/discipline-vocab-seeds.js:24-26 spec.
+    Quote-escape spot-check: `Don't Know` → `'Don''t Know'` correctly
+    emitted.
+  tenant-isolation-auditor on PR #177 diff vs main — PASS APPROVED,
+    0/0/0/0 + 3 INFO. Verdict: "All five user-supplied isolation checks
+    pass with direct evidence. The mirror is a structurally faithful
+    copy of the canonical seedDisciplineVocabsForTenant helper."
+  merge-sha verification: SKIPPED — PR #177 not merged yet (state =
+    OPEN; mergeCommit null at session close).
+  §4B grep on this entry's diff vs origin/main (case-insensitive
+    throughout, added lines only): narrow pass clean, wide pass clean
+    (per 4B_GREP_PATTERNS.md). Supplemental pair-shape pass yielded 1
+    hit on a table column-header line — operational-text false
+    positive, not a person name. Tenant-slug sub-pattern not run:
+    .4b-tenant-slugs.local not populated (operator-side followup;
+    slug enumeration deferred until populated from prod).
+  misattribution check: N/A — no FIXES: block this session (PR #177
+    not merged; fix-claim would cite an unmerged commit).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #177 commit OIDs at branch tip (PR open at session close):
+  1de30c0052de26a1abc89f907aa0acf16eb3eac8
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+F1 (carried, session 105's F5 items #1 and #2) — two sandbox/seed
+  scripts that INSERT INTO tenants still need wiring to
+  seedDisciplineVocabsForTenant. Item #1 is a local dev fixture with a
+  live pg client — call the helper directly with the new tenant id
+  (no SQL-emitter pattern needed). Item #2 is a per-tenant SQL-emitter,
+  the predecessor referenced in this session's script header — apply
+  the same mirror pattern this session applied to the template script.
+  This session closes only item #3 of session 105's F5.
+
+F2 (carried, session 105's F6) — a sandbox seed script's filename
+  embeds a real customer-identifying name. §4B-in-a-committed-path.
+  Decision still outstanding (rename-to-generic vs. documented
+  exception); if renamed, the new name should carry no real tenant
+  identifier.
+
+F3 (new, this session) — data/sandbox-roster-template.js still ships
+  a TENANT.type value that does not match the post-M029 CHECK
+  constraint on tenants.type (per pre-existing Followup #109). The
+  template script's JS-side validator accepts any non-empty string for
+  TENANT.type, so this session's smoke test passed at the JS layer;
+  the emitted SQL would hard-fail at the DB CHECK if pasted into
+  Render as-is. Surfaced in PR #177's out-of-scope watch-items.
+  One-line fix.
+
+F4 (carried, session 105's F2) — docs/privacy-review-staff-notes-
+  admin-notes — pending; lands alongside the discipline-referral
+  route/UI PR.
+
+F5 (carried, session 105's F3) — ON DELETE rationale comment on M036
+  — pending; comment-only edit.
+
+F6 (carried, session 105's F4) — chore/tenants-create-activity-log —
+  pending; small chore/ PR.
+
+NEXT SESSION SHOULD
+  If PR #177 has merged by next session start, the next entry can mark
+  session 105's F5 item #3 closed in its FIXES block. F3 (one-line
+  TENANT.type fix) is cheap and unblocks any operator copying the
+  template literally. If the discipline-referral create-flow PR is
+  next on the queue, sequence F1 item #2 (per-tenant SQL-emitter
+  mirror) before that PR so QA tenants spun up from it have working
+  pickers. F1 item #1 (local dev fixture) is lower urgency. F4 / F5 /
+  F6 remain in their original cadence.
+================================================================================
