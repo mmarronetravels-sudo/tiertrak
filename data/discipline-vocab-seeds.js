@@ -24,6 +24,15 @@
  * Per-tenant counts (verification): locations 16, motivations 7,
  * others_involved 7, consequences 22, harassment_subtypes 8,
  * weapon_subtypes 4, behaviors 20.
+ *
+ * requires_subtype (added M037): tag on a behavior row indicating
+ * the route + UI must collect a conditional subtype at referral
+ * submit time. Only two canonical rows carry a tag — 'Harassment' →
+ * 'harassment' (gates the discipline_harassment_subtypes picker),
+ * and 'Carrying a knife or weapon' → 'weapon' (gates the
+ * discipline_weapon_subtypes picker). Other rows are NULL; a tenant
+ * who adds a new behavior can set the tag via the per-tenant
+ * customization UI.
  */
 
 const LOCATIONS = [
@@ -130,7 +139,7 @@ const BEHAVIORS = [
   { label: 'Forgery of school passes or excuses', sort_order: 4, severity_level: 1, managed_by: 'staff' },
   { label: 'Disorderly conduct', sort_order: 5, severity_level: 1, managed_by: 'staff' },
   { label: 'Fighting', sort_order: 6, severity_level: 2, managed_by: 'admin' },
-  { label: 'Harassment', sort_order: 7, severity_level: 2, managed_by: 'admin' },
+  { label: 'Harassment', sort_order: 7, severity_level: 2, managed_by: 'admin', requires_subtype: 'harassment' },
   { label: 'Smoking on school grounds', sort_order: 8, severity_level: 2, managed_by: 'admin' },
   { label: 'Larceny', sort_order: 9, severity_level: 2, managed_by: 'admin' },
   { label: 'Refusal to abide by school rules', sort_order: 10, severity_level: 2, managed_by: 'admin' },
@@ -141,7 +150,7 @@ const BEHAVIORS = [
   { label: 'Socially unaccepted / immoral behavior', sort_order: 15, severity_level: 3, managed_by: 'admin' },
   { label: 'Destruction or defacement of property', sort_order: 16, severity_level: 3, managed_by: 'admin' },
   { label: 'Use or possession of alcohol or drugs', sort_order: 17, severity_level: 3, managed_by: 'admin' },
-  { label: 'Carrying a knife or weapon', sort_order: 18, severity_level: 3, managed_by: 'admin' },
+  { label: 'Carrying a knife or weapon', sort_order: 18, severity_level: 3, managed_by: 'admin', requires_subtype: 'weapon' },
   { label: 'Bomb threat', sort_order: 19, severity_level: 3, managed_by: 'admin' },
   { label: 'Fireworks or explosive material', sort_order: 20, severity_level: 3, managed_by: 'admin' },
 ];
@@ -206,9 +215,9 @@ async function seedDisciplineVocabsForTenant(client, tenantId) {
   );
 
   await client.query(
-    `INSERT INTO discipline_behaviors (tenant_id, label, sort_order, severity_level, managed_by)
-     SELECT $1, label, sort_order, severity_level, managed_by
-     FROM unnest($2::text[], $3::int[], $4::int[], $5::varchar[]) AS v(label, sort_order, severity_level, managed_by)
+    `INSERT INTO discipline_behaviors (tenant_id, label, sort_order, severity_level, managed_by, requires_subtype)
+     SELECT $1, label, sort_order, severity_level, managed_by, requires_subtype
+     FROM unnest($2::text[], $3::int[], $4::int[], $5::varchar[], $6::varchar[]) AS v(label, sort_order, severity_level, managed_by, requires_subtype)
      ON CONFLICT (tenant_id, lower(label)) WHERE is_active = TRUE DO NOTHING`,
     [
       tenantId,
@@ -216,6 +225,7 @@ async function seedDisciplineVocabsForTenant(client, tenantId) {
       BEHAVIORS.map((r) => r.sort_order),
       BEHAVIORS.map((r) => r.severity_level),
       BEHAVIORS.map((r) => r.managed_by),
+      BEHAVIORS.map((r) => r.requires_subtype || null),
     ]
   );
 }
