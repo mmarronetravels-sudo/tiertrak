@@ -21588,3 +21588,253 @@ above.
 ========================================================================
 END SESSION 100
 ========================================================================
+
+
+========================================================================
+SESSION 101 — 2026-05-29
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S101 shipped two small chore-class items both flowing
+from S99's banked follow-up list:
+
+  1. Operator runbook for the staff CSV importer's
+     setup-link 7-day TTL (PR #166, Followup #144).
+     Documents the exact TTL arithmetic, redemption
+     path, expired-token UX (and its expired-vs-
+     invalid-vs-consumed ambiguity), and the
+     reissue-options ladder ending in "no admin
+     resend endpoint exists today."
+
+  2. helpText parity in the student CSV template
+     GET endpoint, mirroring the staff endpoint's
+     sparse-helpText shape from WI-2 (PR #167).
+     Two entries added (grade, external_id);
+     non-self-explanatory columns only. Pure-
+     backend parity; no FE consumer of the JSON
+     /template flavor exists today for either
+     student or staff.
+
+------------------------------------------------------------------------
+BRANCH STATE
+------------------------------------------------------------------------
+
+ops/staff-csv-setup-link-ttl-runbook-note — 1
+commit (418e0a0), opened as PR #166, merged via
+merge-commit + admin bypass at commit 2479291.
+
+chore/student-csv-template-helptext — 1 commit
+(6db180e), opened as PR #167, merged via merge-
+commit + admin bypass at commit 3491981.
+
+chore/activities-log-session-101 — this entry,
+branched from fresh main after both work PRs
+landed.
+
+------------------------------------------------------------------------
+SURFACES TOUCHED
+------------------------------------------------------------------------
+
+  - 1 new operator-facing markdown file at
+    docs/operational-notes/staff-csv-setup-link-
+    ttl.md (+57 lines)
+  - 1 backend route file modified: routes/
+    csvImport.js (+4 / -0), adding a helpText
+    object to the existing GET /api/csv/template
+    handler
+
+No code paths altered. The runbook is operator-
+facing documentation; the helpText change adds
+metadata to a response object that no FE consumer
+reads today.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+No DB queries, schema, or query-touching code
+modified in either PR. No tenant-isolation surface
+introduced or changed.
+
+The runbook (PR #166) does describe the per-
+tenant uniqueness contract on users.password_
+reset_token + password_reset_expires; the helpText
+on external_id (PR #167) describes the per-tenant
+partial UNIQUE index from Migration 035. Both are
+documentation of EXISTING contracts, not changes
+to them.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+PII fields touched: none.
+
+PR #166 (runbook): the operator template originally
+included a literal noreply email address. Scrubbed
+to "the platform's no-reply sender on the
+scholarpathsystems.org domain" pre-stage to clear
+the narrow gate; the principle from S100's
+operational-notes precedent ("the §4B grep's value
+is being mechanical and never argued past")
+governed the decision over false-positive
+acceptance.
+
+PR #167 (helpText): one narrow-gate hit on the
+school-type token pattern in the proposed external_
+id help string. Scrubbed pre-stage (the scrubbed
+form is also semantically more accurate because
+uniqueness scope is per-tenant, not per the
+broader-aggregation token that triggered the gate).
+
+PR-body recursion trap caught and remediated on
+PR #167: the original PR body described the scrub
+in detail, which re-introduced the matching tokens
+into the body itself; per the landing-the-plane
+skill's §4B-on-PR-body guidance, the body was
+edited to cite acts and results only.
+
+§4B grep against this activities entry: 0 hits on
+narrow patterns (email, school-type, PII-column-
+name, name-field).
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73).
+No backend test run.
+
+Frontend lint: dirty with pre-existing, unrelated
+errors (state recorded in S100: 63 errors / 17
+warnings across 16 files; App.jsx 35 errors / 11
+warnings + 28 errors / 6 warnings across 14 other
+files). This session's code change was backend
+(routes/csvImport.js, 4 added lines). Backend lint
+is not configured (Followup #74). The dirty state
+is unchanged by this session.
+
+merge-SHA verification gate — both work PRs
+verified at activities-write time:
+
+  PR #166 (ops/staff-csv-setup-link-ttl-runbook-
+  note):
+    state         = MERGED
+    HEAD_OID      = 418e0a0b78c24a841308a4837bb960
+                    12ec0ff1bc
+    MERGE_OID     = 2479291c339d326e83371170f6a9a8
+                    486cf7df13
+    PARENT_COUNT  = 2 (true merge commit)
+    PARENT2       = 418e0a0b78c24a841308a4837bb960
+                    12ec0ff1bc
+    Result        = MATCH, silent continue
+
+  PR #167 (chore/student-csv-template-helptext):
+    state         = MERGED
+    HEAD_OID      = 6db180eeb634be909671a3d1f9c00e
+                    d715ba00f8
+    MERGE_OID     = 3491981d724323d94c327e9189b6f5
+                    a4dbf65e29
+    PARENT_COUNT  = 2 (true merge commit)
+    PARENT2       = 6db180eeb634be909671a3d1f9c00e
+                    d715ba00f8
+    Result        = MATCH, silent continue
+
+Both PRs cleared the gate without HALT or SKIP.
+This is the gate's second and third live runs
+(first was PR #164 in S100).
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #166 state at session close: MERGED via admin
+bypass per §2A chore exception. Followup #144
+assigned at file-creation time.
+
+PR #167 state at session close: MERGED via admin
+bypass per §2A chore exception. No Followup #
+assigned — pure parity change to a metadata
+response with no FE consumer; not worth an index
+slot on its own.
+
+Branch hygiene at session start: 3 untracked
+operational artifacts present on main, unchanged
+from S100 (Followup #94 STANDS).
+
+Follow-ups banked this session: NONE NEW.
+Confirmed against the S100 close-out list:
+  - chore/activities-log-misattribution-check
+    (S100-banked): STANDS. Real fix for the S99-
+    class prose-misattribution failure mode the
+    S100 merge-SHA gate explicitly does not catch.
+  - chore/frontend-lint-cleanup-broader-scope
+    (S100-banked): STANDS. 28 errors / 6 warnings
+    in 14 non-App.jsx files; sibling-not-subset
+    of chore/app-jsx-lint-cleanup.
+  - Master-index accuracy items (S100-flagged):
+    STAND.
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured):
+    STANDS.
+  Followup #94 (scripts/ops/ + untracked PDF not
+    yet gitignored): STANDS. Same set carried
+    over from S100, unchanged this session.
+  Followup #144 (this session's runbook): NEW
+    this session per PR #166.
+  chore/frontend-test-infra (S97-banked): STANDS.
+  chore/app-jsx-lint-cleanup (S97-banked): STANDS
+    (per S100 master-index accuracy note: recorded
+    count 37 vs current App.jsx-only 35).
+  fix/api-dberror-translation: STANDS.
+  fix/students-put-null-on-omit-broader-
+    investigation: STANDS.
+
+Remaining S99-banked items not yet shipped:
+  - chore/consolidate-target-tenant-helper
+  - chore/csv-import-result-component
+  - chore/csv-import-resend-rate-limit-aware-
+    abort
+  - chore/parent-creation-resend-error-log-
+    redaction
+  - chore/csv-import-resend-api-key-boot-guard
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+Both this session's chores merged. Next session
+candidates ranked by value:
+
+  - chore/activities-log-misattribution-check
+    (HIGH; the S99-class fix the merge-SHA gate
+    explicitly does not cover — head-SHA equality
+    is insufficient; an ancestry check is the
+    likely correct primitive per S100 design
+    notes)
+  - One of the remaining S99-banked chores,
+    operator's pick depending on priority
+  - chore/frontend-lint-cleanup-broader-scope
+    (MEDIUM; sibling to the App.jsx-scoped item)
+  - operator-side housekeeping: master-index
+    reconciliation for the S99 misattribution
+    framing + the chore/app-jsx-lint-cleanup
+    count drift (both S100-flagged)
+
+If higher-priority operational work has been
+queued, defer the above.
+
+========================================================================
+END SESSION 101
+========================================================================
