@@ -152,6 +152,10 @@ router.get('/template', requireAuth, (req, res) => {
       area: ['Academic', 'Behavior', 'Social-Emotional'],
       risk_level: ['low', 'moderate', 'high']
     },
+    helpText: {
+      grade: "Required. Free text — any non-empty value is accepted and stored as-is; there is no format check. Follow the convention shown in the example rows (ordinal labels like '3rd' and '5th', and 'K'/'Pre-K' for early grades); downstream sorting and display depend on that convention, not on validation.",
+      external_id: "Optional. The student's SIS-issued ID (PowerSchool, Skyward, Infinite Campus, Aeries, etc.), stored verbatim as text. Blank coerces to null, and multiple blank rows are allowed. Must be unique within this school/tenant — a value repeated within the upload is rejected before insert with both row numbers surfaced, and a value already used by another student here is rejected as 'A student with this external_id already exists in this school.' Different tenants may legitimately reuse the same external_id."
+    },
     exampleRows: [
       { first_name: 'John', last_name: 'Smith', grade: '3rd', external_id: 'STU-12345', tier: 1, area: 'Academic', risk_level: 'low' },
       { first_name: 'Jane', last_name: 'Doe', grade: '5th', external_id: 'STU-67890', tier: 2, area: 'Behavior', risk_level: 'moderate' }
