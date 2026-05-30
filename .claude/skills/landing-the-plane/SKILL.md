@@ -104,7 +104,110 @@ NEXT SESSION SHOULD
 ================================================================================
 ```
 
-**Before staging the activities.txt edit**, run §4B grep against the new content. Per `feedback_4b_per_entry_standard.md`, evaluate the diff against `origin/main` (the new entry only), not the whole file. The pattern catalog lives in `docs/ai-context/4B_GREP_PATTERNS.md`; tenant-slug enumeration is operator-supplied at grep-time per the lookup mechanism described there.
+**Before staging the activities.txt edit**, run the **merge-SHA verification gate** first, then the **§4B grep gate**. Both must pass before the entry is staged.
+
+#### Merge-SHA verification gate
+
+Purpose: protect against post-merge SHA drift between GitHub's recorded branch tip (`headRefOid` at the time of merge) and the local merge commit's second parent. When these diverge, the activities entry would record a "merged" disposition for a commit that is not actually the one preserved as the merge's feature-side parent.
+
+**Scope — what this gate catches:**
+- Post-merge force-push to the feature branch that retroactively changes its tip
+- Admin override merge of a SHA that is not the PR's head
+- Stale-ref scenarios where the merged SHA differs from the branch tip GitHub last recorded
+
+**Scope — what this gate does NOT catch:**
+- Prose misattribution within the activities entry (e.g., a TASK SUMMARY claiming a fix landed in PR #N when it actually landed in PR #M). The gate pulls all SHAs from `gh` and `git`; it cannot cross-check narrative claims. A separate misattribution check is a known gap.
+
+The gate keys off the **DISPOSITION** field of the entry being drafted.
+
+**Step 0 — Recover PR number.** The DISPOSITION field is operator-authored each session and is NOT auto-updated post-merge. The `pr-opened:<pr-url>` form persists only if the operator preserves it; bare `merged` after a PR-shipped session is an anti-pattern because it strips the PR# that the gate needs to run at all. Classify:
+
+1. **`pr-opened:<pr-url>`** — parse PR# from URL; query `gh pr view <PR> --json state,mergeCommit,headRefOid,headRefName`.
+   - `state == MERGED` → proceed to Step 1.
+   - `state == OPEN` → emit `merge-sha verification: SKIPPED — PR #<N> not merged yet` and continue.
+2. **`merged`** (bare) — the gate must NOT silently skip. Run a branch→PR lookup:
+   `gh pr list --search "head:<branch-name>" --state merged --json number,url -q '.[0]'`
+   - If a merged PR **is found** → HALT with the UNVERIFIABLE block below (the DISPOSITION is wrong for this session).
+   - If no PR found → legitimate local merge; emit `merge-sha verification: SKIPPED — local merge, no PR` and continue.
+3. **`kept` / `discarded` / `unlogged-by-request`** — N/A.
+
+**Step 1 — Capture feature tip SHA.**
+`HEAD_OID=$(gh pr view <PR> --json headRefOid -q .headRefOid)`
+
+**Step 2 — Capture merge-commit second-parent SHA.**
+- `MERGE_OID=$(gh pr view <PR> --json mergeCommit -q .mergeCommit.oid)`
+- `git fetch origin main`
+- Detect merge style by parent count:
+  `PARENT_COUNT=$(git rev-list --parents -n 1 "$MERGE_OID" 2>/dev/null | tr ' ' '\n' | tail -n +2 | wc -l | tr -d ' ')`
+- If `MERGE_OID` is empty/null → **rebase or fast-forward** (no merge commit on `main`). Emit LOUD-SKIP.
+- If `PARENT_COUNT == 1` → **squash merge**. Emit LOUD-SKIP.
+- If `PARENT_COUNT == 2` → true merge commit; `PARENT2=$(git rev-parse "$MERGE_OID^2")`.
+
+**Step 3 — Compare.** 40-char string equality of `HEAD_OID` and `PARENT2`.
+
+**On MATCH** — silently continue to the §4B grep paragraph below.
+
+**On MISMATCH** — HALT before composing the entry. Print exactly:
+
+```
+MERGE-SHA VERIFICATION — MISMATCH
+  Work PR:               #<pr-number>
+  Feature branch:        <headRefName>
+  Feature tip SHA:       <40-char HEAD_OID>
+  Merge commit SHA:      <40-char MERGE_OID>
+  Merge second-parent:   <40-char PARENT2>
+
+  The merge commit's second parent does not match the feature
+  branch's recorded tip. The activities entry was NOT written.
+  Likely causes:
+    - Commits pushed to the feature branch after the PR was merged
+    - PR merged from a different SHA than the branch tip
+    - Force-push to the feature branch post-merge
+
+  Resolve before logging. Options:
+    1. Investigate — stop here; do not log this session
+    2. Log with a DIVERGENCE note recording both SHAs in
+       OPEN ITEMS / FOLLOW-UPS (only after investigation concludes)
+    3. Abort the skill
+```
+
+**On UNVERIFIABLE** (bare `merged` DISPOSITION but a merged PR exists for the branch) — HALT. Print exactly:
+
+```
+MERGE-SHA VERIFICATION — UNVERIFIABLE
+  Branch:        <branch-name>
+  DISPOSITION:   merged   (bare; documented as "local merge, no PR")
+  PR found:      #<N>     (via gh pr list --search head:<branch-name>)
+
+  The DISPOSITION claims a local merge but a merged PR exists for
+  this branch. The activities entry was NOT written.
+
+  Fix: change DISPOSITION to "pr-opened:<pr-url>" and re-run.
+```
+
+**On SQUASH / REBASE / FAST-FORWARD merge** — gate cannot run because the feature tip SHA is not preserved on `main`. Print this LOUD-SKIP block to the user (NOT just a buried VERIFICATION note):
+
+```
+========================================================================
+MERGE-SHA VERIFICATION — SKIPPED  (PR #<N>, <squash | rebase | fast-forward>)
+------------------------------------------------------------------------
+The feature tip SHA is not preserved on main with this merge style,
+so the gate cannot run for this entry.
+
+This skip is expected if you intentionally squash/rebase a PR. If you
+start seeing this skip on EVERY session, the project's merge convention
+has drifted away from merge-commits and this protection has effectively
+turned off. Re-evaluate the gate.
+========================================================================
+```
+
+Record in the entry's VERIFICATION section: `merge-sha verification: SKIPPED — <squash | rebase | fast-forward> merge for PR #<N>`. The all-caps `SKIPPED` token is grep-able across `activities.txt` history so a streak of skips across consecutive sessions is visible.
+
+**Output rules (all blocks above).** Print SHAs and kebab-case branch names ONLY. Never include PR title, commit subjects, ref descriptions, or row data — they can carry PII (per §4B and `feedback_4b_per_entry_standard.md`). 40-char SHAs and `feat/...`/`sec/...`/`chore/...` branch names are safe by construction.
+
+#### §4B grep gate
+
+After the merge-SHA gate has passed (or emitted a documented skip note), run §4B grep against the new content. Per `feedback_4b_per_entry_standard.md`, evaluate the diff against `origin/main` (the new entry only), not the whole file. The pattern catalog lives in `docs/ai-context/4B_GREP_PATTERNS.md`; tenant-slug enumeration is operator-supplied at grep-time per the lookup mechanism described there.
 
 Both narrow and wide grep passes must return zero matches against added lines only (`^+` excluding `^+++`). If matches surface:
 - Remediate via in-line `[tenant]` marker substitution for tenant identifiers.
@@ -129,6 +232,7 @@ Then stop. Do not start the next task.
 ## Guardrails
 
 - Never write anything to `activities.txt` that would itself violate CLAUDE.md Section 4B. That means: **no student names, no student IDs, no staff names, no email addresses, no tenant-identifiable slugs.** Refer to records by table + row-count or by generic description ("updated 3 intervention-plan rows for 1 test tenant"), never by PII.
+- The **merge-SHA verification gate** in Step 3 is non-optional. For any DISPOSITION that names a PR (or bare `merged` whose branch resolves to a merged PR via search), the gate must run and must pass or HALT. A LOUD-SKIP block on every session means the project's merge convention has drifted to squash/rebase and this protection has effectively turned off — re-evaluate the gate, do not normalize the skip.
 - Never commit `activities.txt` changes to a feature branch that will be squashed — it should ride on its own commit on the branch, or be merged separately to `main` via a trivial `chore/activities-log` PR. The project convention: **`activities.txt` is committed directly to `main` via a dedicated PR** so the log stays linear and doesn't get lost in squashes.
 - If the user says "don't log this session," honor that but also log the fact that a session was explicitly not logged ("SESSION: <timestamp> / DISPOSITION: unlogged-by-request"), so the audit trail isn't silently broken.
 - This skill is the last thing that runs in a session. After Step 4, respond to no further coding requests — if the user has a new task, they should start a fresh session so context starts clean (per Anthropic's `/clear` guidance).
