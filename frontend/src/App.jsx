@@ -11,6 +11,7 @@ import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
 import ReportModal from './components/Modals/ReportModal';
 import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
+import DisciplineReferralModal from './components/Modals/DisciplineReferralModal';
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
 import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
 import { apiFetch } from './utils/apiFetch';
@@ -341,6 +342,8 @@ const [parentCreateLoading, setParentCreateLoading] = useState(false);
   const [currentPlanIntervention, setCurrentPlanIntervention] = useState(null);
   const [mtssMeetings, setMTSSMeetings] = useState([]);
   const [showPreReferralForm, setShowPreReferralForm] = useState(false);
+  const [showDisciplineReferralModal, setShowDisciplineReferralModal] = useState(false);
+  const [disciplineReferralStudent, setDisciplineReferralStudent] = useState(null);
   
   // MTSS Meeting Report state
   const [showMTSSMeetingReport, setShowMTSSMeetingReport] = useState(false);
@@ -757,6 +760,11 @@ const fetchExpiringDocuments = async () => {
 
    const openPreReferralForm = () => {
     setShowPreReferralForm(true);
+  };
+
+  const openDisciplineReferralModal = (studentForPreselect) => {
+    setDisciplineReferralStudent(studentForPreselect || null);
+    setShowDisciplineReferralModal(true);
   };
 
   // Fetch weekly progress for a student
@@ -2096,6 +2104,15 @@ if (!user) {
           <h1 className="text-3xl font-semibold text-slate-800 tracking-tight">MTSS Dashboard</h1>
           <p className="text-slate-500 mt-1">Multi-Tiered System of Supports Overview</p>
         </div>
+        {user?.role !== 'parent' && (
+          <button
+            onClick={() => openDisciplineReferralModal(null)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium"
+          >
+            <AlertTriangle size={18} />
+            New Discipline Referral
+          </button>
+        )}
       </div>
       {/* Tier 1 Self-Assessment card */}
       {tier1Dashboard.loaded && user?.role !== 'parent' && (() => {
@@ -2917,6 +2934,17 @@ if (!user) {
   >
     <ClipboardList size={18} />
     {preReferralLoading ? 'Loading...' : 'Pre-Referral Form'}
+  </button>
+)}
+
+{/* Discipline Referral Button - All non-archived students, staff only */}
+{!selectedStudent.archived && user?.role !== 'parent' && (
+  <button
+    onClick={() => openDisciplineReferralModal(selectedStudent)}
+    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-medium"
+  >
+    <AlertTriangle size={18} />
+    New Discipline Referral
   </button>
 )}
 
@@ -7155,6 +7183,19 @@ if (isParent) {
             onClose={() => setShowPreReferralForm(false)}
             user={user}
             selectedStudent={selectedStudent}
+            API_URL={API_URL}
+          />
+        )}
+
+        {/* Discipline Referral Modal - NOT gated on selectedStudent (global trigger entry point) */}
+        {showDisciplineReferralModal && (
+          <DisciplineReferralModal
+            onClose={() => {
+              setShowDisciplineReferralModal(false);
+              setDisciplineReferralStudent(null);
+            }}
+            user={user}
+            selectedStudent={disciplineReferralStudent}
             API_URL={API_URL}
           />
         )}
