@@ -22834,3 +22834,198 @@ NEXT SESSION SHOULD
   pickers. F1 item #1 (local dev fixture) is lower urgency. F4 / F5 /
   F6 remain in their original cadence.
 ================================================================================
+
+SESSION: 2026-05-30T14:15:00-07:00
+BRANCH:  feat/discipline-referral-create  (this session also shipped migration/discipline-behaviors-requires-subtype)
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/180 (awaiting §2A external human review; do not self-merge). PR #179 (migration/discipline-behaviors-requires-subtype) merged during this session — merge commit 98706b5; M037 prod-applied across all 8 school-tenants with tagged_harassment=1 + tagged_weapon=1 each, no shortfalls.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two-PR cluster building toward the discipline-referral feature
+  family's PR #2 (the staff-create flow).
+
+  PR #179 (M037, merged): added a single NULLable VARCHAR(20) column
+  discipline_behaviors.requires_subtype with CHECK IN
+  ('harassment', 'weapon', NULL), plus an idempotent backfill of the
+  two canonical seeded rows ('Harassment' → 'harassment',
+  'Carrying a knife or weapon' → 'weapon'). Threaded the new column
+  through data/discipline-vocab-seeds.js so new-tenant seeding
+  (PR #175 wiring) propagates the tag. Structural alternative to FE
+  label-matching for the conditional subtype rule M036's comment had
+  hand-waved at. Approved by all three reviewer subagents; merged;
+  prod-applied via Render External PSQL with PITR/backup confirmed
+  pre-apply. Per-tenant verification across 8 school-tenants
+  returned tagged_harassment=1, tagged_weapon=1, untagged=18 for
+  every tenant — no manual tagging needed.
+
+  PR #180 (feat/discipline-referral-create, awaiting §2A): the
+  mobile-first staff submission flow. 4 commits:
+    974c263 backend route — GET /api/discipline-referrals/vocab/:tenantId
+            (7 vocab lists, behaviors carry severity_level / managed_by /
+            requires_subtype) + POST / (transactional, path-fork by
+            behavior.managed_by, conditional subtype enforcement via
+            explicit equality on behavior.requires_subtype).
+    f52ad94 frontend modal — DisciplineReferralModal.jsx (625 lines).
+            Full-screen <sm / centered modal ≥sm. Three steps:
+            Identify (student + behavior), Details (path-specific),
+            Confirmation. "File another for this same incident" preserves
+            behavior + location + date/time + staff_notes; clears
+            per-student fields.
+    d765082 App.jsx wiring — 6 surgical inserts (+41/-0): import, state
+            pair, handler, dashboard top-action-bar trigger, student-
+            profile header trigger, modal render block.
+    cf5d435 PRIVACY_REVIEW.md F2 entry (+36/-0) — documents staff_notes
+            + admin_notes as free-text PII surfaces, the conditional-
+            subtype app-layer rule, and the D6 visibility contract
+            carried forward to PR #3 (admin review) + PR #4 (student-
+            profile referral history).
+    d9f3a5e fix — swapped two bare fetch() calls in the modal for
+            apiFetch() after the vocab GET 401'd at first local-dev
+            smoke. Bare fetch on a cross-origin local-dev setup does
+            not send cookies; production works only because of the
+            Vercel→Render same-origin rewrite (Followup #72). The
+            matching pattern at PreReferralFormModal.jsx:40,52 was
+            intentionally left untouched — stays with F#72.
+
+FILES TOUCHED  (PR #179 + PR #180 combined)
+
+  +/- lines    File                                                       Reason
+  ---------    -------------------------------------------------------    -----------------
+  +133/-0      migration-037-discipline-behaviors-requires-subtype.sql    PR #179 — new
+                                                                          column + backfill
+                                                                          + verification.
+  +15/-5       data/discipline-vocab-seeds.js                             PR #179 — thread
+                                                                          requires_subtype
+                                                                          into BEHAVIORS +
+                                                                          seedDisciplineVocabs
+                                                                          ForTenant INSERT.
+  +328/-0      routes/disciplineReferrals.js                              PR #180 — GET vocab
+                                                                          + POST create;
+                                                                          mirrors
+                                                                          prereferralForms.js
+                                                                          patterns
+                                                                          (resolveAndBindTarget
+                                                                          Tenant per F#125,
+                                                                          ROLLBACK swallow
+                                                                          per S87 5a3cfd1).
+  +3/-0        server.js                                                  PR #180 — route
+                                                                          mount.
+  +623/-0      frontend/src/components/Modals/                            PR #180 — modal;
+               DisciplineReferralModal.jsx                                two single-line
+                                                                          edits in d9f3a5e
+                                                                          (fetch→apiFetch).
+  +41/-0       frontend/src/App.jsx                                       PR #180 — 6
+                                                                          surgical inserts
+                                                                          wiring the modal.
+  +36/-0       docs/ai-context/PRIVACY_REVIEW.md                          PR #180 — F2 entry.
+
+MIGRATIONS RUN
+  M037 — applied to local dev, then to prod via Render External PSQL
+         (PITR/backup confirmed pre-apply per operator). Both UPDATE
+         counts returned 8 across the 8 school-tenants; no shortfalls.
+
+TENANT ISOLATION REVIEW
+  PR #179: tenant-isolation-auditor APPROVED (0 C / 0 H / 0 M / 0 L /
+  3 INFO). Backfill UPDATEs intentionally tenant-blind by design (per-
+  tenant partial-unique label index from M036 bounds to ≤1 row per
+  tenant per label); seedDisciplineVocabsForTenant INSERT preserves
+  the F#125 tenant binding character-for-character; new column lives
+  on an already-tenant-scoped + indexed parent table.
+
+  PR #180: tenant-isolation-auditor APPROVE (0 C / 0 H / 0 M / 1 L /
+  2 INFO). LOW = students lookup uses post-fetch tenant equality
+  check (functionally equivalent to WHERE id=$1 AND tenant_id=$2,
+  defense-in-depth opportunity, banked). All 11 SQL statements
+  reviewed; every SELECT/INSERT carries tenant_id (sourced from bound
+  targetTenantId, never req.body); composite FKs from M036 reject
+  cross-tenant id at the schema layer.
+
+PRIVACY REVIEW
+  PR #179: privacy-reviewer APPROVE (0 C / 0 H / 0 M / 0 L / 2 INFO).
+  No PII surface — column is a tag on a vocab row.
+
+  PR #180: privacy-reviewer APPROVE (0 C / 0 H / 0 M / 0 L / 3 INFO).
+  Two free-text PII columns documented in F2: discipline_referrals.
+  staff_notes (writeable on PR #2; required on L2+ as "what happened",
+  optional on L1) and discipline_referrals.admin_notes (writer
+  deferred to PR #3). D6 visibility contract documented as a hard
+  requirement for the readers (PR #3 admin review + PR #4 student-
+  profile referral-history). D9 (IEP / 504 / BIP) intentionally NOT
+  stored on the referral — schema-enforced by column absence.
+  Server-derived columns (tenant_id, referring_staff_id, grade,
+  status, admin_notes, reviewing_admin_id, reviewed_at,
+  time_out_of_instruction) never read from req.body.
+
+SECURITY REVIEW
+  PR #179: APPROVE WITH NOTES (0 C / 0 H / 0 M / 1 L / 3 INFO). The
+  one LOW was a redundant `OR requires_subtype IS NULL` disjunct in
+  the CHECK constraint — defensible to leave for readability per
+  reviewer; operator chose to leave.
+
+  PR #180: APPROVE WITH NOTES (0 C / 0 H / 0 M / 2 L / 5 INFO). Two
+  LOWs banked (future incident_date guard + staff_notes length cap).
+  6 forward-look items surfaced for PR #3 (admin review-workflow
+  route); not findings on PR #2.
+
+LOCAL-DEV BUG DISCOVERED AND FIXED (d9f3a5e)
+  First in-browser smoke surfaced the bare-fetch/cross-origin issue.
+  Endpoint behavior is correct (verified with authenticated curl —
+  POST /api/auth/login → 200 sets cookies; GET vocab with cookies →
+  200 returns the expected JSON; without cookies → 401). Fix is
+  scoped to the two GETs in the new modal; PreReferralFormModal has
+  the same pattern but stays with Followup #72 per operator
+  direction.
+
+TESTS / LINT (HONEST STATE)
+  Backend automated tests: none exist (Followup #73).
+  Backend lint: not configured (Followup #74).
+  FE lint: not run on this PR.
+  FE build: PASS (vite v7.3.1, 2770 modules, 3.16s, no errors).
+  Static PII grep on changed files: PASS (no console.* in the modal;
+  backend logs metadata-only; all 20 res.json error bodies are
+  generic strings).
+  Authenticated curl smoke against local backend: PASS.
+  Operator browser walkthrough (phone-width, both paths + "file
+  another" + harassment subtype gate): PASS after d9f3a5e.
+
+BANKED FOLLOW-UPS (3 new — all LOW, all non-blocking, bundleable)
+  F1 (new, this session) — project-followup-future-incident-date-guard
+    Server-side reject incident_date > CURRENT_DATE on POST
+    /api/discipline-referrals/. FE max={today} is a UI hint, not a
+    trust boundary. Sibling concern raised twice (operator-flagged S88
+    + security-reviewer LOW). Route-layer 2-line guard OR CHECK
+    constraint via small migration.
+
+  F2 (new, this session) — project-followup-disciplineReferrals-notes-length-cap
+    Length cap on staff_notes (~5000 chars). Column is TEXT (M036) so
+    PG accepts up to ~1GB. DoS / storage-cost surface; not a privacy
+    issue. Same pattern needed on admin_notes when PR #3 writer
+    lands. Bundle with F1.
+
+  F3 (new, this session) — project-followup-disciplineReferrals-students-lookup-tighten
+    Tighten POST handler's students SELECT from post-fetch tenant
+    equality check to WHERE id=$1 AND tenant_id=$2. Defense-in-depth;
+    outcome identical. Same shape exists in routes/prereferralForms.js
+    :402-409 (the precedent I mirrored) — operator's call whether to
+    widen the chore PR.
+
+CARRIED FROM PRIOR SESSIONS (status updates)
+  Session 106's F1 item #3 (sandbox-seeds vocab wiring via PR #177) —
+    merged earlier in this session, confirmed via the commit log
+    visible at branch cut.
+  Session 105's F2 (privacy-review staff-notes/admin-notes doc) —
+    CLOSED in this session as the F2 entry of PR #180.
+  Session 105's F5 (M036 ON DELETE rationale comment), F4
+    (chore/tenants-create-activity-log), F3 (one-line TENANT.type
+    fix) — remain pending; no work this session.
+
+NEXT SESSION SHOULD
+  Land §2A external human review on PR #180; do not self-merge. After
+  merge, the natural next chunk is the chore/disciplineReferrals-
+  input-hygiene PR bundling F1+F2+F3 (3 small input-validation
+  tightenings flagged across the three reviewers). Then PR #3 of the
+  family — chore/feat-discipline-referral-review-workflow — the
+  admin review + status-transition + consequence-assignment route.
+  PR #3 inherits 6 forward-look items from the security-reviewer
+  (see PR #180 body) and the D6 visibility-contract obligation from
+  the F2 doc entry.
+================================================================================
