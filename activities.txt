@@ -22090,3 +22090,282 @@ queued, defer the above.
 ========================================================================
 END SESSION 102
 ========================================================================
+
+
+========================================================================
+SESSION 103 — 2026-05-29
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S103 shipped the shared CsvImportResultBanner
+refactor — extracts the duplicated student and
+staff CSV upload-result render blocks from
+frontend/src/App.jsx into one component at
+frontend/src/components/shared/CsvImportResultBanner
+.jsx. Two props: result (raw response object or
+null) + entityType ('student' | 'staff'). Staff
+response shape is the strict superset (adds
+emailErrors[] + the partial-email / partial-both
+states); student path cannot reach the staff-only
+states by construction.
+
+Render-only refactor: upload handlers, fetch
+contracts, and state hooks are byte-identical to
+pre-refactor. §5 inert by construction (renderers
+consume backend-scoped data; no tenant logic in
+the new surface).
+
+------------------------------------------------------------------------
+BRANCH STATE
+------------------------------------------------------------------------
+
+chore/csv-import-result-component — 1 commit
+(566615d), opened as PR #171, merged via merge-
+commit at commit 0978170.
+
+PR #171 is the first PII-touching change of the
+recent session run to ship via the §2A formal-
+review path rather than admin bypass — the
+review was obtained (reviewDecision: APPROVED on
+the PR via the GitHub API per §2A's "what counts
+as a review" mechanical test). Reviewer name not
+recorded here per the entry's PII discipline.
+
+chore/activities-log-session-103 — this entry,
+branched from fresh main after PR #171 landed.
+
+------------------------------------------------------------------------
+SURFACES TOUCHED
+------------------------------------------------------------------------
+
+  - frontend/src/App.jsx modified (+3 / -203):
+      - deletes the staff 5-state render-state
+        helper from the top-level component scope
+      - replaces both inline render blocks (one
+        in the staff admin tab, one in the
+        student admin tab) with the new
+        CsvImportResultBanner invocation
+      - adds the component import
+  - frontend/src/components/shared/CsvImport
+    ResultBanner.jsx — new file (+156 lines):
+      - getResultState (the 5-state machine
+        helper, internal)
+      - getHeadline (banner copy table, internal,
+        branches on entityType)
+      - getErrorSuffix (suffix-ladder for insert-
+        error rows, internal, branches on
+        entityType, preserves SHAPE B narrow-
+        shape fallback verbatim per the doctrine
+        on commit 01dbb7f)
+      - default export <CsvImportResultBanner>
+        renders the header banner + optional
+        insert-errors list + optional email-
+        errors list (staff-only)
+
+Net codebase change: -44 lines while deduplicating
+~95% of the render logic across the two surfaces.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+No DB queries, schema, or query-touching code
+modified. The renderers consume data already
+scoped to the requesting user's tenant by the
+backend (POST /api/csv/students/:tenantId and
+POST /api/csv/staff/:tenantId at routes/
+csvImport.js); the new component receives that
+data via props and renders it unchanged. No
+tenant logic flows through the renderer surface.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+privacy-reviewer subagent (dispatched before
+commit, against the branch's diff vs main):
+APPROVED. 0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW /
+3 INFO. INFO entries confirmed (without naming
+specific field literals, per recursion-trap
+discipline from S101):
+  - INFO-1: render-guard change is semantically
+    equivalent for the new component's suffix-
+    return set
+  - INFO-2: suffix ladders preserved verbatim
+    with the SHAPE B narrow-shape branch intact;
+    no widening; matches the 01dbb7f doctrine
+  - INFO-3: email-errors block surfaces exactly
+    the 3-field shape; no other fields exposed
+
+Other items the reviewer confirmed in its OK
+block: zero console.* statements in the new
+component; zero introduced around the call sites
+in App.jsx; field surface identical to the
+originals; doctrine comments carried in the new
+component's file-header and inline above the
+suffix-ladder function; headline strings are
+pure counts only; the email-errors block is
+guarded by entityType=staff + state.kind
+membership so the student path cannot reach it
+by construction.
+
+Per-state equivalence walkthrough (pre-commit,
+shown to operator): 10 cases (4 student + 6
+staff, including the 2 SHAPE B narrow-shape
+cases) traced through both the original inline
+code and the new component against representative
+result objects. User-visible copy identical in
+all 10. Two cosmetic-only differences flagged
+transparently: Tailwind class-string order in
+the student outer banner (same classes, different
+order — no visual impact); React key prefix on
+the student insert-error list (keys are internal
+React diffing identifiers, not rendered).
+
+§4B grep against this activities entry: 0 hits
+on narrow patterns (email, school-type, PII-
+column-name, name-field).
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup
+#73). No backend test run.
+
+Frontend lint: state unchanged by this session.
+App.jsx held at 35 errors / 11 warnings — same
+as the S100 baseline; no regression introduced
+by the refactor. The new component file is lint-
+clean (0 errors / 0 warnings against
+frontend/src/components/shared/
+CsvImportResultBanner.jsx). The broader frontend-
+lint dirty state (63 errors / 17 warnings across
+16 files per S100's count) remains pre-existing
+and unrelated.
+
+merge-SHA verification gate — fifth live run
+against PR #171:
+  state         = MERGED
+  HEAD_OID      = 566615d4af6ca375d5fb200f37b0326
+                  f5b2fb586
+  MERGE_OID     = 09781709014f55c86acc929c7abddfa
+                  d18be28f7
+  parents       = 09781709... fe5461b1... 566615d4...
+  PARENT_COUNT  = 2 (true merge commit)
+  PARENT2       = 566615d4af6ca375d5fb200f37b0326
+                  f5b2fb586
+  Result        = MATCH, silent continue
+
+misattribution check — silent no-op (correctly):
+  Entry has NO FIXES: block. PR #171 is a
+  refactor (deduplication into a shared
+  component), not a fix-of-finding. Per spec,
+  the gate silently continues when the FIXES:
+  block is absent. Second live validation of
+  the absent-block-PASS branch (first was S102
+  itself).
+
+§2A review audit-trail (relevant to this PR
+because it touched a render surface for student
+and staff data):
+  - PR #171 reviewDecision: APPROVED via the
+    GitHub PR-reviews API per §2A's mechanical
+    test (gh pr view 171 --json reviewDecision
+    returns "APPROVED")
+  - Review submitted via the formal mechanism,
+    not via merge-commit body text or out-of-
+    band sign-off
+  - Reviewer name not recorded here per the
+    entry's PII discipline
+  - Distinct from prior chore PRs this run that
+    were author-self-merged via admin bypass
+    (which is permitted by §2A for non-§4B/§5
+    chore work but not for this surface)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #171 commit OIDs at merge time:
+  566615d4af6ca375d5fb200f37b0326f5b2fb586
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #171 state at session close: MERGED via §2A
+formal-review path (reviewDecision: APPROVED).
+
+Branch hygiene at session start: 3 untracked
+operational artifacts present on main, unchanged
+from S102 (Followup #94 STANDS).
+
+Follow-ups banked this session: NONE NEW.
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured):
+    STANDS.
+  Followup #94 (scripts/ops/ + untracked PDF not
+    yet gitignored): STANDS. Same set carried
+    over from S102, unchanged this session.
+  Followup #144 (S101 staff-csv setup-link
+    runbook): STANDS as shipped.
+  chore/frontend-test-infra (S97-banked): STANDS.
+  chore/app-jsx-lint-cleanup (S97-banked): STANDS
+    (S100 master-index accuracy note still open).
+  chore/frontend-lint-cleanup-broader-scope
+    (S100-banked): STANDS. Sibling to chore/app-
+    jsx-lint-cleanup, broader scope across 14
+    non-App.jsx files.
+  fix/api-dberror-translation: STANDS.
+  fix/students-put-null-on-omit-broader-
+    investigation: STANDS.
+
+Master-index accuracy items still open from S100:
+  - S99 "merge race" misframing correction.
+  - chore/app-jsx-lint-cleanup count drift.
+
+Remaining S99-banked items not yet shipped:
+  - chore/consolidate-target-tenant-helper
+  - chore/csv-import-resend-rate-limit-aware-abort
+  - chore/parent-creation-resend-error-log-
+    redaction
+  - chore/csv-import-resend-api-key-boot-guard
+
+(S99-banked chore/csv-import-result-component
+shipped this session via PR #171; removed from
+the standing list.)
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+PR #171 merged via §2A external review. Next
+session candidates ranked by value:
+
+  - operator-side master-index reconciliation
+    (S99 misframing correction + chore/app-jsx-
+    lint-cleanup count drift); standing since
+    S100
+  - One of the remaining S99-banked chores per
+    operator priority
+  - chore/frontend-lint-cleanup-broader-scope
+    (MEDIUM)
+
+If higher-priority operational work has been
+queued, defer the above.
+
+========================================================================
+END SESSION 103
+========================================================================
