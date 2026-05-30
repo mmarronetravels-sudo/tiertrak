@@ -128,6 +128,42 @@ Cross-cutting notes:
   - Multi-assessment dashboard tabs (PR3 — per-vendor tabbed view)
   - Student-profile screener section (PR3 — subject-grouped layout displaying screener history; first frontend caller of the per-student GET handler)
 
+### Discipline referral records (FERPA — behavioral)
+
+The `discipline_referrals` table (Migration 036) stores office discipline referrals (ODRs) — student behavior incidents reported by staff. School-tenant-scoped via `tenant_id INTEGER NOT NULL REFERENCES tenants(id)`. Every referral row identifies a single student and is treated as PII at all times per CLAUDE.md §4B. Two free-text columns are the highest-sensitivity surfaces on this table.
+
+**`discipline_referrals.staff_notes`** — Staff-authored free-text narrative captured at submit time. On the staff-managed (Level 1) path it is OPTIONAL response detail (what the staff member did or said); on the admin-managed (Level 2+) path it is REQUIRED — the "what happened" description that lets the reviewing administrator reconstruct an event they did not witness. May contain student names other than the subject ("Alex pushed Jamie"), staff names, witness identifiers, and incident detail. Treat as parent-visible AT WRITE TIME for any future render path the student's parent can reach: per design D6 (the discipline-referral spec §8) the v1 visibility contract is admins + the referring author only. Other staff assigned to the student see the structured fields + level + consequence, but NOT the notes. The structured "others involved" field stays category-only (None / Peers / Staff / Teacher / Substitute / Other / Unknown) so it carries no names and is visible to all referral viewers.
+
+**`discipline_referrals.admin_notes`** — Admin-authored free-text added at the review / resolve step. Column exists in the M036 schema; writer endpoint lands in the next PR (admin review workflow). Same sensitivity tier as `staff_notes` and same D6 visibility contract.
+
+**Conditional-subtype app-layer rule (M036 + M037)** — `harassment_subtype_id` is populated only when the chosen behavior's `requires_subtype = 'harassment'`; `weapon_subtype_id` only when `requires_subtype = 'weapon'`. The route layer is the enforcement point — `routes/disciplineReferrals.js` POST uses explicit equality on `requires_subtype` (never truthy, never label-match) to gate both subtype fields and reject either when not required. The FE never decides this from label text; it reads the column off the vocab row payload. Subtype rows themselves (`discipline_harassment_subtypes` 8 rows, `discipline_weapon_subtypes` 4 rows) are vocab-only, not PII.
+
+**Writers (persist staff_notes)**:
+- `POST /api/discipline-referrals/` (this PR — the staff create flow). `staff_notes` body field permitted; trimmed at parse; empty-after-trim → NULL. `admin_notes` body field NOT accepted (admin-only writer at the review step, future PR). `target_tenant_id` via the F#125 binding pattern (routes/prereferralForms.js precedent); `referring_staff_id` derived from `req.user.id`; `grade` looked up from `students` rather than read from body. Composite FKs from M036 reject cross-tenant FK references at the schema layer; route-layer pre-checks turn unknown ids into clean 400s instead of 23503 violations.
+
+**Readers (project staff_notes / admin_notes)**: deferred to the admin review-workflow PR and the student-profile referral-history PR. When added, both MUST enforce the D6 visibility contract: admins and the referring author see notes; other assigned staff see structured fields + level + consequence only. Mirrors the explicit-projection discipline applied to `routes/student504.js` + `routes/parent504.js`.
+
+Cross-cutting notes:
+
+- **Tenant scoping invariant**: every `discipline_referrals` row carries `tenant_id NOT NULL` with `idx_discipline_referrals_tenant`. The composite-FK pattern from M021 enforces same-tenant for student, location, behavior, motivation, others_involved, and both subtype FKs at the schema layer regardless of any future application-layer route bug. Joined vocab/student SELECTs in future read surfaces MUST include a defense-in-depth `WHERE tenant_id = $...` bind sourced from `resolveAccessibleTenantIds(req.user)` per CLAUDE.md §5 dual-path doctrine.
+- **No PII in logs / error responses**: `routes/disciplineReferrals.js` catch handlers log `tenant_id` (integer) + `user_id` (integer) + `err.message` only. No `student_id`, no behavior label, no notes content, no body echo. `res.json` error bodies are generic strings ("Failed to create referral", "Invalid behavior", etc.). FE modal failures route through `logError()` rather than raw `console.log` per the PreReferralFormModal precedent.
+- **D9 / IEP / 504 / BIP not stored**: per the spec's D9 decision, student-support flags are NOT copied onto the referral row. Surfaces that need to display them look up at read time from `students.*` / `student_504_*` scoped by the same tenant + student keys as the referral. The schema enforces this by simply not having the columns (M036).
+- **CSV / S3 / external egress**: none. No file uploads on the create path. No third-party services touch referral data.
+- **Rate limiting**: matches `routes/prereferralForms.js` posture — no per-route rate limit added on PR #2; CSRF is enforced at the `/api` mount. If a future PR adds bulk-create or import, rate limiting must be revisited.
+- **FE on-device caching**: none. The mobile-first modal (`DisciplineReferralModal.jsx`) deliberately does not use localStorage or IndexedDB per design D10. Vocab and student-search are live fetches per session; no referral draft state survives a page reload.
+
+Migration provenance:
+
+- Migration 036 — `discipline_referrals` + 7 vocab tables + many-per-referral consequences join. School-tenant-scoped; composite-FK cross-tenant rejection on every FK from the referral row.
+- Migration 037 — `discipline_behaviors.requires_subtype` column. Structural alternative to FE label-matching for the conditional harassment/weapon subtype gate. Conservative backfill: only the two canonical seeded rows tagged.
+
+Phase 2+ deferred surfaces (NOT in this PR; will need privacy review when added):
+
+- Admin review-workflow route — writes `admin_notes`, transitions `status` from `submitted` → `under_review` → `resolved`, assigns one or more consequences via the `discipline_referral_consequences` join. Must enforce D6 visibility on the notes columns.
+- Student-profile referral-history view — surfaces past referrals on the student record. Must enforce D6 (admins + referring author see notes; other assigned staff see structured fields + level + consequence only).
+- SWIS-style reports — six aggregate cuts per spec §7. Must aggregate WITHOUT exposing notes content in cross-tenant or cross-permission contexts. Equity / disproportionality reports are deferred entirely to a separate phase per spec D4.
+- Parent / guardian notifications, appeals, restraint/seclusion handling, bulk historical import — out of v1 entirely per spec §2.
+
 ### Access control audit records (FERPA §99.32)
 
 The `user_school_access` + `user_school_access_audit` pair implements the FERPA §99.32 record-of-disclosure trail for the district-structure layered-tenant model. Per-row columns are integer identifiers only (not name/email PII per the Directly-identifying list above), but the aggregate audit table is the FERPA-governed disclosure record for who-granted-or-revoked-whose-school-access-when at the district layer. Treat the audit table as §99.32-grade machinery: retention semantics, append-only contract, and actor-identity capture are all load-bearing.

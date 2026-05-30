@@ -71,9 +71,11 @@ const parent504Routes = require('./routes/parent504');
 const screenerRoutes = require('./routes/screener');
 const districtAccessRoutes = require('./routes/districtAccess');
 const districtDashboardRoutes = require('./routes/districtDashboard');
+const disciplineReferralsRoutes = require('./routes/disciplineReferrals');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
+disciplineReferralsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
 parentLinksRoutes.initializePool(pool);
@@ -751,6 +753,7 @@ app.use('/api/parent-504', parent504Routes);
 app.use('/api/screener-results', screenerRoutes);
 app.use('/api/districts', districtAccessRoutes);
 app.use('/api/districts', districtDashboardRoutes);
+app.use('/api/discipline-referrals', disciplineReferralsRoutes);
 
 // Test route
 app.get('/', (req, res) => {
