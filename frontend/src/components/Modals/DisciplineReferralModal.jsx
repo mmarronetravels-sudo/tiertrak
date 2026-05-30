@@ -68,7 +68,7 @@ var DisciplineReferralModal = function(props) {
   useEffect(function() {
     var loadVocab = async function() {
       try {
-        var res = await fetch(API_URL + '/discipline-referrals/vocab/' + user.tenant_id);
+        var res = await apiFetch(API_URL + '/discipline-referrals/vocab/' + user.tenant_id);
         if (!res.ok) {
           throw new Error('vocab status ' + res.status);
         }
@@ -95,7 +95,7 @@ var DisciplineReferralModal = function(props) {
     var timer = setTimeout(async function() {
       setSearching(true);
       try {
-        var res = await fetch(
+        var res = await apiFetch(
           API_URL + '/students/tenant/' + user.tenant_id + '?search=' + encodeURIComponent(q)
         );
         if (res.ok) {
