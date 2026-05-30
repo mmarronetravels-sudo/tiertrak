@@ -20,6 +20,7 @@ import GoalFormModal from './components/Modals/GoalFormModal';
 import ProgressChartModal from './components/Modals/ProgressChartModal';
 import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/ArchiveModal';
 import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
+import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
@@ -1760,29 +1761,6 @@ const handleUnlinkParent = async (linkId) => {
   const downloadStaffCsvTemplate = () => {
     window.open(`${API_URL}/csv/staff/template/download`, '_blank');
   };
-
-  // 5-state machine for staff CSV import result rendering. Tailwind-safe
-  // class strings (Tailwind purges dynamic `bg-${color}-50` constructions).
-  // emailErrors superset framing per the c.3 design.
-  function getStaffImportResultState(result) {
-    if (!result || result.error) return null;
-    const imported = result.summary?.imported ?? 0;
-    const errs = result.errors?.length ?? 0;
-    const emailErrs = result.emailErrors?.length ?? 0;
-    if (imported > 0 && errs === 0 && emailErrs === 0) {
-      return { kind: 'success', bannerClass: 'bg-emerald-50 border-emerald-200', textClass: 'text-emerald-800', rowBorderClass: 'border-emerald-100' };
-    }
-    if (imported > 0 && errs === 0 && emailErrs > 0) {
-      return { kind: 'partial-email', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
-    }
-    if (imported > 0 && errs > 0 && emailErrs === 0) {
-      return { kind: 'partial-insert', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
-    }
-    if (imported > 0 && errs > 0 && emailErrs > 0) {
-      return { kind: 'partial-both', bannerClass: 'bg-amber-50 border-amber-200', textClass: 'text-amber-800', rowBorderClass: 'border-amber-100' };
-    }
-    return { kind: 'failure', bannerClass: 'bg-red-50 border-red-200', textClass: 'text-red-800', rowBorderClass: 'border-red-100' };
-  }
 
   // Update student tier
   const handleTierChange = async (studentId, newTier) => {
@@ -5474,87 +5452,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
             )}
 
             {/* Upload result banner — 5-state machine per c.3 design */}
-            {staffCsvResult !== null && staffCsvResult.error && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <h3 className="font-semibold text-red-800">
-                    Upload failed: {staffCsvResult.error}
-                  </h3>
-                </div>
-              </div>
-            )}
-            {(() => {
-              const state = getStaffImportResultState(staffCsvResult);
-              if (!state) return null;
-              const totalRows = staffCsvResult.summary.totalRows;
-              const importedCount = staffCsvResult.summary.imported;
-              const errs = staffCsvResult.errors || [];
-              const emailErrs = staffCsvResult.emailErrors || [];
-              return (
-                <div className={`${state.bannerClass} border rounded-xl p-4`}>
-                  <div className="flex items-center gap-2">
-                    {state.kind === 'success'
-                      ? <CheckCircle className="w-5 h-5 text-emerald-600" />
-                      : <AlertCircle className={`w-5 h-5 ${state.kind === 'failure' ? 'text-red-600' : 'text-amber-600'}`} />}
-                    <h3 className={`font-semibold ${state.textClass}`}>
-                      {state.kind === 'success' && `Imported ${importedCount} of ${totalRows} staff members.`}
-                      {state.kind === 'partial-insert' && `Imported ${importedCount} of ${totalRows} staff. ${errs.length} failed to import.`}
-                      {state.kind === 'partial-email' && `Imported ${importedCount} of ${totalRows} staff. ${emailErrs.length} setup emails failed to send.`}
-                      {state.kind === 'partial-both' && `Imported ${importedCount} of ${totalRows} staff. ${errs.length} failed to import, ${emailErrs.length} setup emails failed to send.`}
-                      {state.kind === 'failure' && `No staff imported. ${errs.length} of ${totalRows} failed.`}
-                    </h3>
-                  </div>
-                  {state.kind === 'success' && (
-                    <p className="mt-2 text-sm text-emerald-700">Staff have 7 days to set their password before the link expires.</p>
-                  )}
-                  {(state.kind === 'partial-insert' || state.kind === 'partial-both' || state.kind === 'failure') && errs.length > 0 && (
-                    <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
-                      {errs.map((err, i) => {
-                        // SHAPE A/B/C superset ladder — staff fields. emailErrors entries
-                        // do NOT route here; they render in the emailErrors block below.
-                        // §4B doctrine: data is operator's own upload, rendered back to
-                        // the same operator session.
-                        let suffix = '';
-                        if (err.data?.email && err.data?.full_name) {
-                          suffix = `${err.data.full_name} (${err.data.email})`;
-                        } else if (err.data?.email) {
-                          suffix = err.data.email;
-                        }
-                        return (
-                          <div key={`err-${err.row}-${i}`} className={`flex items-center justify-between p-2 bg-white rounded-lg border ${state.rowBorderClass}`}>
-                            <div>
-                              <span className="font-medium text-slate-800">Row {err.row}</span>
-                              <span className="text-slate-400 mx-2">—</span>
-                              <span className="text-slate-600">{err.error}</span>
-                            </div>
-                            {suffix && <span className="text-xs text-slate-500">{suffix}</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {(state.kind === 'partial-email' || state.kind === 'partial-both') && emailErrs.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="font-medium text-amber-700 mb-2">Emails failed to send ({emailErrs.length}):</h4>
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {emailErrs.map((entry, i) => (
-                          <div key={`email-${entry.row}-${i}`} className={`flex items-center justify-between p-2 bg-white rounded-lg border ${state.rowBorderClass}`}>
-                            <div>
-                              <span className="font-medium text-slate-800">Row {entry.row}</span>
-                              <span className="text-slate-400 mx-2">—</span>
-                              <span className="text-slate-600">{entry.email}</span>
-                            </div>
-                            <span className="text-xs text-slate-500">{entry.error}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-amber-600 mt-2">Manually trigger a password reset for these users.</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            <CsvImportResultBanner result={staffCsvResult} entityType="staff" />
           </div>
         </div>
       )}
@@ -5978,105 +5876,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
           )}
 
           {/* Upload result banner */}
-          {csvResult !== null && (
-            csvResult.error ? (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <h3 className="font-semibold text-red-800">
-                    Upload failed: {csvResult.error}
-                  </h3>
-                </div>
-              </div>
-            ) : csvResult.summary && csvResult.summary.imported === 0 && csvResult.errors.length > 0 ? (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <h3 className="font-semibold text-red-800">
-                    No rows imported. {csvResult.errors.length} of {csvResult.summary.totalRows} failed.
-                  </h3>
-                </div>
-                {csvResult.errors.length > 0 && (
-                  <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
-                    {csvResult.errors.map((err, i) => {
-                      // SHAPE B (within-upload dedup) intentionally narrows data to {external_id} only per §4B.
-                      // The fallback ladder below handles this — do NOT widen shape B in routes/csvImport.js
-                      // to align with shape C. See PRIVACY_REVIEW.md entry for commit 01dbb7f.
-                      let suffix = null;
-                      if (err.data?.first_name && err.data?.last_name) {
-                        suffix = `${err.data.first_name} ${err.data.last_name}`;
-                      } else if (err.data?.external_id) {
-                        suffix = `ID: ${err.data.external_id}`;
-                      }
-                      return (
-                        <div
-                          key={`${err.row}-${i}`}
-                          className="flex items-center justify-between p-2 bg-white rounded-lg border border-red-100"
-                        >
-                          <div>
-                            <span className="font-medium text-slate-800">Row {err.row}</span>
-                            <span className="text-slate-400 mx-2">—</span>
-                            <span className="text-slate-600">{err.error}</span>
-                          </div>
-                          {suffix !== null && (
-                            <span className="text-xs text-slate-500">{suffix}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : csvResult.summary && csvResult.summary.imported > 0 && csvResult.errors.length > 0 ? (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-amber-600" />
-                  <h3 className="font-semibold text-amber-800">
-                    Imported {csvResult.summary.imported} of {csvResult.summary.totalRows} rows. {csvResult.errors.length} failed.
-                  </h3>
-                </div>
-                {csvResult.errors.length > 0 && (
-                  <div className="space-y-2 mt-3 max-h-48 overflow-y-auto">
-                    {csvResult.errors.map((err, i) => {
-                      // SHAPE B (within-upload dedup) intentionally narrows data to {external_id} only per §4B.
-                      // The fallback ladder below handles this — do NOT widen shape B in routes/csvImport.js
-                      // to align with shape C. See PRIVACY_REVIEW.md entry for commit 01dbb7f.
-                      let suffix = null;
-                      if (err.data?.first_name && err.data?.last_name) {
-                        suffix = `${err.data.first_name} ${err.data.last_name}`;
-                      } else if (err.data?.external_id) {
-                        suffix = `ID: ${err.data.external_id}`;
-                      }
-                      return (
-                        <div
-                          key={`${err.row}-${i}`}
-                          className="flex items-center justify-between p-2 bg-white rounded-lg border border-amber-100"
-                        >
-                          <div>
-                            <span className="font-medium text-slate-800">Row {err.row}</span>
-                            <span className="text-slate-400 mx-2">—</span>
-                            <span className="text-slate-600">{err.error}</span>
-                          </div>
-                          {suffix !== null && (
-                            <span className="text-xs text-slate-500">{suffix}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ) : csvResult.summary && csvResult.errors.length === 0 ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-emerald-600" />
-                  <h3 className="font-semibold text-emerald-800">
-                    Imported {csvResult.summary.imported} of {csvResult.summary.totalRows} rows.
-                  </h3>
-                </div>
-              </div>
-            ) : null
-          )}
+          <CsvImportResultBanner result={csvResult} entityType="student" />
          </div>
       )}
 
