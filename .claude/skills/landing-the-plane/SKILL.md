@@ -99,12 +99,18 @@ VERIFICATION
 OPEN ITEMS / FOLLOW-UPS
   <bulleted list of anything not finished, or "none">
 
+  FIXES:
+    <finding-id> → PR #<N> @ <40-char SHA>
+  # Omit the FIXES: block entirely if this session has no
+  # fix-claims to log. When present, each line is parsed and
+  # gated by the misattribution check; full 40-char SHAs only.
+
 NEXT SESSION SHOULD
   <one or two short instructions future-Claude will read at session start>
 ================================================================================
 ```
 
-**Before staging the activities.txt edit**, run the **merge-SHA verification gate** first, then the **§4B grep gate**. Both must pass before the entry is staged.
+**Before staging the activities.txt edit**, run all three gates in order: the **merge-SHA verification gate**, then the **misattribution check**, then the **§4B grep gate**. All must pass before the entry is staged.
 
 #### Merge-SHA verification gate
 
@@ -116,7 +122,7 @@ Purpose: protect against post-merge SHA drift between GitHub's recorded branch t
 - Stale-ref scenarios where the merged SHA differs from the branch tip GitHub last recorded
 
 **Scope — what this gate does NOT catch:**
-- Prose misattribution within the activities entry (e.g., a TASK SUMMARY claiming a fix landed in PR #N when it actually landed in PR #M). The gate pulls all SHAs from `gh` and `git`; it cannot cross-check narrative claims. A separate misattribution check is a known gap.
+- Prose misattribution within the activities entry (e.g., a TASK SUMMARY claiming a fix landed in PR #N when it actually landed in PR #M). The gate pulls all SHAs from `gh` and `git`; it cannot cross-check narrative claims. The misattribution check in the next sub-section addresses the structural form (citing a commit not in the cited PR) via a required FIXES: block; free-prose claims outside that block remain ungated.
 
 The gate keys off the **DISPOSITION** field of the entry being drafted.
 
@@ -205,9 +211,106 @@ Record in the entry's VERIFICATION section: `merge-sha verification: SKIPPED —
 
 **Output rules (all blocks above).** Print SHAs and kebab-case branch names ONLY. Never include PR title, commit subjects, ref descriptions, or row data — they can carry PII (per §4B and `feedback_4b_per_entry_standard.md`). 40-char SHAs and `feat/...`/`sec/...`/`chore/...` branch names are safe by construction.
 
+#### Misattribution check
+
+Purpose: protect against the failure mode in which an activities entry claims a specific fix lives in PR #N but the cited commit was never part of PR #N. Catches the S99-class misattribution that the merge-SHA gate cannot — head-SHA equality between PR head and merge second-parent is silent on what individual commits sat on the branch leading up to that head.
+
+**Honest residual.** This check verifies that a cited commit is **contained** in the cited PR's commit list, not that it is the **correct** fix. A wrong-but-present commit (one that IS in PR #N's commit list but isn't the fix the prose describes) would still PASS. The auto-fill flow (which presents the cited PR's own commits for the operator to pick from) is the behavioral mitigation against citing-the-wrong-commit; the mechanical check covers only the structural failure mode of citing a commit that simply isn't in the PR at all.
+
+**Scope — what this check catches:**
+- A FIXES: line citing a commit SHA that is not in the cited PR's commit list (the S99 explicit-cite-of-a-not-in-PR-commit pattern).
+- The S99 implicit-cite pattern by structural rejection: the FIXES: block requires explicit (PR #, SHA) pairs; "FIXED in-PR" prose without a structured entry contributes no fix-claim to verify, which forces explicit citation if the operator wants the fix-claim logged at all.
+
+**Scope — what this check does NOT catch:**
+- A commit that IS in the cited PR but is the wrong fix (mechanical SHA-equality cannot distinguish two same-PR commits semantically — auto-fill UX is the mitigation, not a check).
+- Free-prose fix claims outside the FIXES: block (the parser reads only the structured block; prose claims remain reviewer-readable but are not gated).
+
+**Structured FIXES: block format.** When an entry has any fix-claim to log, it MUST include a FIXES: block inside the OPEN ITEMS / FOLLOW-UPS section. The parser reads ONLY this block.
+
+```
+FIXES:
+  <finding-id> → PR #<N> @ <40-char SHA>
+  <finding-id> → PR #<N> @ <40-char SHA>
+```
+
+Each line matches:
+
+```
+^\s*[^→]+→\s*PR\s+#(\d+)\s+@\s+([0-9a-f]{40})\s*$
+```
+
+Full 40-char OIDs only — no abbreviated SHAs. Abbreviated SHAs would force a prefix-match that loses precision (multiple commits in a PR's history can share a 7-char prefix); 40-char OIDs make the membership comparison unambiguous.
+
+**The check** for each (PR #N, commit X) parsed from FIXES:
+
+1. Fetch PR #N's commit OID list:
+   `OIDS=$(gh pr view N --json commits -q '.commits[].oid')`
+2. Test exact-SHA membership (whole-line match):
+   `echo "$OIDS" | grep -Fxq "$X"`
+3. Match (exit 0) → PASS. No match (exit 1) → HALT.
+
+This is a **SHA-only operation**. The check never reads, compares, or writes commit messages or subjects — same discipline as the merge-SHA gate (per §4B and `feedback_4b_per_entry_standard.md`).
+
+**Why exact-SHA membership against `gh pr view --json commits` instead of `git merge-base --is-ancestor` against the merge commit:**
+
+- **Merge-commit merges:** both primitives return the same answer.
+- **Squash merges:** GitHub preserves the pre-squash feature-branch commit list in the PR's `commits` array. Membership PASSes for legitimately-squashed claims; ancestry against the post-merge squash commit would FAIL because the original SHAs aren't reachable from `main` after squash.
+- **Rebase merges:** same — PR's `commits` array preserves pre-rebase SHAs; ancestry against the rebased main would fail.
+- **Cherry-picks:** a cherry-pick has a different SHA than its source. Membership correctly distinguishes — citing the source SHA against the destination PR returns no membership match (the destination PR's `commits` array contains the cherry-pick's new SHA, not the source's SHA). Subject-matching, by contrast, would falsely PASS the cherry-pick because subjects survive the SHA change; this is exactly why subject-matching is rejected even as a squash/rebase fallback.
+
+The unified primitive (membership for all merge styles) keeps the gate simple and preserves the cherry-pick guarantee that any subject-based primitive would lose.
+
+**Auto-populate flow.** At entry-compose time, for each FIXES: line where the operator has named a PR but left the SHA unfilled (e.g., `privacy WARN-1 → PR #162 @ <fill>`), the skill:
+
+1. Runs `gh pr view N --json commits` to fetch the PR's commit list (OIDs + headlines).
+2. Presents the operator **interactively** with the commit headlines + abbreviated SHAs side-by-side, for selection only.
+3. Operator picks a commit; the skill writes ONLY the 40-char full OID into the FIXES: block — never the headline.
+
+Operator never types a SHA. Commit headlines are visible at selection time but are NOT committed to the file (per §4B output discipline). The fix-claim's narrative description (the part to the left of `→`) is operator-authored prose and lives in the entry.
+
+**SHA-only Design B supplement — WORK-PR COMMITS section.** For every PR logged in DISPOSITION / BRANCH STATE, the skill auto-appends a new section between VERIFICATION and OPEN ITEMS:
+
+```
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #<N> commit OIDs at merge time:
+  <40-char SHA>
+  <40-char SHA>
+
+PR #<M> commit OIDs at merge time:
+  <40-char SHA>
+```
+
+40-char SHAs and PR numbers ONLY — no headlines, no branch names, no subject lines. Provides raw material for future auditors to spot misattribution that the structured FIXES: block didn't parse (e.g., free-prose fix claims the parser ignores), while preserving the §4B output discipline.
+
+**On MATCH** (every FIXES: line PASSes membership, or the FIXES: block is absent) — silently continue to the §4B grep gate.
+
+**On HALT** (any FIXES: line fails membership) — print exactly:
+
+```
+MISATTRIBUTION CHECK — HALT
+  FIXES: line:          <finding-id> → PR #<N> @ <40-char SHA>
+  Cited PR:             #<N>
+  Cited commit:         <40-char SHA>
+  PR commit list size:  <count>
+  Membership test:      SHA NOT FOUND in `gh pr view <N> --json commits`
+
+  The activities entry was NOT written. The cited commit is not
+  part of the cited PR's commit list. Either:
+    1. Correct the PR number to one whose commit list contains
+       this SHA
+    2. Correct the SHA to one actually in PR #<N>'s commit list
+    3. Investigate — the fix may have been lost (S99-class
+       merge-race) or never shipped
+```
+
+(Output discipline: 40-char SHAs and PR numbers only. No commit headlines, no PR titles, no subject lines. The kebab-case branch names already permitted by the merge-SHA gate's output rules remain the only branch identifiers allowed in gate output.)
+
 #### §4B grep gate
 
-After the merge-SHA gate has passed (or emitted a documented skip note), run §4B grep against the new content. Per `feedback_4b_per_entry_standard.md`, evaluate the diff against `origin/main` (the new entry only), not the whole file. The pattern catalog lives in `docs/ai-context/4B_GREP_PATTERNS.md`; tenant-slug enumeration is operator-supplied at grep-time per the lookup mechanism described there.
+After both the merge-SHA gate and the misattribution check have passed (or emitted documented skip notes), run §4B grep against the new content. Per `feedback_4b_per_entry_standard.md`, evaluate the diff against `origin/main` (the new entry only), not the whole file. The pattern catalog lives in `docs/ai-context/4B_GREP_PATTERNS.md`; tenant-slug enumeration is operator-supplied at grep-time per the lookup mechanism described there.
 
 Both narrow and wide grep passes must return zero matches against added lines only (`^+` excluding `^+++`). If matches surface:
 - Remediate via in-line `[tenant]` marker substitution for tenant identifiers.
@@ -233,6 +336,7 @@ Then stop. Do not start the next task.
 
 - Never write anything to `activities.txt` that would itself violate CLAUDE.md Section 4B. That means: **no student names, no student IDs, no staff names, no email addresses, no tenant-identifiable slugs.** Refer to records by table + row-count or by generic description ("updated 3 intervention-plan rows for 1 test tenant"), never by PII.
 - The **merge-SHA verification gate** in Step 3 is non-optional. For any DISPOSITION that names a PR (or bare `merged` whose branch resolves to a merged PR via search), the gate must run and must pass or HALT. A LOUD-SKIP block on every session means the project's merge convention has drifted to squash/rebase and this protection has effectively turned off — re-evaluate the gate, do not normalize the skip.
+- The **misattribution check** in Step 3 is non-optional for any entry that includes a FIXES: block. The block uses the parseable `<finding-id> → PR #<N> @ <40-char SHA>` format; each line's SHA must be a member of the cited PR's commit list per `gh pr view <N> --json commits`. The check is SHA-only by design — commit headlines are visible interactively at SHA-pick time but are NEVER written into `activities.txt`. The check verifies CONTAINMENT, not CORRECTNESS — a wrong-but-present commit cited as the fix would still PASS; the auto-fill UX (presenting the cited PR's own commits) is the behavioral mitigation. The `WORK-PR COMMITS` section the skill auto-appends to every entry is SHA-only manifest evidence, never headlines or subjects.
 - Never commit `activities.txt` changes to a feature branch that will be squashed — it should ride on its own commit on the branch, or be merged separately to `main` via a trivial `chore/activities-log` PR. The project convention: **`activities.txt` is committed directly to `main` via a dedicated PR** so the log stays linear and doesn't get lost in squashes.
 - If the user says "don't log this session," honor that but also log the fact that a session was explicitly not logged ("SESSION: <timestamp> / DISPOSITION: unlogged-by-request"), so the audit trail isn't silently broken.
 - This skill is the last thing that runs in a session. After Step 4, respond to no further coding requests — if the user has a new task, they should start a fresh session so context starts clean (per Anthropic's `/clear` guidance).
