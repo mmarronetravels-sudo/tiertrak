@@ -30,12 +30,21 @@
 -- Vocabulary seeding strategy: per-tenant default rows are seeded by
 -- this migration for every existing tenant with type = 'school'.
 -- Idempotent via ON CONFLICT against the per-tenant partial-unique
--- label index. New tenants created AFTER this migration runs do NOT
--- automatically inherit these defaults — wiring new-tenant seeding
--- into the tenant-creation route is a separate follow-up PR (will
--- surface as an OPEN ITEM at session close). Until that lands, new
--- tenants will see empty discipline vocabularies and must populate
--- via the customization UI (also a future PR).
+-- label index.
+--
+-- DRIFT-RISK NOTE (added in the new-tenant wiring PR)
+-- ---------------------------------------------------
+-- The VALUES blocks below are the HISTORICAL one-shot seed for existing
+-- tenants at migration time. Going forward, the canonical source of
+-- these defaults is data/discipline-vocab-seeds.js, which the tenant-
+-- creation route consumes via seedDisciplineVocabsForTenant(). Do NOT
+-- edit the VALUES blocks below to change the defaults — this migration
+-- has already run against existing tenants and editing it would have no
+-- effect on them. To change the defaults: (1) edit
+-- data/discipline-vocab-seeds.js, then (2) write a small backfill
+-- migration that re-seeds existing tenants from the JS lists using the
+-- same ON CONFLICT (tenant_id, lower(label)) WHERE is_active = TRUE
+-- DO NOTHING pattern.
 --
 -- Excluded behaviors: handbook §5.1 lists "Excessive tardiness" and
 -- "Truancy" as Level 1 infractions but explicitly defers consequences

@@ -3,6 +3,7 @@ const router = express.Router();
 const { Pool } = require('pg');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
+const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seeds');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -52,30 +53,38 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create a new tenant
+// Create a new tenant.
+//
+// Wrapped in a single BEGIN/COMMIT so that the tenant row, the starter
+// intervention-bank seed, and the discipline-vocabulary seed all commit
+// or all roll back together. The intervention-bank seed pre-dates this
+// transaction wrapper — previously a bank-insert failure would leave
+// the tenant row committed without its starter bank. Folding it into
+// the same transaction as the new vocab seed closes that latent gap.
 router.post('/', async (req, res) => {
   const { name, type, subdomain, settings } = req.body || {};
   if (!name || !type || !subdomain) {
     return res.status(400).json({ error: 'name, type, subdomain are required' });
   }
+  const client = await pool.connect();
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `INSERT INTO tenants (name, type, subdomain, settings)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
       [name, type, subdomain, settings || {}]
     );
-
     const newTenant = result.rows[0];
 
-    // Auto-seed starter interventions from the bank
-    const starterResult = await pool.query(
+    // Auto-seed starter interventions from the bank.
+    const starterResult = await client.query(
       'SELECT id FROM intervention_templates WHERE tenant_id IS NULL AND is_starter = TRUE'
     );
     const starterIds = starterResult.rows.map((r) => r.id);
-
     if (starterIds.length > 0) {
-      await pool.query(
+      await client.query(
         `INSERT INTO tenant_intervention_bank (tenant_id, template_id)
          SELECT $1, unnest($2::int[])
          ON CONFLICT DO NOTHING`,
@@ -83,12 +92,26 @@ router.post('/', async (req, res) => {
       );
     }
 
+    // Auto-seed discipline-referral default vocabularies (per M036).
+    // tenants.type CHECK (M029) restricts type to 'school', so every
+    // tenant that reaches this point is a school-tenant and warrants
+    // the seed; no extra filter required.
+    await seedDisciplineVocabsForTenant(client, newTenant.id);
+
+    await client.query('COMMIT');
     res.status(201).json(newTenant);
   } catch (err) {
+    // Swallow ROLLBACK errors so a dead connection during rollback can't
+    // mask the original error, skip the 23514/23505 redirects, or fall
+    // through to Express's default error handler. The finally block
+    // releases the client regardless.
+    try { await client.query('ROLLBACK'); } catch (_) { /* swallow */ }
     if (err.code === '23514') return res.status(400).json({ error: 'Invalid tenant type' });
     if (err.code === '23505') return res.status(409).json({ error: 'Subdomain already in use' });
     console.error('[tenants:create]', err.message);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
