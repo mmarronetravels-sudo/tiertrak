@@ -21355,3 +21355,236 @@ If higher-priority operational work has been queued
 ========================================================================
 END SESSION 99
 ========================================================================
+
+
+========================================================================
+SESSION 100 — 2026-05-29
+========================================================================
+
+------------------------------------------------------------------------
+TASK SUMMARY
+------------------------------------------------------------------------
+
+S100 hardened the landing-the-plane skill with a
+merge-SHA verification gate. The gate runs at the top
+of Step 3 (before the §4B grep gate) and cross-checks
+GitHub's recorded headRefOid for the work PR against
+the local merge commit's second parent. Scope-honest:
+catches post-merge SHA drift (force-push, admin
+override on a different SHA, stale-ref); does NOT
+catch prose misattribution — that's a known gap with
+its own banked follow-up (see OPEN ITEMS).
+
+Single-file markdown change to .claude/skills/
+landing-the-plane/SKILL.md (+105 / -1). Three
+HALT/skip classes added: MISMATCH (HEAD_OID !=
+merge^2), UNVERIFIABLE (bare 'merged' DISPOSITION
+where branch→PR search finds a merged PR), and a
+multi-line LOUD-SKIP block for squash / rebase /
+fast-forward merge style (whose feature-tip SHA is
+not preserved on main).
+
+------------------------------------------------------------------------
+BRANCH STATE
+------------------------------------------------------------------------
+
+chore/activities-log-merge-sha-verification — 1
+commit (7d9376c), opened as PR #164, merged via
+merge-commit + admin bypass at commit 91efdf5.
+
+chore/activities-log-session-100 — this entry,
+branched from fresh main after the feature-branch
+work landed (S99 pattern).
+
+------------------------------------------------------------------------
+SURFACES TOUCHED
+------------------------------------------------------------------------
+
+  - 1 skill markdown file modified
+    (.claude/skills/landing-the-plane/SKILL.md):
+    merge-SHA gate sub-step added before the §4B
+    grep paragraph; one Guardrails bullet added.
+
+No code surfaces touched. Markdown-only change to
+session-close tooling. No new dependencies, no
+schema, no framework/ORM/hosting substitutions.
+
+------------------------------------------------------------------------
+MIGRATIONS RUN
+------------------------------------------------------------------------
+
+None.
+
+------------------------------------------------------------------------
+TENANT ISOLATION REVIEW
+------------------------------------------------------------------------
+
+No DB queries, schema, or query-touching code
+modified. No tenant-isolation surface introduced or
+changed.
+
+------------------------------------------------------------------------
+PRIVACY REVIEW (§4B)
+------------------------------------------------------------------------
+
+PII fields touched: none. Markdown-only skill change.
+The gate's own output rules forbid PR titles, commit
+subjects, ref descriptions, and row data; only 40-
+char SHAs and kebab-case branch names are emitted by
+the HALT and LOUD-SKIP blocks (safe by construction).
+
+§4B grep against this activities entry: 0 hits on
+the narrow-pass and wide-pass enumeration.
+
+------------------------------------------------------------------------
+VERIFICATION
+------------------------------------------------------------------------
+
+Backend test command: not configured (Followup #73).
+No backend test run.
+
+Frontend lint: 63 errors / 17 warnings, all pre-
+existing in untouched frontend files. Per-file
+breakdown:
+  - src/App.jsx: 35 errors / 11 warnings
+  - 14 non-App.jsx files: 28 errors / 6 warnings
+    (StaffModals.jsx 7, tier1Pdf.js 4,
+     TemplateEditorModal.jsx 4, Tier1AssessmentModal
+     .jsx 2, ProgressFormModal.jsx 2, AppContext.jsx
+     2, plus 8 other Modals/views with 1 each)
+This session's change is markdown-only (.claude/
+skills/landing-the-plane/SKILL.md); not lint-
+scanned. The lint dirt is pre-existing tech debt,
+unchanged by this session — see OPEN ITEMS for the
+master-index accuracy note and the scope-broader
+follow-up.
+
+merge-SHA verification gate — FIRST LIVE RUN (this
+entry is the gate's inaugural use against a work PR
+that was merged earlier in the same session):
+  - Step 0: DISPOSITION = pr-opened:.../pull/164
+           → PR# = 164; state = MERGED → proceed
+  - Step 1: HEAD_OID =
+           7d9376ca5fc1319ee28812ccdbcb9a2ef5f4c79b
+  - Step 2: MERGE_OID =
+           91efdf5a747143aa572c13b24cf6cf5fe4750d4e
+           git rev-list --parents -n 1 $MERGE_OID:
+             91efdf5a... 3513dc35... 7d9376ca...
+           PARENT_COUNT = 2 (true merge commit)
+           PARENT2 =
+           7d9376ca5fc1319ee28812ccdbcb9a2ef5f4c79b
+  - Step 3: HEAD_OID == PARENT2 → MATCH
+  - Result: silently continue to §4B grep gate
+
+Gate three-trace pre-deploy verification (walked
+with operator before commit):
+  (a) Constructed force-push mismatch on PR #160 →
+      HALT with MISMATCH block as designed
+  (b) Real PR #160 clean merge → MATCH, silent
+  (c) Squash-merge hypothetical → LOUD-SKIP block +
+      grep-able 'SKIPPED' VERIFICATION line
+All three matched the implemented gate behavior.
+
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+------------------------------------------------------------------------
+
+PR #164 state at session close: MERGED via admin
+bypass per §2A chore exception (not a §4B/§5 PR;
+no formal review required).
+
+Branch hygiene at session start: 3 untracked
+operational artifacts present on main, unchanged
+from S99 (#94 STANDS).
+
+Follow-ups banked this session (branch names only):
+
+  - chore/activities-log-misattribution-check
+      The real S99 fix. Catches prose claiming a
+      fix is in PR #X when it actually landed in
+      PR #M. Design notes (operator-authored
+      mid-session):
+        a) failure mode is narrative-prose
+           misattribution, not SHA drift
+        b) any SHA the gate checks must be auto-
+           fetched via gh, NOT hand-entered (no
+           per-session operator burden)
+        c) open design question to resolve before
+           building: does the check verify the
+           specific fix commit is contained in the
+           cited PR's merge (git ancestry test) or
+           only confirm the PR's head-SHA equality?
+           Head-SHA equality alone would NOT have
+           caught S99 — ancestry is likely the
+           necessary primitive.
+
+  - chore/frontend-lint-cleanup-broader-scope
+      28 errors / 6 warnings in 14 non-App.jsx
+      files (Modals cluster + utils + context +
+      one view). Genuinely wider than the existing
+      chore/app-jsx-lint-cleanup item. Recommend
+      banking as a separate item rather than
+      growing the App.jsx-scoped one.
+
+Master-index accuracy issues flagged this session:
+
+  - S99 summary correction. Master-index summarizes
+    the S99 incident as a "merge race." Actual git
+    shows PR #160 merged faithfully (headRefOid ==
+    merge^2; verified in this session). The real
+    issue was prose misattribution: the dbError
+    redaction landed in PR #162, not PR #160 (this
+    is already captured correctly in the S99
+    activities entry; master-index needs to be
+    brought into alignment).
+
+  - chore/app-jsx-lint-cleanup count drift.
+    Recorded as 37 errors; current App.jsx-only
+    count is 35 errors / 11 warnings. Confirm
+    whether the original 37 was App.jsx-only or
+    a total figure. The 37 → 63 total-count change
+    is driven by scope-broadening (28 errors in 14
+    non-App.jsx files), not by App.jsx growth.
+
+Pre-existing follow-ups carrying through:
+  Followup #73 (no backend test suite): STANDS.
+  Followup #74 (backend lint not configured):
+    STANDS.
+  Followup #94 (untracked operational artifacts
+    not yet gitignored): STANDS. Same set carried
+    over from S99, unchanged this session.
+  chore/frontend-test-infra (S97-banked): STANDS.
+  chore/app-jsx-lint-cleanup (S97-banked): STANDS
+    (see master-index accuracy issue above).
+  fix/api-dberror-translation: STANDS.
+  fix/students-put-null-on-omit-broader-
+    investigation: STANDS.
+
+------------------------------------------------------------------------
+NEXT SESSION SHOULD
+------------------------------------------------------------------------
+
+PR #164 merged; the merge-SHA gate is live on
+landing-the-plane. Next session candidates ranked
+by value:
+
+  - chore/activities-log-misattribution-check
+    (HIGH value; completes the S99-class
+    protection story that this session only
+    partly addressed — head-SHA gate covers SHA
+    drift but not misattribution)
+  - chore/frontend-lint-cleanup-broader-scope
+    (MEDIUM value; sibling to chore/app-jsx-
+    lint-cleanup but broader scope across 14
+    files)
+  - operator-side housekeeping: master-index
+    reconciliation for the S99 summary + the
+    chore/app-jsx-lint-cleanup count drift
+
+If higher-priority operational work has been
+queued (production incident, etc.), defer the
+above.
+
+========================================================================
+END SESSION 100
+========================================================================
