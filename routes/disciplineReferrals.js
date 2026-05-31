@@ -50,8 +50,37 @@ const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'intervention
 // in routes/prereferralForms.js.
 const ACT_ROLES = ['school_admin', 'district_admin'];
 
+// admin_notes length cap, enforced from-the-start at the route layer
+// (no schema change). Mirrors the banked staff_notes/admin_notes
+// length-cap follow-up, applied here for the first surface that needs
+// it. 5000 chars after trim is comfortably above the longest
+// reasonable narrative entry.
+const ADMIN_NOTES_MAX_LENGTH = 5000;
+
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
+}
+
+// parseAdminNotes(raw) — validate + normalize an admin_notes payload.
+// Callers must first decide whether the key being absent from the body
+// is acceptable (PATCH /:id/admin-notes requires it; PATCH /:id/resolve
+// treats absent as "preserve existing"). Once invoked, raw should be a
+// string or explicit null.
+//
+// Returns { ok: true, value } where value is the trimmed string or null
+// (empty-after-trim collapses to null so a deliberate clear works).
+// Returns { ok: false, error } when raw is not string/null or when the
+// trimmed string exceeds ADMIN_NOTES_MAX_LENGTH.
+function parseAdminNotes(raw) {
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'admin_notes must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > ADMIN_NOTES_MAX_LENGTH) {
+    return { ok: false, error: 'admin_notes exceeds maximum length' };
+  }
+  return { ok: true, value: trimmed.length === 0 ? null : trimmed };
 }
 
 async function resolveAndBindTargetTenant(req) {
@@ -810,6 +839,80 @@ router.patch('/:id/release', requireAuth, async (req, res) => {
       'err=', error.message
     );
     res.status(500).json({ error: 'Failed to release referral' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/admin-notes — save (or clear) admin_notes mid-review.
+//
+// Required while the referral is under_review so admins can persist
+// draft notes incrementally without committing to /resolve. Status is
+// NOT changed by this endpoint.
+//
+// Body contract: { admin_notes: string | null }
+//   - Key absent → 400 "Missing admin_notes". Use a different endpoint
+//     to reach the row without touching notes.
+//   - Non-string (other than null) → 400.
+//   - String trimmed to NULL → clears the column (deliberate clear).
+//   - String length after trim > ADMIN_NOTES_MAX_LENGTH → 400.
+//
+// Gates:
+//   - requireAuth + ACT_ROLES (write surface; counselor/interventionist
+//     can read notes via GET /:id but cannot write them).
+//   - loadReferralAndAssertTenant collapses not-found/cross-tenant to 403.
+//   - SQL WHERE status = 'under_review' is the authoritative from-state
+//     gate. Helper-passed + UPDATE-touched-0 ⇒ 400 (operational state).
+//
+// PII discipline (§4B): admin_notes contents are never logged, never
+// echoed in error bodies. Error log carries referral_id (int) +
+// user_id (int) + err.message only.
+// ============================================================
+router.patch('/:id/admin-notes', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const body = req.body || {};
+    if (!Object.prototype.hasOwnProperty.call(body, 'admin_notes')) {
+      return res.status(400).json({ error: 'Missing admin_notes' });
+    }
+    const parsed = parseAdminNotes(body.admin_notes);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET admin_notes = $3,
+              updated_at  = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'under_review'
+        RETURNING id, status, updated_at`,
+      [referralId, auth.accessible, parsed.value]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Notes can only be saved while a referral is under review' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:adminNotes]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to save admin notes' });
   }
 });
 
