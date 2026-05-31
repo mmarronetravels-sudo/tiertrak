@@ -526,6 +526,9 @@ router.get('/queue/:tenantId', requireAuth, requireTenantStaffAccess, async (req
     }
 
     const tenantId = Number(req.params.tenantId);
+    if (!isPositiveInt(tenantId)) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
 
     const status = typeof req.query.status === 'string' ? req.query.status : null;
     if (status !== null && !['submitted', 'under_review', 'resolved'].includes(status)) {
