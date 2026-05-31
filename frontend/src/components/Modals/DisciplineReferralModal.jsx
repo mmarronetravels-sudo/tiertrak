@@ -168,7 +168,7 @@ var DisciplineReferralModal = function(props) {
       var trimmed = staffNotes.trim();
       if (trimmed.length > 0) body.staff_notes = trimmed;
 
-      var res = await apiFetch(API_URL + '/discipline-referrals/', {
+      var res = await apiFetch(API_URL + '/discipline-referrals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
