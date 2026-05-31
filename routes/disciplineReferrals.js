@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
+const {
+  requireAuth,
+  requireStudentReadAccess,
+  requireTenantStaffAccess,
+} = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
@@ -30,8 +34,53 @@ const initializePool = (dbPool) => {
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
+// Positive role gates for the admin-review surface. Teacher is
+// deliberately NOT in VIEW_ROLES — teachers see their own authored
+// referrals via GET /student/:studentId (D6 CASE projection), not the
+// admin queue/detail surfaces. Parent is implicitly excluded by not
+// appearing in either set; handlers that follow the existing file
+// convention also add an explicit parent → 403 line as defense in
+// depth, but the role-set membership check alone is sufficient.
+const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
+
+// ACT_ROLES is the narrower gate for state-changing endpoints (claim /
+// release / admin-notes / resolve). Counselors and interventionists
+// can view the queue and the detail page but cannot move status or
+// assign consequences. Mirrors the APPROVE_ROLES / ADMIN_ROLES split
+// in routes/prereferralForms.js.
+const ACT_ROLES = ['school_admin', 'district_admin'];
+
+// admin_notes length cap, enforced from-the-start at the route layer
+// (no schema change). Mirrors the banked staff_notes/admin_notes
+// length-cap follow-up, applied here for the first surface that needs
+// it. 5000 chars after trim is comfortably above the longest
+// reasonable narrative entry.
+const ADMIN_NOTES_MAX_LENGTH = 5000;
+
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
+}
+
+// parseAdminNotes(raw) — validate + normalize an admin_notes payload.
+// Callers must first decide whether the key being absent from the body
+// is acceptable (PATCH /:id/admin-notes requires it; PATCH /:id/resolve
+// treats absent as "preserve existing"). Once invoked, raw should be a
+// string or explicit null.
+//
+// Returns { ok: true, value } where value is the trimmed string or null
+// (empty-after-trim collapses to null so a deliberate clear works).
+// Returns { ok: false, error } when raw is not string/null or when the
+// trimmed string exceeds ADMIN_NOTES_MAX_LENGTH.
+function parseAdminNotes(raw) {
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'admin_notes must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > ADMIN_NOTES_MAX_LENGTH) {
+    return { ok: false, error: 'admin_notes exceeds maximum length' };
+  }
+  return { ok: true, value: trimmed.length === 0 ? null : trimmed };
 }
 
 async function resolveAndBindTargetTenant(req) {
@@ -47,6 +96,32 @@ async function resolveAndBindTargetTenant(req) {
     return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
   }
   return { targetTenantId: bodyTarget, error: null };
+}
+
+// Load a discipline_referrals row by id and assert it belongs to a
+// tenant in the caller's accessible-tenant set (§5 dual-path doctrine
+// via helper, never inlined). Returns
+//   { ok: true, row, accessible }                     on success
+//   { ok: false, status, body }                       on failure
+// so the caller responds with a byte-identical 403 for both "row not
+// found" and "wrong tenant" — preventing existence-disclosure across
+// tenants. The accessible-tenant list is returned alongside the row so
+// downstream defense-in-depth SELECTs can reuse it without a second
+// resolveAccessibleTenantIds() call. Mirrors loadFormAndAssertTenant
+// in routes/prereferralForms.js.
+async function loadReferralAndAssertTenant(referralId, user) {
+  const result = await pool.query(
+    'SELECT id, tenant_id, status, reviewing_admin_id FROM discipline_referrals WHERE id = $1',
+    [referralId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  const accessible = await resolveAccessibleTenantIds(user);
+  if (!accessible.includes(result.rows[0].tenant_id)) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  return { ok: true, row: result.rows[0], accessible };
 }
 
 // ============================================================
@@ -415,6 +490,587 @@ router.post('/', requireAuth, async (req, res) => {
     try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
     console.error('[disciplineReferrals:create]', 'tenant_id=', targetTenantId, 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to create referral' });
+  } finally {
+    client.release();
+  }
+});
+
+// ============================================================
+// GET /queue/:tenantId — admin review queue for one school.
+//
+// Visibility gate (§4B/§5):
+//   - parent: 403 (existence-of-referral is FERPA-protected; same
+//     precedent as POST and GET /student/:studentId).
+//   - VIEW_ROLES (school_admin, district_admin, counselor,
+//     interventionist): see the queue summary for any referral whose
+//     tenant_id matches the path :tenantId. Teachers are NOT in
+//     VIEW_ROLES — they reach their own authored referrals via the
+//     student-record D6 CASE projection.
+//
+// Tenant scope: requireTenantStaffAccess verified path :tenantId is in
+// the caller's accessible-tenant set per §5 dual-path; the SQL filter
+// uses tenant_id = $1 for defense in depth.
+//
+// PII discipline (§4B): summary fields only. staff_notes / admin_notes
+// are NOT in the queue payload — the detail endpoint serves notes via
+// the D6 CASE projection when one referral is opened.
+//
+// Filters: ?status=submitted|under_review|resolved (optional).
+// Pagination: ?limit=N (default 50, max 200), ?offset=N (default 0).
+// Ordering: incident_date DESC, created_at DESC.
+// ============================================================
+router.get('/queue/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
+  try {
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const tenantId = Number(req.params.tenantId);
+    if (!isPositiveInt(tenantId)) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
+    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    if (status !== null && !['submitted', 'under_review', 'resolved'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    const rawLimit = parseInt(req.query.limit, 10);
+    const rawOffset = parseInt(req.query.offset, 10);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
+    const offset = Number.isInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.incident_date,
+         dr.status,
+         db.label          AS behavior_label,
+         db.severity_level,
+         s.first_name      AS student_first_name,
+         s.last_name       AS student_last_name,
+         s.grade           AS student_grade,
+         rs.full_name      AS referring_staff_name,
+         ra.full_name      AS reviewing_admin_name,
+         (SELECT COUNT(*)::int
+            FROM discipline_referral_consequences drc
+           WHERE drc.referral_id = dr.id
+             AND drc.tenant_id   = dr.tenant_id) AS consequence_count
+       FROM discipline_referrals dr
+       JOIN students s
+         ON s.id = dr.student_id AND s.tenant_id = dr.tenant_id
+       JOIN discipline_behaviors db
+         ON db.id = dr.behavior_id AND db.tenant_id = dr.tenant_id
+       LEFT JOIN users rs ON rs.id = dr.referring_staff_id
+       LEFT JOIN users ra ON ra.id = dr.reviewing_admin_id
+       WHERE dr.tenant_id = $1
+         AND ($2::text IS NULL OR dr.status = $2::text)
+       ORDER BY dr.incident_date DESC, dr.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [tenantId, status, limit, offset]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:queue]',
+      'tenant_id=', req.params.tenantId,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load queue' });
+  }
+});
+
+// ============================================================
+// GET /:id — single-referral detail for the admin review surface.
+//
+// Visibility gate (§4B/§5):
+//   - parent: 403 (existence-of-referral is FERPA-protected).
+//   - VIEW_ROLES: see the referral if its tenant is in the caller's
+//     accessible-tenant set. Cross-tenant probe and non-existent id
+//     collapse to a byte-identical 403 via loadReferralAndAssertTenant.
+//
+// D6 CASE-projection of staff_notes / admin_notes is kept even though
+// every current VIEW_ROLE resolves to "see notes" — if the role gate
+// ever widens, the SQL gate keeps notes off the wire for non-allowed
+// roles (defense in depth).
+//
+// Tenant scope: helper performs the §5 dual-path check; the SELECT
+// also filters dr.tenant_id = ANY($2::int[]) so a divergence between
+// the helper and the SELECT can't leak a row.
+//
+// PII discipline (§4B): error log carries referral_id (int) + user_id
+// (int) + err.message only. No body echo, no labels.
+// ============================================================
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.tenant_id,
+         dr.student_id,
+         dr.incident_date,
+         dr.incident_time,
+         dr.status,
+         dr.reviewing_admin_id,
+         dr.reviewed_at,
+         dr.time_out_of_instruction,
+         dr.created_at,
+         dr.updated_at,
+         s.first_name      AS student_first_name,
+         s.last_name       AS student_last_name,
+         s.grade           AS student_grade,
+         db.id             AS behavior_id,
+         db.label          AS behavior_label,
+         db.severity_level,
+         db.managed_by,
+         db.requires_subtype,
+         dl.id             AS location_id,
+         dl.label          AS location_label,
+         dm.id             AS motivation_id,
+         dm.label          AS motivation_label,
+         doi.id            AS others_involved_id,
+         doi.label         AS others_involved_label,
+         dhs.id            AS harassment_subtype_id,
+         dhs.label         AS harassment_subtype_label,
+         dws.id            AS weapon_subtype_id,
+         dws.label         AS weapon_subtype_label,
+         rs.full_name      AS referring_staff_name,
+         ra.full_name      AS reviewing_admin_name,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.staff_notes
+           WHEN $3::text = 'teacher' AND dr.referring_staff_id = $4::int THEN dr.staff_notes
+           ELSE NULL
+         END               AS staff_notes,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.admin_notes
+           ELSE NULL
+         END               AS admin_notes,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+              'id', dc.id,
+              'label', dc.label,
+              'is_restorative', dc.is_restorative,
+              'sort_order', dc.sort_order,
+              'assigned_at', drc.assigned_at
+            ) ORDER BY dc.sort_order, dc.label)
+              FROM discipline_referral_consequences drc
+              JOIN discipline_consequences dc
+                ON dc.id = drc.consequence_id AND dc.tenant_id = drc.tenant_id
+             WHERE drc.referral_id = dr.id AND drc.tenant_id = dr.tenant_id),
+           '[]'::json
+         )                 AS consequences
+       FROM discipline_referrals dr
+       JOIN students s
+         ON s.id = dr.student_id AND s.tenant_id = dr.tenant_id
+       JOIN discipline_behaviors db
+         ON db.id = dr.behavior_id AND db.tenant_id = dr.tenant_id
+       JOIN discipline_locations dl
+         ON dl.id = dr.location_id AND dl.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_motivations dm
+         ON dm.id = dr.motivation_id AND dm.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_others_involved doi
+         ON doi.id = dr.others_involved_id AND doi.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_harassment_subtypes dhs
+         ON dhs.id = dr.harassment_subtype_id AND dhs.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_weapon_subtypes dws
+         ON dws.id = dr.weapon_subtype_id AND dws.tenant_id = dr.tenant_id
+       LEFT JOIN users rs ON rs.id = dr.referring_staff_id
+       LEFT JOIN users ra ON ra.id = dr.reviewing_admin_id
+       WHERE dr.id = $1 AND dr.tenant_id = ANY($2::int[])`,
+      [referralId, auth.accessible, req.user.role, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      // Helper passed but the defensive SELECT scope returned nothing —
+      // treat as not-authorized rather than 500 to preserve the
+      // existence-non-disclosure contract.
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:detail]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load referral' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/claim — admin opens a submitted referral for review.
+//
+// Transition: status 'submitted' → 'under_review'. From-state is
+// encoded in the SQL WHERE clause; the request body never carries
+// a target status. Side effects: reviewing_admin_id = req.user.id
+// (always server-derived, never read from body), reviewed_at = now.
+//
+// Gates:
+//   - requireAuth + ACT_ROLES (school_admin, district_admin).
+//   - loadReferralAndAssertTenant collapses not-found and cross-tenant
+//     to a byte-identical 403.
+//
+// Operational-state vs authz: if the helper passed but the UPDATE
+// touches 0 rows, the referral exists in the caller's tenant but is
+// not in 'submitted' status. Return 400, not 403 — matches the
+// prereferralForms transition-endpoint precedent (e.g. /:id/submit at
+// routes/prereferralForms.js:558).
+//
+// PII discipline (§4B): error log carries referral_id (int) + user_id
+// (int) + err.message only.
+// ============================================================
+router.patch('/:id/claim', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET status             = 'under_review',
+              reviewing_admin_id = $3,
+              reviewed_at        = CURRENT_TIMESTAMP,
+              updated_at         = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'submitted'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, auth.accessible, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Referral is not in a claimable state' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:claim]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to claim referral' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/release — admin releases a claimed referral back to the
+// queue without resolving.
+//
+// Transition: status 'under_review' → 'submitted'. From-state is
+// encoded in the SQL WHERE clause. Side effects: reviewing_admin_id
+// and reviewed_at are cleared so the row reads as "fresh in queue"
+// for the next admin.
+//
+// Any admin in ACT_ROLES can release — not just the admin who claimed
+// it. Per product call, this avoids a stuck state when the claiming
+// admin is out of office or has left the district. The audit trail
+// of who held the claim moves to the trigger / audit log layer if/when
+// one is added; the row itself is intentionally a current-state shape.
+//
+// admin_notes is NOT cleared on release. A release-back is reversible
+// state, and destroying draft notes silently is a footgun. The next
+// admin who claims can read or overwrite them.
+//
+// Gates + error model mirror /:id/claim.
+// ============================================================
+router.patch('/:id/release', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET status             = 'submitted',
+              reviewing_admin_id = NULL,
+              reviewed_at        = NULL,
+              updated_at         = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'under_review'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, auth.accessible]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Referral is not in a releasable state' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:release]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to release referral' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/admin-notes — save (or clear) admin_notes mid-review.
+//
+// Required while the referral is under_review so admins can persist
+// draft notes incrementally without committing to /resolve. Status is
+// NOT changed by this endpoint.
+//
+// Body contract: { admin_notes: string | null }
+//   - Key absent → 400 "Missing admin_notes". Use a different endpoint
+//     to reach the row without touching notes.
+//   - Non-string (other than null) → 400.
+//   - String trimmed to NULL → clears the column (deliberate clear).
+//   - String length after trim > ADMIN_NOTES_MAX_LENGTH → 400.
+//
+// Gates:
+//   - requireAuth + ACT_ROLES (write surface; counselor/interventionist
+//     can read notes via GET /:id but cannot write them).
+//   - loadReferralAndAssertTenant collapses not-found/cross-tenant to 403.
+//   - SQL WHERE status = 'under_review' is the authoritative from-state
+//     gate. Helper-passed + UPDATE-touched-0 ⇒ 400 (operational state).
+//
+// PII discipline (§4B): admin_notes contents are never logged, never
+// echoed in error bodies. Error log carries referral_id (int) +
+// user_id (int) + err.message only.
+// ============================================================
+router.patch('/:id/admin-notes', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const body = req.body || {};
+    if (!Object.prototype.hasOwnProperty.call(body, 'admin_notes')) {
+      return res.status(400).json({ error: 'Missing admin_notes' });
+    }
+    const parsed = parseAdminNotes(body.admin_notes);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET admin_notes = $3,
+              updated_at  = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'under_review'
+        RETURNING id, status, updated_at`,
+      [referralId, auth.accessible, parsed.value]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Notes can only be saved while a referral is under review' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:adminNotes]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to save admin notes' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/resolve — terminal transition: under_review → resolved.
+//
+// Attaches one or more consequence rows to the referral and optionally
+// updates admin_notes in the same transaction. reviewing_admin_id and
+// reviewed_at are intentionally preserved on resolve so the row carries
+// the audit trail of who handled it.
+//
+// Body contract:
+//   { consequence_ids: positive_int[], admin_notes?: string | null }
+//   - consequence_ids: REQUIRED. Non-empty array of positive ints; the
+//     handler dedupes via Set. Every id must resolve to an active
+//     consequence in the row's tenant; otherwise 400 with a generic
+//     "Invalid consequence(s)".
+//   - admin_notes: OPTIONAL. Absent key ⇒ preserve existing column.
+//     Present (incl. explicit null / empty-after-trim) ⇒ overwrite.
+//     parseAdminNotes enforces the 5000-char cap.
+//
+// Replace-set semantics: existing join rows are deleted and replaced
+// with the supplied set in the same transaction, so re-resolving (in
+// the unlikely case the row was ever bounced back, which the current
+// matrix forbids — resolved is terminal) yields a clean state. The
+// replacement is wrapped in a single tx; UPDATE-touched-0 ⇒ ROLLBACK
+// and 400, no half-written state.
+//
+// Gates: requireAuth + ACT_ROLES + loadReferralAndAssertTenant (403
+// collapse). SQL WHERE status = 'under_review' is the authoritative
+// from-state guard.
+//
+// PII discipline (§4B): admin_notes contents are never logged or
+// echoed in error bodies. Error log carries referral_id (int) +
+// user_id (int) + err.message only.
+// ============================================================
+router.patch('/:id/resolve', requireAuth, async (req, res) => {
+  if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+  if (!ACT_ROLES.includes(req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+
+  const referralId = Number(req.params.id);
+  if (!isPositiveInt(referralId)) {
+    return res.status(400).json({ error: 'Invalid referral id' });
+  }
+
+  const body = req.body || {};
+
+  if (!Array.isArray(body.consequence_ids)) {
+    return res.status(400).json({ error: 'consequence_ids must be an array' });
+  }
+  if (body.consequence_ids.length === 0) {
+    return res.status(400).json({ error: 'At least one consequence is required' });
+  }
+  if (!body.consequence_ids.every(isPositiveInt)) {
+    return res.status(400).json({ error: 'Invalid consequence_ids' });
+  }
+  const uniqueIds = Array.from(new Set(body.consequence_ids));
+
+  const hasNotesField = Object.prototype.hasOwnProperty.call(body, 'admin_notes');
+  let notesValue = null;
+  if (hasNotesField) {
+    const parsed = parseAdminNotes(body.admin_notes);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    notesValue = parsed.value;
+  }
+
+  // Tenant assertion (pre-tx, read-only). Failure modes here are wrapped
+  // in their own try so they don't leak into the tx rollback path.
+  let auth;
+  try {
+    auth = await loadReferralAndAssertTenant(referralId, req.user);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:resolve]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    return res.status(500).json({ error: 'Failed to resolve referral' });
+  }
+  if (!auth.ok) return res.status(auth.status).json(auth.body);
+  const tenantId = auth.row.tenant_id;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Validate every supplied consequence id: exists + active + same
+    // tenant as the row. Count-comparison collapses ids-not-found and
+    // ids-from-another-tenant to a single 400 (no existence disclosure).
+    const conqRes = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM discipline_consequences
+        WHERE id = ANY($1::int[])
+          AND tenant_id = $2
+          AND is_active = TRUE`,
+      [uniqueIds, tenantId]
+    );
+    if (conqRes.rows[0].n !== uniqueIds.length) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+      return res.status(400).json({ error: 'Invalid consequence(s)' });
+    }
+
+    // Replace-set: clear any existing join rows for this referral then
+    // bulk-insert the supplied set. Composite FK on the join enforces
+    // same-tenant at the schema layer.
+    await client.query(
+      `DELETE FROM discipline_referral_consequences
+        WHERE referral_id = $1 AND tenant_id = $2`,
+      [referralId, tenantId]
+    );
+
+    // Placeholder layout: $1 = referralId, $2 = tenantId, $3..$N = ids.
+    const valueRows = uniqueIds.map((_, i) => `($1, $${i + 3}, $2)`).join(', ');
+    await client.query(
+      `INSERT INTO discipline_referral_consequences (referral_id, consequence_id, tenant_id)
+       VALUES ${valueRows}`,
+      [referralId, tenantId, ...uniqueIds]
+    );
+
+    // Terminal status transition. admin_notes is overwritten only when
+    // the body carried the key; the CASE-on-bool keeps PATCH semantics
+    // (omitted field → preserve). reviewing_admin_id and reviewed_at
+    // are intentionally NOT touched — they carry the audit trail of who
+    // handled the referral.
+    const updateRes = await client.query(
+      `UPDATE discipline_referrals
+          SET status      = 'resolved',
+              admin_notes = CASE WHEN $4::bool THEN $3 ELSE admin_notes END,
+              updated_at  = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = $2
+          AND status    = 'under_review'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, tenantId, notesValue, hasNotesField]
+    );
+
+    if (updateRes.rows.length === 0) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+      return res.status(400).json({ error: 'Referral is not in a resolvable state' });
+    }
+
+    await client.query('COMMIT');
+    res.json(updateRes.rows[0]);
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+    console.error(
+      '[disciplineReferrals:resolve]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to resolve referral' });
   } finally {
     client.release();
   }
