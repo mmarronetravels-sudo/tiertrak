@@ -230,6 +230,8 @@ const [screenerLoading, setScreenerLoading] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [interventionTemplates, setInterventionTemplates] = useState([]);
   const [interventionLogs, setInterventionLogs] = useState([]);
+  const [referralHistory, setReferralHistory] = useState([]);
+  const [referralHistoryScope, setReferralHistoryScope] = useState('current');
   const [logOptions, setLogOptions] = useState({ timeOfDay: [], location: [] });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTier, setFilterTier] = useState('2_3');
@@ -962,6 +964,10 @@ const openMTSSMeetingForm = (meeting = null) => {
         if (data.tier > 1) {
           fetchMTSSMeetings(studentId);
        }
+        // Discipline-referral history — parents are 403'd server-side; skip the call.
+        if (user?.role !== 'parent') {
+          fetchStudentReferralHistory(studentId, referralHistoryScope);
+        }
       }
     } catch (error) {
       console.error('Error fetching student details:', error);
@@ -1072,6 +1078,28 @@ const fetchStudentDocuments = async (studentId) => {
       }
     } catch (error) {
       console.error('Error fetching intervention logs:', error);
+    }
+  };
+
+  // Fetch discipline-referral history for a student.
+  // staff_notes / admin_notes are gated server-side per D6; the client
+  // simply renders whatever the API returns and does not gate visibility.
+  // Uses apiFetch (not raw fetch) so credentials: 'include' rides on every
+  // request — same fix as d9f3a5e for vocab/student-search GETs.
+  const fetchStudentReferralHistory = async (studentId, scope = 'current') => {
+    try {
+      const res = await apiFetch(
+        `${API_URL}/discipline-referrals/student/${studentId}?scope=${encodeURIComponent(scope)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setReferralHistory(Array.isArray(data) ? data : []);
+      } else {
+        setReferralHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching referral history:', error);
+      setReferralHistory([]);
     }
   };
  // Open the plan modal for an intervention
@@ -1284,6 +1312,7 @@ setUser(null);
 setStudents([]);
 setSelectedStudent(null);
 setInterventionLogs([]);
+setReferralHistory([]);
 };
 
   // Add intervention
@@ -2852,7 +2881,7 @@ if (!user) {
     return (
       <div className="space-y-6">
         <button
-          onClick={() => { setView('students'); setSelectedStudent(null); setInterventionLogs([]); }}
+          onClick={() => { setView('students'); setSelectedStudent(null); setInterventionLogs([]); setReferralHistory([]); }}
           className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors"
         >
           <ArrowLeft size={20} />
@@ -3573,6 +3602,117 @@ if (!user) {
             </div>
           </div>
         </div>
+
+        {/* Discipline Referral History — D6 note-gating enforced server-side.
+            staff_notes / admin_notes are NULL for viewers not authorized to
+            see them; the client renders whatever the API returns. */}
+        {user?.role !== 'parent' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={20} className="text-slate-400" />
+                <h2 className="text-lg font-semibold text-slate-800">
+                  {referralHistoryScope === 'all' ? 'Referrals (all years)' : 'Referrals this school year'}
+                </h2>
+                <span className="text-sm text-slate-500">({referralHistory.length})</span>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    setReferralHistoryScope('current');
+                    fetchStudentReferralHistory(selectedStudent.id, 'current');
+                  }}
+                  className={`px-3 py-1 text-xs rounded-lg transition ${
+                    referralHistoryScope === 'current'
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  This year
+                </button>
+                <button
+                  onClick={() => {
+                    setReferralHistoryScope('all');
+                    fetchStudentReferralHistory(selectedStudent.id, 'all');
+                  }}
+                  className={`px-3 py-1 text-xs rounded-lg transition ${
+                    referralHistoryScope === 'all'
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All
+                </button>
+              </div>
+            </div>
+
+            {referralHistory.length === 0 ? (
+              <p className="text-sm text-gray-400 italic text-center py-4">
+                No referrals on record{referralHistoryScope === 'current' ? ' this school year' : ''}.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {referralHistory.map((r) => {
+                  const sevColor =
+                    r.severity_level === 3 ? 'bg-red-100 text-red-700' :
+                    r.severity_level === 2 ? 'bg-amber-100 text-amber-700' :
+                    'bg-blue-100 text-blue-700';
+                  const statusLabel =
+                    r.status === 'under_review' ? 'Under review' :
+                    r.status === 'resolved' ? 'Resolved' :
+                    'Submitted';
+                  return (
+                    <div key={r.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${sevColor}`}>
+                            Level {r.severity_level}
+                          </span>
+                          <span className="text-sm font-medium text-slate-800">{r.behavior_label}</span>
+                          {r.location_label && (
+                            <span className="text-xs text-slate-500">at {r.location_label}</span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-500 shrink-0 ml-2">
+                          {r.incident_date ? new Date(r.incident_date).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-600 mb-1 flex-wrap">
+                        <span className="px-2 py-0.5 bg-white border border-slate-200 rounded-full">{statusLabel}</span>
+                        {r.referring_staff_name && (
+                          <span>Filed by {r.referring_staff_name}</span>
+                        )}
+                      </div>
+                      {Array.isArray(r.consequences) && r.consequences.length > 0 && (
+                        <p className="text-xs text-slate-600 mb-1">
+                          Consequence{r.consequences.length > 1 ? 's' : ''}:{' '}
+                          {r.consequences.map((c, i) => (
+                            <span key={i}>
+                              {i > 0 && ', '}
+                              {c.label}{c.is_restorative ? ' (restorative)' : ''}
+                            </span>
+                          ))}
+                        </p>
+                      )}
+                      {r.staff_notes && (
+                        <p className="text-sm text-slate-700 mt-2 whitespace-pre-line">
+                          <span className="text-xs font-medium text-slate-500">Staff notes: </span>
+                          {r.staff_notes}
+                        </p>
+                      )}
+                      {r.admin_notes && (
+                        <p className="text-sm text-slate-700 mt-2 whitespace-pre-line">
+                          <span className="text-xs font-medium text-slate-500">Admin notes: </span>
+                          {r.admin_notes}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
          {/* Student Documents Section */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">

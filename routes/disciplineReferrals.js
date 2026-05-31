@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
@@ -125,6 +125,102 @@ router.get('/vocab/:tenantId', requireAuth, async (req, res) => {
     // No body echo; tenant_id only (id integer, not PII).
     console.error('[disciplineReferrals:vocab]', 'tenant_id=', req.params.tenantId, 'err=', error.message);
     res.status(500).json({ error: 'Failed to load vocab' });
+  }
+});
+
+// ============================================================
+// GET /student/:studentId — referrals on a student's record.
+//
+// Visibility (design D6 — enforced in the SQL projection, NOT the UI):
+//   - Structured fields (date, behavior, severity_level, status,
+//     consequences, referring_staff_name) visible to every
+//     authenticated non-parent role for any student in the viewer's
+//     accessible-tenant set.
+//   - staff_notes: counselor / school_admin / district_admin /
+//     interventionist see all; teacher sees ONLY referrals they
+//     authored (dr.referring_staff_id = $4); everyone else NULL.
+//   - admin_notes: counselor / school_admin / district_admin /
+//     interventionist see all; everyone else NULL.
+//   - Parents: 403 (existence-of-referral is itself FERPA-protected;
+//     same precedent as prereferralForms /student/:studentId).
+//
+// Note-gating lives ONLY in the SELECT CASE expressions; the
+// staff_notes / admin_notes columns are never plucked into JS and
+// post-filtered. A viewer whose CASE resolves to ELSE NULL never
+// receives the underlying text in the query result, period.
+//
+// Tenant scope: requireStudentReadAccess admits parent-by-link or
+// staff-by-accessible-set; the handler then filters
+// dr.tenant_id = ANY($2::int[]) for defense in depth.
+//
+// Time scope: ?scope=current (default) — incident_date on or after
+// Aug 1 of the current school year (server-derived). ?scope=all
+// removes the floor. Aug 1 boundary is a US convention; promotable
+// to a per-tenant setting later if a district needs it.
+// ============================================================
+router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+
+    let schoolYearFloor = null;
+    if (req.query.scope !== 'all') {
+      const now = new Date();
+      const cutoffYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+      schoolYearFloor = `${cutoffYear}-08-01`;
+    }
+
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.incident_date,
+         dr.status,
+         db.label          AS behavior_label,
+         db.severity_level,
+         dl.label          AS location_label,
+         ru.full_name      AS referring_staff_name,
+         COALESCE(
+           (SELECT json_agg(json_build_object('label', dc.label, 'is_restorative', dc.is_restorative)
+                            ORDER BY dc.sort_order)
+              FROM discipline_referral_consequences drc
+              JOIN discipline_consequences dc
+                ON dc.id = drc.consequence_id AND dc.tenant_id = drc.tenant_id
+             WHERE drc.referral_id = dr.id AND drc.tenant_id = dr.tenant_id),
+           '[]'::json
+         )                 AS consequences,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.staff_notes
+           WHEN $3::text = 'teacher' AND dr.referring_staff_id = $4::int THEN dr.staff_notes
+           ELSE NULL
+         END               AS staff_notes,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.admin_notes
+           ELSE NULL
+         END               AS admin_notes
+       FROM discipline_referrals dr
+       JOIN discipline_behaviors db
+         ON db.id = dr.behavior_id AND db.tenant_id = dr.tenant_id
+       JOIN discipline_locations dl
+         ON dl.id = dr.location_id AND dl.tenant_id = dr.tenant_id
+       LEFT JOIN users ru
+         ON ru.id = dr.referring_staff_id
+       WHERE dr.student_id = $1
+         AND dr.tenant_id  = ANY($2::int[])
+         AND ($5::date IS NULL OR dr.incident_date >= $5::date)
+       ORDER BY dr.incident_date DESC, dr.created_at DESC`,
+      [req.params.studentId, accessible, req.user.role, req.user.id, schoolYearFloor]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:studentHistory]',
+      'user_id=', req.user && req.user.id,
+      'student_tenant_id=', req.student && req.student.tenant_id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load referral history' });
   }
 });
 
