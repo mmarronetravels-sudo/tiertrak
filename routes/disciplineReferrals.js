@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
+const {
+  requireAuth,
+  requireStudentReadAccess,
+  requireTenantStaffAccess,
+} = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 let pool;
@@ -29,6 +33,13 @@ const initializePool = (dbPool) => {
 // ============================================================
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Positive role gates for the admin-review surface. Teacher is
+// deliberately NOT in VIEW_ROLES — teachers see their own authored
+// referrals via GET /student/:studentId (D6 CASE projection), not the
+// admin queue/detail surfaces. Parent is implicitly excluded (not in
+// either set); each handler still asserts parent → 403 first.
+const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -417,6 +428,90 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Failed to create referral' });
   } finally {
     client.release();
+  }
+});
+
+// ============================================================
+// GET /queue/:tenantId — admin review queue for one school.
+//
+// Visibility gate (§4B/§5):
+//   - parent: 403 (existence-of-referral is FERPA-protected; same
+//     precedent as POST and GET /student/:studentId).
+//   - VIEW_ROLES (school_admin, district_admin, counselor,
+//     interventionist): see the queue summary for any referral whose
+//     tenant_id matches the path :tenantId. Teachers are NOT in
+//     VIEW_ROLES — they reach their own authored referrals via the
+//     student-record D6 CASE projection.
+//
+// Tenant scope: requireTenantStaffAccess verified path :tenantId is in
+// the caller's accessible-tenant set per §5 dual-path; the SQL filter
+// uses tenant_id = $1 for defense in depth.
+//
+// PII discipline (§4B): summary fields only. staff_notes / admin_notes
+// are NOT in the queue payload — the detail endpoint serves notes via
+// the D6 CASE projection when one referral is opened.
+//
+// Filters: ?status=submitted|under_review|resolved (optional).
+// Pagination: ?limit=N (default 50, max 200), ?offset=N (default 0).
+// Ordering: incident_date DESC, created_at DESC.
+// ============================================================
+router.get('/queue/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
+  try {
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const tenantId = Number(req.params.tenantId);
+
+    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    if (status !== null && !['submitted', 'under_review', 'resolved'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    const rawLimit = parseInt(req.query.limit, 10);
+    const rawOffset = parseInt(req.query.offset, 10);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
+    const offset = Number.isInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.incident_date,
+         dr.status,
+         db.label          AS behavior_label,
+         db.severity_level,
+         s.first_name      AS student_first_name,
+         s.last_name       AS student_last_name,
+         s.grade           AS student_grade,
+         rs.full_name      AS referring_staff_name,
+         ra.full_name      AS reviewing_admin_name,
+         (SELECT COUNT(*)::int
+            FROM discipline_referral_consequences drc
+           WHERE drc.referral_id = dr.id
+             AND drc.tenant_id   = dr.tenant_id) AS consequence_count
+       FROM discipline_referrals dr
+       JOIN students s
+         ON s.id = dr.student_id AND s.tenant_id = dr.tenant_id
+       JOIN discipline_behaviors db
+         ON db.id = dr.behavior_id AND db.tenant_id = dr.tenant_id
+       LEFT JOIN users rs ON rs.id = dr.referring_staff_id
+       LEFT JOIN users ra ON ra.id = dr.reviewing_admin_id
+       WHERE dr.tenant_id = $1
+         AND ($2::text IS NULL OR dr.status = $2::text)
+       ORDER BY dr.incident_date DESC, dr.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [tenantId, status, limit, offset]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:queue]',
+      'tenant_id=', req.params.tenantId,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load queue' });
   }
 });
 
