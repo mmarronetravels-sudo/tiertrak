@@ -43,6 +43,13 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // depth, but the role-set membership check alone is sufficient.
 const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
 
+// ACT_ROLES is the narrower gate for state-changing endpoints (claim /
+// release / admin-notes / resolve). Counselors and interventionists
+// can view the queue and the detail page but cannot move status or
+// assign consequences. Mirrors the APPROVE_ROLES / ADMIN_ROLES split
+// in routes/prereferralForms.js.
+const ACT_ROLES = ['school_admin', 'district_admin'];
+
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
 }
@@ -672,6 +679,72 @@ router.get('/:id', requireAuth, async (req, res) => {
       'err=', error.message
     );
     res.status(500).json({ error: 'Failed to load referral' });
+  }
+});
+
+// ============================================================
+// PATCH /:id/claim — admin opens a submitted referral for review.
+//
+// Transition: status 'submitted' → 'under_review'. From-state is
+// encoded in the SQL WHERE clause; the request body never carries
+// a target status. Side effects: reviewing_admin_id = req.user.id
+// (always server-derived, never read from body), reviewed_at = now.
+//
+// Gates:
+//   - requireAuth + ACT_ROLES (school_admin, district_admin).
+//   - loadReferralAndAssertTenant collapses not-found and cross-tenant
+//     to a byte-identical 403.
+//
+// Operational-state vs authz: if the helper passed but the UPDATE
+// touches 0 rows, the referral exists in the caller's tenant but is
+// not in 'submitted' status. Return 400, not 403 — matches the
+// prereferralForms transition-endpoint precedent (e.g. /:id/submit at
+// routes/prereferralForms.js:558).
+//
+// PII discipline (§4B): error log carries referral_id (int) + user_id
+// (int) + err.message only.
+// ============================================================
+router.patch('/:id/claim', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET status             = 'under_review',
+              reviewing_admin_id = $3,
+              reviewed_at        = CURRENT_TIMESTAMP,
+              updated_at         = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'submitted'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, auth.accessible, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Referral is not in a claimable state' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:claim]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to claim referral' });
   }
 });
 
