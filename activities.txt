@@ -23029,3 +23029,181 @@ NEXT SESSION SHOULD
   (see PR #180 body) and the D6 visibility-contract obligation from
   the F2 doc entry.
 ================================================================================
+
+SESSION: 2026-05-31T11:00:00-07:00
+BRANCH:  feat/discipline-referral-admin-review
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/184 (merge commit 903c9e0; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR #3 of the discipline-referral feature family — the admin review
+  workflow. Adds the queue + detail read surfaces and four PATCH
+  transition endpoints (claim, release, mid-review admin-notes save,
+  terminal resolve). Six feat commits + a 7th defensive chore + an
+  8th PRIVACY_REVIEW.md policy commit. Single backend file change;
+  no schema change (M036 storage already in place).
+
+  Two role gates, positive (not parent-deny inversion):
+    VIEW_ROLES (queue + detail): school_admin, district_admin,
+                                 counselor, interventionist
+    ACT_ROLES (claim/release/notes/resolve): school_admin,
+                                             district_admin
+
+  Status-transition matrix is server-validated against the current
+  row via WHERE status = '<from>' as the authoritative race-safe
+  gate; the body never carries a target status. reviewing_admin_id
+  is always taken from req.user.id, never read from body.
+  Release-back preserves admin_notes (silent destruction rejected
+  as a footgun). Resolve is transactional: validate consequence_ids
+  exist + active + same-tenant, replace-set DELETE+INSERT on the
+  join, then the terminal UPDATE; any failure rolls back the join
+  change. reviewing_admin_id + reviewed_at intentionally preserved
+  on resolve as audit trail.
+
+  loadReferralAndAssertTenant helper mirrors loadFormAndAssertTenant
+  from routes/prereferralForms.js: collapses cross-tenant probes and
+  not-found id to a byte-identical 403 (no existence disclosure).
+  Returns the resolved accessible-tenant list alongside the row so
+  downstream defense-in-depth SELECTs don't re-call the §5 resolver.
+
+FILES TOUCHED
+
+  +/- lines    File                                   Reason
+  ---------    -----------------------------------    --------------------------
+  +657/-1      routes/disciplineReferrals.js          6 new endpoints + helpers
+                                                     (VIEW_ROLES/ACT_ROLES,
+                                                     loadReferralAndAssertTenant,
+                                                     parseAdminNotes,
+                                                     ADMIN_NOTES_MAX_LENGTH=5000).
+                                                     Mirrors prereferralForms.js
+                                                     transition-endpoint shape.
+  +10/-6       docs/ai-context/PRIVACY_REVIEW.md      Documents v1 visibility
+                                                     policy on draft admin_notes
+                                                     after release-back; updates
+                                                     Readers contract to
+                                                     enumerate the 3 reader
+                                                     surfaces; removes the
+                                                     now-landed Phase 2+
+                                                     deferred entry.
+
+  Total: 2 files, +667/-7 (per git diff --stat main...HEAD).
+
+MIGRATIONS RUN
+  None. M036 already supplies all storage (discipline_referrals +
+  discipline_referral_consequences join). No schema change in this
+  PR.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor APPROVED (0 C / 0 H / 0 M / 1 L / 4 INFO).
+  Nine new queries audited; all positive-WHERE scoped. Helper threads
+  the §5 dual-path contract end-to-end; no inline branching anywhere
+  in new code. /resolve transaction binds to auth.row.tenant_id
+  (single int from the helper) — flagged INFO as the TIGHTER form vs
+  the accessible-set array, preventing a district_admin from claiming
+  in school A and supplying consequences from school B (both in their
+  accessible set). Composite-FK schema enforcement on the join.
+  Existence-disclosure tests pass for all three probe shapes (GET
+  /queue/<wrong>, GET /<wrong>, PATCH /<wrong>/<transition>) — all
+  return byte-identical {"error":"Not authorized"}.
+
+  LOW = defensive isPositiveInt on /queue/:tenantId path param;
+  requireTenantStaffAccess already 403s on NaN so the check was
+  unreachable, but inconsistent with :id handling elsewhere in the
+  file. Fixed in this PR (commit chore(disciplineReferrals): defensive
+  isPositiveInt on /queue/:tenantId).
+
+PRIVACY REVIEW
+  privacy-reviewer APPROVED WITH NOTES (0 C / 0 H / 0 M / 1 L / 3 INFO).
+  Seven added console.error lines audited; all carry tenant_id /
+  referral_id (int) + user_id (int) + err.message only. Twenty-six
+  added error response bodies audited; all FORBIDDEN_BODY or
+  fixed-string JSON. D6 CASE projection on GET /:id is byte-identical
+  to the student-record path. Queue payload data-minimized (no notes
+  columns shipped). admin_notes 5000-char cap reasonable for FERPA
+  narrative volume; banked staff_notes cap from PR #2 remains open.
+
+  LOW = after PATCH /:id/release returns the row to 'submitted' with
+  preserved admin_notes, the student-record D6 path
+  (GET /student/:studentId) gates admin_notes by ROLE only (counselor
+  / school_admin / district_admin / interventionist see; teacher and
+  parents NULL), not by STATUS. Counselor / interventionist therefore
+  see in-progress draft admin_notes on a released-back row. Operator
+  ratified this as deliberate v1 policy: counselor and interventionist
+  are within the D6 admin_notes audience by design. Tightening to
+  status-aware gating is a future follow-up if product policy moves.
+  Captured as a new paragraph in docs/ai-context/PRIVACY_REVIEW.md
+  within this PR (commit docs(privacy): document discipline_referrals
+  admin_notes v1 policy).
+
+SECURITY REVIEW
+  security-reviewer APPROVED WITH NOTES (0 C / 0 H / 1 M / 2 L / 3 INFO).
+  All transition endpoints encode the target status as a SQL literal;
+  body→status path verified absent. /resolve VALUES-list construction
+  is index-only string concatenation (placeholder ordinals from i+3);
+  ids land in the params array and are isPositiveInt-validated first.
+  Pre-tx auth call wrapped in its own try/catch so a helper failure
+  can't roll back a tx that hasn't begun. JWT validation,
+  parameterization, body-driven actor identity rejection, race-safe
+  transition gates, transactional safety, PII discipline, and
+  existence-non-disclosure all verified.
+
+  MEDIUM = 400-vs-403 differential on GET /:id between malformed id
+  and numeric-but-cross-tenant id. Operator ratified as INTENDED;
+  matches the routes/prereferralForms.js precedent contract. No code
+  change. Captured in the PR body.
+
+  LOW #1 = /queue/:tenantId offset-iteration exfiltration within the
+  Followup #80 envelope (no NEW pressure point; queue is already
+  requireTenantStaffAccess-gated to the caller's accessible set).
+  LOW #2 = /resolve consequence count-comparison is correctly
+  non-disclosing; flagged for FE UX discipline (don't re-probe to
+  enumerate which id was invalid).
+
+RATIFIED FINDINGS (no code change)
+  - Privacy LOW: counselor / interventionist visibility into draft
+    admin_notes after release-back. Documented as v1 policy in
+    PRIVACY_REVIEW.md.
+  - Security MEDIUM: GET /:id 400-vs-403 differential. Matches the
+    prereferralForms.js contract.
+
+ADDRESSED FINDING (this PR)
+  - Tenant LOW: isPositiveInt(tenantId) defensive check on
+    /queue/:tenantId path param.
+
+TESTS / LINT (HONEST STATE)
+  Backend automated tests: none exist (Followup #73). npm test runs
+  the npm default placeholder and exits non-zero.
+  Backend lint: not configured (Followup #74). npm run lint errors
+  with Missing script: "lint".
+  Node syntax check: node --check routes/disciplineReferrals.js → OK.
+  FE: not touched on this PR.
+  Pattern-matching: 6 new endpoints faithfully follow the
+  prereferralForms.js transition-endpoint precedent
+  (loadFormAndAssertTenant → 403-collapse → WHERE status='<from>'
+  → 400 on operational-state mismatch).
+
+BANKED FOLLOW-UPS (none new this session)
+  All three reviewer subagent flags this session were either ratified
+  as design intent or fixed within the PR. No new entries for the
+  master-index.
+
+CARRIED FROM PRIOR SESSIONS
+  Followup #73 (no backend test suite) and Followup #74 (no backend
+  lint) continue to be the only safety-net gap on this PR; pattern-
+  matching against prereferralForms.js + 3 reviewer subagents are the
+  pre-merge signal. The banked staff_notes-length-cap follow-up from
+  PR #180 is now PARTIALLY advanced: admin_notes cap (5000) applied
+  at its first-use surface here; staff_notes cap on POST / remains
+  open for the future chore/disciplineReferrals-input-hygiene PR.
+
+NEXT SESSION SHOULD
+  Land §2A external human review on PR #184; do not self-merge —
+  this PR touches §4B (PII) and §5 (tenant scope). After PR #184
+  merges, the companion chore/activities-log-session-110 PR lands
+  this activities entry (memory convention: activities entry on its
+  own PR after the work PR merges, never bundled). Then the natural
+  next chunk is the chore/disciplineReferrals-input-hygiene PR
+  bundling the future-incident_date guard + staff_notes length cap.
+  After that, the FE side of the admin review workflow — a queue
+  page and a referral-detail page that consume the 6 new endpoints
+  in PR #184.
+================================================================================
