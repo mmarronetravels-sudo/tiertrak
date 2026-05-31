@@ -112,6 +112,13 @@ export default function DisciplineReferralQueue(props) {
   const [schools, setSchools] = useState(null);
   const [schoolsError, setSchoolsError] = useState(null);
   const [selectedTenantId, setSelectedTenantId] = useState(user.tenant_id);
+  // schoolsResolved gates the initial queue fetch so we don't fire it
+  // until the school list has settled and selectedTenantId is its final
+  // post-correction value. Prevents a throwaway/403 fetch on mount when
+  // user.tenant_id isn't in the accessible-school set (district users
+  // whose home tenant is the district's owning tenant). Flips to true
+  // once in loadSchools' settle path (success OR error) and never resets.
+  const [schoolsResolved, setSchoolsResolved] = useState(false);
 
   const [status, setStatus] = useState('submitted');
   const [sortKey, setSortKey] = useState('newest');
@@ -124,8 +131,19 @@ export default function DisciplineReferralQueue(props) {
   const [loadError, setLoadError] = useState(null);
 
   // Load accessible schools once on mount. The server returns id + name
-  // only; if length <= 1 we hide the picker and the queue is implicitly
-  // scoped to user.tenant_id.
+  // only; if length <= 1 we hide the picker and the queue is scoped to
+  // the single accessible school (or user.tenant_id if the call failed).
+  //
+  // Auto-correction of selectedTenantId fires when the home tenant
+  // (user.tenant_id) isn't in the accessible set — applies to both
+  // length === 1 (district user whose home is the district's owning
+  // tenant, with one school grant) and length > 1.
+  //
+  // schoolsResolved flips at the end of both success and error paths so
+  // the queue-fetch effect can fire exactly once on mount, against the
+  // settled selectedTenantId. On schools-fetch error we still let the
+  // queue fire as a best-effort fallback — the server will 403 cleanly
+  // if user.tenant_id isn't accessible.
   useEffect(() => {
     let cancelled = false;
     const loadSchools = async () => {
@@ -136,11 +154,12 @@ export default function DisciplineReferralQueue(props) {
         }
         const data = await res.json();
         if (cancelled) return;
-        setSchools(Array.isArray(data) ? data : []);
-        if (Array.isArray(data) && data.length > 1) {
-          const hasHome = data.some((s) => s.id === user.tenant_id);
+        const list = Array.isArray(data) ? data : [];
+        setSchools(list);
+        if (list.length >= 1) {
+          const hasHome = list.some((s) => s.id === user.tenant_id);
           if (!hasHome) {
-            setSelectedTenantId(data[0].id);
+            setSelectedTenantId(list[0].id);
           }
         }
       } catch (err) {
@@ -148,6 +167,8 @@ export default function DisciplineReferralQueue(props) {
         logError('[disciplineQueue:schools]', err);
         setSchoolsError('Could not load schools.');
         setSchools([]);
+      } finally {
+        if (!cancelled) setSchoolsResolved(true);
       }
     };
     loadSchools();
@@ -188,10 +209,14 @@ export default function DisciplineReferralQueue(props) {
   }, [API_URL]);
 
   // Initial + filter/school changes: reset offset and refetch from 0.
+  // Gated on schoolsResolved so the first fetch fires after the school
+  // list has settled and any selectedTenantId auto-correction is in
+  // place — single fetch on mount, no throwaway against a stale value.
   useEffect(() => {
+    if (!schoolsResolved) return;
     setOffset(0);
     fetchQueue(selectedTenantId, status, 0, 'replace');
-  }, [selectedTenantId, status, fetchQueue]);
+  }, [selectedTenantId, status, fetchQueue, schoolsResolved]);
 
   const handleLoadMore = () => {
     const next = offset + PAGE_SIZE;
