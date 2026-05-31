@@ -37,8 +37,10 @@ const FORBIDDEN_BODY = { error: 'Not authorized' };
 // Positive role gates for the admin-review surface. Teacher is
 // deliberately NOT in VIEW_ROLES — teachers see their own authored
 // referrals via GET /student/:studentId (D6 CASE projection), not the
-// admin queue/detail surfaces. Parent is implicitly excluded (not in
-// either set); each handler still asserts parent → 403 first.
+// admin queue/detail surfaces. Parent is implicitly excluded by not
+// appearing in either set; handlers that follow the existing file
+// convention also add an explicit parent → 403 line as defense in
+// depth, but the role-set membership check alone is sufficient.
 const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
 
 function isPositiveInt(n) {
@@ -58,6 +60,32 @@ async function resolveAndBindTargetTenant(req) {
     return { targetTenantId: null, error: { status: 403, body: { error: 'Not authorized for target tenant' } } };
   }
   return { targetTenantId: bodyTarget, error: null };
+}
+
+// Load a discipline_referrals row by id and assert it belongs to a
+// tenant in the caller's accessible-tenant set (§5 dual-path doctrine
+// via helper, never inlined). Returns
+//   { ok: true, row, accessible }                     on success
+//   { ok: false, status, body }                       on failure
+// so the caller responds with a byte-identical 403 for both "row not
+// found" and "wrong tenant" — preventing existence-disclosure across
+// tenants. The accessible-tenant list is returned alongside the row so
+// downstream defense-in-depth SELECTs can reuse it without a second
+// resolveAccessibleTenantIds() call. Mirrors loadFormAndAssertTenant
+// in routes/prereferralForms.js.
+async function loadReferralAndAssertTenant(referralId, user) {
+  const result = await pool.query(
+    'SELECT id, tenant_id, status, reviewing_admin_id FROM discipline_referrals WHERE id = $1',
+    [referralId]
+  );
+  if (result.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  const accessible = await resolveAccessibleTenantIds(user);
+  if (!accessible.includes(result.rows[0].tenant_id)) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  return { ok: true, row: result.rows[0], accessible };
 }
 
 // ============================================================
@@ -512,6 +540,138 @@ router.get('/queue/:tenantId', requireAuth, requireTenantStaffAccess, async (req
       'err=', error.message
     );
     res.status(500).json({ error: 'Failed to load queue' });
+  }
+});
+
+// ============================================================
+// GET /:id — single-referral detail for the admin review surface.
+//
+// Visibility gate (§4B/§5):
+//   - parent: 403 (existence-of-referral is FERPA-protected).
+//   - VIEW_ROLES: see the referral if its tenant is in the caller's
+//     accessible-tenant set. Cross-tenant probe and non-existent id
+//     collapse to a byte-identical 403 via loadReferralAndAssertTenant.
+//
+// D6 CASE-projection of staff_notes / admin_notes is kept even though
+// every current VIEW_ROLE resolves to "see notes" — if the role gate
+// ever widens, the SQL gate keeps notes off the wire for non-allowed
+// roles (defense in depth).
+//
+// Tenant scope: helper performs the §5 dual-path check; the SELECT
+// also filters dr.tenant_id = ANY($2::int[]) so a divergence between
+// the helper and the SELECT can't leak a row.
+//
+// PII discipline (§4B): error log carries referral_id (int) + user_id
+// (int) + err.message only. No body echo, no labels.
+// ============================================================
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `SELECT
+         dr.id,
+         dr.tenant_id,
+         dr.student_id,
+         dr.incident_date,
+         dr.incident_time,
+         dr.status,
+         dr.reviewing_admin_id,
+         dr.reviewed_at,
+         dr.time_out_of_instruction,
+         dr.created_at,
+         dr.updated_at,
+         s.first_name      AS student_first_name,
+         s.last_name       AS student_last_name,
+         s.grade           AS student_grade,
+         db.id             AS behavior_id,
+         db.label          AS behavior_label,
+         db.severity_level,
+         db.managed_by,
+         db.requires_subtype,
+         dl.id             AS location_id,
+         dl.label          AS location_label,
+         dm.id             AS motivation_id,
+         dm.label          AS motivation_label,
+         doi.id            AS others_involved_id,
+         doi.label         AS others_involved_label,
+         dhs.id            AS harassment_subtype_id,
+         dhs.label         AS harassment_subtype_label,
+         dws.id            AS weapon_subtype_id,
+         dws.label         AS weapon_subtype_label,
+         rs.full_name      AS referring_staff_name,
+         ra.full_name      AS reviewing_admin_name,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.staff_notes
+           WHEN $3::text = 'teacher' AND dr.referring_staff_id = $4::int THEN dr.staff_notes
+           ELSE NULL
+         END               AS staff_notes,
+         CASE
+           WHEN $3::text IN ('counselor','school_admin','district_admin','interventionist') THEN dr.admin_notes
+           ELSE NULL
+         END               AS admin_notes,
+         COALESCE(
+           (SELECT json_agg(json_build_object(
+              'id', dc.id,
+              'label', dc.label,
+              'is_restorative', dc.is_restorative,
+              'sort_order', dc.sort_order,
+              'assigned_at', drc.assigned_at
+            ) ORDER BY dc.sort_order, dc.label)
+              FROM discipline_referral_consequences drc
+              JOIN discipline_consequences dc
+                ON dc.id = drc.consequence_id AND dc.tenant_id = drc.tenant_id
+             WHERE drc.referral_id = dr.id AND drc.tenant_id = dr.tenant_id),
+           '[]'::json
+         )                 AS consequences
+       FROM discipline_referrals dr
+       JOIN students s
+         ON s.id = dr.student_id AND s.tenant_id = dr.tenant_id
+       JOIN discipline_behaviors db
+         ON db.id = dr.behavior_id AND db.tenant_id = dr.tenant_id
+       JOIN discipline_locations dl
+         ON dl.id = dr.location_id AND dl.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_motivations dm
+         ON dm.id = dr.motivation_id AND dm.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_others_involved doi
+         ON doi.id = dr.others_involved_id AND doi.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_harassment_subtypes dhs
+         ON dhs.id = dr.harassment_subtype_id AND dhs.tenant_id = dr.tenant_id
+       LEFT JOIN discipline_weapon_subtypes dws
+         ON dws.id = dr.weapon_subtype_id AND dws.tenant_id = dr.tenant_id
+       LEFT JOIN users rs ON rs.id = dr.referring_staff_id
+       LEFT JOIN users ra ON ra.id = dr.reviewing_admin_id
+       WHERE dr.id = $1 AND dr.tenant_id = ANY($2::int[])`,
+      [referralId, auth.accessible, req.user.role, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      // Helper passed but the defensive SELECT scope returned nothing —
+      // treat as not-authorized rather than 500 to preserve the
+      // existence-non-disclosure contract.
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:detail]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load referral' });
   }
 });
 
