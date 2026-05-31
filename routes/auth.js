@@ -202,18 +202,22 @@ router.get('/me', async (req, res) => {
 // ============================================
 // GET /me/schools — list of school-tenants the caller can access.
 //
-// Drives the school-picker on the discipline-referral admin queue (and is
-// shaped to serve future multi-tenant pickers). Returns id + name only —
-// no counts, no PII. Parents have no school picker and are refused.
+// Drives the school-picker on the discipline-referral admin queue.
+// Role gate is a positive allowlist that mirrors the discipline-referral
+// VIEW_ROLES set at routes/disciplineReferrals.js:44 — what the picker
+// offers must be reachable by the actual consumer (the queue endpoint).
+// Returns id + name only; no counts, no PII.
 //
 // Tenant scope is sourced exclusively from resolveAccessibleTenantIds so
 // what the picker offers is exactly what the data routes will accept
 // (§5 dual-path: legacy users → [tenant_id]; district users → user_school_access
 // membership). Helper-consume, never inline.
 // ============================================
+const ME_SCHOOLS_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
+
 router.get('/me/schools', requireAuth, async (req, res) => {
   try {
-    if (req.user.role === 'parent') {
+    if (!ME_SCHOOLS_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
     const accessible = await resolveAccessibleTenantIds(req.user);
