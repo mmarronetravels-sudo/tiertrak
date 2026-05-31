@@ -748,5 +748,70 @@ router.patch('/:id/claim', requireAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// PATCH /:id/release — admin releases a claimed referral back to the
+// queue without resolving.
+//
+// Transition: status 'under_review' → 'submitted'. From-state is
+// encoded in the SQL WHERE clause. Side effects: reviewing_admin_id
+// and reviewed_at are cleared so the row reads as "fresh in queue"
+// for the next admin.
+//
+// Any admin in ACT_ROLES can release — not just the admin who claimed
+// it. Per product call, this avoids a stuck state when the claiming
+// admin is out of office or has left the district. The audit trail
+// of who held the claim moves to the trigger / audit log layer if/when
+// one is added; the row itself is intentionally a current-state shape.
+//
+// admin_notes is NOT cleared on release. A release-back is reversible
+// state, and destroying draft notes silently is a footgun. The next
+// admin who claims can read or overwrite them.
+//
+// Gates + error model mirror /:id/claim.
+// ============================================================
+router.patch('/:id/release', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!ACT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const referralId = Number(req.params.id);
+    if (!isPositiveInt(referralId)) {
+      return res.status(400).json({ error: 'Invalid referral id' });
+    }
+
+    const auth = await loadReferralAndAssertTenant(referralId, req.user);
+    if (!auth.ok) return res.status(auth.status).json(auth.body);
+
+    const result = await pool.query(
+      `UPDATE discipline_referrals
+          SET status             = 'submitted',
+              reviewing_admin_id = NULL,
+              reviewed_at        = NULL,
+              updated_at         = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = ANY($2::int[])
+          AND status    = 'under_review'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, auth.accessible]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Referral is not in a releasable state' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:release]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to release referral' });
+  }
+});
+
 module.exports = router;
 module.exports.initializePool = initializePool;
