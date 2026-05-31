@@ -916,5 +916,162 @@ router.patch('/:id/admin-notes', requireAuth, async (req, res) => {
   }
 });
 
+// ============================================================
+// PATCH /:id/resolve — terminal transition: under_review → resolved.
+//
+// Attaches one or more consequence rows to the referral and optionally
+// updates admin_notes in the same transaction. reviewing_admin_id and
+// reviewed_at are intentionally preserved on resolve so the row carries
+// the audit trail of who handled it.
+//
+// Body contract:
+//   { consequence_ids: positive_int[], admin_notes?: string | null }
+//   - consequence_ids: REQUIRED. Non-empty array of positive ints; the
+//     handler dedupes via Set. Every id must resolve to an active
+//     consequence in the row's tenant; otherwise 400 with a generic
+//     "Invalid consequence(s)".
+//   - admin_notes: OPTIONAL. Absent key ⇒ preserve existing column.
+//     Present (incl. explicit null / empty-after-trim) ⇒ overwrite.
+//     parseAdminNotes enforces the 5000-char cap.
+//
+// Replace-set semantics: existing join rows are deleted and replaced
+// with the supplied set in the same transaction, so re-resolving (in
+// the unlikely case the row was ever bounced back, which the current
+// matrix forbids — resolved is terminal) yields a clean state. The
+// replacement is wrapped in a single tx; UPDATE-touched-0 ⇒ ROLLBACK
+// and 400, no half-written state.
+//
+// Gates: requireAuth + ACT_ROLES + loadReferralAndAssertTenant (403
+// collapse). SQL WHERE status = 'under_review' is the authoritative
+// from-state guard.
+//
+// PII discipline (§4B): admin_notes contents are never logged or
+// echoed in error bodies. Error log carries referral_id (int) +
+// user_id (int) + err.message only.
+// ============================================================
+router.patch('/:id/resolve', requireAuth, async (req, res) => {
+  if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+  if (!ACT_ROLES.includes(req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+
+  const referralId = Number(req.params.id);
+  if (!isPositiveInt(referralId)) {
+    return res.status(400).json({ error: 'Invalid referral id' });
+  }
+
+  const body = req.body || {};
+
+  if (!Array.isArray(body.consequence_ids)) {
+    return res.status(400).json({ error: 'consequence_ids must be an array' });
+  }
+  if (body.consequence_ids.length === 0) {
+    return res.status(400).json({ error: 'At least one consequence is required' });
+  }
+  if (!body.consequence_ids.every(isPositiveInt)) {
+    return res.status(400).json({ error: 'Invalid consequence_ids' });
+  }
+  const uniqueIds = Array.from(new Set(body.consequence_ids));
+
+  const hasNotesField = Object.prototype.hasOwnProperty.call(body, 'admin_notes');
+  let notesValue = null;
+  if (hasNotesField) {
+    const parsed = parseAdminNotes(body.admin_notes);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    notesValue = parsed.value;
+  }
+
+  // Tenant assertion (pre-tx, read-only). Failure modes here are wrapped
+  // in their own try so they don't leak into the tx rollback path.
+  let auth;
+  try {
+    auth = await loadReferralAndAssertTenant(referralId, req.user);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:resolve]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    return res.status(500).json({ error: 'Failed to resolve referral' });
+  }
+  if (!auth.ok) return res.status(auth.status).json(auth.body);
+  const tenantId = auth.row.tenant_id;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Validate every supplied consequence id: exists + active + same
+    // tenant as the row. Count-comparison collapses ids-not-found and
+    // ids-from-another-tenant to a single 400 (no existence disclosure).
+    const conqRes = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM discipline_consequences
+        WHERE id = ANY($1::int[])
+          AND tenant_id = $2
+          AND is_active = TRUE`,
+      [uniqueIds, tenantId]
+    );
+    if (conqRes.rows[0].n !== uniqueIds.length) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+      return res.status(400).json({ error: 'Invalid consequence(s)' });
+    }
+
+    // Replace-set: clear any existing join rows for this referral then
+    // bulk-insert the supplied set. Composite FK on the join enforces
+    // same-tenant at the schema layer.
+    await client.query(
+      `DELETE FROM discipline_referral_consequences
+        WHERE referral_id = $1 AND tenant_id = $2`,
+      [referralId, tenantId]
+    );
+
+    // Placeholder layout: $1 = referralId, $2 = tenantId, $3..$N = ids.
+    const valueRows = uniqueIds.map((_, i) => `($1, $${i + 3}, $2)`).join(', ');
+    await client.query(
+      `INSERT INTO discipline_referral_consequences (referral_id, consequence_id, tenant_id)
+       VALUES ${valueRows}`,
+      [referralId, tenantId, ...uniqueIds]
+    );
+
+    // Terminal status transition. admin_notes is overwritten only when
+    // the body carried the key; the CASE-on-bool keeps PATCH semantics
+    // (omitted field → preserve). reviewing_admin_id and reviewed_at
+    // are intentionally NOT touched — they carry the audit trail of who
+    // handled the referral.
+    const updateRes = await client.query(
+      `UPDATE discipline_referrals
+          SET status      = 'resolved',
+              admin_notes = CASE WHEN $4::bool THEN $3 ELSE admin_notes END,
+              updated_at  = CURRENT_TIMESTAMP
+        WHERE id        = $1
+          AND tenant_id = $2
+          AND status    = 'under_review'
+        RETURNING id, status, reviewing_admin_id, reviewed_at, updated_at`,
+      [referralId, tenantId, notesValue, hasNotesField]
+    );
+
+    if (updateRes.rows.length === 0) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+      return res.status(400).json({ error: 'Referral is not in a resolvable state' });
+    }
+
+    await client.query('COMMIT');
+    res.json(updateRes.rows[0]);
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
+    console.error(
+      '[disciplineReferrals:resolve]',
+      'referral_id=', req.params.id,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to resolve referral' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 module.exports.initializePool = initializePool;
