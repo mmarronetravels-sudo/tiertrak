@@ -23366,3 +23366,223 @@ NEXT SESSION SHOULD
   chore/apifetch-sweep PR if no higher-priority feature work is
   queued.
 ================================================================================
+
+================================================================================
+SESSION: 2026-05-31T18:19:49-07:00
+BRANCH:  chore/disciplineReferrals-input-hygiene
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/188 (merge commit 60948c4c8d48207389873d4290e815450d52e310; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Three server-side input-hygiene hardenings on POST /api/discipline-
+  referrals/ in routes/disciplineReferrals.js. Single commit, +49/-5,
+  one file. No schema change, no migration, no new dependency, no
+  behavior change on the happy path.
+
+  1. Future incident_date guard. Reject incident_date > today (UTC)
+     with a 400 before pool.connect(). Shape-regex (^YYYY-MM-DD$)
+     first so junk values fail without Date-parser coercion. Both
+     sides anchored to UTC midnight so the comparison aligns with
+     the DB's COALESCE(..., CURRENT_DATE) on a UTC-running Render
+     server. Same-day still passes (strict-> boundary).
+       400 "Invalid incident_date"            on bad shape / NaN
+       400 "incident_date cannot be in the future"  on future date
+       Missing/empty falls through unchanged (DB COALESCE).
+
+  2. staff_notes length cap. New constant STAFF_NOTES_MAX_LENGTH
+     = 5000 and helper parseStaffNotes(raw) mirroring the existing
+     parseAdminNotes helper. Replaces the inline trim+null block
+     at the POST / call site. Closes the staff_notes side of the
+     length-cap follow-up (admin_notes side already shipped in
+     PR #184). parseStaffNotes deliberately accepts `undefined` as
+     {ok, value:null} because POST / treats absent key as "no note"
+     (the L2+ required-note check at the path-fork still gates on
+     null/empty). parseAdminNotes deliberately rejects undefined
+     because its PATCH callers must distinguish key-absent (preserve
+     existing column) from key-present-null (explicit clear). The
+     divergence is captured in a comment above the helper.
+       400 "staff_notes must be a string"           on non-string
+       400 "staff_notes exceeds maximum length"     on >5000 trim
+
+  3. students lookup tenant tightening. Convert the same-tenant
+     check from "fetch row, compare tenant_id in JS" to a WHERE-
+     clause filter:
+       BEFORE: SELECT grade, tenant_id FROM students WHERE id = $1
+               then if (rows.length === 0 || rows[0].tenant_id !==
+               targetTenantId) → 403 FORBIDDEN_BODY
+       AFTER:  SELECT grade FROM students WHERE id = $1 AND
+               tenant_id = $2 then if (rows.length === 0) →
+               403 FORBIDDEN_BODY
+     $2 = targetTenantId from resolveAndBindTargetTenant (§5 helper-
+     consume, never inlined). Same 403 FORBIDDEN_BODY collapse;
+     not-found and cross-tenant remain byte-identical. Projection
+     narrowed to `grade` only. Mirrors the discipline_behaviors /
+     discipline_consequences lookups already in this same function.
+
+  Slight strictening on staff_notes happy path: a non-string body
+  value (e.g. number, object, array, boolean) now 400s instead of
+  silently coercing to null. Recorded as the FE-drift release note
+  in the PR body.
+
+FILES TOUCHED
+
+  +/- lines    File                                   Reason
+  ---------    -----------------------------------    --------------------------
+  +49/-5       routes/disciplineReferrals.js          STAFF_NOTES_MAX_LENGTH +
+                                                     parseStaffNotes helper;
+                                                     future-date guard block in
+                                                     POST /; students SELECT
+                                                     tightened to WHERE id=$1
+                                                     AND tenant_id=$2.
+
+  Total: 1 file, +49/-5 (per git diff --stat main...HEAD).
+
+MIGRATIONS RUN
+  None. No schema change in this PR.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor APPROVED (0 C / 0 H / 0 M / 0 L / 1 INFO).
+  agentId: afd84fdb53e7e9081. One changed query audited (students
+  lookup in POST /); zero added, zero removed. The change moves a
+  tenant equality check from JS-post-fetch to SQL-WHERE — §5 posture
+  STRENGTHENED. $2 confirmed bound to targetTenantId, which flows
+  from resolveAndBindTargetTenant → resolveAccessibleTenantIds
+  (middleware/resolveAccessibleTenantIds.js) — the §5 centralized
+  helper. No inline `users.district_id` branching introduced;
+  diff-wide grep for `district_id|user\.district` returns zero hits.
+  Existence-disclosure still collapses: cross-tenant student_id and
+  non-existent student_id both produce rows.length === 0 → identical
+  403 FORBIDDEN_BODY. ROLLBACK swallow (S87 5a3cfd1 pattern) preserved
+  on the cross-tenant 403 path with attribution comment intact.
+  Downstream INSERT into discipline_referrals + FK chain to behavior/
+  consequence + join-row INSERT all still bind targetTenantId — no
+  parameter-array shape shifted.
+
+  INFO (non-blocking) = style consistency. The new students SELECT
+  is single-line; other tenant-scoped SELECTs in this file are
+  multi-line template strings. Functionally identical, zero security
+  impact. Optional cosmetic reformat in a later chore.
+
+PRIVACY REVIEW (Section 4B)
+  No new PII fields read, written, logged, or transmitted. All three
+  changes are input validation on an existing write surface.
+  Error responses: 5 new error paths, all generic static strings.
+  No body echo, no PII reflection, no existence-disclosure leak.
+  console.error lines: zero new added.
+  PII-adjacent column (staff_notes): now subject to a 5000-char cap
+  at the route layer (no schema change), trim → null on empty.
+
+VERIFICATION
+  node --check routes/disciplineReferrals.js — OK.
+  Backend test suite: absent (Followup #73). npm test returns the
+    placeholder "Error: no test specified" and exits non-zero.
+  Backend lint: not configured (Followup #74). npm run lint errors
+    with "Missing script: lint".
+  Pattern-matching against in-file precedents:
+    parseAdminNotes (cap-helper shape — mirror with documented
+      undefined-handling divergence)
+    discipline_behaviors / discipline_consequences lookups (WHERE-
+      clause tenant filter shape — mirror)
+    FORBIDDEN_BODY constant + S87 ROLLBACK swallow (response shape
+      + tx hygiene — preserved)
+  §4B grep on the diff (emails / tenant slugs / person names / ID
+    literals / phone-SSN / known sandbox slugs):
+    zero hits across all five generic patterns; sandbox-slug second-
+    pass also clean.
+  merge-sha verification: MATCH for PR #188
+    feature tip:        480af2b96caed5f97187513244d3a05408597e00
+    merge second-parent: 480af2b96caed5f97187513244d3a05408597e00
+    merge commit:       60948c4c8d48207389873d4290e815450d52e310
+
+  Two reviewer subagents ran against the branch diff vs main — both
+  APPROVED with zero blocking findings:
+    tenant-isolation-auditor: APPROVED (agentId afd84fdb53e7e9081)
+    security-reviewer:        APPROVED (agentId ac21abd952eb38673)
+
+  Convergent observation: both reviewers independently audited the
+  same diff and arrived at 0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW.
+  Per the convergent-grep-verification memory pattern, this
+  convergence is the load-bearing signal — stronger than either
+  pass alone.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #188 commit OIDs at merge time:
+  480af2b96caed5f97187513244d3a05408597e00
+
+OPEN ITEMS / FOLLOW-UPS
+  INFO-1 (tenant-isolation, NEW low-priority this session) — single-
+    line vs multi-line SQL style consistency on the new students
+    SELECT. Optional cosmetic reformat in a later chore. Non-blocking.
+
+  INFO-2 (security, NEW info this session) — Number.isNaN(getTime())
+    branch reachability after the shape-regex pass: reachable but
+    narrow. Catches calendar-impossible dates like 2026-02-30,
+    2026-13-01, 2026-04-31. Belt-and-suspenders is correct;
+    reviewer recommends keeping as-is.
+
+  INFO-3 (security, NEW info this session) — FE-drift watch. The
+    staff_notes strictening (non-string body → 400 instead of silent
+    coerce to null) is now in the PR body as a QA release note.
+    Any FE consumer that was silently dropping non-string values
+    will now surface as a 400. Watch QA for fallout; risk is low
+    because every known FE call site sends a string or omits the
+    key.
+
+  Followup #73 (carried) — backend test suite absent. Still the
+    only safety-net gap on PRs of this shape; pattern-matching
+    against precedents + 2 reviewer subagents are the pre-merge
+    signal.
+  Followup #74 (carried) — backend lint not configured. Sibling to
+    #73. Recommend ESLint + lint:backend script + pre-commit/CI
+    gate.
+  Followup #72 (carried) — bare-fetch sweep across App.jsx +
+    AppContext + modals remains scoped to a future
+    chore/apifetch-sweep PR.
+  Followup #94 (carried, STANDS) — scripts/ops/ → .gitignore.
+    Three untracked files on the tree this session (one PDF +
+    two ops .sql) — explicitly NOT staged, NOT committed, NOT
+    touched.
+
+  NEW for next session (FLAG, do not fix this session) —
+    Pre-existing §4B precedent issue: prior activities.txt entries
+    in committed history appear to reference a real district name
+    in plain text. Surfaced incidentally during this session's
+    §4B audit when the generic slug grep needed to be tightened
+    for the current entry. Operator wants this scoped deliberately
+    next session — do not attempt remediation in-flight. Likely
+    shape: read-only audit pass over activities.txt for slug/name
+    literals against the §4B catalog, then a decision on whether
+    to redact-in-place (git history rewrite — destructive, requires
+    operator verb) or document-and-accept (single PRIVACY_REVIEW.md
+    entry acknowledging the precedent + the s90 follow-up's role
+    in preventing recurrence).
+
+ADVANCED / CLOSED THIS SESSION
+  - staff_notes length cap follow-up (banked from PR #180 reviewer
+    feedback, partially advanced in PR #184 admin_notes side):
+    NOW FULLY CLOSED. The 5000-char cap applies at both POST
+    create-time (this PR) and PATCH /admin-notes / PATCH /resolve
+    update-time (PR #184).
+  - Future-incident_date guard follow-up (banked S88, route-layer
+    or CHECK-constraint reject incident_date > CURRENT_DATE; FE
+    date-picker is not the trust boundary):
+    NOW CLOSED at the route layer. CHECK-constraint variant remains
+    an option for defense-in-depth in a future migration if the
+    product team wants belt-and-suspenders.
+  - students-lookup tightening follow-up (banked S88, tenant-
+    isolation-auditor LOW on PR #2; change post-fetch equality
+    check to WHERE id=$1 AND tenant_id=$2):
+    NOW CLOSED.
+
+NEXT SESSION SHOULD
+  The discipline-referral feature family is now four PRs in
+  (#180, #182, #184, #186) plus this hardening PR (#188). The
+  required post-merge prod smoke from S111 (vocab payload-shape
+  contract that localhost cannot verify against Vercel edge
+  behavior) is still the gating item before declaring the family
+  done. After that smoke, the natural next chunk is revisiting
+  Followup #72 (bare-fetch sweep) as its own chore/apifetch-sweep
+  PR — no higher-priority feature work is currently queued.
+================================================================================
