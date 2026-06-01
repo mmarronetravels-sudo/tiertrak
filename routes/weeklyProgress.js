@@ -10,6 +10,7 @@ const {
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { ELEVATED_ROLES } = require('../constants/roles');
+const { applyElevatedViewerGate } = require('../middleware/canAccessStudent');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -156,10 +157,14 @@ router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (r
     let query;
     let params;
 
-    // Elevated-role users (constants/roles.js ELEVATED_ROLES) or users
-    // with school_wide_access see every active intervention in the tenant.
-    // Mirrors the tenant-wide branch at routes/students.js.
-    if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
+    // Elevated-read predicate, flag-gated. Legacy elevation =
+    // ELEVATED_ROLES OR school_wide_access. Strict mode also accepts an
+    // mtss_coordinators row for this tenant. Dark mode emits
+    // [access-flip:would-widen] telemetry for teachers whose access the
+    // strict path would have widened.
+    const legacyElevated = ELEVATED_ROLES.includes(userRole) || schoolWideAccess;
+    const { elevated } = await applyElevatedViewerGate(req.user, pathTenantId, { legacyElevated });
+    if (elevated) {
       query = `
         SELECT
           si.id,

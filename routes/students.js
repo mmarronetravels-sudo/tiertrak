@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 require('dotenv').config();
 const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { applyElevatedViewerGate } = require('../middleware/canAccessStudent');
 const { ELEVATED_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
@@ -138,9 +139,14 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     let query;
     let params;
 
-    // Elevated-role users (constants/roles.js ELEVATED_ROLES) or users
-    // with school_wide_access see all students in the tenant.
-    if (ELEVATED_ROLES.includes(userRole) || schoolWideAccess) {
+    // Elevated-read predicate, flag-gated.
+    // Legacy elevation = ELEVATED_ROLES OR school_wide_access. Strict mode
+    // also accepts an mtss_coordinators row for this tenant. Dark mode
+    // emits [access-flip:would-widen] telemetry for teachers whose access
+    // the strict path would have widened.
+    const legacyElevated = ELEVATED_ROLES.includes(userRole) || schoolWideAccess;
+    const { elevated } = await applyElevatedViewerGate(req.user, pathTenantId, { legacyElevated });
+    if (elevated) {
       query = `
         SELECT s.*, u.full_name as teacher_name
         FROM students s
