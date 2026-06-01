@@ -9,6 +9,8 @@ const crypto = require('crypto');
 require('dotenv').config();
 const { setCsrfCookie, clearCsrfCookie } = require('../middleware/csrfProtection');
 const { authLoginCompoundLimiter } = require('../middleware/rateLimiters');
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -194,6 +196,42 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'Token expired' });
     }
     res.status(500).json({ error: 'Failed to get user info.' });
+  }
+});
+
+// ============================================
+// GET /me/schools — list of school-tenants the caller can access.
+//
+// Drives the school-picker on the discipline-referral admin queue.
+// Role gate is a positive allowlist that mirrors the discipline-referral
+// VIEW_ROLES set at routes/disciplineReferrals.js:44 — what the picker
+// offers must be reachable by the actual consumer (the queue endpoint).
+// Returns id + name only; no counts, no PII.
+//
+// Tenant scope is sourced exclusively from resolveAccessibleTenantIds so
+// what the picker offers is exactly what the data routes will accept
+// (§5 dual-path: legacy users → [tenant_id]; district users → user_school_access
+// membership). Helper-consume, never inline.
+// ============================================
+const ME_SCHOOLS_ROLES = ['school_admin', 'district_admin', 'counselor', 'interventionist'];
+
+router.get('/me/schools', requireAuth, async (req, res) => {
+  try {
+    if (!ME_SCHOOLS_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (accessible.length === 0) {
+      return res.json([]);
+    }
+    const result = await pool.query(
+      `SELECT id, name FROM tenants WHERE id = ANY($1::int[]) ORDER BY name`,
+      [accessible]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('[auth:meSchools]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Failed to load schools' });
   }
 });
 

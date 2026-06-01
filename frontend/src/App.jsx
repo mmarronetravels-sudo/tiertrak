@@ -12,6 +12,9 @@ import ReportModal from './components/Modals/ReportModal';
 import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
 import DisciplineReferralModal from './components/Modals/DisciplineReferralModal';
+import DisciplineReferralQueue from './components/DisciplineReferralQueue';
+import DisciplineReferralDetail from './components/DisciplineReferralDetail';
+import DisciplineReferralResolveModal from './components/DisciplineReferralResolveModal';
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
 import { getCurrentWeekStart, formatWeekOf, getRatingLabel, getRatingColor, getStatusColor } from './utils/helpers';
 import { apiFetch } from './utils/apiFetch';
@@ -232,6 +235,17 @@ const [screenerLoading, setScreenerLoading] = useState(false);
   const [interventionLogs, setInterventionLogs] = useState([]);
   const [referralHistory, setReferralHistory] = useState([]);
   const [referralHistoryScope, setReferralHistoryScope] = useState('current');
+  // Discipline admin-review surface state. selectedReferralId drives the
+  // detail view; selectedQueueTenantId is the school-tenant the operator
+  // clicked into from (carried for forward use — future "back to this
+  // school's queue" memory). referralDetailRefreshToken is incremented
+  // after a resolve so the detail page refetches the terminal state +
+  // consequence list. resolveModalReferral holds the detail object the
+  // modal needs (id, tenant_id, admin_notes); null when the modal is closed.
+  const [selectedReferralId, setSelectedReferralId] = useState(null);
+  const [selectedQueueTenantId, setSelectedQueueTenantId] = useState(null);
+  const [referralDetailRefreshToken, setReferralDetailRefreshToken] = useState(0);
+  const [resolveModalReferral, setResolveModalReferral] = useState(null);
   const [logOptions, setLogOptions] = useState({ timeOfDay: [], location: [] });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTier, setFilterTier] = useState('2_3');
@@ -463,6 +477,19 @@ fetchLogOptions();
     fetchTier1Dashboard();
   }
 }, [view, user?.tenant_id]);
+
+  // Clear discipline admin-review state when navigating away from the
+  // two discipline views. Keeps stale selectedReferralId from leaking
+  // into a future visit and ensures the resolve modal can't survive a
+  // navigation. Does NOT trigger on view changes within the discipline
+  // surface (queue <-> detail), so those transitions remain instant.
+  useEffect(() => {
+    if (view !== 'discipline-queue' && view !== 'discipline-detail') {
+      setSelectedReferralId(null);
+      setSelectedQueueTenantId(null);
+      setResolveModalReferral(null);
+    }
+  }, [view]);
 
     // Fetch Tier 1 Self-Assessment dashboard summary. Uses the list
     // endpoint with default filters (non-archived only, sorted by
@@ -1313,6 +1340,38 @@ setStudents([]);
 setSelectedStudent(null);
 setInterventionLogs([]);
 setReferralHistory([]);
+// Discipline admin-review state must clear on logout so a subsequent
+// sign-in (different user) never inherits stale ids or open modals.
+setSelectedReferralId(null);
+setSelectedQueueTenantId(null);
+setResolveModalReferral(null);
+setReferralDetailRefreshToken(0);
+};
+
+// Positive role allowlist for the top-nav Discipline button and the two
+// discipline views. Hidden for parent and teacher — UI convenience only;
+// the server still enforces VIEW_ROLES on every queue/detail endpoint.
+const canViewDisciplineReview = !!user && ['school_admin','district_admin','counselor','interventionist'].includes(user.role);
+
+// Discipline admin-review handlers.
+const openDisciplineReferral = (referralId, tenantId) => {
+  setSelectedReferralId(referralId);
+  setSelectedQueueTenantId(tenantId);
+  setView('discipline-detail');
+};
+const backToDisciplineQueue = () => {
+  setSelectedReferralId(null);
+  setView('discipline-queue');
+};
+const openResolveModal = (detail) => {
+  setResolveModalReferral(detail);
+};
+const closeResolveModal = () => {
+  setResolveModalReferral(null);
+};
+const handleReferralResolved = () => {
+  setResolveModalReferral(null);
+  setReferralDetailRefreshToken((t) => t + 1);
 };
 
   // Add intervention
@@ -7068,6 +7127,18 @@ if (isParent) {
                 >
                   Resources
                 </button>
+                {canViewDisciplineReview && (
+                  <button
+                    onClick={() => setView('discipline-queue')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      view === 'discipline-queue' || view === 'discipline-detail'
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Discipline
+                  </button>
+                )}
                 {isDistrictAdmin && (
                   <button
                     onClick={() => setView('district')}
@@ -7123,6 +7194,23 @@ if (isParent) {
         {view === 'admin' && <AdminView />}
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
+        {view === 'discipline-queue' && canViewDisciplineReview && (
+          <DisciplineReferralQueue
+            user={user}
+            API_URL={API_URL}
+            onOpenReferral={openDisciplineReferral}
+          />
+        )}
+        {view === 'discipline-detail' && canViewDisciplineReview && selectedReferralId && (
+          <DisciplineReferralDetail
+            user={user}
+            API_URL={API_URL}
+            referralId={selectedReferralId}
+            refreshToken={referralDetailRefreshToken}
+            onBack={backToDisciplineQueue}
+            onOpenResolve={openResolveModal}
+          />
+        )}
      </main>
      {/* Add Custom Intervention Modal */}
       {showAddTemplate && (
@@ -7337,6 +7425,19 @@ if (isParent) {
             user={user}
             selectedStudent={disciplineReferralStudent}
             API_URL={API_URL}
+          />
+        )}
+
+        {/* Discipline Referral Resolve Modal — atomic PATCH /:id/resolve.
+            Mounted only when a detail object is in flight; closing the
+            modal (cancel/X/backdrop) sets resolveModalReferral to null.
+            On success the parent bumps refreshToken so detail refetches. */}
+        {resolveModalReferral && (
+          <DisciplineReferralResolveModal
+            API_URL={API_URL}
+            referral={resolveModalReferral}
+            onClose={closeResolveModal}
+            onResolved={handleReferralResolved}
           />
         )}
 
