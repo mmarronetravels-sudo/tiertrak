@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
+const { applyStudentAccessGate } = require('./canAccessStudent');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -64,13 +65,14 @@ const requireAuth = async (req, res, next) => {
 // users see user_school_access membership. Parent: row in parent_student_links.
 async function resolveStudentAccess(userRow, studentId) {
   const studentResult = await pool.query(
-    'SELECT id, tenant_id FROM students WHERE id = $1',
+    'SELECT id, tenant_id, tier FROM students WHERE id = $1',
     [studentId]
   );
   if (studentResult.rows.length === 0) {
     return { ok: false, studentTenantId: null };
   }
-  const studentTenantId = studentResult.rows[0].tenant_id;
+  const studentRow = studentResult.rows[0];
+  const studentTenantId = studentRow.tenant_id;
 
   if (userRow.role === 'parent') {
     const linkResult = await pool.query(
@@ -82,8 +84,11 @@ async function resolveStudentAccess(userRow, studentId) {
     return { ok: linkResult.rows.length > 0, studentTenantId };
   }
 
+  // Staff branch: flag-gated through applyStudentAccessGate.
   const accessible = await resolveAccessibleTenantIds(userRow);
-  return { ok: accessible.includes(studentTenantId), studentTenantId };
+  const legacyAllowed = accessible.includes(studentTenantId);
+  const gate = await applyStudentAccessGate(userRow, studentRow, { legacyAllowed });
+  return { ok: gate.decision === 'allow', studentTenantId };
 }
 
 // GET /student/:studentId — list documents for a student.

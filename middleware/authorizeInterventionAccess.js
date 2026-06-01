@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 const { mutationUserLimiter } = require('./rateLimiters');
 const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
+const { applyStudentAccessGate } = require('./canAccessStudent');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -51,7 +52,7 @@ const requireAuth = async (req, res, next) => {
 // requireWriteAccessByBody and requireWriteAccessByLogId.
 async function authorizeByInterventionId(req, res, studentInterventionId) {
   const interventionResult = await pool.query(
-    `SELECT si.id, si.student_id, s.tenant_id
+    `SELECT si.id, si.student_id, s.tenant_id, s.tier
      FROM student_interventions si
      JOIN students s ON s.id = si.student_id
      WHERE si.id = $1`,
@@ -60,8 +61,11 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
   if (interventionResult.rows.length === 0) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
-  const { student_id: interventionStudentId, tenant_id: interventionTenantId } =
-    interventionResult.rows[0];
+  const {
+    student_id: interventionStudentId,
+    tenant_id: interventionTenantId,
+    tier: interventionStudentTier,
+  } = interventionResult.rows[0];
 
   if (req.user.role === 'parent') {
     const assignmentResult = await pool.query(
@@ -77,8 +81,19 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
   } else {
+    // Staff branch: flag-gated through applyStudentAccessGate so the new
+    // canonical predicate can replace the legacy tenant-only check in
+    // strict mode, while dark mode emits would-block telemetry without
+    // changing the decision.
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(interventionTenantId)) {
+    const legacyAllowed = accessible.includes(interventionTenantId);
+    const studentRow = {
+      id: interventionStudentId,
+      tenant_id: interventionTenantId,
+      tier: interventionStudentTier,
+    };
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
   }
@@ -96,7 +111,7 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
 // required), staff gate uses tenant match. Used by requireInterventionReadAccess.
 async function authorizeReadByInterventionId(req, res, studentInterventionId) {
   const interventionResult = await pool.query(
-    `SELECT si.id, si.student_id, s.tenant_id
+    `SELECT si.id, si.student_id, s.tenant_id, s.tier
      FROM student_interventions si
      JOIN students s ON s.id = si.student_id
      WHERE si.id = $1`,
@@ -105,8 +120,11 @@ async function authorizeReadByInterventionId(req, res, studentInterventionId) {
   if (interventionResult.rows.length === 0) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
-  const { student_id: interventionStudentId, tenant_id: interventionTenantId } =
-    interventionResult.rows[0];
+  const {
+    student_id: interventionStudentId,
+    tenant_id: interventionTenantId,
+    tier: interventionStudentTier,
+  } = interventionResult.rows[0];
 
   if (req.user.role === 'parent') {
     const linkResult = await pool.query(
@@ -119,8 +137,16 @@ async function authorizeReadByInterventionId(req, res, studentInterventionId) {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
   } else {
+    // Staff branch: flag-gated through applyStudentAccessGate.
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(interventionTenantId)) {
+    const legacyAllowed = accessible.includes(interventionTenantId);
+    const studentRow = {
+      id: interventionStudentId,
+      tenant_id: interventionTenantId,
+      tier: interventionStudentTier,
+    };
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
   }
@@ -238,13 +264,13 @@ async function requireStudentReadAccess(req, res, next) {
     }
 
     const studentResult = await pool.query(
-      'SELECT id, tenant_id FROM students WHERE id = $1',
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
       [studentId]
     );
     if (studentResult.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
-    const studentTenantId = studentResult.rows[0].tenant_id;
+    const studentRow = studentResult.rows[0];
 
     if (req.user.role === 'parent') {
       const linkResult = await pool.query(
@@ -257,13 +283,20 @@ async function requireStudentReadAccess(req, res, next) {
         return res.status(403).json(FORBIDDEN_BODY);
       }
     } else {
+      // Staff branch: flag-gated through applyStudentAccessGate.
       const accessible = await resolveAccessibleTenantIds(req.user);
-      if (!accessible.includes(studentTenantId)) {
+      const legacyAllowed = accessible.includes(studentRow.tenant_id);
+      const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+      if (gate.decision === 'deny') {
         return res.status(403).json(FORBIDDEN_BODY);
       }
     }
 
-    req.student = { id: Number(studentId), tenant_id: studentTenantId };
+    req.student = {
+      id: Number(studentId),
+      tenant_id: studentRow.tenant_id,
+      tier: studentRow.tier,
+    };
     return next();
   } catch (err) {
     console.error('[requireStudentReadAccess]', err.message);
