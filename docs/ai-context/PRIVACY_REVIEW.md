@@ -165,8 +165,89 @@ Migration provenance:
 - Migration 037 — `discipline_behaviors.requires_subtype` column. Structural alternative to FE label-matching for the conditional harassment/weapon subtype gate. Conservative backfill: only the two canonical seeded rows tagged.
 
 Phase 2+ deferred surfaces (NOT yet landed; will need privacy review when added):
-- SWIS-style reports — six aggregate cuts per spec §7. Must aggregate WITHOUT exposing notes content in cross-tenant or cross-permission contexts. Equity / disproportionality reports are deferred entirely to a separate phase per spec D4.
 - Parent / guardian notifications, appeals, restraint/seclusion handling, bulk historical import — out of v1 entirely per spec §2.
+- Equity / disproportionality reports — deferred to a separate phase per spec D4. Re-evaluate small-cell aggregation rules at design time before these surfaces ship.
+
+(SWIS-style report cuts from spec §7 — five total — are now LANDED. See "Discipline reports — GET surfaces" subsection below.)
+
+### Discipline reports — GET surfaces (FERPA)
+
+The `/api/discipline-reports/*` router (`routes/disciplineReports.js`) exposes five GET cuts over `discipline_referrals` for in-school review. All five are gated by `requireAuth + requireTenantStaffAccess` (per §5 dual-path doctrine, helper-consumed); tenant scope is bound at `WHERE dr.tenant_id = $1` on every query. Two distinct role-gate tiers split the catalog by privacy posture: an aggregate tier and a per-person tier.
+
+**Tier 1 — Aggregate cuts (no PII).** Three GET surfaces: `/by-location/:tenantId`, `/by-incident-type/:tenantId`, `/by-time-of-day/:tenantId`. Gated by `VIEW_ROLES = ['school_admin','district_admin','counselor','interventionist']`; teacher + parent return 403. Projections are tenant-customizable vocab labels + integer counts only — `location_label`, `behavior_label + severity_level`, and `hour` respectively. No student or staff identifier of any kind reaches any of these responses. Notes columns (`staff_notes`, `admin_notes`) are never projected on the reports surface; the D6 visibility contract on the read-from-student-record path is the canonical place for notes. FE consumer (`frontend/src/components/DisciplineReports.jsx`) renders these as three cards in the "Aggregate cuts" section; `cache: 'no-store'` on every GET so granular counts don't sit in the browser disk cache.
+
+**Tier 2 — Per-person cuts (display-name projections).** Two GET surfaces, each documented as a worked application of the granter-name precedent in the "Display-name projections under the granter-name precedent" subsection below: `/repeat-offenders/:tenantId` (student display names; same `VIEW_ROLES` gate as Tier 1) and `/by-staff/:tenantId` (staff display names; NARROWER `STAFF_VIEW_ROLES = ['school_admin','district_admin']` per product decision R5). Both projections are display-name-only; both pass the four-point granter-name precedent. The FE renders these as two cards in a separate "Per-person cuts" section so the privacy posture difference is visible at the layout level; the by-staff card is conditionally rendered for admins only via `canViewStaffReport` (UI gate is UX-only — server is the boundary). Each card's empty-state caption is a static literal with no interpolation of identity ("No students with N+ referrals in this range." / "No referrals submitted by staff in this range.").
+
+Cross-cutting notes (apply to all five cuts):
+
+- **No PII in logs / error bodies**: every handler's `console.error` carries `tenant_id` (integer, from path), `user_id` (integer, from `req.user.id`), and `err.message` only. No student/staff identifier, no body echo. Generic-string error responses ("Invalid tenant id", "Invalid min_count", "Invalid status filter", "Failed to load report").
+- **Input validation**: `parseDateParam` shape-regex on `start_date`/`end_date`; allowlist on `status`; `parseInt + isPositiveInt + REPEAT_OFFENDERS_MAX_MIN_COUNT=1000` cap on `min_count`. Junk input returns 400 with a generic message; raw input is never echoed in the response.
+- **Tenant scoping**: `requireTenantStaffAccess` enforces accessible-set membership BEFORE the role check fires, and the role check fires BEFORE any DB read — out-of-scope callers consume zero PII via this surface.
+- **URL convention**: every endpoint terminates in the `:tenantId` path segment with no trailing slash, mirroring the disciplineReferrals/queue convention and avoiding the PR #183 Vercel-rewrite / 405 edge.
+
+Migration provenance:
+- Wave-1 aggregate cuts landed in PR #190 (`feat/discipline-referral-reports`).
+- Wave-2 per-person cuts landed in PR #197 (`feat/discipline-reports-wave2`).
+- Closes F-DOC-1 / catalog-gap follow-up flagged by privacy-reviewer on PR #197.
+
+Phase 2+ deferred surfaces (NOT yet landed; will need privacy review when added):
+- Teacher caseload-scoped repeat-offenders — tied to enabling the access-flip strict mode (PR #195's `STRICT_STUDENT_ACCESS_PREDICATE=true`). Deferred until that flag is on in prod.
+- Equity / disproportionality cuts (spec D4) — deferred entirely per the discipline-referral section above.
+
+### MTSS Coordinator entitlement records
+
+The `mtss_coordinators` + `mtss_coordinators_audit` pair (Migrations 038 / 039 / 040) implements the per-(user, school_tenant_id) coordinator designation introduced in PR #191. The data shape mirrors the access-control audit pair almost exactly: integer-key entitlement table + append-only audit table with NO foreign keys (FERPA §99.32 retention), AFTER DELETE trigger writing `'cascade_user_delete'` by default, two transaction-local GUCs (`app.actor_user_id`, `app.audit_action`) for explicit-revoke attribution. The trigger function `mtss_coordinators_audit_cascade` runs as plain `LANGUAGE plpgsql` with NO `SECURITY DEFINER`; M040 evolved it from the M031-minimal hardcoded shape to the M033-mature GUC-driven shape in a single CREATE OR REPLACE FUNCTION step (greenfield audit table; combined evolution rather than the historical M032+M033 split that user_school_access_audit went through).
+
+Per-row columns are integer identifiers only; this table itself is NOT a name-projecting surface. The grant/revoke API at `/api/mtss-coordinators` (`POST /` + `DELETE /users/:userId/schools/:schoolTenantId`, PR #192) accepts only integer ids in body/path and returns only integer ids + status messages. Writers (PR #192) and destroyers (PR #192 + the M038 ON DELETE CASCADE triggered from DELETE-FROM-users) both comply with the two-GUC writers contract documented for `user_school_access_audit` above; M040's header re-states the contract verbatim so audit-table evolution and writer-site evolution stay in sync.
+
+The single name-projecting surface is `GET /api/mtss-coordinators/by-school/:tenantId` (PR #193), which surfaces the granter's `users.full_name` via LEFT JOIN to support the admin-UI display caption "Designated by [granter] on [date]". This surface is a worked application of the granter-name precedent below.
+
+Migration provenance:
+- Migration 038 — `mtss_coordinators` table foundation (PR #191; mirrors M028 composite-FK doctrine).
+- Migration 039 — `mtss_coordinators_audit` + AFTER DELETE trigger (PR #191; mirrors M031 forensic-grade append-only doctrine).
+- Migration 040 — trigger function evolution to GUC-driven action + actor capture (PR #192 prerequisite; M032+M033 doctrines combined in one CREATE OR REPLACE FUNCTION step).
+- PR #193 — admin UI for grant/revoke; established the granter-name display-projection precedent.
+- Closes F-INFO-1 / doc-only follow-up flagged by privacy-reviewer on PR #193.
+
+### Display-name projections under the granter-name precedent
+
+A doctrinal subsection: how this codebase reasons about response projections that surface a person's `full_name` (or equivalent display name). Established in PR #193's privacy-reviewer ruling on the MTSS Coordinator UI; applied verbatim on the discipline-reports wave-2 cuts in PR #197.
+
+**The four-point test.** A display-name projection is acceptable under §4B if and only if it satisfies all four of:
+
+(a) **Audit-subject purpose.** The named person IS the audit subject the surface exists to surface — granter, reviewer, author, designee. Concealing the name would defeat the feature's stated purpose. (Counter-test: if the surface could function equally well with only an integer id, the name projection is unjustified.)
+
+(b) **Repo precedent.** The same projection shape already exists on an analogous surface with the same gating posture, so the new projection is incremental rather than novel. Cite the precedent file:line.
+
+(c) **Strict minimum projection.** The name field is the ONLY identity field in the response. No email, no role, no district_id, no DOB, no external_id, no employment data, no grade, no enrollment status, no incident notes. The reader gets exactly what the audit-subject purpose requires and nothing else.
+
+(d) **Gated recipient.** The endpoint enforces a role/scope gate in the server handler that restricts visibility to a small allowlist (admin, counselor, interventionist, etc., as appropriate). The FE role gate is UX-only; the server is the trust boundary. Document the allowlist and the in-handler check site.
+
+**Application precedent and worked rulings.**
+
+**Ruling 1 — `granter_full_name` on `GET /api/mtss-coordinators/by-school/:tenantId` (PR #193).**
+
+- (a) Audit-subject purpose: the granter IS the audit subject the toggle surface exists to display ("Designated by [granter] on [date]" caption). Concealing the granter defeats the feature.
+- (b) Repo precedent: `routes/disciplineReferrals.js` line 597 already projects `ra.full_name AS reviewing_admin_name` (the reviewing admin of a referral) under the same gating posture.
+- (c) Strict minimum projection: `granter.full_name` is the ONLY identity field in the response. The projection at `routes/mtssCoordinators.js` GET `/by-school/:tenantId` returns `user_id, school_tenant_id, district_id, granted_by, granted_at, granter_full_name` — integer keys + timestamp + the one name field. No email, no role, no district_id of the granter, no other identity field.
+- (d) Gated recipient: the GET surface enforces `VIEW_ROLES = ['school_admin','district_admin']` in-handler before any DB read (`routes/mtssCoordinators.js` GET handler). Counselor / interventionist / teacher / parent return 403 server-side.
+- Reader contract: visible only to school-admin / district-admin of the building. A district-admin from a different district granting a coordinator designation in this building may legitimately appear in the response — that's the audit-subject purpose; the granter's identity is the whole point of displaying the row at all.
+
+**Ruling 2 — `student_first_name + student_last_name` on `GET /api/discipline-reports/repeat-offenders/:tenantId` (PR #197).**
+
+- (a) Audit-subject purpose: this cut exists to surface the specific students requiring intervention review (the repeat-referral cohort). Without names the surface devolves into "you have 4 students with 3+ referrals" — no actionable signal for the intervention team.
+- (b) Repo precedent: `routes/disciplineReferrals.js` lines 594-598 already project `student_first_name + student_last_name` (the referred student) on the admin review queue under the same gating posture. The wave-2 projection is a strict subset of the existing queue projection.
+- (c) Strict minimum projection: `student_first_name + student_last_name` are the ONLY identity fields. Response shape is `student_id, student_first_name, student_last_name, referral_count` — integer keys + the two name fields + the count. No DOB, no `external_id` (the H10 SIS-identifier surface remains deferred), no email, no grade, no enrollment status, no notes content.
+- (d) Gated recipient: the GET surface enforces `VIEW_ROLES = ['school_admin','district_admin','counselor','interventionist']` in-handler before any DB read. Teacher / parent return 403 server-side. (Same gate as the wave-1 aggregate cuts.)
+
+**Ruling 3 — `staff_full_name` on `GET /api/discipline-reports/by-staff/:tenantId` (PR #197).**
+
+- (a) Audit-subject purpose: this cut exists to surface per-staff referral activity for school-leadership review. The named staff IS the activity subject; an anonymous "5 staff submitted 17 referrals" surface gives leadership nothing actionable.
+- (b) Repo precedent: `routes/disciplineReferrals.js` line 277 already projects `ru.full_name AS referring_staff_name` (the referring staff member) on the per-student referral-history view under a similar gating posture. The wave-2 projection mirrors the same field with tighter recipient gating.
+- (c) Strict minimum projection: `staff_full_name` is the ONLY identity field. Response shape is `staff_id, staff_full_name, referral_count` — integer key + the name + the count. No email, no role, no district_id, no employment data, no home tenant_id (a staff member whose home tenant changed since authoring still appears under the audit-identity semantics; the projection deliberately doesn't expose where they "are now").
+- (d) Gated recipient: the GET surface enforces NARROWER `STAFF_VIEW_ROLES = ['school_admin','district_admin']` in-handler before any DB read — explicitly distinct from `VIEW_ROLES` and from the wave-1 cuts. Counselor / interventionist (who DO see the four other cuts) are 403'd here per product decision R5: staff-performance data restricts to administrators. The FE component conditionally renders the by-staff card only when `canViewStaffReport` evaluates true; non-admin callers never fire the request.
+
+**Drift-watch invariant**: any future endpoint surfacing a display name MUST be examined against the four-point test by a privacy-reviewer pass; precedent reuse is not automatic. The audit-subject purpose criterion (a) is the gating one — if a maintainer cannot articulate why the name belongs in the audit picture, the projection should default to integer id only.
 
 ### Access control audit records (FERPA §99.32)
 
