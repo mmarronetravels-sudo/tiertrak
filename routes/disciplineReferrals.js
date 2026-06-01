@@ -56,6 +56,7 @@ const ACT_ROLES = ['school_admin', 'district_admin'];
 // it. 5000 chars after trim is comfortably above the longest
 // reasonable narrative entry.
 const ADMIN_NOTES_MAX_LENGTH = 5000;
+const STAFF_NOTES_MAX_LENGTH = 5000;
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -79,6 +80,25 @@ function parseAdminNotes(raw) {
   const trimmed = raw.trim();
   if (trimmed.length > ADMIN_NOTES_MAX_LENGTH) {
     return { ok: false, error: 'admin_notes exceeds maximum length' };
+  }
+  return { ok: true, value: trimmed.length === 0 ? null : trimmed };
+}
+
+// parseStaffNotes(raw) — POST / variant of parseAdminNotes. Accepts
+// `undefined` as {ok:true, value:null} because POST / treats an absent
+// staff_notes key as "no note" (the L2+ required-note check at the
+// path-fork below catches the cases where a note is mandatory).
+// parseAdminNotes deliberately rejects undefined because its PATCH
+// callers must distinguish key-absent (preserve existing column) from
+// key-present-null (explicit clear).
+function parseStaffNotes(raw) {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'staff_notes must be a string' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > STAFF_NOTES_MAX_LENGTH) {
+    return { ok: false, error: 'staff_notes exceeds maximum length' };
   }
   return { ok: true, value: trimmed.length === 0 ? null : trimmed };
 }
@@ -351,19 +371,43 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing or invalid required field(s)' });
   }
 
-  const trimmedNotes = typeof staff_notes === 'string' ? staff_notes.trim() : null;
-  const notesValue = trimmedNotes && trimmedNotes.length > 0 ? trimmedNotes : null;
+  // Future incident_date guard. Anchored to UTC midnight on both sides
+  // so the comparison aligns with the DB COALESCE(..., CURRENT_DATE) on
+  // a UTC-running server (Render). Sub-day TZ slop is acceptable; the
+  // failure mode this guards against is multi-day/month/year typos, not
+  // hour-of-day boundaries. FE date-picker is not the trust boundary.
+  if (incident_date !== undefined && incident_date !== null && incident_date !== '') {
+    if (typeof incident_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(incident_date)) {
+      return res.status(400).json({ error: 'Invalid incident_date' });
+    }
+    const incidentUtcMidnight = new Date(incident_date + 'T00:00:00Z');
+    if (Number.isNaN(incidentUtcMidnight.getTime())) {
+      return res.status(400).json({ error: 'Invalid incident_date' });
+    }
+    const todayUtcMidnight = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+    if (incidentUtcMidnight.getTime() > todayUtcMidnight.getTime()) {
+      return res.status(400).json({ error: 'incident_date cannot be in the future' });
+    }
+  }
+
+  const parsedNotes = parseStaffNotes(staff_notes);
+  if (!parsedNotes.ok) {
+    return res.status(400).json({ error: parsedNotes.error });
+  }
+  const notesValue = parsedNotes.value;
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     // Student must belong to the target tenant; derive grade in the same hop.
+    // Tenant filter in the WHERE clause (defense-in-depth) — cross-tenant
+    // student_id returns zero rows at the SQL layer instead of a row+JS check.
     const studentRes = await client.query(
-      'SELECT grade, tenant_id FROM students WHERE id = $1',
-      [student_id]
+      'SELECT grade FROM students WHERE id = $1 AND tenant_id = $2',
+      [student_id, targetTenantId]
     );
-    if (studentRes.rows.length === 0 || studentRes.rows[0].tenant_id !== targetTenantId) {
+    if (studentRes.rows.length === 0) {
       try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
       return res.status(403).json(FORBIDDEN_BODY);
     }
