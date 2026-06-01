@@ -13,6 +13,7 @@ import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
 import DisciplineReferralModal from './components/Modals/DisciplineReferralModal';
 import DisciplineReferralQueue from './components/DisciplineReferralQueue';
+import DisciplineReports from './components/DisciplineReports';
 import DisciplineReferralDetail from './components/DisciplineReferralDetail';
 import DisciplineReferralResolveModal from './components/DisciplineReferralResolveModal';
 import { tierColors, areaColors, gradeOptions, archiveReasons } from './utils/constants';
@@ -7193,6 +7194,18 @@ if (isParent) {
                     Discipline
                   </button>
                 )}
+                {canViewDisciplineReview && (
+                  <button
+                    onClick={() => setView('discipline-reports')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      view === 'discipline-reports'
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Discipline Reports
+                  </button>
+                )}
                 {isDistrictAdmin && (
                   <button
                     onClick={() => setView('district')}
@@ -7264,6 +7277,9 @@ if (isParent) {
             onBack={backToDisciplineQueue}
             onOpenResolve={openResolveModal}
           />
+        )}
+        {view === 'discipline-reports' && canViewDisciplineReview && (
+          <DisciplineReports user={user} API_URL={API_URL} />
         )}
      </main>
      {/* Add Custom Intervention Modal */}
