@@ -26,6 +26,7 @@ import { ArchiveStudentModal, UnarchiveStudentModal } from './components/Modals/
 import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
+import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
@@ -227,6 +228,36 @@ const [screenerLoading, setScreenerLoading] = useState(false);
       console.error('Error fetching staff:', error);
     }
   };
+
+  // MTSS Coordinator map for the Staff Management table — keyed by
+  // user_id so the per-row toggle component can look up coordinator
+  // state in O(1). Loaded from GET /api/mtss-coordinators/by-school/:tenantId
+  // via apiFetch (modern pattern; new code, not the legacy loadStaffList
+  // bare-fetch — Followup #72 stays banked). cache: 'no-store' so the
+  // browser disk cache never persists granter names beyond this session.
+  const [coordinatorMap, setCoordinatorMap] = useState(new Map());
+  const loadCoordinatorMap = async (tenantId) => {
+    const tid = tenantId || user?.tenant_id;
+    if (!tid) return;
+    try {
+      const res = await apiFetch(`${API_URL}/mtss-coordinators/by-school/${tid}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCoordinatorMap(new Map(data.map((row) => [row.user_id, row])));
+      }
+      // Non-OK (403/500) silently leaves the map empty — the toggle row
+      // will render the "Designate" state for every eligible staff
+      // member. Server-side gate is the truth boundary; FE empty state
+      // is acceptable degradation.
+    } catch (err) {
+      console.error('[loadCoordinatorMap]', err.message);
+    }
+  };
+  // useEffect that triggers loadCoordinatorMap on Staff-tab activation
+  // is declared below, after adminTab is initialized — see Coordinator
+  // map useEffect anchor.
   const [parentsList, setParentsList] = useState([]);
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [selectedInterventionForAssignment, setSelectedInterventionForAssignment] = useState(null);
@@ -302,6 +333,19 @@ const [passwordMessage, setPasswordMessage] = useState('');
   
   // Admin state
   const [adminTab, setAdminTab] = useState('interventions');
+
+  // Coordinator map useEffect anchor. Loads the per-school coordinator
+  // list when the Staff tab becomes active. Decoupled from the staff
+  // list load (line 215) so the two legacy bare-fetch staff loaders
+  // stay untouched per Followup #72. Toggle callbacks (onChange) call
+  // loadCoordinatorMap directly so the map refreshes immediately after
+  // a designate/revoke. Placed AFTER adminTab is declared so the
+  // dependency reference doesn't TDZ-error.
+  useEffect(() => {
+    if (adminTab !== 'staff' || !user?.tenant_id) return;
+    loadCoordinatorMap(user.tenant_id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminTab, user?.tenant_id]);
   const [adminAreaFilter, setAdminAreaFilter] = useState('all');
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', description: '', area: '', tier: '' });
@@ -5488,6 +5532,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                   <th className="pb-3 font-medium">Email</th>
                   <th className="pb-3 font-medium">Role</th>
                   <th className="pb-3 font-medium">Access</th>
+                  <th className="pb-3 font-medium">Coordinator</th>
                   <th className="pb-3 font-medium">SSO</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
@@ -5531,6 +5576,15 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                       <span className={`text-xs ${member.school_wide_access ? 'text-emerald-600' : 'text-slate-400'}`}>
                         {member.school_wide_access ? 'All Students' : 'Assigned Only'}
                       </span>
+                    </td>
+                    <td className="py-3">
+                      <MTSSCoordinatorToggle
+                        staffMember={member}
+                        coordinatorRow={coordinatorMap.get(member.id)}
+                        tenantId={user.tenant_id}
+                        API_URL={API_URL}
+                        onChange={() => loadCoordinatorMap(user.tenant_id)}
+                      />
                     </td>
                     <td className="py-3">
                       {member.google_id ? (
