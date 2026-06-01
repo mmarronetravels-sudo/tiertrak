@@ -208,4 +208,81 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /users/:userId/schools/:schoolTenantId — revoke a coordinator
+// designation. Sets both transaction-local GUCs (app.actor_user_id
+// for attribution, app.audit_action='revoke' for label override)
+// inside a single-client transaction, then DELETEs the row. M040's
+// trigger fires AFTER DELETE inside the same transaction and reads
+// both GUCs to write the audit row with action='revoke' and
+// actor_user_id=<caller>.
+//
+// The BEGIN, both SET LOCAL calls via set_config(..., true), the
+// DELETE, and COMMIT MUST run on the same checked-out client (not
+// separate pool.query calls) — otherwise the GUC lands on a
+// different session and the trigger reads '' which COALESCEs to
+// 'cascade_user_delete' (silent attribution failure). Mirrors
+// routes/districtAccess.js:190-264 doctrine.
+router.delete('/users/:userId/schools/:schoolTenantId', requireAuth, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const targetUserId = validateIntParam(req.params.userId);
+    if (targetUserId === null) {
+      return res.status(400).json({ error: 'Invalid user_id' });
+    }
+    const schoolTenantId = validateIntParam(req.params.schoolTenantId);
+    if (schoolTenantId === null) {
+      return res.status(400).json({ error: 'Invalid school_tenant_id' });
+    }
+
+    if (!GRANT_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const actorId = Number(req.user.id);
+    if (!Number.isInteger(actorId) || actorId <= 0) {
+      console.error('[mtssCoordinators:delete]', 'invalid req.user.id from JWT');
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    // Caller-scope: same predicate as POST. Composes school_admin and
+    // district_admin without role-specific branching.
+    const callerAccessible = await resolveAccessibleTenantIds(req.user);
+    if (!callerAccessible.includes(schoolTenantId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await client.query('BEGIN');
+    await client.query(
+      "SELECT set_config('app.actor_user_id', $1, true)",
+      [String(actorId)]
+    );
+    await client.query(
+      "SELECT set_config('app.audit_action', 'revoke', true)"
+    );
+
+    const result = await client.query(
+      `DELETE FROM mtss_coordinators
+       WHERE user_id = $1 AND school_tenant_id = $2
+       RETURNING user_id`,
+      [targetUserId, schoolTenantId]
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    await client.query('COMMIT');
+    res.json({
+      message: 'Revoked',
+      user_id: targetUserId,
+      school_tenant_id: schoolTenantId
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[mtssCoordinators:delete]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
