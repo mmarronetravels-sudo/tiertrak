@@ -23207,3 +23207,162 @@ NEXT SESSION SHOULD
   page and a referral-detail page that consume the 6 new endpoints
   in PR #184.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-01T00:30:00-07:00
+BRANCH:  feat/discipline-referral-admin-review-ui
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/186 (merge commit 28c5a2b47653152f5b9bab1d8fad8d8f4f0a87a2; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR #4 of the discipline-referral feature family — the admin-review
+  frontend. Adds three new React components (queue page, detail page,
+  atomic resolve modal) consuming the six endpoints shipped in PR
+  #184. Also adds one additive backend route — GET /api/auth/me/schools
+  — to drive the school picker on the queue page. Five feat commits
+  + two inline fix commits closing reviewer-flagged MEDIUMs. No schema
+  change, no new dependencies, no new external services.
+
+  Two role gates on the frontend, both UI-only (server is the trust
+  boundary at every endpoint):
+    VIEW_ROLES (queue, detail, /me/schools, top-nav button):
+      school_admin, district_admin, counselor, interventionist
+    ACT_ROLES (action-bar buttons + admin-notes editor):
+      school_admin, district_admin
+
+  The new /me/schools endpoint is helper-consume (resolveAccessible-
+  TenantIds), VIEW_ROLES-scoped, returns id + name only. The picker
+  it drives offers exactly what the data routes will accept — no
+  picker-to-server contract drift possible. SELECT on tenants is
+  parameterized (id = ANY($1::int[])).
+
+  The atomic resolve modal makes one PATCH per click:
+  consequence_ids (deduped positive ints) + admin_notes (string|null,
+  trim-to-NULL matching server's parseAdminNotes). admin_notes key
+  is always sent (modal's textarea is the operator's final source-
+  of-truth at resolve time — deliberate divergence from /admin-notes
+  which requires the key).
+
+FILES TOUCHED
+  routes/auth.js — new GET /me/schools endpoint (+38 net)
+  frontend/src/components/DisciplineReferralQueue.jsx — new (393)
+  frontend/src/components/DisciplineReferralDetail.jsx — new (484)
+  frontend/src/components/DisciplineReferralResolveModal.jsx — new (314)
+  frontend/src/App.jsx — nav button + view routing + state + handlers (+101)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  One new SQL query (routes/auth.js): tenant-scoped by helper output,
+  no inline §5 branching. Picker→server contract holds (helper-
+  consume on both sides). Spoofing the picker tenantId hits 403
+  server-side via requireTenantStaffAccess. tenant-isolation-auditor
+  re-run after the M-1/M-2 fixes: APPROVED WITH NOTES, 0 CRITICAL,
+  0 WARN, 2 INFO carried forward (selectedQueueTenantId is FE-only
+  bookkeeping; SELECT on tenants lacks explicit type='school' filter
+  — no-op post-M029, belt-and-suspenders opportunity).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: student first/last/grade, referral-row
+  structured fields, staff_notes, admin_notes — all already-served
+  by PR #184 endpoints, no new collection.
+  Logging audit: verified no PII in logs. All logError calls in
+  the three new components pass static tag + Error object only.
+  Cross-tenant risk: none identified. cache: 'no-store' on every
+  GET and PATCH so the browser disk cache never persists student
+  names beyond the session. No localStorage / sessionStorage /
+  IndexedDB writes anywhere in the new components or App.jsx
+  state slots — confirmed by storage sweep.
+  privacy-reviewer pass: APPROVED, 0 CRITICAL, 0 WARN, 2 INFO
+  (user_id in error log matches existing convention; pre-existing
+  localStorage.clear() in handleLogout is belt-and-suspenders).
+
+VERIFICATION
+  node --check (esbuild parse for .jsx) — clean on every changed file
+  Bare-fetch grep on the three new components — zero hits
+  Bare-fetch count in App.jsx — unchanged at 34 (no new sites added;
+    pre-existing #72 backlog remains scoped to a separate
+    chore/apifetch-sweep)
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  merge-sha verification: MATCH for PR #186
+    feature tip:        877f6ad94a89e7e262bb1ac68d9e405f4e9860cf
+    merge second-parent: 877f6ad94a89e7e262bb1ac68d9e405f4e9860cf
+    merge commit:       28c5a2b47653152f5b9bab1d8fad8d8f4f0a87a2
+
+  Three reviewer subagents ran against the branch diff after both
+  rounds of fixes — all approved with 0 CRITICAL/HIGH/MEDIUM:
+    security-reviewer:        APPROVED WITH NOTES (agentId aa282c7dc46928e91)
+    tenant-isolation-auditor: APPROVED WITH NOTES (agentId af260c67af516430f)
+    privacy-reviewer:         APPROVED              (agentId a28cd9220435cc576)
+
+  Two MEDIUM findings from security-reviewer's first pass were
+  addressed inline before re-review:
+    M-1 closed by commit 504cb3fbcb9ac43305b072509d2768b319beea10
+      (scope /me/schools to VIEW_ROLES — positive allowlist mirror
+      of routes/disciplineReferrals.js:44)
+    M-2 closed by commit 877f6ad94a89e7e262bb1ac68d9e405f4e9860cf
+      (defer queue fetch until /me/schools resolves; extend auto-
+      correction to length === 1)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #186 commit OIDs at merge time:
+  a9f0eb925803d613ad42bb55af244995536eea90
+  4392b00f159faab5a806b79b01e2205262a24592
+  8cd8555e81c371c7d80db13c61997239bec09a79
+  44569d80d3d1185e941c0913064ba7dafc6d4cdb
+  0241082d8848cc9558d6d244d850b4bdbf4b059f
+  504cb3fbcb9ac43305b072509d2768b319beea10
+  877f6ad94a89e7e262bb1ac68d9e405f4e9860cf
+
+OPEN ITEMS / FOLLOW-UPS
+  L-4 (security-reviewer, NEW low this session) — schoolsResolved
+    in DisciplineReferralQueue.jsx never resets if user.tenant_id
+    changes after initial resolve. Only matters if a future change
+    introduces a tenant-swap-in-place flow (current app has none).
+    Trivial follow-up: setSchoolsResolved(false) at the top of the
+    loadSchools effect, before the try.
+  INFO-2 (tenant-isolation, carried) — selectedQueueTenantId is set
+    on row click but currently unused by any code path; carried as
+    forward-use bookkeeping for a future "back to this school's
+    queue" memory.
+  INFO-3 (tenant-isolation, carried) — SELECT on tenants in
+    /me/schools lacks an explicit type='school' filter. No-op
+    post-M029 (CHECK constraint narrows the column), but worth
+    adding as belt-and-suspenders if tenants.type is ever re-
+    widened.
+  POST-MERGE PROD SMOKE (required) — localhost does not exercise
+    Vercel edge behavior, and the one external contract no reviewer
+    agent verified is the vocab payload shape returned by
+    GET /discipline-referrals/vocab/:tenantId. After deploy, the
+    resolve modal must be opened end-to-end on prod and a
+    consequence selected. If the modal shows "No consequence
+    options configured for this school" against a school that does
+    have vocab seeded, the payload-shape contract has drifted.
+  Followup #72 (carried) — bare-fetch sweep across App.jsx +
+    AppContext + modals remains scoped to a future
+    chore/apifetch-sweep PR.
+
+  OPERATIONAL NOTES (for ops; not a code follow-up):
+    - A school must have consequence vocab seeded before admins
+      can resolve. Zero vocab → resolve button can never enable.
+      New tenants get the seed via the per-tenant seeder; pre-
+      existing tenants without it need a one-time backfill.
+    - The resolve modal seeds consequences empty by design
+      (replace-set semantics; the operator picks the final
+      assignment at resolve time, even on referrals that pre-
+      attached an L1-staff-managed consequence at create-time).
+
+NEXT SESSION SHOULD
+  Run the required post-merge prod smoke described in OPEN ITEMS
+  before declaring the discipline-referral feature family done.
+  Natural next chunk after that: pick up the chore/disciplineReferrals-
+  input-hygiene PR bundling the carried input-validation
+  tightenings flagged across the three reviewers during PRs #2 and
+  #4. Then revisit Followup #72 (bare-fetch sweep) as its own
+  chore/apifetch-sweep PR if no higher-priority feature work is
+  queued.
+================================================================================
