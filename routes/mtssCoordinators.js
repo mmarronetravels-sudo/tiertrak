@@ -85,11 +85,87 @@ const GRANT_ROLES = ['school_admin', 'district_admin'];
 // up front.
 const INELIGIBLE_TARGET_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'parent'];
 
+// Roles authorized to READ the per-school coordinator list. Declared
+// separately from GRANT_ROLES (even though they happen to be the same
+// set today) so a future widening of the read surface (e.g. allowing
+// counselor/interventionist to see who the coordinators are) does not
+// accidentally widen the grant/revoke surface.
+const VIEW_ROLES = ['school_admin', 'district_admin'];
+
 function validateIntParam(value) {
   const n = parseInt(value, 10);
   if (!Number.isInteger(n) || n <= 0 || n > INT4_MAX) return null;
   return n;
 }
+
+// GET /by-school/:tenantId — list current coordinator designations
+// for one building. Sole admin-side read surface; the FE admin
+// toggle joins this to the staff list in memory by user_id.
+//
+// Authz model:
+//   1. requireAuth                                       (middleware)
+//   2. role ∈ VIEW_ROLES                                 (else 403)
+//   3. tenantId ∈ resolveAccessibleTenantIds(req.user)
+//                                                        (else 403)
+//
+// Projection includes granter_full_name via LEFT JOIN to users on
+// mtss_coordinators.created_by. The granter may legitimately be a
+// district_admin from outside the requesting school_admin's tenant;
+// surfacing the name is intentional — the granter IS the audit
+// subject and concealing them defeats the "Designated by [name] on
+// [date]" display the toggle exists to provide. Same precedent as
+// "Reviewed by" on discipline referrals. Projection is full_name
+// ONLY — no email, no role, no district_id of the granter.
+//
+// LEFT JOIN handles the M038 created_by ON DELETE SET NULL case: if
+// the granter has been deleted from users since the grant, granted_by
+// is NULL and granter_full_name is NULL via the LEFT JOIN. FE
+// degrades gracefully.
+//
+// Error mapping:
+//   400  parseInt validation failure on :tenantId
+//   403  caller is not in VIEW_ROLES OR tenant out of scope
+//   500  unexpected; console.error carries route tag + err.message only
+router.get('/by-school/:tenantId', requireAuth, async (req, res) => {
+  try {
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const tenantId = validateIntParam(req.params.tenantId);
+    if (tenantId === null) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
+    // §5 dual-path consumed via helper, never inlined. Mirrors the
+    // gate shape on routes/staffManagement.js:95-98 and
+    // routes/disciplineReferrals.js queue endpoints.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         mc.user_id,
+         mc.school_tenant_id,
+         mc.district_id,
+         mc.created_by         AS granted_by,
+         mc.created_at         AS granted_at,
+         granter.full_name     AS granter_full_name
+       FROM mtss_coordinators mc
+       LEFT JOIN users granter ON granter.id = mc.created_by
+       WHERE mc.school_tenant_id = $1
+       ORDER BY mc.user_id`,
+      [tenantId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[mtssCoordinators:byschool]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // POST / — grant a coordinator designation.
 // Body: { user_id, school_tenant_id }. Explicit transaction on a
