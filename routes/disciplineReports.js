@@ -199,5 +199,80 @@ router.get('/by-incident-type/:tenantId', requireAuth, requireTenantStaffAccess,
   }
 });
 
+// ============================================================
+// GET /by-time-of-day/:tenantId — referral count grouped by hour
+// of the incident_time column.
+//
+// incident_time is nullable on discipline_referrals (the column
+// is optional at create-time per the SWIS model). Null values are
+// surfaced as a separate row with hour = null so admins can see
+// the data-quality picture without inflating any concrete hour
+// bucket.
+//
+// Query params (all optional):
+//   start_date=YYYY-MM-DD  (incident_date >= start_date)
+//   end_date=YYYY-MM-DD    (incident_date <= end_date)
+//   status=submitted|under_review|resolved
+//
+// Gates and scoping identical to /by-location/:tenantId.
+//
+// PII discipline (§4B): projection is hour, referral_count. The
+// hour bucket is derived from incident_time (TIME) and carries no
+// identifying information. No student names, staff names, notes.
+// Error log carries tenant_id (int) + user_id (int) + err.message
+// only.
+// ============================================================
+router.get('/by-time-of-day/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
+  try {
+    if (!VIEW_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const tenantId = Number(req.params.tenantId);
+    if (!isPositiveInt(tenantId)) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
+    const startParsed = parseDateParam(req.query.start_date, 'start_date');
+    if (!startParsed.ok) return res.status(400).json({ error: startParsed.error });
+    const endParsed = parseDateParam(req.query.end_date, 'end_date');
+    if (!endParsed.ok) return res.status(400).json({ error: endParsed.error });
+
+    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    if (status !== null && !STATUS_VALUES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    // EXTRACT(HOUR FROM incident_time) returns NULL when
+    // incident_time is NULL, so the GROUP BY naturally produces
+    // one row for unknown-hour rather than dropping them. Cast
+    // to int so JSON carries a plain integer, not a numeric
+    // string. NULLS LAST keeps the unknown-hour row at the end.
+    const result = await pool.query(
+      `SELECT
+         EXTRACT(HOUR FROM dr.incident_time)::int AS hour,
+         COUNT(*)::int                             AS referral_count
+       FROM discipline_referrals dr
+       WHERE dr.tenant_id = $1
+         AND ($2::date IS NULL OR dr.incident_date >= $2::date)
+         AND ($3::date IS NULL OR dr.incident_date <= $3::date)
+         AND ($4::text IS NULL OR dr.status = $4::text)
+       GROUP BY hour
+       ORDER BY hour NULLS LAST`,
+      [tenantId, startParsed.value, endParsed.value, status]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      '[disciplineReports:byTimeOfDay]',
+      'tenant_id=', req.params.tenantId,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load report' });
+  }
+});
+
 module.exports = router;
 module.exports.initializePool = initializePool;
