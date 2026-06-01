@@ -7,6 +7,7 @@ const {
   requireStudentReadAccess,
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -91,19 +92,22 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid student_id' });
     }
 
-    // Tenant check: load student → verify tenant_id is in caller's
-    // accessible-tenant set (§5 dual-path via helper, never inlined).
-    // Not-found collapses to 403 for existence-non-disclosure parity
-    // with the sibling middleware in middleware/authorizeInterventionAccess.js.
+    // Student access: load tenant + tier, then route through
+    // applyStudentAccessGate (flag-gated). Dark mode preserves the
+    // tenant-only decision; strict mode enforces the canonical predicate.
+    // Not-found collapses to 403 for existence-non-disclosure parity.
     const studentRes = await pool.query(
-      'SELECT tenant_id FROM students WHERE id = $1',
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
       [sid]
     );
     if (studentRes.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
+    const studentRow = studentRes.rows[0];
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(studentRes.rows[0].tenant_id)) {
+    const legacyAllowed = accessible.includes(studentRow.tenant_id);
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
@@ -150,14 +154,17 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     const studentRes = await pool.query(
-      'SELECT tenant_id FROM students WHERE id = $1',
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
       [noteRes.rows[0].student_id]
     );
     if (studentRes.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
+    const studentRow = studentRes.rows[0];
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(studentRes.rows[0].tenant_id)) {
+    const legacyAllowed = accessible.includes(studentRow.tenant_id);
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
@@ -199,14 +206,17 @@ router.delete('/:id', requireAuth, async (req, res) => {
     }
 
     const studentRes = await pool.query(
-      'SELECT tenant_id FROM students WHERE id = $1',
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
       [noteRes.rows[0].student_id]
     );
     if (studentRes.rows.length === 0) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
+    const studentRow = studentRes.rows[0];
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(studentRes.rows[0].tenant_id)) {
+    const legacyAllowed = accessible.includes(studentRow.tenant_id);
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 

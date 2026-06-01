@@ -7,6 +7,7 @@ const {
   requireWriteAccessByInterventionId
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -94,14 +95,25 @@ router.post('/assign', requireAuth, async (req, res) => {
 
     const { student_id, intervention_template_id, intervention_name, notes, log_frequency = 'weekly', start_date, end_date, no_progress_monitoring_required } = req.body;
 
-    // Tenant verification: student's tenant must be in the caller's
-    // accessible-tenant set (§5 dual-path doctrine via helper).
+    // Student access: load tenant + tier, then route the staff branch
+    // through applyStudentAccessGate (flag-gated). §5 dual-path
+    // resolution is internal to the helper via resolveAccessibleTenantIds;
+    // we still compute legacyAllowed here so dark mode preserves
+    // today's tenant-only decision while strict mode enforces the
+    // canonical predicate (admin / counselor / interventionist / MTSS
+    // Coordinator / teacher-caseload).
     const studentResult = await pool.query(
-      'SELECT tenant_id FROM students WHERE id = $1',
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
       [student_id]
     );
+    if (studentResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const studentRow = studentResult.rows[0];
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (studentResult.rows.length === 0 || !accessible.includes(studentResult.rows[0].tenant_id)) {
+    const legacyAllowed = accessible.includes(studentRow.tenant_id);
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
