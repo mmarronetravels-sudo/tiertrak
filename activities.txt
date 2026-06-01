@@ -23586,3 +23586,262 @@ NEXT SESSION SHOULD
   Followup #72 (bare-fetch sweep) as its own chore/apifetch-sweep
   PR — no higher-priority feature work is currently queued.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-01T22:30:00-07:00
+BRANCH:  multi-PR session (9 work PRs + 2 doc-only closing PRs)
+DISPOSITION: pr-merged-multi (see PRs LANDED block below)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  End-to-end MTSS-coordinator + discipline-reports enhancement plus
+  one expedited live-prod-exposure auth fix and one access-flip
+  predicate consolidation. Nine feature/sec/migration PRs (#189-#197)
+  landed back-to-back; M038/M039/M040 applied in prod per operator
+  confirmation. Two closing doc-only PRs (#198 + this entry) wrap
+  the session and close banked F-DOC-1 / F-INFO-1.
+
+PRs LANDED
+  #189  chore/activities-log-session-112
+        Append-only log entry for session 112 (input-hygiene work).
+  #190  feat/discipline-referral-reports
+        Three aggregate SWIS-style report cuts on
+        /api/discipline-reports/* (by-location, by-incident-type,
+        by-time-of-day). Server gate VIEW_ROLES; no PII in
+        projections; cache:'no-store' on every GET.
+  #191  migration/mtss-coordinator
+        M038 mtss_coordinators table + M039 mtss_coordinators_audit
+        + AFTER DELETE trigger. Mirrors M028/M031 composite-FK +
+        forensic-audit doctrine. Three reviewers approved (zero
+        CRITICAL/HIGH/MEDIUM/LOW).
+  #192  feat/mtss-coordinator-grant-revoke
+        Admin-only grant/revoke API at /api/mtss-coordinators (POST
+        + DELETE). Includes M040 trigger evolution (combined
+        M032+M033 doctrines in one CREATE OR REPLACE FUNCTION).
+        Single-client transaction discipline; explicit-revoke writes
+        the 'revoke' audit row via GUC override.
+  #193  feat/mtss-coordinator-ui
+        Admin Panel staff-management toggle component +
+        GET /api/mtss-coordinators/by-school/:tenantId read path.
+        FIRST display-name projection (granter_full_name); privacy-
+        reviewer established the four-point granter-name precedent.
+  #194  sec/progressNotes-require-auth   (EXPEDITED)
+        Closed a live prod auth hole: all four progress-notes
+        handlers were unauthenticated end-to-end on main. Added
+        requireAuth + per-student access gates mirroring the
+        weeklyProgress router pattern. 15/15 dev smoke PASS;
+        prod-deploy verified via 401 on status-code-only curl
+        probe.
+  #195  feat/student-access-predicate
+        New middleware/canAccessStudent.js canonical predicate +
+        two flag-gated appliers behind STRICT_STUDENT_ACCESS_PREDICATE
+        env var. Wired into 11 sites (3 list endpoints + 4
+        middleware + 4 inline route checks). Dark mode preserves
+        legacy behavior + would-block telemetry; strict mode fails
+        safe on predicate errors. 14/14 dev smoke PASS in both
+        flag modes.
+  #196  feat/discipline-reports-ui
+        Admin/counselor/interventionist UI for the three wave-1
+        aggregate cuts. New 'Discipline Reports' top-nav entry;
+        school picker mirrored from DisciplineReferralQueue.
+        Three reviewers approved (zero CRITICAL/HIGH/MEDIUM/LOW).
+  #197  feat/discipline-reports-wave2
+        Two PII-bearing cuts: GET /repeat-offenders/:tenantId
+        (VIEW_ROLES) + GET /by-staff/:tenantId (NARROWER
+        STAFF_VIEW_ROLES per R5). UI extended with two new cards
+        in a 'Per-person cuts' section. Card-local min_count
+        input. Both cuts passed the four-point granter-name
+        precedent per privacy-reviewer. 14/14 dev smoke PASS.
+  #198  docs/privacy-review-display-name-rulings  (this session's close)
+        Doc-only: catalogues discipline-reports endpoint family +
+        MTSS Coordinator entitlement records + display-name
+        doctrine with three worked rulings (#193 + #197 x2).
+        Closes F-DOC-1 and F-INFO-1.
+
+  (this entry rides on chore/activities-log-session-113.)
+
+FILES TOUCHED (high-level across all 9 work PRs)
+  routes/disciplineReports.js          — new file (#190); +2 PII cuts (#197)
+  routes/mtssCoordinators.js           — new file (#192); +1 GET surface (#193)
+  routes/students.js                   — Tier A elevated-list-predicate gate (#195)
+  routes/weeklyProgress.js             — Tier A elevated-list-predicate gate (#195)
+  routes/studentDocuments.js           — Tier A elevated-list-predicate gate (#195)
+  routes/interventions.js              — inline staff-tenant check rerouted (#195)
+  routes/progressNotes.js              — auth gates added (#194); predicate wired (#195)
+  middleware/canAccessStudent.js       — new file (#195); canonical predicate
+  middleware/authorizeInterventionAccess.js — 4 staff branches rerouted (#195)
+  middleware/authorizeDocumentAccess.js     — staff branch rerouted (#195)
+  migration-038-mtss-coordinators.sql           — new (#191)
+  migration-039-mtss-coordinators-audit.sql     — new (#191)
+  migration-040-mtss-coordinators-audit-guc.sql — new (#192)
+  frontend/src/components/MTSSCoordinatorToggle.jsx — new file (#193)
+  frontend/src/components/DisciplineReports.jsx     — new file (#196); +2 wave-2 cards (#197)
+  frontend/src/App.jsx                              — wired toggle (#193); nav button (#196)
+  activities.txt                                    — session 112 entry (#189); this entry (next)
+
+MIGRATIONS RUN
+  M038 — mtss_coordinators table        prod-applied per operator
+  M039 — mtss_coordinators_audit + trigger  prod-applied per operator
+  M040 — trigger evolution (GUC-driven)     prod-applied per operator
+  (Pre-flight invariants per migration headers; idempotent re-runnable.)
+
+TENANT ISOLATION REVIEW
+  Tenant-isolation-auditor ran on every PR (8/9 work PRs; #189 doc-only
+  skipped). Zero CRITICAL/HIGH/MEDIUM findings across the session.
+  Key invariants verified:
+    - §5 dual-path: resolveAccessibleTenantIds consumed via helper at
+      every site; never inlined.
+    - Composite-FK doctrine: M038 mirrors M028; M039 mirrors M031.
+    - Per-record predicate first checks tenant membership BEFORE any
+      elevation branch in canStaffAccessStudent.
+    - All new SQL queries parameterized; defense-in-depth tenant binds
+      on every JOIN where the child table has a tenant_id column.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched:
+    - Display-name projections (FIRST surfaces on these endpoints):
+        granter_full_name on GET /api/mtss-coordinators/by-school (#193)
+        student first/last on GET /api/discipline-reports/repeat-offenders (#197)
+        staff full_name on GET /api/discipline-reports/by-staff (#197)
+      All three passed the four-point granter-name precedent per
+      privacy-reviewer. Documented in PRIVACY_REVIEW.md via PR #198.
+    - No new PII columns; no new PII storage; no new PII in logs.
+  Logging audit: every new console.error site carries integer ids +
+    err.message only. logError calls tag-only.
+  Cross-tenant risk: none identified by tenant-isolation-auditor on
+    any of the 8 audited PRs.
+  Smoke residue (dev DB only): 2 INSERT rows + 1 modified note on
+    progress_notes (#194 smoke); 1 audit row on
+    mtss_coordinators_audit (#192 smoke); 1 audit row on
+    mtss_coordinators_audit (#195 smoke). Append-only doctrine
+    preserved; intentionally not cleaned (dev-only).
+
+VERIFICATION
+  Reviewer subagents:
+    privacy-reviewer:           ran on 7 of 9 work PRs (skipped #191
+                                schema-only + #189 doc-only)
+    security-reviewer:          ran on 6 of 9 work PRs (skipped #190,
+                                #191 schema-only, #189 doc-only)
+    tenant-isolation-auditor:   ran on 7 of 9 work PRs (skipped #189
+                                + #194 expedited)
+  All reviewer reports approved with zero CRITICAL/HIGH/MEDIUM/LOW
+  findings except: privacy LOW on #194 inherited 500-catch
+  error.message echo (pre-existing, banked F-B); privacy LOW on #197
+  PRIVACY_REVIEW.md catalog gap (closed by PR #198); security LOWs
+  on #193 cosmetic pattern-consistency (banked F-LOW-1/2).
+  Mechanical checks per commit:
+    node --check on every changed .js file — OK throughout
+    npm test (root) — placeholder; exits 1 (Followup #73 stands)
+    npm run lint (root) — Missing script (Followup #74 stands)
+    frontend npm test — Missing script
+    Backend test suite: absent (no spec exists).
+  Dev smokes (curl + JWT mint patterns; per-PR matrices):
+    #190 dev smoke: 8/8 (counselor 200, teacher 403, cross-tenant
+      403, empty-filter renders friendly empty-state)
+    #192 dev smoke: pre-commit DO-block proof of M040 GUC trigger;
+      session-end multi-cycle grant/revoke verified action='revoke'
+      with captured actor_user_id
+    #194 dev smoke: 15/15 (unauthed 401 + 403 CSRF; in-tenant
+      200/201; cross-tenant 403; non-existent note 403)
+    #195 dev smoke: 14/14 in dark mode + 14/14 in strict mode
+    #196 dev smoke: 8/8 (counselor 200, teacher 403, cross-tenant
+      403, empty/bad-date validation)
+    #197 dev smoke: 14/14 (counselor 200 on repeat-offenders + 403
+      on by-staff per R5; admin 200 on both; teacher 403 on both;
+      cross-tenant 403; min_count clamping + bad-value validation)
+  Prod-deploy probe (status-code-only):
+    GET https://tiertrak.scholarpathsystems.org/api/progress-notes/student/1
+      → 401 (PR #194 confirmed live in prod within ~30 min of merge;
+      strongly suggests Render auto-deploy from main).
+
+  Merge-SHA verification gate ran for all 9 PRs:
+    #189 #190 #191 #192 #193 #194 #195 #196 #197 — ALL 9 MATCH
+    (every PR's headRefOid equals the merge commit's second parent;
+    standard merge-commits, no squash/rebase, no admin override).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #189 commit OIDs at merge time:
+  0d8f1bc4cb311141100ea389acd6dca1a37b254c
+
+PR #190 commit OIDs at merge time:
+  266956dc68d95218f882014b254d441055f2e1e5
+  ca64268977dfba9ee7221d3624beb1413c52fcfc
+  12ba85aafd488baa4a4e46284d9036d1c02ec7b7
+
+PR #191 commit OIDs at merge time:
+  d8e3ee587f823042154108a6a3f6f3021ad8114d
+  e08598060100c903b9be2b1020598b6f9bc400e8
+
+PR #192 commit OIDs at merge time:
+  8c0eeb2d09a10009d67b77e5d4dc487be1346050
+  dd9b25b81cdedec883b097edcab10496fafad564
+  694cb97d205c62e27f76cd042739eff6d052f88a
+
+PR #193 commit OIDs at merge time:
+  e56ae95349c37f42f5ad308d1fa7ac1022472861
+  b8d9b15e9abd489f40787435f5dabad90f5c4288
+  b7b6b48a5caccfdfd97c8c28a3c3f19ef493e0fb
+
+PR #194 commit OIDs at merge time:
+  61f161b9bbd242a3ebee16b50927ab236015f1ab
+
+PR #195 commit OIDs at merge time:
+  1c28bcfebb71b419c4bed8423f84444a8da95e2d
+  98ccb46925a33502b9444369c8a7b11e97683c29
+  d7c9bd81763f1b909ecf193fb8904dcb06f084ea
+  9e1e8c7087bf9eace2ce19082bdd9b7c3478c9cc
+
+PR #196 commit OIDs at merge time:
+  1edf25fbb50faa1c860c39b70f47980b8421b4d3
+  6a99e036426e16a9838e68d6475312b50446fe0d
+
+PR #197 commit OIDs at merge time:
+  889a82754cab24cdc0da41be65339327cbe0380c
+  87195c8dcec93db0266c9535bda5f3906eee9bda
+
+  (All SHAs sourced from gh pr view <N> --json commits at session
+  close. Tip SHAs match the merge-SHA gate's headRefOid for every
+  PR; all 9 PRs MATCH in the gate.)
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed this session:
+    F-DOC-1 (privacy LOW on #197) → PR #198 (docs/privacy-review-display-name-rulings)
+    F-INFO-1 (privacy INFO on #193) → PR #198
+
+  Banked / open after this session:
+    F-A through F-D on progressNotes.js (#194 banked):
+      author_id body-spoofable, error.message echoed, meeting_date
+      unvalidated, PUT/DELETE no ownership check. Pre-existing
+      shape; deferred from auth-hole-only directive.
+    F-LOW-1 (#193): swap bare confirm() to window.confirm() for
+      pattern consistency.
+    F-LOW-2 (#193): swap one App.jsx console.error to logError().
+    F-CHORE-1 (#195): after 2 weeks stable strict mode, strip the
+      STRICT_STUDENT_ACCESS_PREDICATE flag + legacy branches.
+    F-CHORE-2 (security LOW on #195): pg Pool sprawl across
+      middleware modules; consolidate to a single shared pool.
+    Deferred (#197): teacher caseload-scoped repeat-offenders
+      depends on STRICT mode being on in prod.
+    Followup #72 (carried): bare-fetch sweep across App.jsx +
+      AppContext + modals.
+    Followup #73 (carried): backend test suite absent.
+    Followup #74 (carried): backend lint not configured.
+    Followup #80 (carried): rate-limiting coverage gap.
+    Followup #94 (carried, STANDS): scripts/ops/ → .gitignore.
+      Three untracked files on tree this session (one PDF + two
+      ops .sql) — explicitly NOT staged, NOT committed.
+
+NEXT SESSION SHOULD
+  Decide the rollout window for flipping STRICT_STUDENT_ACCESS_PREDICATE
+  in prod. Per PR #195's pre-deploy checklist: M038/M039/M040 are now
+  applied in prod (per this session's operator confirmation); next
+  steps are (a) watch [access-flip:would-block] / [access-flip:would-widen]
+  prod log lines for ~1 week to compile the per-district designation
+  TODO list; (b) coordinate with district admins to designate
+  coordinators via the PR #193 UI; (c) flip the env var and observe
+  for 24h; (d) if stable for 2 weeks, ship F-CHORE-1 to strip the flag.
+  Alternatively, take F-LOW-1 / F-LOW-2 / F-CHORE-2 as small chore PRs
+  if no feature work is queued.
+================================================================================
