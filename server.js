@@ -72,10 +72,12 @@ const screenerRoutes = require('./routes/screener');
 const districtAccessRoutes = require('./routes/districtAccess');
 const districtDashboardRoutes = require('./routes/districtDashboard');
 const disciplineReferralsRoutes = require('./routes/disciplineReferrals');
+const disciplineReportsRoutes = require('./routes/disciplineReports');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
 disciplineReferralsRoutes.initializePool(pool);
+disciplineReportsRoutes.initializePool(pool);
 mtssMeetingsRoutes.initializePool(pool);
 interventionAssignmentsRoutes.initializePool(pool);
 parentLinksRoutes.initializePool(pool);
@@ -754,6 +756,7 @@ app.use('/api/screener-results', screenerRoutes);
 app.use('/api/districts', districtAccessRoutes);
 app.use('/api/districts', districtDashboardRoutes);
 app.use('/api/discipline-referrals', disciplineReferralsRoutes);
+app.use('/api/discipline-reports', disciplineReportsRoutes);
 
 // Test route
 app.get('/', (req, res) => {
