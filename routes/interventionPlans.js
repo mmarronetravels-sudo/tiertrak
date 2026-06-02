@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireWriteAccessByInterventionId } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 
 let pool;
@@ -175,10 +175,17 @@ router.get('/student-interventions/:id/plan', async (req, res) => {
   }
 });
 
-// Save plan data (auto-save/draft)
-router.put('/student-interventions/:id/plan', async (req, res) => {
+// Save plan data (auto-save/draft).
+//
+// Tenant binding (§5): :interventionId is the student_intervention id; the
+// canonical requireWriteAccessByInterventionId middleware walks
+// student_interventions → students.tenant_id and gates via the same
+// applyStudentAccessGate as PR-A/PR-B. Not-found and wrong-tenant collapse
+// to a byte-identical 403 inside the middleware. Sets req.intervention =
+// {id, student_id, tenant_id} for downstream defense-in-depth.
+router.put('/student-interventions/:interventionId/plan', requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { interventionId: id } = req.params;
     const { plan_data } = req.body;
     
     // Check if this intervention has a plan template
@@ -220,10 +227,14 @@ router.put('/student-interventions/:id/plan', async (req, res) => {
   }
 });
 
-// Mark plan as complete
-router.post('/student-interventions/:id/plan/complete', async (req, res) => {
+// Mark plan as complete.
+//
+// Tenant binding (§5): same shape as PUT — :interventionId is the
+// student_intervention id; requireWriteAccessByInterventionId gates the
+// caller against the chain → students.tenant_id.
+router.post('/student-interventions/:interventionId/plan/complete', requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { interventionId: id } = req.params;
     const { plan_data, user_id } = req.body;
     
     if (!user_id) {
@@ -256,10 +267,12 @@ router.post('/student-interventions/:id/plan/complete', async (req, res) => {
   }
 });
 
-// Reopen plan (change from complete back to draft)
-router.post('/student-interventions/:id/plan/reopen', async (req, res) => {
+// Reopen plan (change from complete back to draft).
+//
+// Tenant binding (§5): same shape as PUT and /complete.
+router.post('/student-interventions/:interventionId/plan/reopen', requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { interventionId: id } = req.params;
     
     const result = await pool.query(
       `UPDATE student_interventions 
