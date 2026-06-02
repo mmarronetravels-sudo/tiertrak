@@ -6331,7 +6331,7 @@ const AssignmentManager = () => {
                     {staffList
                       .filter(s => !staffAssignments.some(a => a.user_id === s.id))
                       .map(s => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                        <option key={s.id} value={s.id}>{s.full_name} ({s.role})</option>
                       ))
                     }
                   </select>
