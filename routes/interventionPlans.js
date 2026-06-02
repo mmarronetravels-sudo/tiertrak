@@ -235,22 +235,23 @@ router.put('/student-interventions/:interventionId/plan', requireWriteAccessByIn
 router.post('/student-interventions/:interventionId/plan/complete', requireWriteAccessByInterventionId, async (req, res) => {
   try {
     const { interventionId: id } = req.params;
-    const { plan_data, user_id } = req.body;
-    
-    if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
-    }
-    
+    const { plan_data } = req.body;
+
+    // plan_completed_by is server-derived from req.user.id (set by
+    // mount-level requireAuth from PR #200). Any body-supplied user_id
+    // is intentionally ignored — the prior body-user_id binding was
+    // spoofable: a caller could mark the plan as completed by any user
+    // id, distorting the FERPA audit trail of who finalized the plan.
     const result = await pool.query(
-      `UPDATE student_interventions 
-       SET plan_data = $1, 
+      `UPDATE student_interventions
+       SET plan_data = $1,
            plan_status = 'complete',
            plan_completed_at = CURRENT_TIMESTAMP,
            plan_completed_by = $2,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING id, plan_data, plan_status, plan_completed_at`,
-      [JSON.stringify(plan_data), user_id, id]
+      [JSON.stringify(plan_data), req.user.id, id]
     );
     
     if (result.rows.length === 0) {
