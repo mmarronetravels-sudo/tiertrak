@@ -2,11 +2,19 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 require('dotenv').config();
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+function isPositiveInt(n) {
+  return Number.isInteger(n) && n > 0;
+}
 
 // Valid options for dropdowns
 const TIME_OF_DAY_OPTIONS = ['Before School', 'Morning', 'Mid-Morning', 'Lunch', 'Afternoon', 'After School'];
@@ -57,31 +65,86 @@ router.get('/intervention/:interventionId', async (req, res) => {
   }
 });
 
-// Create a new intervention log
+// Create a new intervention log.
+//
+// Tenant binding (§5): the student named in req.body.student_id is looked
+// up; its tenant must be in the caller's accessible-tenant set per the
+// dual-path helper. The decision is delegated to applyStudentAccessGate
+// so dark mode (legacy tenant-membership) and strict mode (per-record
+// caseload predicate from canStaffAccessStudent) are both supported.
+// Not-found and wrong-tenant collapse to a byte-identical 403 to avoid
+// cross-tenant existence disclosure.
+//
+// student_intervention_id is optional. When supplied, its student_id
+// must match the body-supplied student_id — prevents a body-side-channel
+// where a caller could attach a log to a student_intervention belonging
+// to a different student/tenant.
 router.post('/', async (req, res) => {
   try {
-    const { student_intervention_id, student_id, logged_by, log_date, time_of_day, location, notes } = req.body;
-    
-    // Validate required fields
-    if (!student_id || !logged_by || !time_of_day || !location) {
+    if (req.user && req.user.role === 'parent') {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    const { student_intervention_id, student_id, log_date, time_of_day, location, notes } = req.body || {};
+
+    // Validate required fields. logged_by is server-derived from req.user.id;
+    // any body-supplied logged_by is intentionally ignored to prevent spoofing
+    // the author of a log entry.
+    if (!isPositiveInt(student_id) || !time_of_day || !location) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    
+
     // Validate time_of_day
     if (!TIME_OF_DAY_OPTIONS.includes(time_of_day)) {
       return res.status(400).json({ error: `Invalid time of day. Must be one of: ${TIME_OF_DAY_OPTIONS.join(', ')}` });
     }
-    
+
     // Validate location
     if (!LOCATION_OPTIONS.includes(location)) {
       return res.status(400).json({ error: `Invalid location. Must be one of: ${LOCATION_OPTIONS.join(', ')}` });
     }
-    
+
+    // Per-record tenant gate. Look up the student (tier needed for the
+    // strict-mode caseload branch). 0 rows OR tenant-not-accessible OR
+    // gate-deny all collapse to 403.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const studentRes = await pool.query(
+      'SELECT id, tenant_id, tier FROM students WHERE id = $1',
+      [student_id]
+    );
+    if (studentRes.rows.length === 0) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+    const studentRow = studentRes.rows[0];
+    const { decision } = await applyStudentAccessGate(req.user, studentRow, {
+      legacyAllowed: accessible.includes(studentRow.tenant_id)
+    });
+    if (decision !== 'allow') {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    // If student_intervention_id supplied, its student_id MUST match the
+    // body's student_id. Composite check closes the cross-student/cross-
+    // tenant side-channel where a body could attach a log to another
+    // tenant's intervention row.
+    if (student_intervention_id != null) {
+      if (!isPositiveInt(student_intervention_id)) {
+        return res.status(400).json({ error: 'Invalid student_intervention_id' });
+      }
+      const siRes = await pool.query(
+        'SELECT 1 FROM student_interventions WHERE id = $1 AND student_id = $2',
+        [student_intervention_id, student_id]
+      );
+      if (siRes.rows.length === 0) {
+        return res.status(400).json({ error: 'Invalid student_intervention_id' });
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO intervention_logs (student_intervention_id, student_id, logged_by, log_date, time_of_day, location, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [student_intervention_id || null, student_id, logged_by, log_date || new Date(), time_of_day, location, notes]
+      [student_intervention_id || null, student_id, req.user.id, log_date || new Date(), time_of_day, location, notes]
     );
     
     // Update the student's updated_at timestamp
@@ -92,58 +155,10 @@ router.post('/', async (req, res) => {
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update an intervention log
-router.put('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { log_date, time_of_day, location, notes } = req.body;
-    
-    // Validate time_of_day if provided
-    if (time_of_day && !TIME_OF_DAY_OPTIONS.includes(time_of_day)) {
-      return res.status(400).json({ error: `Invalid time of day. Must be one of: ${TIME_OF_DAY_OPTIONS.join(', ')}` });
-    }
-    
-    // Validate location if provided
-    if (location && !LOCATION_OPTIONS.includes(location)) {
-      return res.status(400).json({ error: `Invalid location. Must be one of: ${LOCATION_OPTIONS.join(', ')}` });
-    }
-    
-    const result = await pool.query(
-      `UPDATE intervention_logs
-       SET log_date = $1, time_of_day = $2, location = $3, notes = $4
-       WHERE id = $5
-       RETURNING *`,
-      [log_date, time_of_day, location, notes, id]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Intervention log not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Delete an intervention log
-router.delete('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query(
-      'DELETE FROM intervention_logs WHERE id = $1 RETURNING *',
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Intervention log not found' });
-    }
-    res.json({ message: 'Intervention log deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII
+    // (student_id is an integer; notes column never enters the log line).
+    console.error('[interventionLogs:create]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
