@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
 
 let pool;
 
@@ -29,6 +32,9 @@ router.get('/:studentInterventionId', async (req, res) => {
 
 // POST add assignment to intervention
 router.post('/', async (req, res) => {
+  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
   try {
     const { student_intervention_id, user_id, assignment_type } = req.body;
     
@@ -52,9 +58,12 @@ router.post('/', async (req, res) => {
 
 // DELETE remove assignment
 router.delete('/:id', async (req, res) => {
+  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
   try {
     const { id } = req.params;
-    
+
     await pool.query('DELETE FROM intervention_assignments WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
