@@ -222,7 +222,9 @@ router.put('/student-interventions/:interventionId/plan', requireWriteAccessByIn
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error saving plan data:', error);
+    // §4B: integer user_id + err.message only. No body echo (plan_data
+    // is free-text PII), no name/student leakage.
+    console.error('[interventionPlans:savePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -263,7 +265,8 @@ router.post('/student-interventions/:interventionId/plan/complete', requireWrite
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error completing plan:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:completePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -295,7 +298,8 @@ router.post('/student-interventions/:interventionId/plan/reopen', requireWriteAc
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error reopening plan:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:reopenPlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
