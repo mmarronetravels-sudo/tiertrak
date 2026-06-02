@@ -2,6 +2,27 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireWriteAccessByInterventionId } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Cheapest check first: role allowlist runs as the leading middleware
+// on each of the three plan-write routes so non-INTERVENTION_MANAGER_ROLES
+// callers (e.g. parent) 403 before any DB I/O fires from
+// requireWriteAccessByInterventionId. Mirrors the PR-B polish pattern.
+//
+// FE no-regression: canManageInterventions (App.jsx:481 +
+// AppContext.jsx:42) = `user && user.role !== 'parent'`. The Plan
+// button at App.jsx:3316-3325 sits inside the canManageInterventions-
+// wrapped block at App.jsx:3119. INTERVENTION_MANAGER_ROLES =
+// constants/roles.js:39-46 = exact membership match (the 6 non-parent
+// staff roles). No FE flow regresses.
+function requireInterventionManagerRole(req, res, next) {
+  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+  return next();
+}
 
 let pool;
 
@@ -183,7 +204,7 @@ router.get('/student-interventions/:id/plan', async (req, res) => {
 // applyStudentAccessGate as PR-A/PR-B. Not-found and wrong-tenant collapse
 // to a byte-identical 403 inside the middleware. Sets req.intervention =
 // {id, student_id, tenant_id} for downstream defense-in-depth.
-router.put('/student-interventions/:interventionId/plan', requireWriteAccessByInterventionId, async (req, res) => {
+router.put('/student-interventions/:interventionId/plan', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
     const { interventionId: id } = req.params;
     const { plan_data } = req.body;
@@ -234,7 +255,7 @@ router.put('/student-interventions/:interventionId/plan', requireWriteAccessByIn
 // Tenant binding (§5): same shape as PUT — :interventionId is the
 // student_intervention id; requireWriteAccessByInterventionId gates the
 // caller against the chain → students.tenant_id.
-router.post('/student-interventions/:interventionId/plan/complete', requireWriteAccessByInterventionId, async (req, res) => {
+router.post('/student-interventions/:interventionId/plan/complete', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
     const { interventionId: id } = req.params;
     const { plan_data } = req.body;
@@ -274,7 +295,7 @@ router.post('/student-interventions/:interventionId/plan/complete', requireWrite
 // Reopen plan (change from complete back to draft).
 //
 // Tenant binding (§5): same shape as PUT and /complete.
-router.post('/student-interventions/:interventionId/plan/reopen', requireWriteAccessByInterventionId, async (req, res) => {
+router.post('/student-interventions/:interventionId/plan/reopen', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
     const { interventionId: id } = req.params;
     
