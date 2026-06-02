@@ -76,13 +76,24 @@ router.post('/', requireInterventionManagerRole, requireWriteAccessByBody, async
     // check would permit broader assignment but breaks the §5 helper-
     // consume invariant — explicitly rejected per the PR-B scope
     // directive.
-    if (!Number.isInteger(user_id) || user_id <= 0) {
+    // Coerce body.user_id with Number() before validating.
+    // The FE submits the dropdown value as a string (DOM form values are
+    // always strings — `<option value={s.id}>` renders `value="5"` and
+    // `e.target.value` returns "5"). The prior `Number.isInteger(user_id)`
+    // check rejected stringified integers and broke the live FE flow.
+    // Number() handles both numeric and stringified-numeric inputs;
+    // non-numeric and decimal inputs collapse to NaN or non-integer and
+    // fail the subsequent check. The parsed integer (assignedUserId) is
+    // used downstream — the tenant gate `tenant_id = ANY($accessible)`
+    // is unchanged and continues to enforce cross-tenant denial.
+    const assignedUserId = Number(user_id);
+    if (!Number.isInteger(assignedUserId) || assignedUserId <= 0) {
       return res.status(400).json({ error: 'Invalid user_id' });
     }
     const accessible = await resolveAccessibleTenantIds(req.user);
     const assignedRes = await pool.query(
       'SELECT 1 FROM users WHERE id = $1 AND tenant_id = ANY($2::int[])',
-      [user_id, accessible]
+      [assignedUserId, accessible]
     );
     if (assignedRes.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid user_id' });
@@ -93,7 +104,7 @@ router.post('/', requireInterventionManagerRole, requireWriteAccessByBody, async
       VALUES ($1, $2, $3, TRUE)
       ON CONFLICT (student_intervention_id, user_id) DO NOTHING
       RETURNING *
-    `, [student_intervention_id, user_id, assignment_type]);
+    `, [student_intervention_id, assignedUserId, assignment_type]);
     
     if (result.rows.length === 0) {
       return res.status(409).json({ error: 'User already assigned to this intervention' });
