@@ -92,8 +92,9 @@ router.post('/', requireWriteAccessByBody, async (req, res) => {
     
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Error adding assignment:', error);
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionAssignments:create]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -144,8 +145,9 @@ router.delete('/:id', async (req, res) => {
     await pool.query('DELETE FROM intervention_assignments WHERE id = $1', [id]);
     res.json({ success: true });
   } catch (error) {
-    console.error('Error removing assignment:', error);
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionAssignments:delete]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
