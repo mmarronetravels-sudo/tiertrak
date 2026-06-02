@@ -85,10 +85,12 @@ router.post('/', async (req, res) => {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
-    const { student_intervention_id, student_id, logged_by, log_date, time_of_day, location, notes } = req.body || {};
+    const { student_intervention_id, student_id, log_date, time_of_day, location, notes } = req.body || {};
 
-    // Validate required fields
-    if (!isPositiveInt(student_id) || !logged_by || !time_of_day || !location) {
+    // Validate required fields. logged_by is server-derived from req.user.id;
+    // any body-supplied logged_by is intentionally ignored to prevent spoofing
+    // the author of a log entry.
+    if (!isPositiveInt(student_id) || !time_of_day || !location) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -142,7 +144,7 @@ router.post('/', async (req, res) => {
       `INSERT INTO intervention_logs (student_intervention_id, student_id, logged_by, log_date, time_of_day, location, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [student_intervention_id || null, student_id, logged_by, log_date || new Date(), time_of_day, location, notes]
+      [student_intervention_id || null, student_id, req.user.id, log_date || new Date(), time_of_day, location, notes]
     );
     
     // Update the student's updated_at timestamp
