@@ -1,11 +1,18 @@
 /**
  * Seed Plan Templates
- * 
- * Run this script to populate plan templates for interventions.
- * Usage: node scripts/seedPlanTemplates.js
- * 
- * Or call the API endpoint:
- * POST /api/intervention-plans/admin/templates/bulk-update
+ *
+ * Run this script to populate plan templates in the shared bank
+ * (intervention_templates rows where tenant_id IS NULL). Generates
+ * UPDATE statements to stdout; pipe to psql against the target env.
+ *
+ * Usage:
+ *   node scripts/seedPlanTemplates.js | psql "$DATABASE_URL"
+ *
+ * The generated UPDATEs include AND tenant_id IS NULL so tenant-owned
+ * templates that happen to share a name with a bank template are NOT
+ * overwritten. The matching API endpoint at
+ * POST /api/intervention-plans/admin/templates/bulk-update is
+ * platform-admin-gated and applies the same bank-only WHERE clause.
  */
 
 const planTemplates = {
@@ -1995,7 +2002,7 @@ if (require.main === module) {
   
   Object.entries(planTemplates).forEach(([name, template]) => {
     const escaped = JSON.stringify(template).replace(/'/g, "''");
-    console.log(`UPDATE intervention_templates SET plan_template = '${escaped}', has_plan_template = true WHERE name = '${name}';`);
+    console.log(`UPDATE intervention_templates SET plan_template = '${escaped}', has_plan_template = true WHERE name = '${name}' AND tenant_id IS NULL;`);
     console.log('');
   });
 }
