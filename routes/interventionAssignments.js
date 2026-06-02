@@ -7,6 +7,18 @@ const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
 
+// Cheapest check first: role allowlist runs as the leading middleware in
+// the chain on both POST and DELETE so non-INTERVENTION_MANAGER_ROLES
+// callers (e.g. parent) 403 before any DB I/O. Per security-reviewer
+// INFO #1 on the prior commits — code now matches the "cheapest check
+// first" intent stated in commit 1's body.
+function requireInterventionManagerRole(req, res, next) {
+  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+  return next();
+}
+
 let pool;
 
 const initializePool = (p) => {
@@ -40,10 +52,7 @@ router.get('/:studentInterventionId', async (req, res) => {
 // student_interventions → students.tenant_id and gates via the same
 // applyStudentAccessGate as PR-A. Sets req.intervention = {id, student_id,
 // tenant_id} for downstream defense-in-depth.
-router.post('/', requireWriteAccessByBody, async (req, res) => {
-  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
-    return res.status(403).json(FORBIDDEN_BODY);
-  }
+router.post('/', requireInterventionManagerRole, requireWriteAccessByBody, async (req, res) => {
   try {
     const { student_intervention_id, user_id, assignment_type } = req.body;
 
@@ -108,10 +117,7 @@ router.post('/', requireWriteAccessByBody, async (req, res) => {
 // collapse to a byte-identical 403 to avoid cross-tenant existence disclosure.
 // Note (banked): extract a requireWriteAccessByAssignmentId middleware helper
 // if a third inline gate of this shape appears.
-router.delete('/:id', async (req, res) => {
-  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
-    return res.status(403).json(FORBIDDEN_BODY);
-  }
+router.delete('/:id', requireInterventionManagerRole, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
