@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 
 let pool;
 
@@ -331,68 +333,53 @@ router.get('/students/:studentId/plans', async (req, res) => {
 // ADMIN: Manage Plan Templates
 // ============================================
 
-// Update plan template for an intervention
-router.put('/admin/templates/:templateId', async (req, res) => {
+// Bulk update plan templates in the shared bank (tenant_id IS NULL).
+// Gated to platform admins via the PLATFORM_ADMIN_USER_IDS env-allowlist
+// and scoped to bank rows only — tenant-owned templates that share a
+// name with a bank template are NEVER overwritten. Mirrors the bank-only
+// WHERE clause emitted by scripts/seedPlanTemplates.js.
+//
+// PII discipline (§4B): plan_template contents are operator-curated bank
+// payloads, not student data. No request-body echo in error responses;
+// console.error carries user_id (integer) + err.message only.
+router.post('/admin/templates/bulk-update', requireAuth, platformAdminOnly, async (req, res) => {
   try {
-    const { templateId } = req.params;
-    const { plan_template, has_plan_template } = req.body;
-    
-    const result = await pool.query(
-      `UPDATE intervention_templates 
-       SET plan_template = $1,
-           has_plan_template = $2
-       WHERE id = $3
-       RETURNING id, name, has_plan_template`,
-      [JSON.stringify(plan_template), has_plan_template, templateId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
-    
-    res.json({
-      message: 'Template updated',
-      ...result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating template:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+    const { templates } = req.body || {};
 
-// Bulk update: Set plan templates for multiple interventions by name
-router.post('/admin/templates/bulk-update', async (req, res) => {
-  try {
-    const { templates } = req.body;
-    // templates is an array of { name, plan_template }
-    
     if (!Array.isArray(templates)) {
       return res.status(400).json({ error: 'templates must be an array' });
     }
-    
+
     const results = [];
-    
+
     for (const template of templates) {
+      if (!template || typeof template.name !== 'string' || !template.name.trim()) {
+        return res.status(400).json({ error: 'each template requires a non-empty name' });
+      }
+      if (template.plan_template === undefined || template.plan_template === null) {
+        return res.status(400).json({ error: 'each template requires a plan_template' });
+      }
+
       const result = await pool.query(
-        `UPDATE intervention_templates 
+        `UPDATE intervention_templates
          SET plan_template = $1,
              has_plan_template = true
-         WHERE name = $2
-         RETURNING id, name`,
+         WHERE name = $2 AND tenant_id IS NULL
+         RETURNING id, name, tenant_id`,
         [JSON.stringify(template.plan_template), template.name]
       );
-      
+
       if (result.rows.length > 0) {
         results.push(result.rows[0]);
       }
     }
-    
+
     res.json({
-      message: `Updated ${results.length} templates`,
+      message: `Updated ${results.length} bank template(s)`,
       updated: results
     });
   } catch (error) {
-    console.error('Error bulk updating templates:', error);
+    console.error('[interventionPlans:bulkUpdate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
