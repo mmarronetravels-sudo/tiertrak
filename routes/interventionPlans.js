@@ -331,35 +331,6 @@ router.get('/students/:studentId/plans', async (req, res) => {
 // ADMIN: Manage Plan Templates
 // ============================================
 
-// Update plan template for an intervention
-router.put('/admin/templates/:templateId', async (req, res) => {
-  try {
-    const { templateId } = req.params;
-    const { plan_template, has_plan_template } = req.body;
-    
-    const result = await pool.query(
-      `UPDATE intervention_templates 
-       SET plan_template = $1,
-           has_plan_template = $2
-       WHERE id = $3
-       RETURNING id, name, has_plan_template`,
-      [JSON.stringify(plan_template), has_plan_template, templateId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Template not found' });
-    }
-    
-    res.json({
-      message: 'Template updated',
-      ...result.rows[0]
-    });
-  } catch (error) {
-    console.error('Error updating template:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // Bulk update: Set plan templates for multiple interventions by name
 router.post('/admin/templates/bulk-update', async (req, res) => {
   try {
