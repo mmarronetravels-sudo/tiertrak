@@ -23,8 +23,8 @@ const pool = new Pool({
 // Tenant binding (§5): :tenantId path param must be in the caller's
 // accessible-tenant set per resolveAccessibleTenantIds. requireTenantStaffAccess
 // is the canonical middleware that does this check (used by /staff/:tenantId,
-// /discipline-referrals/queue/:tenantId, etc.). Failure collapses to 404 to
-// avoid existence disclosure across tenants.
+// /discipline-referrals/queue/:tenantId, etc.). Failure collapses to 403
+// FORBIDDEN_BODY to avoid existence disclosure across tenants.
 //
 // Pre-fix: anonymous-reachable per the PR #206 prep audit; live prod probe
 // confirmed 200 anonymously. PR #206 closed anonymous access; this PR adds
