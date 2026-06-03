@@ -1,7 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireWriteAccessByInterventionId } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Cheapest check first: role allowlist runs as the leading middleware
+// on each of the three plan-write routes so non-INTERVENTION_MANAGER_ROLES
+// callers (e.g. parent) 403 before any DB I/O fires from
+// requireWriteAccessByInterventionId. Mirrors the PR-B polish pattern.
+//
+// FE no-regression: canManageInterventions (App.jsx:481 +
+// AppContext.jsx:42) = `user && user.role !== 'parent'`. The Plan
+// button at App.jsx:3316-3325 sits inside the canManageInterventions-
+// wrapped block at App.jsx:3119. INTERVENTION_MANAGER_ROLES =
+// constants/roles.js:39-46 = exact membership match (the 6 non-parent
+// staff roles). No FE flow regresses.
+function requireInterventionManagerRole(req, res, next) {
+  if (!INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+  return next();
+}
 
 let pool;
 
@@ -175,10 +196,17 @@ router.get('/student-interventions/:id/plan', async (req, res) => {
   }
 });
 
-// Save plan data (auto-save/draft)
-router.put('/student-interventions/:id/plan', async (req, res) => {
+// Save plan data (auto-save/draft).
+//
+// Tenant binding (§5): :interventionId is the student_intervention id; the
+// canonical requireWriteAccessByInterventionId middleware walks
+// student_interventions → students.tenant_id and gates via the same
+// applyStudentAccessGate as PR-A/PR-B. Not-found and wrong-tenant collapse
+// to a byte-identical 403 inside the middleware. Sets req.intervention =
+// {id, student_id, tenant_id} for downstream defense-in-depth.
+router.put('/student-interventions/:interventionId/plan', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { interventionId: id } = req.params;
     const { plan_data } = req.body;
     
     // Check if this intervention has a plan template
@@ -215,31 +243,38 @@ router.put('/student-interventions/:id/plan', async (req, res) => {
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error saving plan data:', error);
+    // §4B: integer user_id + err.message only. No body echo (plan_data
+    // is free-text PII), no name/student leakage.
+    console.error('[interventionPlans:savePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Mark plan as complete
-router.post('/student-interventions/:id/plan/complete', async (req, res) => {
+// Mark plan as complete.
+//
+// Tenant binding (§5): same shape as PUT — :interventionId is the
+// student_intervention id; requireWriteAccessByInterventionId gates the
+// caller against the chain → students.tenant_id.
+router.post('/student-interventions/:interventionId/plan/complete', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { plan_data, user_id } = req.body;
-    
-    if (!user_id) {
-      return res.status(400).json({ error: 'user_id is required' });
-    }
-    
+    const { interventionId: id } = req.params;
+    const { plan_data } = req.body;
+
+    // plan_completed_by is server-derived from req.user.id (set by
+    // mount-level requireAuth from PR #200). Any body-supplied user_id
+    // is intentionally ignored — the prior body-user_id binding was
+    // spoofable: a caller could mark the plan as completed by any user
+    // id, distorting the FERPA audit trail of who finalized the plan.
     const result = await pool.query(
-      `UPDATE student_interventions 
-       SET plan_data = $1, 
+      `UPDATE student_interventions
+       SET plan_data = $1,
            plan_status = 'complete',
            plan_completed_at = CURRENT_TIMESTAMP,
            plan_completed_by = $2,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3
        RETURNING id, plan_data, plan_status, plan_completed_at`,
-      [JSON.stringify(plan_data), user_id, id]
+      [JSON.stringify(plan_data), req.user.id, id]
     );
     
     if (result.rows.length === 0) {
@@ -251,15 +286,18 @@ router.post('/student-interventions/:id/plan/complete', async (req, res) => {
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error completing plan:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:completePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Reopen plan (change from complete back to draft)
-router.post('/student-interventions/:id/plan/reopen', async (req, res) => {
+// Reopen plan (change from complete back to draft).
+//
+// Tenant binding (§5): same shape as PUT and /complete.
+router.post('/student-interventions/:interventionId/plan/reopen', requireInterventionManagerRole, requireWriteAccessByInterventionId, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { interventionId: id } = req.params;
     
     const result = await pool.query(
       `UPDATE student_interventions 
@@ -281,7 +319,8 @@ router.post('/student-interventions/:id/plan/reopen', async (req, res) => {
       ...result.rows[0]
     });
   } catch (error) {
-    console.error('Error reopening plan:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:reopenPlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
