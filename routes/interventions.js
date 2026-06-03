@@ -4,20 +4,33 @@ const { Pool } = require('pg');
 const {
   requireAuth,
   requireStudentReadAccess,
-  requireWriteAccessByInterventionId
+  requireWriteAccessByInterventionId,
+  requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 require('dotenv').config();
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Get all intervention templates for a tenant (includes system defaults)
-// GET /templates/tenant/:tenantId — used by "New Intervention" modal when assigning to student
-router.get('/templates/tenant/:tenantId', async (req, res) => {
+// Get all intervention templates for a tenant (includes system defaults).
+//
+// Tenant binding (§5): :tenantId path param must be in the caller's
+// accessible-tenant set per resolveAccessibleTenantIds. requireTenantStaffAccess
+// is the canonical middleware that does this check (used by /staff/:tenantId,
+// /discipline-referrals/queue/:tenantId, etc.). Failure collapses to 404 to
+// avoid existence disclosure across tenants.
+//
+// Pre-fix: anonymous-reachable per the PR #206 prep audit; live prod probe
+// confirmed 200 anonymously. PR #206 closed anonymous access; this PR adds
+// the per-handler tenant scope so authenticated cross-tenant probing is
+// also denied.
+router.get('/templates/tenant/:tenantId', requireTenantStaffAccess, async (req, res) => {
   try {
     const { tenantId } = req.params;
     
@@ -40,46 +53,104 @@ router.get('/templates/tenant/:tenantId', async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching templates:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:listTemplates]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Create a custom intervention template for a tenant
+// Create a custom intervention template for a tenant.
+//
+// Tenant binding (§5): body.tenant_id must be in the caller's accessible-
+// tenant set per resolveAccessibleTenantIds. The body field is Number()-
+// coerced before validation per the PR #204 lesson (FE may send stringified
+// integers from form values). Out-of-scope and non-integer collapse to a
+// byte-identical 403 — no existence disclosure across tenants.
 router.post('/templates', async (req, res) => {
   try {
-    const { tenant_id, name, description, area, tier } = req.body;
+    const { tenant_id, name, description, area, tier } = req.body || {};
+
+    // Coerce + validate body.tenant_id per the #204 lesson. FE at App.jsx:1693
+    // sends user.tenant_id (JS number from /me response); defense-in-depth
+    // accepts stringified-numeric inputs the same way.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const result = await pool.query(
-      `INSERT INTO intervention_templates (tenant_id, name, description, area, tier, is_system_default) 
-       VALUES ($1, $2, $3, $4, $5, FALSE) 
+      `INSERT INTO intervention_templates (tenant_id, name, description, area, tier, is_system_default)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
        RETURNING *`,
-      [tenant_id, name, description, area, tier]
+      [tenantIdInt, name, description, area, tier]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:createTemplate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Delete a custom intervention template (cannot delete system defaults)
+// Delete a custom intervention template (cannot delete system defaults).
+//
+// Tenant binding (§5): load the row's tenant_id, then verify it's in the
+// caller's accessible-tenant set. Bank rows (tenant_id IS NULL) keep the
+// existing 403 message — they're operator-curated content that no per-
+// tenant caller can delete. Not-found and wrong-tenant collapse to a
+// byte-identical 403 with FORBIDDEN_BODY (mirrors PR-A/B/C pattern).
+//
+// The :id path param is Number()-coerced per the PR #204 lesson.
 router.delete('/templates/:id', async (req, res) => {
   try {
-    // Don't allow deleting bank interventions (tenant_id IS NULL)
-    const check = await pool.query('SELECT tenant_id FROM intervention_templates WHERE id = $1', [req.params.id]);
-    if (check.rows.length > 0 && check.rows[0].tenant_id === null) {
+    const idInt = Number(req.params.id);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      return res.status(400).json({ error: 'Invalid template id' });
+    }
+
+    // Load row to inspect tenant_id + bank-status.
+    const check = await pool.query(
+      'SELECT tenant_id FROM intervention_templates WHERE id = $1',
+      [idInt]
+    );
+    if (check.rows.length === 0) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+    const rowTenantId = check.rows[0].tenant_id;
+    if (rowTenantId === null) {
+      // Bank row — preserve existing user-facing message for the FE; not a
+      // tenant-isolation 403, but a product-rule 403.
       return res.status(403).json({ error: 'Bank interventions cannot be deleted. Use the Intervention Bank tab to remove them from your school.' });
     }
-    const { id } = req.params;
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(rowTenantId)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const result = await pool.query(
       'DELETE FROM intervention_templates WHERE id = $1 AND is_system_default = FALSE RETURNING *',
-      [id]
+      [idInt]
     );
     if (result.rows.length === 0) {
+      // Row was loaded above but the DELETE returned no rows: only
+      // reachable via is_system_default=TRUE (the WHERE filter rejects)
+      // or a TOCTOU race (concurrent delete). 404 matches the FE
+      // user-facing expectation.
       return res.status(404).json({ error: 'Template not found or cannot delete system default' });
     }
     res.json({ message: 'Template deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:deleteTemplate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
