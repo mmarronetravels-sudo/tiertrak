@@ -11,6 +11,8 @@ const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleT
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 require('dotenv').config();
 
+const FORBIDDEN_BODY = { error: 'Not authorized' };
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
@@ -56,15 +58,36 @@ router.get('/templates/tenant/:tenantId', requireTenantStaffAccess, async (req, 
   }
 });
 
-// Create a custom intervention template for a tenant
+// Create a custom intervention template for a tenant.
+//
+// Tenant binding (§5): body.tenant_id must be in the caller's accessible-
+// tenant set per resolveAccessibleTenantIds. The body field is Number()-
+// coerced before validation per the PR #204 lesson (FE may send stringified
+// integers from form values). Out-of-scope and non-integer collapse to a
+// byte-identical 403 — no existence disclosure across tenants.
 router.post('/templates', async (req, res) => {
   try {
-    const { tenant_id, name, description, area, tier } = req.body;
+    const { tenant_id, name, description, area, tier } = req.body || {};
+
+    // Coerce + validate body.tenant_id per the #204 lesson. FE at App.jsx:1693
+    // sends user.tenant_id (JS number from /me response); defense-in-depth
+    // accepts stringified-numeric inputs the same way.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const result = await pool.query(
-      `INSERT INTO intervention_templates (tenant_id, name, description, area, tier, is_system_default) 
-       VALUES ($1, $2, $3, $4, $5, FALSE) 
+      `INSERT INTO intervention_templates (tenant_id, name, description, area, tier, is_system_default)
+       VALUES ($1, $2, $3, $4, $5, FALSE)
        RETURNING *`,
-      [tenant_id, name, description, area, tier]
+      [tenantIdInt, name, description, area, tier]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
