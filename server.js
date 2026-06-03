@@ -735,7 +735,7 @@ createTables();
 // Use routes
 app.use('/api/tenants', tenantsRoutes);
 app.use('/api/students', studentsRoutes);
-app.use('/api/interventions', interventionsRoutes);
+app.use('/api/interventions', requireAuth, interventionsRoutes);
 app.use('/api/progress-notes', progressNotesRoutes);
 app.use('/api/users', authIpLimiter, usersRoutes);
 app.use('/api/auth', authIpLimiter, authRoutes);
