@@ -109,7 +109,8 @@ router.post('/activate', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error activating intervention:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionBank:activate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -190,7 +191,8 @@ router.delete('/deactivate', async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deactivating intervention:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionBank:deactivate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
