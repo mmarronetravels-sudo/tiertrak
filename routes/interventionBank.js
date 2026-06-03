@@ -63,7 +63,7 @@ router.get('/all', async (req, res) => {
 // cross-tenant existence disclosure.
 router.post('/activate', async (req, res) => {
   try {
-    const { tenant_id, template_id, user_id } = req.body || {};
+    const { tenant_id, template_id } = req.body || {};
 
     // Coerce + validate body.tenant_id per the #204 lesson.
     const tenantIdInt = Number(tenant_id);
@@ -95,11 +95,17 @@ router.post('/activate', async (req, res) => {
       return res.status(400).json({ error: 'Invalid template_id' });
     }
 
+    // activated_by is server-derived from req.user.id, not body. Any body-
+    // supplied user_id is intentionally ignored — the prior body-user_id
+    // binding was spoofable: a caller could attribute the bank activation
+    // to any user id, distorting the FERPA audit trail. Mirrors the PR-A
+    // logged_by fix on intervention_logs and the PR-C plan_completed_by
+    // fix on student_interventions.
     await pool.query(`
       INSERT INTO tenant_intervention_bank (tenant_id, template_id, activated_by)
       VALUES ($1, $2, $3)
       ON CONFLICT (tenant_id, template_id) DO NOTHING
-    `, [tenantIdInt, templateIdInt, user_id || null]);
+    `, [tenantIdInt, templateIdInt, req.user.id]);
 
     res.json({ success: true });
   } catch (error) {
