@@ -61,29 +61,6 @@ router.post('/activate', async (req, res) => {
   }
 });
 
-// POST /api/intervention-bank/activate-bulk
-// Activate multiple bank interventions at once (for starter set)
-router.post('/activate-bulk', async (req, res) => {
-  try {
-    const { tenant_id, template_ids, user_id } = req.body;
-    if (!tenant_id || !template_ids || !template_ids.length) {
-      return res.status(400).json({ error: 'tenant_id and template_ids are required' });
-    }
-
-    // Use a single INSERT with unnest for efficiency
-    await pool.query(`
-      INSERT INTO tenant_intervention_bank (tenant_id, template_id, activated_by)
-      SELECT $1, unnest($2::int[]), $3
-      ON CONFLICT (tenant_id, template_id) DO NOTHING
-    `, [tenant_id, template_ids, user_id || null]);
-
-    res.json({ success: true, count: template_ids.length });
-  } catch (error) {
-    console.error('Error bulk activating interventions:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // DELETE /api/intervention-bank/deactivate
 // Remove a bank intervention from a tenant's active list
 router.delete('/deactivate', async (req, res) => {
