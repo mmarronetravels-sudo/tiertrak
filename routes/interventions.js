@@ -95,20 +95,52 @@ router.post('/templates', async (req, res) => {
   }
 });
 
-// Delete a custom intervention template (cannot delete system defaults)
+// Delete a custom intervention template (cannot delete system defaults).
+//
+// Tenant binding (§5): load the row's tenant_id, then verify it's in the
+// caller's accessible-tenant set. Bank rows (tenant_id IS NULL) keep the
+// existing 403 message — they're operator-curated content that no per-
+// tenant caller can delete. Not-found and wrong-tenant collapse to a
+// byte-identical 403 with FORBIDDEN_BODY (mirrors PR-A/B/C pattern).
+//
+// The :id path param is Number()-coerced per the PR #204 lesson.
 router.delete('/templates/:id', async (req, res) => {
   try {
-    // Don't allow deleting bank interventions (tenant_id IS NULL)
-    const check = await pool.query('SELECT tenant_id FROM intervention_templates WHERE id = $1', [req.params.id]);
-    if (check.rows.length > 0 && check.rows[0].tenant_id === null) {
+    const idInt = Number(req.params.id);
+    if (!Number.isInteger(idInt) || idInt <= 0) {
+      return res.status(400).json({ error: 'Invalid template id' });
+    }
+
+    // Load row to inspect tenant_id + bank-status.
+    const check = await pool.query(
+      'SELECT tenant_id FROM intervention_templates WHERE id = $1',
+      [idInt]
+    );
+    if (check.rows.length === 0) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+    const rowTenantId = check.rows[0].tenant_id;
+    if (rowTenantId === null) {
+      // Bank row — preserve existing user-facing message for the FE; not a
+      // tenant-isolation 403, but a product-rule 403.
       return res.status(403).json({ error: 'Bank interventions cannot be deleted. Use the Intervention Bank tab to remove them from your school.' });
     }
-    const { id } = req.params;
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(rowTenantId)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const result = await pool.query(
       'DELETE FROM intervention_templates WHERE id = $1 AND is_system_default = FALSE RETURNING *',
-      [id]
+      [idInt]
     );
     if (result.rows.length === 0) {
+      // Row was loaded above but the DELETE returned no rows: only
+      // reachable via is_system_default=TRUE (the WHERE filter rejects)
+      // or a TOCTOU race (concurrent delete). 404 matches the FE
+      // user-facing expectation.
       return res.status(404).json({ error: 'Template not found or cannot delete system default' });
     }
     res.json({ message: 'Template deleted successfully' });
