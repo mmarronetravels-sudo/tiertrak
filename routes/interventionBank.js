@@ -115,35 +115,78 @@ router.post('/activate', async (req, res) => {
 });
 
 // DELETE /api/intervention-bank/deactivate
-// Remove a bank intervention from a tenant's active list
+// Remove a bank intervention from a tenant's active list.
+//
+// Tenant binding (§5): body.tenant_id Number()-coerced and verified
+// against resolveAccessibleTenantIds. Same shape as POST /activate.
+//
+// template_id bank-row validation: same shape as POST /activate. A
+// caller deactivating a non-bank template_id would be a no-op against
+// tenant_intervention_bank but signals abuse or FE drift; reject with
+// 400 to keep the contract symmetric with /activate. Non-existent and
+// non-bank template_id collapse to byte-identical 400.
+//
+// The existing active-students 409 gate (no deactivation if students
+// have this intervention assigned) is preserved; it now runs after the
+// tenant scope check, so cross-tenant probing cannot count another
+// tenant's active assignments.
 router.delete('/deactivate', async (req, res) => {
   try {
-    const { tenant_id, template_id } = req.body;
-    if (!tenant_id || !template_id) {
-      return res.status(400).json({ error: 'tenant_id and template_id are required' });
+    const { tenant_id, template_id } = req.body || {};
+
+    // Coerce + validate body.tenant_id per the #204 lesson.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
     }
 
-    // Check if any students currently have this intervention assigned
+    // Coerce + validate body.template_id.
+    const templateIdInt = Number(template_id);
+    if (!Number.isInteger(templateIdInt) || templateIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid template_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    // template_id must be a bank row (tenant_id IS NULL). Matches the
+    // POST /activate validation: bank membership is a relationship to
+    // shared bank rows only; non-bank rows have no slot in
+    // tenant_intervention_bank to deactivate.
+    const bankCheck = await pool.query(
+      'SELECT 1 FROM intervention_templates WHERE id = $1 AND tenant_id IS NULL',
+      [templateIdInt]
+    );
+    if (bankCheck.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid template_id' });
+    }
+
+    // Check if any students currently have this intervention assigned.
+    // Runs AFTER the tenant gate so cross-tenant probing cannot count
+    // another tenant's active assignments.
     const usage = await pool.query(`
-      SELECT COUNT(*) as count 
+      SELECT COUNT(*) as count
       FROM student_interventions si
       JOIN students s ON si.student_id = s.id
-      WHERE si.intervention_template_id = $1 
+      WHERE si.intervention_template_id = $1
         AND s.tenant_id = $2
         AND si.status = 'active'
-    `, [template_id, tenant_id]);
+    `, [templateIdInt, tenantIdInt]);
 
     if (parseInt(usage.rows[0].count) > 0) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         error: 'Cannot deactivate — this intervention is currently assigned to active students',
         active_count: parseInt(usage.rows[0].count)
       });
     }
 
     await pool.query(`
-      DELETE FROM tenant_intervention_bank 
+      DELETE FROM tenant_intervention_bank
       WHERE tenant_id = $1 AND template_id = $2
-    `, [tenant_id, template_id]);
+    `, [tenantIdInt, templateIdInt]);
 
     res.json({ success: true });
   } catch (error) {
