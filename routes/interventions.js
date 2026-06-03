@@ -53,7 +53,8 @@ router.get('/templates/tenant/:tenantId', requireTenantStaffAccess, async (req, 
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching templates:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:listTemplates]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -91,7 +92,9 @@ router.post('/templates', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:createTemplate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -145,7 +148,9 @@ router.delete('/templates/:id', async (req, res) => {
     }
     res.json({ message: 'Template deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventions:deleteTemplate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
