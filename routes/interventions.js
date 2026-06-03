@@ -4,7 +4,8 @@ const { Pool } = require('pg');
 const {
   requireAuth,
   requireStudentReadAccess,
-  requireWriteAccessByInterventionId
+  requireWriteAccessByInterventionId,
+  requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
@@ -15,9 +16,19 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Get all intervention templates for a tenant (includes system defaults)
-// GET /templates/tenant/:tenantId — used by "New Intervention" modal when assigning to student
-router.get('/templates/tenant/:tenantId', async (req, res) => {
+// Get all intervention templates for a tenant (includes system defaults).
+//
+// Tenant binding (§5): :tenantId path param must be in the caller's
+// accessible-tenant set per resolveAccessibleTenantIds. requireTenantStaffAccess
+// is the canonical middleware that does this check (used by /staff/:tenantId,
+// /discipline-referrals/queue/:tenantId, etc.). Failure collapses to 404 to
+// avoid existence disclosure across tenants.
+//
+// Pre-fix: anonymous-reachable per the PR #206 prep audit; live prod probe
+// confirmed 200 anonymously. PR #206 closed anonymous access; this PR adds
+// the per-handler tenant scope so authenticated cross-tenant probing is
+// also denied.
+router.get('/templates/tenant/:tenantId', requireTenantStaffAccess, async (req, res) => {
   try {
     const { tenantId } = req.params;
     
