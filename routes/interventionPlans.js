@@ -216,7 +216,9 @@ router.get('/student-interventions/:interventionId/plan', requireInterventionRea
       plan_template: row.plan_template
     });
   } catch (error) {
-    console.error('Error fetching plan data:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII
+    // (plan_data is free-text intervention plan content).
+    console.error('[interventionPlans:getPlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -403,7 +405,9 @@ router.get('/students/:studentId/plans', requireStudentReadAccess, async (req, r
     
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching student plans:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII
+    // (plan_data is free-text intervention plan content).
+    console.error('[interventionPlans:getStudentPlans]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
