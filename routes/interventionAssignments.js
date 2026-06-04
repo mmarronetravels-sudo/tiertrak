@@ -60,8 +60,9 @@ router.get('/:interventionId', requireInterventionReadAccess, async (req, res) =
     
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching assignments:', error);
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionAssignments:getByIntervention]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
