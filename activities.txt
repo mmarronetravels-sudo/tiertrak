@@ -23845,3 +23845,356 @@ NEXT SESSION SHOULD
   Alternatively, take F-LOW-1 / F-LOW-2 / F-CHORE-2 as small chore PRs
   if no feature work is queued.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-04T23:41:19-07:00
+BRANCH:  multi-PR session (10 work PRs + 1 doc-only closing PR)
+DISPOSITION: pr-merged-multi (see PRs LANDED block below; this entry rides
+             on chore/activities-log-session-114)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  The S114 comprehensive remediation sprint. STRICT_STUDENT_ACCESS_PREDICATE
+  was flipped to true in production at the start of the session — the
+  teacher caseload predicate is now enforcing on every applyStudentAccessGate
+  call site, not dev-only. With that as the live trust boundary, the
+  session executed a top-to-bottom remediation of the cross-tenant /
+  audit-trail surface:
+
+    1) HIGH cross-tenant reads tier (R1-R5)
+    2) HIGH cross-tenant writes (admin-templates)
+    3) 504 process-vs-finalized-plan split (R4-A + R4-B)
+    4) Repo-wide actor-field spoof sweep (FERPA audit trail)
+    5) Two FE quality-of-life fixes (one bundled with the spoof sweep,
+       one standalone for the silent-non-ok-response failure mode that
+       had masked a prior regression)
+
+  Ten work PRs landed back-to-back (#210-#219); this docs-only entry
+  closes the session. Combined dev smoke total across the 10 work PRs:
+  183/183 PASS (excluding #219 which was code-review-only per its
+  FE/UX scope).
+
+PRs LANDED
+  #210  sec/interventionAssignments-get-tenant-scoping
+        R1 of the HIGH reads tier. Gated GET /:interventionId via
+        canonical requireInterventionReadAccess; param rename
+        :studentInterventionId → :interventionId via destructure-
+        rename pattern. Closed cross-tenant staff/parent directory
+        leak (full_name + email + role projection). 15/15 smoke.
+  #211  sec/interventionLogs-reads-tenant-scoping
+        R2. Gated GET /student/:studentId via requireStudentReadAccess
+        and GET /intervention/:interventionId via
+        requireInterventionReadAccess. Closed logger-directory +
+        intervention-name leak across two handlers. 20/20 smoke.
+  #212  sec/interventionPlans-student-intervention-reads-tenant-scoping
+        R3. Heaviest PII payload of the reads tier — closed
+        cross-tenant plan_data + completed_by directory leak on both
+        GET /student-interventions/:id/plan and GET
+        /students/:studentId/plans. Param rename + canonical gates.
+        Tenant-isolation reviewer's repo-wide grep confirmed no other
+        router projects student_interventions.plan_data unscoped
+        post-merge. 20/20 smoke.
+  #213  sec/template-reads-tenant-scoping
+        R5. Gated 4 operator-curated-content GETs (1 in
+        intervention-bank, 3 in intervention-plans templates) with
+        Number()-coerce + accessible-set check on query.tenant_id.
+        Same shape as the PR #208 write-side fix. 28/28 smoke.
+  #214  sec/admin-templates-tenant-scoping
+        R5 carry-forward. Closed the structurally identical probe
+        vector on adminTemplates.js GET /templates and GET
+        /templates/:id (surfaced by R5's tenant-isolation review).
+        14/14 smoke. After merge, tenant-isolation auditor confirmed
+        the cross-router req.query.tenant_id probe family is fully
+        closed for live handlers (only the already-gated users.js
+        sites remain).
+  #215  sec/admin-templates-writes-tenant-scoping  (HIGH closure)
+        Re-audit caught what the prior sweep had under-classified as
+        MEDIUM. Three plan-write handlers (PUT/DELETE /templates/:id
+        /plan + POST /templates/:id/duplicate) were exploitable cross-
+        tenant writes via body.tenant_id verbatim — any authenticated
+        user including parents/teachers/students could rewrite
+        another tenant's tenant_plan_template_overrides row or
+        overwrite a tenant-owned intervention_templates row. Two-layer
+        fix: new requireAdminTemplateRole (ELEVATED_ROLES allowlist —
+        strict superset of FE Admin tab's isAdmin set, no regression)
+        + Number()-coerce + accessible-set check on body.tenant_id,
+        with tenantIdInt threaded through every downstream query AND
+        the templateBelongsToTenant helper call. 30/30 smoke including
+        parent + teacher role-gate denial rows and INSERT + UPSERT
+        spoof attempts. A parallel re-audit of every live
+        body/query-tenant_id write handler ran in tandem: re-confirmed
+        the 6 prior-labeled "already correctly scoped" handlers
+        (parentLinks × 2, districtAccess × 2, mtssCoordinators × 2)
+        with explicit gate citations; surfaced 7 NEW Pattern E
+        write surfaces (screener, mtssMeetings, students,
+        prereferralForms, student504, csvImport, disciplineReferrals)
+        all MEDIUM via the shared resolveAndBindTargetTenant helper.
+  #216  sec/student504-finalized-plan-teacher-readable  (R4-B)
+        Additive new endpoint GET /api/student-504/plans/student/
+        :studentId. Gated by requireAuth + requireStudentReadAccess
+        (teachers reach via caseload predicate now LIVE in prod;
+        elevated staff and linked parents also covered). WHERE
+        c.student_id=$1 AND c.tenant_id=$2 AND p.plan_status='active'
+        — finalized only, never drafts. Minimized projection (5 keys:
+        id, plan_status, effective_date, review_date, accommodations).
+        Drops created_by + team_members.user_id to avoid staff-
+        directory leak in the teacher tier. New FE component
+        TeacherAccommodationsView; App.jsx conditional mount for
+        role='teacher'. 12/12 smoke with STRICT_STUDENT_ACCESS_PREDICATE
+        engaged. Privacy reviewer's framing: "net privacy reduction
+        relative to the only realistic alternative (giving teachers
+        Section504Tab)."
+  #217  sec/student504-process-handlers-elevated-only  (R4-A)
+        The real backend closure of the 504 process tier. Pre-fix
+        used refuseParentRole (let teachers reach the process
+        endpoints via curl/devtools); post-fix uses
+        requireElevated504Role (ELEVATED_ROLES allowlist). Narrows 10
+        process handlers covering active-form-set, cycles, consents,
+        eligibility-determinations (incl. staff-only
+        determination_notes), POST /plans drafts, and GET /plans/:id
+        full staff bundle. Operator-confirmed: all 504-process staff
+        in prod are coded as counselor/interventionist/school_admin;
+        no FE caller blocked. R4-B teacher path intentionally
+        untouched. 34/34 smoke (10 handlers × {teacher 403, parent
+        403, elevated 200/201} + R4-B regression {teacher caseload
+        200 + minimized projection} + cross-tenant 404 + no-auth 401).
+        FE comment updates in 3 components for accuracy.
+  #218  sec/actor-field-spoof-sweep
+        Closes the FERPA audit-trail spoof family that PR-A
+        (logged_by), PR-C (plan_completed_by), and PR #208
+        (activated_by) had started. Phase 1 enumeration (read-only,
+        operator-confirmed) identified exactly 3 SPOOF-FIXABLE
+        sites repo-wide: tenant_plan_template_overrides.updated_by
+        × 2 in adminTemplates (closes PR #215 WARN-1) and
+        progress_notes.author_id (closes the file's own banked
+        F-A followup that called the surface "impersonation"). 5
+        LEGITIMATELY BODY-SOURCED fields verified and NOT touched
+        (504 consent signatures × 4 + prereferral_forms.initiated_by
+        — captured-at-write parties distinct from JWT identity by
+        design). FE cleanup on 3 callers (silently-ignored body
+        fields dropped). Spoof-proof smoke 10/10 PASS: caller=X
+        submits actor=Y in body, DB stores X.id; covered INSERT,
+        ON CONFLICT UPDATE × 2 sites, and FE-clean omit shape, plus
+        cross-tenant sanity. Side-channel sweep independently
+        confirmed by both security and privacy reviewers — no
+        additional spoof-fixable actor columns remain in routes/.
+  #219  fix/assignmentmanager-silent-non-ok-response  (FE/UX)
+        The #203 invisibility fix. Pre-fix, addInterventionAssignment
+        and removeInterventionAssignment silently swallowed non-ok
+        HTTP responses — apiFetch never throws on 4xx/5xx, so the
+        try/catch only caught network errors. A backend 400/500 fell
+        through to return null with no user feedback. Now both
+        handlers branch on response.ok and surface a generic
+        hardcoded alert() — §4B-clean (no body echo, no err.message).
+        Dev-side console.error tagging preserved + augmented with
+        response.status int. Two reviewers approved (privacy + security;
+        tenant-isolation skipped per FE/UX scope).
+
+  (This entry rides on chore/activities-log-session-114.)
+
+STRICT-MODE ACCESS-FLIP — LIVE IN PROD AT START OF SESSION
+  STRICT_STUDENT_ACCESS_PREDICATE=true flipped in prod at session start
+  (verified by operator). All applyStudentAccessGate call sites now
+  enforce canStaffAccessStudent (tenant membership + role/predicate)
+  as the trust boundary, not legacy tenant-membership. Telemetry
+  channels [access-flip:would-block] / [access-flip:would-widen] are
+  no longer the decision point — they only fire in dark mode. R4-B
+  caseload narrowing is therefore enforcing in prod immediately, not
+  pending a rollout window.
+
+  F-CHORE-1 from S113 (strip the flag + legacy branches after 2 weeks
+  stable) is now the post-flip cleanup window. Re-bank for S116+.
+
+FILES TOUCHED (high-level across the 10 work PRs)
+  routes/interventionAssignments.js         R1 — gate added (#210)
+  routes/interventionLogs.js                R2 — 2 gates added (#211)
+  routes/interventionPlans.js               R3 — 2 gates added (#212);
+                                            R5 — 3 gates added (#213)
+  routes/interventionBank.js                R5 — 1 gate added (#213)
+  routes/adminTemplates.js                  R5-cf — 2 GET gates (#214);
+                                            writes-HIGH — 3 write gates +
+                                            role gate (#215);
+                                            actor-field — updated_by × 2
+                                            sites (#218)
+  routes/student504.js                      R4-B — new endpoint (#216);
+                                            R4-A — 10 handlers narrowed
+                                            to ELEVATED_ROLES (#217)
+  routes/progressNotes.js                   actor-field — author_id (#218)
+  frontend/src/App.jsx                      R4-B conditional mount (#216);
+                                            R4-A comment (#217);
+                                            #218 FE cleanup; #219 fix
+  frontend/src/components/Section504/
+    TeacherAccommodationsView.jsx           new (#216)
+    Section504Tab.jsx                       R4-A comment (#217)
+    FormJPlanModal.jsx                      R4-A comment (#217)
+    api.js                                  new helper (#216)
+  frontend/src/components/Modals/
+    TemplateEditorModal.jsx                 #218 FE cleanup
+  activities.txt                            this entry (next)
+
+DATABASE TABLES TOUCHED (read or written by the sec/ PRs; §4B-clean,
+                         table names only)
+  Reads-tier gated:
+    intervention_assignments (R1)
+    intervention_logs, student_interventions (R2)
+    student_504_plans, student_504_cycles (R3)
+    intervention_templates, tenant_intervention_bank,
+      tenant_plan_template_overrides (R5)
+  Reads-tier projection-minimized for teacher tier:
+    student_504_plans (R4-B; 5-key projection)
+  Writes gated/hardened:
+    tenant_plan_template_overrides (R5-cf reads + writes-HIGH +
+      actor-field updated_by)
+    intervention_templates (writes-HIGH tenant-owned branch)
+    progress_notes (actor-field author_id)
+  Process-tier narrowed (R4-A):
+    student_504_cycles, student_504_evaluation_consents,
+      student_504_eligibility_determinations,
+      student_504_plans (POST /plans drafts + GET /plans/:id),
+      student_504_team_members, tenant_form_sets
+  Verified intact (cross-tenant gate fires byte-identically post-fix):
+    every tenant-isolation reviewer's audit confirmed zero SQL +/-
+    lines on WHERE / bind / accessible-set / composite-FK / role gate
+    across the 10 PRs except the surgical changes documented above.
+
+MIGRATIONS RUN
+  None this session. All work was application-layer (routes/, middleware/,
+  FE). No schema changes.
+
+TENANT ISOLATION REVIEW
+  Tenant-isolation-auditor ran on all 10 work PRs. Zero CRITICAL / HIGH
+  / MEDIUM findings across the session. PR #215 is the standout: caught
+  what the prior sweep had under-classified MEDIUM as actually HIGH
+  cross-tenant write — triggered the parallel repo-wide re-audit which
+  re-confirmed the 6 prior-labeled "already correctly scoped" handlers
+  with explicit gate citations and surfaced 7 NEW MEDIUM Pattern E
+  surfaces (all gated via shared helper). The cross-router
+  req.query.tenant_id + req.body.tenant_id probe families are fully
+  closed for live handlers post-session.
+
+PRIVACY REVIEW (Section 4B)
+  Privacy-reviewer ran on all 10 work PRs. Zero CRITICAL findings.
+  One WARN on #215 (updated_by spoofable) was operator-explicitly-out-
+  of-scope and closed by the downstream #218. Notable framings:
+    - R4-B (#216): "net privacy REDUCTION relative to the only
+      realistic alternative" — teachers gain FERPA-permissible
+      classroom-support minimum (5 keys) while structurally losing
+      access to the process tier (determination_notes, signature
+      trails, drafts, team_members.user_id, created_by directory).
+    - R4-A (#217): "net privacy reduction verified across all 10
+      handlers" — teacher loses READ on determination_notes, signature
+      trails, full cycle bundle, staff-side GET /plans/:id; loses
+      WRITE on consents, eligibility, plans.
+    - Actor-field sweep (#218): "FERPA audit-trail integrity restored
+      ... downstream u.full_name projection via pn.author_id join now
+      reflects actual JWT-verified author — privacy-positive."
+  Logging discipline maintained: every new console.error / log line
+  carries integer user_id + err.message (or err.code on student504) at
+  most. No body echo, no name/email/role/tenant interpolation. Error
+  bodies remained generic across all sec/ PRs.
+
+LINT / TEST STATE — HONEST
+  Backend lint: not configured (Followup #74 carried from prior).
+  Backend tests: none (Followup #73 carried from prior). All 10 work
+    PRs verified via dev smoke harnesses (cumulative 183/183 PASS),
+    not unit tests.
+  Frontend lint (`npm run lint` in /frontend): pre-existing failure
+    state — 74 errors + 19 warnings on main as of session close,
+    overwhelmingly unused-vars on pre-existing code in App.jsx,
+    tier1Pdf.js, ResourcesView.jsx and similar. NOT introduced by
+    this session.
+  Frontend lint findings ON SESSION-TOUCHED FILES specifically:
+    - frontend/src/components/Section504/TeacherAccommodationsView.jsx:24
+      one NEW lint error introduced this session — `'user' is defined
+      but never used` (the new component destructures `user` as a prop
+      but doesn't reference it in JSX). Banked as
+      chore/TeacherAccommodationsView-drop-unused-user-prop below;
+      one-line fix.
+    - App.jsx + TemplateEditorModal.jsx: lint errors at session-touched
+      regions are PRE-EXISTING (catch-branch unused error, etc.); none
+      introduced by this session's edits.
+  Frontend tests: not configured.
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed this session:
+    PR #215 privacy WARN-1 (updated_by spoof) → closed by #218
+    progressNotes.js banked F-A (author_id impersonation) → closed by
+      #218
+    F-CHORE-1 trigger (S113 banked: 2-week stable strict-mode window
+      before stripping the flag + legacy branches) → the flip itself
+      is now live, so F-CHORE-1's clock is running
+
+  Banked / open after this session (Tier B structural chores —
+  defense-in-depth, none are exposures):
+    chore/admin-templates-router-level-role-gate
+      Lift requireAdminTemplateRole from per-handler chains to
+      router.use at the top of routes/adminTemplates.js. Closes the
+      future-handler regression risk that introduced PR #215's HIGH
+      in the first place.
+    chore/extract-requireElevated504Role-to-middleware
+      Same pattern, applied to routes/student504.js — lift the
+      file-local middleware to middleware/ for reuse.
+    chore/templateBelongsToTenant-body-normalization
+      Replace 'Not permitted to edit this template' literal with
+      FORBIDDEN_BODY so all 403 paths in adminTemplates.js are
+      byte-identical (probe-resistance polish).
+    chore/resolveAndBindTargetTenant-consolidation
+      8 module-local duplicates of the helper across 7 routers →
+      single middleware/resolveAndBindTargetTenant.js. Consistency,
+      not exposure. A doctrine change would otherwise need editing
+      8 places.
+    chore/TeacherAccommodationsView-drop-unused-user-prop
+      NEW this session. One-line FE lint fix (drop the destructured
+      `user` prop from TeacherAccommodationsView.jsx:24 — it isn't
+      used in the component body).
+
+  Banked / open UX fixes (operator-endorsed priority order):
+    fix/staff-management-silent-non-ok-response
+      Same swallow shape as #219 on App.jsx:794 handleDeleteStaff but
+      in the staff-management domain. Bank — would balloon scope to
+      sweep all FE swallow handlers.
+    fix/fe-date-render-tz-bug
+      FE-only display bug; date-only string parsed UTC then rendered
+      local → day-early in negative-UTC tenants. Helpers
+      formatDateLocal/formatMeetingDate already exist; sibling
+      pattern at ProgressChartModal.jsx week_of. Cosmetic.
+
+  Pre-existing alert() leak pattern (S114-surfaced, not new):
+    Multiple FE alert() sites interpolate backend error.message /
+    data.error into user-visible text (e.g., App.jsx:1075 'Upload
+    failed: ' + error.error; 6590 `Upload failed: ${error.message}`).
+    §4B-adjacent issue; pre-existing across the codebase. Worth a
+    future fe-error-ux-pass.
+
+  Still-spec'd Education Assistant role:
+    Operator-flagged as still in spec/design at session close. No
+    routes/, middleware/, or migrations exist on main for this role
+    as of session close. Re-surface when the spec lands so the
+    routing review can fold it into the existing ELEVATED_ROLES /
+    INTERVENTION_MANAGER_ROLES / refuseParentRole role-gate matrix
+    (and the new requireElevated504Role on 504 process surface) at
+    the same time the role enters production rather than after-the-
+    fact.
+
+  Carried across sessions (still standing):
+    Followup #72 (carried): bare-fetch sweep across App.jsx +
+      AppContext + modals.
+    Followup #73 (carried): backend test suite absent.
+    Followup #74 (carried): backend lint not configured.
+    Followup #80 (carried): rate-limiting coverage gap.
+    Followup #94 (carried, STANDS): scripts/ops/ → .gitignore.
+      Three untracked files still on tree at session close (one PDF
+      + two ops .sql) — explicitly NOT staged, NOT committed this
+      session.
+
+NEXT SESSION SHOULD
+  Pick from the prioritized punch list above. Operator-endorsed order:
+    (a) Tier B structural chores in any order — all defense-in-depth,
+        none are exposures.
+    (b) fix/fe-date-render-tz-bug last — purely cosmetic.
+  Education Assistant role surfaces when spec lands; fold into existing
+  role-gate matrix at that point.
+  Watch Render logs for unexpected [requireElevated504Role] 403s from
+  real users for the next several days — that's the empirical
+  confirmation that no legitimate 504-process user is teacher-coded
+  in prod (operator's stated post-#217 monitoring task).
+================================================================================
