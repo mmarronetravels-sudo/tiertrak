@@ -77,7 +77,8 @@ router.get('/templates', async (req, res) => {
     );
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching plan templates:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:getTemplates]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -128,7 +129,8 @@ router.get('/templates/by-name/:interventionName', async (req, res) => {
       template: result.rows[0].plan_template
     });
   } catch (error) {
-    console.error('Error fetching plan template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:getTemplateByName]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -179,7 +181,8 @@ router.get('/templates/:templateId', async (req, res) => {
       name: template.name
     });
   } catch (error) {
-    console.error('Error fetching plan template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionPlans:getTemplateById]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

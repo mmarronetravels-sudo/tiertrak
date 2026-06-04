@@ -58,7 +58,8 @@ router.get('/all', async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching intervention bank:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionBank:getAll]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
