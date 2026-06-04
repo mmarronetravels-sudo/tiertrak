@@ -9,12 +9,32 @@ let pool;
 const initializePool = (p) => { pool = p; };
 
 // GET /api/intervention-bank/all
-// Returns ALL bank interventions (tenant_id IS NULL, not legacy)
-// with a flag showing which ones this tenant has activated
+// Returns ALL bank interventions (tenant_id IS NULL, not legacy) with a flag
+// showing which ones the supplied tenant has activated + which have
+// per-tenant plan_template overrides.
+//
+// Tenant binding (§5): query.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix the handler emitted is_activated +
+// tib.activated_at + per-tenant has_plan_template override for ANY supplied
+// tenant_id — letting a caller probe another tenant's bank-activation state
+// and override surface (the bank-row content itself is shared, but
+// activation/override membership is tenant-private). Same shape as the
+// PR #208 fix on POST /activate / DELETE /deactivate; closes the read-side.
 router.get('/all', async (req, res) => {
   try {
     const { tenant_id } = req.query;
-    if (!tenant_id) return res.status(400).json({ error: 'tenant_id is required' });
+
+    // Coerce + validate per the #204 lesson.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
 
     const result = await pool.query(`
       SELECT
@@ -34,7 +54,7 @@ router.get('/all', async (req, res) => {
         ON o.template_id = it.id AND o.tenant_id = $1
       WHERE it.tenant_id IS NULL AND (it.is_legacy IS NULL OR it.is_legacy = FALSE)
       ORDER BY it.area, it.name
-    `, [tenant_id]);
+    `, [tenantIdInt]);
 
     res.json(result.rows);
   } catch (error) {

@@ -6,6 +6,7 @@ const {
   requireInterventionReadAccess,
   requireStudentReadAccess,
 } = require('../middleware/authorizeInterventionAccess');
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
@@ -39,13 +40,28 @@ const initializePool = (dbPool) => {
 // PLAN TEMPLATES
 // ============================================
 
-// Get all intervention templates that (for this tenant) have a plan template
+// GET intervention templates that (for this tenant) have a plan template.
+//
+// Tenant binding (§5): query.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix the handler emitted bank + tenant-owned
+// templates for ANY supplied tenant_id and surfaced per-tenant
+// has_plan_template overrides — letting a caller probe another tenant's
+// owned-template set and their plan-template override surface.
+// Tenant-owned `intervention_templates` rows (it.tenant_id = $1) contain
+// operator-curated content scoped to one tenant; cross-tenant emission is
+// the closure target. Same shape as the PR #208 fix; closes the read-side.
 router.get('/templates', async (req, res) => {
   try {
     const { tenant_id } = req.query;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     const result = await pool.query(
@@ -57,7 +73,7 @@ router.get('/templates', async (req, res) => {
        WHERE (it.tenant_id = $1 OR it.tenant_id IS NULL)
          AND COALESCE(o.has_plan_template, it.has_plan_template) = TRUE
        ORDER BY it.name`,
-      [tenant_id]
+      [tenantIdInt]
     );
     res.json(result.rows);
   } catch (error) {
@@ -66,14 +82,26 @@ router.get('/templates', async (req, res) => {
   }
 });
 
-// Get plan template for a specific intervention by name (tenant-scoped)
+// GET plan template for a specific intervention by name (tenant-scoped).
+//
+// Tenant binding (§5): query.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix this handler emitted the resolved
+// plan_template (including any per-tenant override) for ANY supplied
+// tenant_id — letting a caller pull another tenant's customized plan
+// template body cross-tenant. Same shape as the PR #208 fix.
 router.get('/templates/by-name/:interventionName', async (req, res) => {
   try {
     const { interventionName } = req.params;
     const { tenant_id } = req.query;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     // Prefer a tenant-owned template over a bank row so a tenant's customized
@@ -88,7 +116,7 @@ router.get('/templates/by-name/:interventionName', async (req, res) => {
          AND (it.tenant_id = $1 OR it.tenant_id IS NULL)
        ORDER BY (it.tenant_id = $1) DESC
        LIMIT 1`,
-      [tenant_id, interventionName]
+      [tenantIdInt, interventionName]
     );
 
     if (result.rows.length === 0 || !result.rows[0].has_plan_template) {
@@ -105,14 +133,27 @@ router.get('/templates/by-name/:interventionName', async (req, res) => {
   }
 });
 
-// Get plan template by intervention template ID (tenant-scoped)
+// GET plan template by intervention template ID (tenant-scoped).
+//
+// Tenant binding (§5): query.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix this handler emitted the resolved
+// plan_template body + tenant-owned template name for ANY supplied
+// tenant_id — letting a caller pull another tenant's customized plan
+// template content and verify-by-id whether a given template id belongs to
+// a specific tenant. Same shape as the PR #208 fix.
 router.get('/templates/:templateId', async (req, res) => {
   try {
     const { templateId } = req.params;
     const { tenant_id } = req.query;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     const result = await pool.query(
@@ -124,7 +165,7 @@ router.get('/templates/:templateId', async (req, res) => {
          ON o.template_id = it.id AND o.tenant_id = $1
        WHERE it.id = $2
          AND (it.tenant_id = $1 OR it.tenant_id IS NULL)`,
-      [tenant_id, templateId]
+      [tenantIdInt, templateId]
     );
 
     if (result.rows.length === 0) {
