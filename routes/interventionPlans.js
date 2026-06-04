@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireWriteAccessByInterventionId } = require('../middleware/authorizeInterventionAccess');
+const {
+  requireAuth,
+  requireWriteAccessByInterventionId,
+  requireInterventionReadAccess,
+  requireStudentReadAccess,
+} = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
@@ -142,11 +147,31 @@ router.get('/templates/:templateId', async (req, res) => {
 // STUDENT INTERVENTION PLANS
 // ============================================
 
-// Get plan data for a student intervention
-router.get('/student-interventions/:id/plan', async (req, res) => {
+// GET plan data for a student intervention.
+//
+// Tenant binding (§5): :interventionId is the student_intervention id; the
+// canonical requireInterventionReadAccess middleware walks
+// student_interventions → students.tenant_id and gates via the same
+// applyStudentAccessGate as PR #210 / PR #211. Parent role is supported via
+// parent_student_links membership (read-side). Not-found and wrong-tenant
+// collapse to a byte-identical 403 inside the middleware.
+//
+// Pre-fix this handler had NO tenant scope and projected si.plan_data
+// (free-text intervention plan content — sensitive PII) + si.intervention_name
+// + u.full_name as completed_by_name for every student_intervention by raw
+// :id — any authenticated user could probe student_intervention ids
+// cross-tenant and pull both the plan_data content and the staff
+// completed_by directory (R3 in the reads-tier scoping pass; same shape as
+// PR #210 / #211 but with a heavier PII payload via plan_data).
+//
+// Param rename: :id → :interventionId so requireInterventionReadAccess's
+// `req.params.interventionId` lookup works. URL pattern unchanged from the
+// client's perspective; handler destructure-renames back to `id` to preserve
+// the local + SQL bind (mirrors R1 pattern).
+router.get('/student-interventions/:interventionId/plan', requireInterventionReadAccess, async (req, res) => {
   try {
-    const { id } = req.params;
-    
+    const { interventionId: id } = req.params;
+
     const result = await pool.query(
       `SELECT
         si.id,
@@ -191,7 +216,9 @@ router.get('/student-interventions/:id/plan', async (req, res) => {
       plan_template: row.plan_template
     });
   } catch (error) {
-    console.error('Error fetching plan data:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII
+    // (plan_data is free-text intervention plan content).
+    console.error('[interventionPlans:getPlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -325,8 +352,23 @@ router.post('/student-interventions/:interventionId/plan/reopen', requireInterve
   }
 });
 
-// Get all interventions for a student that have plan templates
-router.get('/students/:studentId/plans', async (req, res) => {
+// GET all interventions for a student that have plan templates.
+//
+// Tenant binding (§5): :studentId is gated by the canonical
+// requireStudentReadAccess middleware — walks students.tenant_id and
+// delegates to applyStudentAccessGate for staff branches (with
+// resolveAccessibleTenantIds for §5 dual-path), and to parent_student_links
+// membership for parents. Not-found and wrong-tenant collapse to a
+// byte-identical 403 inside the middleware.
+//
+// Pre-fix this handler had NO tenant scope and projected si.plan_data
+// (free-text intervention plan content — sensitive PII) + si.intervention_name
+// + u.full_name as completed_by_name for every plan-template-bearing
+// student_intervention by raw :studentId — any authenticated user could
+// probe student ids cross-tenant and pull both the plan_data content and
+// the staff completed_by directory (R3 in the reads-tier scoping pass;
+// pairs with the /student-interventions/:interventionId/plan fix above).
+router.get('/students/:studentId/plans', requireStudentReadAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
     
@@ -363,7 +405,9 @@ router.get('/students/:studentId/plans', async (req, res) => {
     
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching student plans:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII
+    // (plan_data is free-text intervention plan content).
+    console.error('[interventionPlans:getStudentPlans]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
