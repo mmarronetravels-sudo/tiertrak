@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 require('dotenv').config();
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
+const { requireStudentReadAccess, requireInterventionReadAccess } = require('../middleware/authorizeInterventionAccess');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -28,8 +29,22 @@ router.get('/options', (req, res) => {
   });
 });
 
-// Get all logs for a student
-router.get('/student/:studentId', async (req, res) => {
+// GET logs for a student.
+//
+// Tenant binding (§5): :studentId is gated by the canonical
+// requireStudentReadAccess middleware — walks students.tenant_id and
+// delegates to applyStudentAccessGate for staff branches (with
+// resolveAccessibleTenantIds for §5 dual-path), and to parent_student_links
+// membership for parents. Not-found and wrong-tenant collapse to a
+// byte-identical 403 inside the middleware.
+//
+// Pre-fix this handler had NO tenant scope and projected u.full_name as
+// logged_by_name + si.intervention_name for every log row by raw
+// :studentId — any authenticated user could probe student ids cross-tenant
+// and enumerate the staff logger-directory plus intervention names
+// (R2 in the reads-tier scoping pass). The middleware now gates the read;
+// URL pattern unchanged from the client's perspective.
+router.get('/student/:studentId', requireStudentReadAccess, async (req, res) => {
   try {
     const { studentId } = req.params;
     const result = await pool.query(
@@ -47,8 +62,22 @@ router.get('/student/:studentId', async (req, res) => {
   }
 });
 
-// Get all logs for a specific intervention
-router.get('/intervention/:interventionId', async (req, res) => {
+// GET logs for a specific intervention.
+//
+// Tenant binding (§5): :interventionId is the student_intervention id; the
+// canonical requireInterventionReadAccess middleware walks
+// student_interventions → students.tenant_id and gates via the same
+// applyStudentAccessGate as the assignments-GET fix (PR #210). Parent role
+// is supported via parent_student_links membership (read-side). Not-found
+// and wrong-tenant collapse to a byte-identical 403 inside the middleware.
+//
+// Pre-fix this handler had NO tenant scope and projected u.full_name as
+// logged_by_name for every log row by raw :interventionId — any
+// authenticated user could probe student_intervention ids cross-tenant and
+// enumerate the staff logger-directory (R2 in the reads-tier scoping
+// pass; same shape as the HIGH-1 leak closed in PR #210). URL pattern
+// unchanged from the client's perspective.
+router.get('/intervention/:interventionId', requireInterventionReadAccess, async (req, res) => {
   try {
     const { interventionId } = req.params;
     const result = await pool.query(
