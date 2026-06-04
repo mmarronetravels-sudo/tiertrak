@@ -3,6 +3,7 @@ const router = express.Router();
 const { Pool } = require('pg');
 const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -60,8 +61,28 @@ const pool = new Pool({
 // composition in the route definition rather than function-call-inside-
 // handler — reduces forgetting risk on the 9 staff handlers and is
 // grep-able as a structural commitment.
-function refuseParentRole(req, res, next) {
-  if (req.user && req.user.role === 'parent') {
+// R4-A: narrow the 504 process surface (cycles, consents, eligibility-
+// determinations, draft plans, full staff plan bundle, active-form-set)
+// from "any non-parent staff" to ELEVATED_ROLES only. Replaces the prior
+// refuseParentRole middleware which let teachers reach the process
+// endpoints via curl/devtools even though the FE hid them.
+//
+// Operator-confirmed: all 504-process staff in production are coded as
+// counselor / interventionist / school_admin (administrator). No 504-process
+// staff are coded as 'teacher'. ELEVATED_ROLES (district_admin,
+// district_tech_admin, school_admin, counselor, interventionist) gates the
+// process tier with no lockout in prod.
+//
+// Teacher access to finalized 504 accommodations remains intact via the
+// separate R4-B endpoint GET /plans/student/:studentId, gated by
+// requireStudentReadAccess + canStaffAccessStudent's caseload predicate
+// (STRICT_STUDENT_ACCESS_PREDICATE is LIVE in prod as of S114).
+//
+// Returns the byte-identical { error: 'Not authorized' } shape used
+// file-wide so role-deny is indistinguishable from any other gate-deny
+// path.
+function requireElevated504Role(req, res, next) {
+  if (!ELEVATED_ROLES.includes(req.user && req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
   next();
@@ -171,9 +192,11 @@ async function resolveAndBindTargetTenant(req) {
 // separately and intentionally NOT in scope for this endpoint.
 //
 // Differences from the parent route's tenant_form_sets read:
-//   - refuseParentRole gated. Parent users have no use for the staff tab
-//     visibility gate; routing parents here is a misconfiguration, not a
-//     data exposure (the guard 403s before any query runs).
+//   - requireElevated504Role gated (R4-A). Parents AND teachers have no use
+//     for the staff tab visibility gate; routing them here is a
+//     misconfiguration, not a data exposure (the guard 403s before any
+//     query runs). Pre-R4-A this was refuseParentRole, which let teachers
+//     reach the endpoint via curl/devtools even though the FE hides it.
 //   - Returns BOTH form_set_id AND form_set_version, since the staff FE
 //     uses both fields when POSTing to /cycles. This lets the FE drop the
 //     compile-time form-set-identity import and treat the DB as the
@@ -186,7 +209,7 @@ async function resolveAndBindTargetTenant(req) {
 //   - §5: tenantId is derived from req.user.tenant_id (JWT claim) — never
 //     read from req.body, req.query, or req.params. Cross-tenant read is
 //     impossible via this handler.
-router.get('/active-form-set', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/active-form-set', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const result = await pool.query(
@@ -223,7 +246,7 @@ router.get('/active-form-set', requireAuth, refuseParentRole, async (req, res) =
 // tenant_form_sets has UNIQUE (tenant_id, form_set_id) but no constraint
 // limiting one active row per tenant, so multiple form sets may be active
 // concurrently — body inputs are validated against the row that matches.
-router.post('/cycles', requireAuth, refuseParentRole, async (req, res) => {
+router.post('/cycles', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     // Per Followup #125 — per-school binding. tenantId is the resolved
     // target tenant; the tenant_form_sets lookup below therefore
@@ -283,7 +306,7 @@ router.post('/cycles', requireAuth, refuseParentRole, async (req, res) => {
 // Result is empty if the studentId does not exist in this tenant — that's
 // indistinguishable from "no cycles yet," which is the intended non-leaky
 // behavior (no probe for cross-tenant student existence).
-router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/cycles/student/:studentId', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const studentId = Number(req.params.studentId);
@@ -318,7 +341,7 @@ router.get('/cycles/student/:studentId', requireAuth, refuseParentRole, async (r
 // all. tenant scoping is enforced both on the outer cycle row and on
 // every inner subquery so a cross-tenant child row is unreachable even
 // if an FK ever drifted.
-router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/cycles/:cycleId', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const cycleId = Number(req.params.cycleId);
@@ -432,7 +455,7 @@ router.get('/cycles/:cycleId', requireAuth, refuseParentRole, async (req, res) =
 // other §4B-tier-restricted content in this field. No new server-side
 // validation is added beyond what other free-text fields use; this is
 // a UX/policy rule the frontend Form C surface enforces.
-router.post('/consents', requireAuth, refuseParentRole, async (req, res) => {
+router.post('/consents', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     // Per Followup #125 — per-school binding. tenantId below is the
     // resolved target tenant for this write.
@@ -517,7 +540,7 @@ router.post('/consents', requireAuth, refuseParentRole, async (req, res) => {
 // student_504_evaluation_consents cannot widen this response shape
 // without an intentional edit. Tenant-scoped on req.user.tenant_id;
 // 404 for both "doesn't exist" and "wrong tenant" — non-leaky.
-router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/consents/:id', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
@@ -566,7 +589,7 @@ router.get('/consents/:id', requireAuth, refuseParentRole, async (req, res) => {
 // short for that semantic. Other "notes" fields in the codebase
 // (mtssMeetings.notes, progressNotes.note, interventionPlans, etc.)
 // are uncapped, which is the majority house style being followed.
-router.post('/eligibility-determinations', requireAuth, refuseParentRole, async (req, res) => {
+router.post('/eligibility-determinations', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     // Per Followup #125 — per-school binding. tenantId below is the
     // resolved target tenant for this write.
@@ -634,7 +657,7 @@ router.post('/eligibility-determinations', requireAuth, refuseParentRole, async 
 // §4B tier matrix). Tenant-scoped on req.user.tenant_id; 404 covers
 // both "not found" and "wrong tenant" — non-leaky. The parent route
 // family does NOT expose this resource at all.
-router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/eligibility-determinations/:id', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
@@ -688,7 +711,7 @@ router.get('/eligibility-determinations/:id', requireAuth, refuseParentRole, asy
 // (educational / extracurricular / assessments) per the form-set
 // module. Validation enforces object-ness only; internal key shape is
 // a frontend/form-set concern.
-router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
+router.post('/plans', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     // Per Followup #125 — per-school binding. tenantId below is the
     // resolved target tenant for this write.
@@ -768,7 +791,7 @@ router.post('/plans', requireAuth, refuseParentRole, async (req, res) => {
 // team_members subquery additionally scoped on c.tenant_id via the
 // cycle JOIN as defense in depth (composite FKs already enforce the
 // match). 404 covers both "not found" and "wrong tenant" — non-leaky.
-router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
+router.get('/plans/:id', requireAuth, requireElevated504Role, async (req, res) => {
   try {
     const accessible = await resolveAccessibleTenantIds(req.user);
     const id = Number(req.params.id);
@@ -821,8 +844,10 @@ router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
 //
 // R4-B: teacher-readable finalized-plan view. The process workflow (cycles,
 // consents, eligibility-determinations, draft plans) remains special-ed-team-
-// only via the refuseParentRole + ELEVATED_ROLES handlers in this file
-// (R4-A's narrowing target). This endpoint is the additive teacher-side
+// only via the requireElevated504Role handlers in this file (R4-A
+// closure of the process tier — replaced refuseParentRole, which let
+// teachers reach the process surface via curl). This endpoint is the
+// additive teacher-side
 // surface: a teacher who has caseload access to the student (via
 // canStaffAccessStudent's caseload predicate) can read the student's
 // active (finalized) 504 accommodations to inform classroom support.
