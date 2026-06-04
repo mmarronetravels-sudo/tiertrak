@@ -1,8 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { ELEVATED_ROLES } = require('../constants/roles');
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
+
+// Cheapest check first: role allowlist runs as the leading middleware on each
+// of the three plan-template write routes (PUT, DELETE, POST /duplicate) so
+// non-ELEVATED_ROLES callers (parent, teacher, student) 403 before any DB I/O.
+// Mirrors the pattern used by routes/interventionAssignments.js's
+// requireInterventionManagerRole and routes/interventionPlans.js's plan-write
+// chain (INTERVENTION_MANAGER_ROLES). Uses ELEVATED_ROLES (a strict subset of
+// INTERVENTION_MANAGER_ROLES; excludes 'teacher') because admin template
+// management is a tenant-admin surface — the FE Admin tab is rendered only
+// to `isAdmin = [district_admin, school_admin, counselor, interventionist]`
+// (frontend/src/App.jsx:472). ELEVATED_ROLES is a strict superset of that FE
+// set (+ district_tech_admin), so no FE caller is blocked — no regression.
+function requireAdminTemplateRole(req, res, next) {
+  if (!ELEVATED_ROLES.includes(req.user && req.user.role)) {
+    return res.status(403).json(FORBIDDEN_BODY);
+  }
+  return next();
+}
 
 let pool;
 
@@ -167,14 +186,34 @@ router.get('/templates/:id', async (req, res) => {
 // Create or update plan template for an intervention, scoped to the caller's
 // tenant. Writes to the override table when the target is a bank row.
 // Body: { tenant_id, user_id?, plan_template }
+//
+// Tenant binding (§5): body.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix the handler accepted body.tenant_id
+// verbatim — letting a Lincoln caller supply body.tenant_id=2 (Parkview) and
+// (a) write into Parkview's tenant_plan_template_overrides when target is a
+// bank row, or (b) overwrite a Parkview-owned template row (since
+// templateBelongsToTenant is keyed on the body-supplied tenant_id, not the
+// caller's tenant). Per the tenant-isolation audit on this branch's parent:
+// VERDICT HIGH — genuinely exploitable cross-tenant write. The new
+// Number()-coerce + accessible-set check + the requireAdminTemplateRole
+// middleware close the surface; tenantIdInt is threaded into every
+// downstream query AND the templateBelongsToTenant helper call.
 // ============================================
-router.put('/templates/:id/plan', async (req, res) => {
+router.put('/templates/:id/plan', requireAdminTemplateRole, async (req, res) => {
   try {
     const { id } = req.params;
     const { tenant_id, user_id, plan_template } = req.body;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    // Coerce + validate per the #204 lesson.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     if (!plan_template || !plan_template.name || !plan_template.sections) {
@@ -201,7 +240,7 @@ router.put('/templates/:id/plan', async (req, res) => {
               updated_by = EXCLUDED.updated_by,
               updated_at = CURRENT_TIMESTAMP
         RETURNING tenant_id, template_id, plan_template, has_plan_template
-      `, [tenant_id, id, JSON.stringify(plan_template), user_id || null]);
+      `, [tenantIdInt, id, JSON.stringify(plan_template), user_id || null]);
 
       return res.json({
         message: 'Plan template saved successfully',
@@ -209,7 +248,7 @@ router.put('/templates/:id/plan', async (req, res) => {
       });
     }
 
-    const owns = await templateBelongsToTenant(id, tenant_id);
+    const owns = await templateBelongsToTenant(id, tenantIdInt);
     if (!owns) {
       return res.status(403).json({ error: 'Not permitted to edit this template' });
     }
@@ -220,7 +259,7 @@ router.put('/templates/:id/plan', async (req, res) => {
           has_plan_template = TRUE
       WHERE id = $2 AND tenant_id = $3
       RETURNING id, name, plan_template, has_plan_template
-    `, [JSON.stringify(plan_template), id, tenant_id]);
+    `, [JSON.stringify(plan_template), id, tenantIdInt]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
@@ -242,14 +281,27 @@ router.put('/templates/:id/plan', async (req, res) => {
 // the override (restoring the bank default). For tenant-owned rows, it
 // clears plan_template on the row.
 // Body: { tenant_id }
+//
+// Tenant binding (§5): same shape as PUT /templates/:id/plan above —
+// body.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds before any DB I/O. Closes the DELETE arm of
+// the cross-tenant write surface flagged HIGH by the tenant-isolation
+// audit; threads tenantIdInt into every downstream query and the
+// templateBelongsToTenant helper call.
 // ============================================
-router.delete('/templates/:id/plan', async (req, res) => {
+router.delete('/templates/:id/plan', requireAdminTemplateRole, async (req, res) => {
   try {
     const { id } = req.params;
     const { tenant_id } = req.body;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     const bank = await isBankTemplate(id);
@@ -269,7 +321,7 @@ router.delete('/templates/:id/plan', async (req, res) => {
               has_plan_template = FALSE,
               updated_at = CURRENT_TIMESTAMP
         RETURNING tenant_id, template_id
-      `, [tenant_id, id]);
+      `, [tenantIdInt, id]);
 
       return res.json({
         message: 'Plan template removed for this tenant',
@@ -277,7 +329,7 @@ router.delete('/templates/:id/plan', async (req, res) => {
       });
     }
 
-    const owns = await templateBelongsToTenant(id, tenant_id);
+    const owns = await templateBelongsToTenant(id, tenantIdInt);
     if (!owns) {
       return res.status(403).json({ error: 'Not permitted to edit this template' });
     }
@@ -288,7 +340,7 @@ router.delete('/templates/:id/plan', async (req, res) => {
           has_plan_template = FALSE
       WHERE id = $1 AND tenant_id = $2
       RETURNING id, name
-    `, [id, tenant_id]);
+    `, [id, tenantIdInt]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
@@ -311,14 +363,26 @@ router.delete('/templates/:id/plan', async (req, res) => {
 // destination is written to the override (for bank rows) or to the
 // intervention_templates row (for tenant-owned rows).
 // Body: { tenant_id, user_id?, sourceId }
+//
+// Tenant binding (§5): same shape as PUT/DELETE above — body.tenant_id
+// Number()-coerced and verified against resolveAccessibleTenantIds before
+// any DB I/O. Closes the duplicate arm of the cross-tenant write surface
+// (source SELECT + target SELECT + bank-target INSERT/UPDATE all flow
+// through the gated tenantIdInt).
 // ============================================
-router.post('/templates/:id/duplicate', async (req, res) => {
+router.post('/templates/:id/duplicate', requireAdminTemplateRole, async (req, res) => {
   try {
     const { id } = req.params;
     const { tenant_id, user_id, sourceId } = req.body;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     if (!sourceId) {
@@ -334,7 +398,7 @@ router.post('/templates/:id/duplicate', async (req, res) => {
         ON o.template_id = it.id AND o.tenant_id = $1
       WHERE it.id = $2
         AND (it.tenant_id = $1 OR it.tenant_id IS NULL)
-    `, [tenant_id, sourceId]);
+    `, [tenantIdInt, sourceId]);
 
     if (
       sourceResult.rows.length === 0 ||
@@ -347,7 +411,7 @@ router.post('/templates/:id/duplicate', async (req, res) => {
     const targetResult = await pool.query(
       `SELECT name, tenant_id FROM intervention_templates
        WHERE id = $1 AND (tenant_id = $2 OR tenant_id IS NULL)`,
-      [id, tenant_id]
+      [id, tenantIdInt]
     );
 
     if (targetResult.rows.length === 0) {
@@ -371,7 +435,7 @@ router.post('/templates/:id/duplicate', async (req, res) => {
               updated_by = EXCLUDED.updated_by,
               updated_at = CURRENT_TIMESTAMP
         RETURNING tenant_id, template_id, plan_template
-      `, [tenant_id, id, JSON.stringify(clonedTemplate), user_id || null]);
+      `, [tenantIdInt, id, JSON.stringify(clonedTemplate), user_id || null]);
 
       return res.json({
         message: 'Plan template duplicated successfully',
@@ -385,7 +449,7 @@ router.post('/templates/:id/duplicate', async (req, res) => {
           has_plan_template = TRUE
       WHERE id = $2 AND tenant_id = $3
       RETURNING id, name, plan_template
-    `, [JSON.stringify(clonedTemplate), id, tenant_id]);
+    `, [JSON.stringify(clonedTemplate), id, tenantIdInt]);
 
     res.json({
       message: 'Plan template duplicated successfully',
