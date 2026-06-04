@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
-const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { requireAuth, requireStudentReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 
 const pool = new Pool({
@@ -813,6 +813,78 @@ router.get('/plans/:id', requireAuth, refuseParentRole, async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     console.error('[student504 GET /plans/:id] error code:', err && err.code);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /plans/student/:studentId — finalized accommodation plans for a student.
+//
+// R4-B: teacher-readable finalized-plan view. The process workflow (cycles,
+// consents, eligibility-determinations, draft plans) remains special-ed-team-
+// only via the refuseParentRole + ELEVATED_ROLES handlers in this file
+// (R4-A's narrowing target). This endpoint is the additive teacher-side
+// surface: a teacher who has caseload access to the student (via
+// canStaffAccessStudent's caseload predicate) can read the student's
+// active (finalized) 504 accommodations to inform classroom support.
+//
+// Tenant binding (§5): :studentId is gated by the canonical
+// requireStudentReadAccess middleware — walks students.tenant_id, delegates
+// to applyStudentAccessGate for staff branches (with resolveAccessibleTenantIds
+// for §5 dual-path), and to parent_student_links membership for parents.
+// Sets req.student = { id, tenant_id, tier }. Not-found and wrong-tenant
+// collapse to byte-identical 403 inside the middleware.
+//
+// Access matrix (set by the gate, not by this handler):
+//   - ELEVATED_ROLES (district_admin, district_tech_admin, school_admin,
+//     counselor, interventionist): allowed via legacy tenant-membership /
+//     applyStudentAccessGate's allow branch.
+//   - teacher: allowed iff student is on caseload (tier=1 OR active
+//     intervention_assignments(user_id, student_id) with status='active') —
+//     enforced by canStaffAccessStudent's caseload predicate when strict
+//     mode is engaged; legacy tenant-membership in dark mode.
+//   - linked parent: allowed via parent_student_links membership.
+//   - unlinked parent / cross-tenant staff / non-caseload teacher (strict):
+//     byte-identical 403 inside the middleware.
+//
+// Plan-status filter: `WHERE p.plan_status = 'active'` — only finalized
+// (active) plans are emitted. Draft/expired/discontinued plans are NEVER
+// returned by this endpoint. Mirrors the parent504.js GET
+// /accommodations/student/:studentId precedent at parent504.js:120.
+//
+// Projection (minimized — operator-mandated for the teacher tier):
+//   id, plan_status, effective_date, review_date, accommodations
+// Drops created_by (staff-directory leak) and team_members.user_id
+// (staff-directory leak). The staff-side bundle (GET /plans/:id at
+// line 771) retains the full projection — additive design, no collision.
+//
+// Tenant SQL defense-in-depth: c.tenant_id = $2 (req.student.tenant_id
+// from the gate). Tighter than the existing accessible-array pattern
+// because the gate has already confirmed which single tenant the caller
+// is operating in for this :studentId.
+router.get('/plans/student/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
+  try {
+    const studentId = req.student.id;
+    const tenantId = req.student.tenant_id;
+
+    const result = await pool.query(
+      `SELECT
+         p.id,
+         p.plan_status,
+         p.effective_date,
+         p.review_date,
+         p.accommodations
+       FROM student_504_plans p
+       JOIN student_504_cycles c ON c.id = p.cycle_id
+       WHERE c.student_id = $1
+         AND c.tenant_id = $2
+         AND p.plan_status = 'active'
+       ORDER BY p.effective_date DESC NULLS LAST, p.id DESC`,
+      [studentId, tenantId]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    // §4B: integer user_id + err.code only. No body echo, no PII.
+    console.error('[student504:getStudentFinalizedPlans]', 'user_id=', req.user && req.user.id, 'err_code=', err && err.code);
     return res.status(500).json({ error: 'Server error' });
   }
 });

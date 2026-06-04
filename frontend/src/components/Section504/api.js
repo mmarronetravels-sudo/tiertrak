@@ -187,3 +187,23 @@ export function createPlan(API_URL, body) {
     body: JSON.stringify(body),
   });
 }
+
+// GET /api/student-504/plans/student/:studentId — R4-B teacher-readable
+// finalized accommodations view. Returns an array of plan rows where
+// plan_status = 'active'; draft/expired/discontinued plans are NEVER
+// returned. Backend gates :studentId via requireStudentReadAccess, so a
+// teacher reaches this only when the student is on caseload (and
+// applies §5 dual-path for elevated staff and parent_student_links for
+// linked parents). 403 collapses to a thrown Error here; the FE shows
+// "no active plan" rather than distinguishing "no plan" from "no
+// access" — same non-leak pattern as the staff routes above.
+//
+// Projection (minimized per R4-B operator mandate):
+//   { id, plan_status, effective_date, review_date, accommodations }
+// Drops created_by and team_members.user_id — no staff-directory leak
+// in the teacher tier.
+export function listActiveAccommodationsForStudent(API_URL, studentId) {
+  return send(API_URL, `/student-504/plans/student/${studentId}`, {
+    method: 'GET',
+  });
+}

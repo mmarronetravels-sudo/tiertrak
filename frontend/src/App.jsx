@@ -36,6 +36,7 @@ import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
 import DistrictDashboardView from './views/DistrictDashboardView';
 import Section504Tab from './components/Section504/Section504Tab';
+import TeacherAccommodationsView from './components/Section504/TeacherAccommodationsView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -4605,10 +4606,20 @@ if (!user) {
           </div>
         )}
 
-        {/* Section 504 — staff-only; component additionally guards on
-            user.role !== 'parent' and the /api/student-504 routes refuse
-            parent role at the boundary. */}
-        <Section504Tab user={user} API_URL={API_URL} student={selectedStudent} />
+        {/* Section 504 — staff-only.
+            R4-B split: teacher role gets the minimized read-only
+            accommodations view (active plans only, no draft/process surface).
+            Elevated roles (district_admin, district_tech_admin, school_admin,
+            counselor, interventionist) get the full Section504Tab process
+            bundle (cycles + Forms C/I/J). Parent is gated out by
+            Section504Tab itself + refuseParentRole at the backend. R4-A
+            will additionally enforce ELEVATED_ROLES at the backend
+            process handlers. */}
+        {user?.role === 'teacher' ? (
+          <TeacherAccommodationsView user={user} API_URL={API_URL} student={selectedStudent} />
+        ) : (
+          <Section504Tab user={user} API_URL={API_URL} student={selectedStudent} />
+        )}
 </div>
     );
   };
