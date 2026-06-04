@@ -102,7 +102,8 @@ router.get('/templates', async (req, res) => {
     `, [tenantIdInt]);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching templates:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[adminTemplates:getTemplates]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
@@ -155,7 +156,8 @@ router.get('/templates/:id', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error fetching template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[adminTemplates:getTemplateById]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to fetch template' });
   }
 });
