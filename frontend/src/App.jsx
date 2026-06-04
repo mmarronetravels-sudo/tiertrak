@@ -774,19 +774,34 @@ const addInterventionAssignment = async (studentInterventionId, userId, assignme
     if (response.ok) {
       return await response.json();
     }
+    // Non-ok HTTP status (4xx/5xx). apiFetch never throws on these
+    // (utils/apiFetch.js:29-30), so the prior code silently fell through
+    // to `return null` — the failure mode that masked the PR #203
+    // regression during testing. §4B: surface a generic user-visible
+    // message; never echo response.body or error.message.
+    console.error('Error adding assignment: HTTP', response.status);
+    alert("Couldn't save the assignment — please try again.");
   } catch (error) {
     console.error('Error adding assignment:', error);
+    alert("Couldn't save the assignment — please try again.");
   }
   return null;
 };
 
 const removeInterventionAssignment = async (assignmentId) => {
   try {
-    await apiFetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
+    const response = await apiFetch(`${API_URL}/intervention-assignments/${assignmentId}`, {
       method: 'DELETE'
     });
+    if (!response.ok) {
+      // Same non-ok-swallow shape as addInterventionAssignment pre-fix.
+      // §4B: generic message, no body echo.
+      console.error('Error removing assignment: HTTP', response.status);
+      alert("Couldn't remove the assignment — please try again.");
+    }
   } catch (error) {
     console.error('Error removing assignment:', error);
+    alert("Couldn't remove the assignment — please try again.");
   }
 
  
