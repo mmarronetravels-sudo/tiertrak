@@ -357,11 +357,56 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'interventi
     const adminTenantId = adminCheck.rows[0].tenant_id;
     
     const { email, full_name, student_ids } = req.body;
-    
+
     if (!email || !full_name) {
       return res.status(400).json({ error: 'Email and full name are required' });
     }
-    
+
+    // Validate body.student_ids: Number()-coerce per the PR #204 lesson,
+    // then verify EACH one belongs to the admin's tenant.
+    //
+    // Pre-fix (closed by this commit): the downstream loop INSERTed body-
+    // supplied student_ids into parent_student_links with the admin's
+    // tenant_id and NO verification. An admin could link a newly-created
+    // parent to any student in any tenant by supplying a foreign student_id
+    // in the body — a cross-tenant FERPA exposure. The post-fix gate
+    // structurally bars the cross-tenant link.
+    //
+    // Existence-non-disclosure: out-of-tenant student_id and not-found
+    // student_id both collapse to a byte-identical 400 'Invalid student_ids'
+    // — a probe cannot distinguish "this student doesn't exist" from
+    // "this student exists in another tenant."
+    //
+    // Validation runs BEFORE user creation so a partial-state failure
+    // (parent row created but linkage validation rejects) is impossible.
+    let validatedStudentIds = [];
+    if (student_ids != null) {
+      if (!Array.isArray(student_ids)) {
+        return res.status(400).json({ error: 'Invalid student_ids' });
+      }
+      if (student_ids.length > 0) {
+        const coerced = [];
+        for (const sid of student_ids) {
+          const n = Number(sid);
+          if (!Number.isInteger(n) || n <= 0) {
+            return res.status(400).json({ error: 'Invalid student_ids' });
+          }
+          coerced.push(n);
+        }
+        const uniqueIds = [...new Set(coerced)];
+        const verify = await pool.query(
+          'SELECT COUNT(DISTINCT id)::int AS n FROM students WHERE id = ANY($1::int[]) AND tenant_id = $2',
+          [uniqueIds, adminTenantId]
+        );
+        if (verify.rows[0].n !== uniqueIds.length) {
+          // Any combination of out-of-tenant / not-found / duplicate-collision
+          // collapses here. Single byte-identical failure mode.
+          return res.status(400).json({ error: 'Invalid student_ids' });
+        }
+        validatedStudentIds = uniqueIds;
+      }
+    }
+
     // Check if user already exists
     const existingUser = await pool.query(
       'SELECT id FROM users WHERE email = $1',
@@ -386,16 +431,16 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'interventi
     
     const newUser = result.rows[0];
     
-    // Link parent to students if provided
-    if (student_ids && student_ids.length > 0) {
-      for (const studentId of student_ids) {
-        await pool.query(
-          `INSERT INTO parent_student_links (parent_user_id, student_id, tenant_id)
-           VALUES ($1, $2, $3)
-           ON CONFLICT DO NOTHING`,
-          [newUser.id, studentId, adminTenantId]
-        );
-      }
+    // Link parent to validated students. validatedStudentIds is the
+    // deduped + Number()-coerced + tenant-verified set from above —
+    // raw req.body.student_ids is never used downstream.
+    for (const studentId of validatedStudentIds) {
+      await pool.query(
+        `INSERT INTO parent_student_links (parent_user_id, student_id, tenant_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [newUser.id, studentId, adminTenantId]
+      );
     }
     
     // Send welcome email with password setup link
