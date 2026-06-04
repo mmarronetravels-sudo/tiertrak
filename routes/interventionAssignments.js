@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
-const { requireWriteAccessByBody } = require('../middleware/authorizeInterventionAccess');
+const { requireWriteAccessByBody, requireInterventionReadAccess } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 
@@ -25,11 +25,31 @@ const initializePool = (p) => {
   pool = p;
 };
 
-// GET assignments for an intervention
-router.get('/:studentInterventionId', async (req, res) => {
+// GET assignments for an intervention.
+//
+// Tenant binding (§5): :interventionId is the student_intervention id; the
+// canonical requireInterventionReadAccess middleware walks
+// student_interventions → students.tenant_id and gates via the same
+// applyStudentAccessGate as PR-A/B/C. Parent role is supported via
+// parent_student_links membership (read-side, unlike the write-side
+// requireWriteAccessByInterventionId which requires an active assignment).
+// Not-found and wrong-tenant collapse to a byte-identical 403 inside
+// the middleware.
+//
+// Pre-fix this handler had NO tenant scope and projected u.full_name +
+// u.email + u.role for every assignment row by the supplied
+// :studentInterventionId — meaning any authenticated user could probe
+// student_intervention ids cross-tenant and enumerate the staff/parent
+// directory (HIGH-1 in the reads-tier scoping pass). The middleware
+// now gates the read; URL pattern unchanged from the client's
+// perspective (only the internal param name changed from
+// :studentInterventionId to :interventionId so requireInterventionReadAccess's
+// `req.params.interventionId` lookup works — mirrors PR-C's destructure-
+// rename pattern).
+router.get('/:interventionId', requireInterventionReadAccess, async (req, res) => {
   try {
-    const { studentInterventionId } = req.params;
-    
+    const { interventionId: studentInterventionId } = req.params;
+
     const result = await pool.query(`
       SELECT ia.*, u.full_name as user_name, u.email as user_email, u.role as user_role
       FROM intervention_assignments ia
@@ -40,8 +60,9 @@ router.get('/:studentInterventionId', async (req, res) => {
     
     res.json(result.rows);
   } catch (error) {
-    console.error('Error fetching assignments:', error);
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionAssignments:getByIntervention]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
