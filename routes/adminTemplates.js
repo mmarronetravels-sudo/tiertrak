@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+
+const FORBIDDEN_BODY = { error: 'Not authorized' };
 
 let pool;
 
@@ -33,13 +36,27 @@ const templateBelongsToTenant = async (templateId, tenantId) => {
 // GET /api/admin/templates?tenant_id=...
 // List all intervention templates visible to this tenant (bank + tenant-owned),
 // with plan status resolved against the tenant's overrides.
+//
+// Tenant binding (§5): query.tenant_id Number()-coerced and verified against
+// resolveAccessibleTenantIds. Pre-fix the handler accepted req.query.tenant_id
+// verbatim — same probe-vector shape closed by PR #213 (R5) on the
+// intervention-bank/plans template GETs. Surfaced by the R5 tenant-isolation
+// review as a structural carry-forward. Closes the bank/template probe family.
 // ============================================
 router.get('/templates', async (req, res) => {
   try {
     const { tenant_id } = req.query;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    // Coerce + validate per the #204 lesson.
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    // Caller-scope check via §5 helper-consume.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     // When a tenant has a custom template with the same (area, name) as a
@@ -82,7 +99,7 @@ router.get('/templates', async (req, res) => {
           (it.tenant_id = $1) DESC
       ) sub
       ORDER BY sub.category, sub.name
-    `, [tenant_id]);
+    `, [tenantIdInt]);
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching templates:', error);
@@ -93,14 +110,25 @@ router.get('/templates', async (req, res) => {
 // ============================================
 // GET /api/admin/templates/:id?tenant_id=...
 // Get single template with the plan_template that this tenant should see.
+//
+// Tenant binding (§5): same shape as GET /templates above — query.tenant_id
+// Number()-coerced and verified against resolveAccessibleTenantIds before
+// the resolved plan_template body + tenant-override flag are emitted.
+// Closes the per-id arm of the bank/template probe family.
 // ============================================
 router.get('/templates/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { tenant_id } = req.query;
 
-    if (!tenant_id) {
-      return res.status(400).json({ error: 'tenant_id is required' });
+    const tenantIdInt = Number(tenant_id);
+    if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
+      return res.status(400).json({ error: 'Invalid tenant_id' });
+    }
+
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(tenantIdInt)) {
+      return res.status(403).json(FORBIDDEN_BODY);
     }
 
     const result = await pool.query(`
@@ -119,7 +147,7 @@ router.get('/templates/:id', async (req, res) => {
         ON o.template_id = it.id AND o.tenant_id = $1
       WHERE it.id = $2
         AND (it.tenant_id = $1 OR it.tenant_id IS NULL)
-    `, [tenant_id, id]);
+    `, [tenantIdInt, id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Template not found' });
