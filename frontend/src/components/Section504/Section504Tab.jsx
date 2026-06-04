@@ -7,11 +7,15 @@ import Section504CycleView from './Section504CycleView';
 // Staff-only Section 504 surface for the student profile.
 //
 // Auth predicates (defense in depth):
-//   - App.jsx mounts this only inside StudentProfileView, which is only
-//     reached when user is authenticated and on the staff side of the app.
+//   - App.jsx conditionally mounts this for non-teacher non-parent inside
+//     StudentProfileView (R4-B): teacher gets TeacherAccommodationsView
+//     instead. Reached only when user is authenticated and on the staff
+//     side of the app.
 //   - This component additionally short-circuits on user.role === 'parent'
-//     before any fetch. The /api/student-504 routes also refuse parent role
-//     at the route boundary (refuseParentRole middleware) — three layers.
+//     before any fetch. The /api/student-504 process routes also enforce
+//     ELEVATED_ROLES at the route boundary via requireElevated504Role
+//     middleware (R4-A) — three layers, with the backend role gate now
+//     the load-bearing one (FE could be bypassed via curl).
 //
 // Tenant scoping: every fetch goes through ./api.js, which never includes
 // tenant_id in the request. The backend derives tenant_id from the JWT.

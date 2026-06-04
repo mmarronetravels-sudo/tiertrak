@@ -82,8 +82,9 @@ const formJ = oregonOde2025.forms.formJ;
 // eligibility_determination before allowing Form J save) is a separate
 // product decision and out of scope for v1.
 //
-// Auth: parent role short-circuit at the top of render; parent role also
-// refused at the route boundary (routes/student504.js refuseParentRole).
+// Auth: parent role short-circuit at the top of render; route boundary
+// enforces ELEVATED_ROLES via routes/student504.js requireElevated504Role
+// (R4-A), which refuses parent AND teacher.
 const FormJPlanModal = ({
   API_URL,
   user,

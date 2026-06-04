@@ -4612,9 +4612,9 @@ if (!user) {
             Elevated roles (district_admin, district_tech_admin, school_admin,
             counselor, interventionist) get the full Section504Tab process
             bundle (cycles + Forms C/I/J). Parent is gated out by
-            Section504Tab itself + refuseParentRole at the backend. R4-A
-            will additionally enforce ELEVATED_ROLES at the backend
-            process handlers. */}
+            Section504Tab itself + requireElevated504Role at the backend
+            (R4-A) — which also blocks teacher hitting the process routes
+            directly via curl/devtools. */}
         {user?.role === 'teacher' ? (
           <TeacherAccommodationsView user={user} API_URL={API_URL} student={selectedStudent} />
         ) : (
