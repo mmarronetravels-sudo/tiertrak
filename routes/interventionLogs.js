@@ -58,7 +58,9 @@ router.get('/student/:studentId', requireStudentReadAccess, async (req, res) => 
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionLogs:getByStudent]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -90,7 +92,9 @@ router.get('/intervention/:interventionId', requireInterventionReadAccess, async
     );
     res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[interventionLogs:getByIntervention]', 'user_id=', req.user && req.user.id, 'err=', error.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
