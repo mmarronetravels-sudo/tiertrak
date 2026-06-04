@@ -434,12 +434,23 @@ const allowedRoles = ['district_admin', 'school_admin', 'counselor', 'interventi
     // Link parent to validated students. validatedStudentIds is the
     // deduped + Number()-coerced + tenant-verified set from above —
     // raw req.body.student_ids is never used downstream.
+    //
+    // The phantom `tenant_id` column referenced by the pre-fix INSERT
+    // does not exist on parent_student_links (Followup #77 in the bank
+    // registry). Pre-fix this INSERT 500'd on every call with a non-
+    // empty student_ids array — which is why the cross-tenant body-side-
+    // channel exposure flagged by the comprehensive audit was actually
+    // unreachable in production: the write never succeeded. The phantom
+    // column is removed here so the handler functions correctly + the
+    // tenant binding from the prior commit becomes load-bearing for
+    // real linkage writes. ON CONFLICT targets the UNIQUE constraint
+    // on (parent_user_id, student_id).
     for (const studentId of validatedStudentIds) {
       await pool.query(
-        `INSERT INTO parent_student_links (parent_user_id, student_id, tenant_id)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
-        [newUser.id, studentId, adminTenantId]
+        `INSERT INTO parent_student_links (parent_user_id, student_id)
+         VALUES ($1, $2)
+         ON CONFLICT (parent_user_id, student_id) DO NOTHING`,
+        [newUser.id, studentId]
       );
     }
     
