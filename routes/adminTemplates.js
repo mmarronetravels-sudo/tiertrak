@@ -270,7 +270,8 @@ router.put('/templates/:id/plan', requireAdminTemplateRole, async (req, res) => 
       template: result.rows[0]
     });
   } catch (error) {
-    console.error('Error saving plan template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[adminTemplates:savePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to save plan template' });
   }
 });
@@ -351,7 +352,8 @@ router.delete('/templates/:id/plan', requireAdminTemplateRole, async (req, res) 
       template: result.rows[0]
     });
   } catch (error) {
-    console.error('Error removing plan template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[adminTemplates:removePlan]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to remove plan template' });
   }
 });
@@ -456,7 +458,8 @@ router.post('/templates/:id/duplicate', requireAdminTemplateRole, async (req, re
       template: updateResult.rows[0]
     });
   } catch (error) {
-    console.error('Error duplicating template:', error);
+    // §4B: integer user_id + err.message only. No body echo, no PII.
+    console.error('[adminTemplates:duplicateTemplate]', 'user_id=', req.user && req.user.id, 'err=', error.message);
     res.status(500).json({ error: 'Failed to duplicate template' });
   }
 });
