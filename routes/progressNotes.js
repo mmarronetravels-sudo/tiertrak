@@ -35,7 +35,10 @@ const pool = new Pool({
 //
 // Banked followups (out of scope per the auth-hole-only directive):
 //   F-A — author_id is body-readable on POST (impersonation surface).
-//         Should be server-derived from req.user.id.
+//         FIXED in sec/actor-field-spoof-sweep: author_id is now
+//         server-derived from req.user.id; the body field is dropped
+//         from the destructure. Mirrors PR-A logged_by, PR-C
+//         plan_completed_by, PR #208 activated_by.
 //   F-B — error.message echoed in response bodies (information
 //         disclosure via pg error text). Should redact to generic
 //         "Server error" with console.error tag + err.message only.
@@ -85,7 +88,12 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
-    const { student_id, author_id, note, meeting_date } = req.body;
+    // author_id is server-derived from req.user.id, not body. Any body-
+    // supplied author_id is intentionally ignored — the prior body.author_id
+    // binding was spoofable: a caller could attribute the progress note to
+    // any user id, distorting the FERPA audit trail. Mirrors PR-A logged_by,
+    // PR-C plan_completed_by, PR #208 activated_by.
+    const { student_id, note, meeting_date } = req.body;
 
     const sid = parseInt(student_id, 10);
     if (!isPositiveInt(sid)) {
@@ -115,7 +123,7 @@ router.post('/', requireAuth, async (req, res) => {
       `INSERT INTO progress_notes (student_id, author_id, note, meeting_date)
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [sid, author_id, note, meeting_date || new Date().toISOString().split('T')[0]]
+      [sid, req.user.id, note, meeting_date || new Date().toISOString().split('T')[0]]
     );
 
     // Update the student's updated_at timestamp

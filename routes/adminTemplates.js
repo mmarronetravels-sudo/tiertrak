@@ -202,7 +202,13 @@ router.get('/templates/:id', async (req, res) => {
 router.put('/templates/:id/plan', requireAdminTemplateRole, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenant_id, user_id, plan_template } = req.body;
+    // updated_by is server-derived from req.user.id, not body. Any body-
+    // supplied user_id is intentionally ignored — the prior body.user_id
+    // binding was spoofable: a caller could attribute the override
+    // mutation to any user id, distorting the FERPA audit trail. Mirrors
+    // the PR-A logged_by, PR-C plan_completed_by, and PR #208 activated_by
+    // fixes; closes PR #215 WARN-1.
+    const { tenant_id, plan_template } = req.body;
 
     // Coerce + validate per the #204 lesson.
     const tenantIdInt = Number(tenant_id);
@@ -240,7 +246,7 @@ router.put('/templates/:id/plan', requireAdminTemplateRole, async (req, res) => 
               updated_by = EXCLUDED.updated_by,
               updated_at = CURRENT_TIMESTAMP
         RETURNING tenant_id, template_id, plan_template, has_plan_template
-      `, [tenantIdInt, id, JSON.stringify(plan_template), user_id || null]);
+      `, [tenantIdInt, id, JSON.stringify(plan_template), req.user.id]);
 
       return res.json({
         message: 'Plan template saved successfully',
@@ -375,7 +381,9 @@ router.delete('/templates/:id/plan', requireAdminTemplateRole, async (req, res) 
 router.post('/templates/:id/duplicate', requireAdminTemplateRole, async (req, res) => {
   try {
     const { id } = req.params;
-    const { tenant_id, user_id, sourceId } = req.body;
+    // updated_by is server-derived from req.user.id, not body. See PUT
+    // /templates/:id/plan above for the spoofing-fix rationale.
+    const { tenant_id, sourceId } = req.body;
 
     const tenantIdInt = Number(tenant_id);
     if (!Number.isInteger(tenantIdInt) || tenantIdInt <= 0) {
@@ -437,7 +445,7 @@ router.post('/templates/:id/duplicate', requireAdminTemplateRole, async (req, re
               updated_by = EXCLUDED.updated_by,
               updated_at = CURRENT_TIMESTAMP
         RETURNING tenant_id, template_id, plan_template
-      `, [tenantIdInt, id, JSON.stringify(clonedTemplate), user_id || null]);
+      `, [tenantIdInt, id, JSON.stringify(clonedTemplate), req.user.id]);
 
       return res.json({
         message: 'Plan template duplicated successfully',
