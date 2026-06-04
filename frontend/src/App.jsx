@@ -1629,12 +1629,12 @@ const handleUnlinkParent = async (linkId) => {
     const noteText = noteTextareaRef.current?.value || '';
     if (!noteText || !selectedStudent) return;
     try {
+      // author_id is server-derived from the JWT on the backend; no need to send it.
       const res = await apiFetch(`${API_URL}/progress-notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           student_id: selectedStudent.id,
-          author_id: user.id,
           note: noteText,
           meeting_date: noteDate
         })

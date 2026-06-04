@@ -47,12 +47,12 @@ const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefres
 
   const saveTemplateEditor = async () => {
     try {
+      // updated_by is server-derived from the JWT on the backend; no need to send user_id.
       const response = await apiFetch(`${API_URL}/admin/templates/${template.id}/plan`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenant_id: user.tenant_id,
-          user_id: user.id,
           plan_template: templateEditorForm
         })
       });
@@ -101,12 +101,12 @@ const TemplateEditorModal = ({ template, adminTemplates, user, onClose, onRefres
     if (!duplicateSourceId) return;
 
     try {
+      // updated_by is server-derived from the JWT on the backend; no need to send user_id.
       const response = await apiFetch(`${API_URL}/admin/templates/${template.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenant_id: user.tenant_id,
-          user_id: user.id,
           sourceId: duplicateSourceId
         })
       });
