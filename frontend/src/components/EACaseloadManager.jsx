@@ -47,19 +47,20 @@ function formatDate(iso) {
   if (!iso) return '';
   try {
     return new Date(iso).toLocaleDateString();
-  } catch (_) {
+  } catch {
     return '';
   }
 }
 
 export default function EACaseloadManager({ staffMember, API_URL }) {
-  // UX render gate. Non-EA rows show em-dash, mirroring the
-  // MTSSCoordinatorToggle ineligible-row pattern. The BE rejects non-EA
-  // POST targets with 400 anyway; this is just to hide the control.
-  if (staffMember.role !== 'education_assistant') {
-    return <span className="text-xs text-slate-400">—</span>;
-  }
-
+  // Hooks are declared unconditionally above the role-based render gate
+  // below, per React's Rules of Hooks — hooks must be called in the same
+  // order on every render regardless of which return path the component
+  // takes. loadCaseload is declared above useEffect because the effect
+  // body references it (closure capture; no TDZ since the effect body
+  // runs after render). The button that flips isOpen is only rendered
+  // in the EA branch, so for non-EA rows the effect's branch is never
+  // entered (isOpen stays false) and no DB call is made.
   const tenantId = staffMember.tenant_id;
   const [isOpen, setIsOpen] = useState(false);
   const [caseload, setCaseload] = useState([]);
@@ -95,6 +96,14 @@ export default function EACaseloadManager({ staffMember, API_URL }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // UX render gate. Non-EA rows show em-dash, mirroring the
+  // MTSSCoordinatorToggle ineligible-row pattern. The BE rejects non-EA
+  // POST targets with 400 anyway; this is just to hide the control.
+  // Placed AFTER all hooks per Rules of Hooks.
+  if (staffMember.role !== 'education_assistant') {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
 
   const handleSearch = async () => {
     setError(null);
