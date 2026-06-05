@@ -3506,20 +3506,30 @@ if (!user) {
                             <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(log.status)}`}>
                               {log.status}
                             </span>
-                            <button
+                            {/* Edit + delete icons on a logged weekly_progress entry are
+                                MANAGEMENT (PUT/DELETE /weekly-progress/:id — rows #6 and
+                                #7 in the progress-logging audit). Gated to
+                                canManageInterventions, NOT canLogProgress, so EA is
+                                hidden even though they can create new entries via
+                                "Log Progress". The BE blocks EA writes at 403; this
+                                gate avoids rendering a button that would always fail.
+                                Also hides the controls for parent — pre-existing UX
+                                bug (BE 403s parent too; icons rendered with no gate).
+                                Pure UX; BE remains the trust boundary. */}
+                            {canManageInterventions && <button
   onClick={() => openEditProgressLog(log, intervention)}
   className="text-slate-400 hover:text-blue-600 p-1"
   title="Edit log"
 >
   <Pencil className="w-3 h-3" />
-</button>
-                            <button
+</button>}
+                            {canManageInterventions && <button
                               onClick={() => deleteWeeklyProgress(log.id)}
                               className="text-slate-400 hover:text-rose-600 p-1"
                               title="Delete log"
                             >
                               <Trash2 className="w-3 h-3" />
-                            </button>
+                            </button>}
                           </div>
                         </div>
                         {log.rating && (
