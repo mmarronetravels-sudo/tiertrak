@@ -24198,3 +24198,165 @@ NEXT SESSION SHOULD
   confirmation that no legitimate 504-process user is teacher-coded
   in prod (operator's stated post-#217 monitoring task).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-04T19:20:58-07:00
+BRANCH:  feat/education-assistant-enforcement
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/222 (merge commit 68b7c60d8545dbb23e99085729af9d751a94e822; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR-2 of N for the education_assistant role family. PR-1 (M041
+  schema foundation) landed in S114 via PR #221. PR-2 is app-layer
+  enforcement: admits the new role in the per-router allowlists,
+  adds the per-record EA branch in canStaffAccessStudent, and adds
+  a narrow building-wide student picker endpoint that the FE
+  referral modal now consumes. Also adds the EA option to both
+  staff-management dropdowns and the M041 entry in
+  docs/ai-context/PRIVACY_REVIEW.md (mirroring the M038/M039/M040
+  sibling section). Five commits, one per discrete change, no
+  collateral edits. constants/roles.js intentionally untouched
+  (PR-1 reviewer invariant — EA stays out of ELEVATED_ROLES and
+  INTERVENTION_MANAGER_ROLES). No schema change in PR-2; M041
+  already in prod.
+
+FILES TOUCHED
+  routes/auth.js — VALID_ROLES (+1/-1)
+  routes/users.js — VALID_ROLES + CREATE_USER_RULES.school_admin (+2/-2)
+  routes/staffManagement.js — STAFF_ROLES + CREATE_STAFF_RULES.school_admin (+3/-2)
+  middleware/canAccessStudent.js — EA caseload branch + docblock addendum (+20/-0)
+  routes/disciplineReferrals.js — new GET /picker/:tenantId (+73/-0)
+  frontend/src/components/Modals/DisciplineReferralModal.jsx — repoint picker fetch (+1/-1)
+  frontend/src/components/Modals/StaffModals.jsx — EA option in 2 dropdowns (+2/-0)
+  docs/ai-context/PRIVACY_REVIEW.md — M041 + ea_caseload_students section (+15/-0)
+
+MIGRATIONS RUN
+  none (M041 was applied in S114 prep; landed via PR #221 — see prior session log)
+
+TENANT ISOLATION REVIEW
+  Two new SQL surfaces in PR-2:
+    (1) canAccessStudent EA branch — SELECT 1 FROM ea_caseload_students
+        WHERE ea_user_id=$1 AND student_id=$2 AND school_tenant_id=$3
+        LIMIT 1. The third bind takes studentRow.tenant_id (already
+        gated by the upstream accessible-set check at line 115).
+        M041 FK3 guarantees the schema-layer trust property: no
+        caseload row can exist whose school_tenant_id differs from
+        the student's tenant_id. No inline section-5 dual-path
+        branching — helper-consume only.
+    (2) Picker endpoint — SELECT id, first_name, last_name, grade
+        FROM students WHERE tenant_id = $1 (+ optional LIKE on
+        first/last_name, parameterized). Path :tenantId
+        int-validated AND gated by requireTenantStaffAccess against
+        resolveAccessibleTenantIds(req.user) BEFORE handler runs.
+        SQL filter on tenant_id is defense-in-depth.
+  tenant-isolation-auditor verdict: APPROVED, 0 CRITICAL, 0 WARN,
+  3 INFO (LIKE-wildcard noted, PR-3 hand-off invariant pre-flagged,
+  minimum-payload contract preservation observed).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: picker SELECT projects first_name, last_name,
+  grade — explicit column list, no SELECT *. No new persisted PII
+  fields. Picker payload is the data-minimization replacement for
+  the over-disclosing /students/tenant/:tenantId roster that the FE
+  used before — net privacy improvement applies tenant-wide, not
+  just for the new role.
+  Logging audit: 1 new console.error (picker error path); verified
+  integer-only ids + err.message. EA branch in canAccessStudent
+  contains zero log statements.
+  Cross-tenant risk: none identified by any of the three reviewers.
+  privacy-reviewer pass: APPROVED, 0 CRITICAL, 0 WARN, 3 INFO
+  (raw-tenantId-in-log intentional + LIKE-wildcard noted +
+  renderStudentBadge graceful-degradation observed).
+  Section 4B grep at every commit boundary in this session: 0 PII
+  hits per commit (5 commits checked).
+  Section 4B grep on PR body before gh pr create: 0 PII hits after
+  path-conversion remediation pattern reused from S114 PR-1
+  (operator-handle-leak class via auto-memory link paths).
+
+VERIFICATION
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  Section 4B grep at each of the 5 commits — 0 PII hits per commit
+  Section 4B grep on PR body before gh pr create — 0 PII hits
+  merge-sha verification: MATCH for PR #222
+    feature tip:        34c09e3c1454bc9c2f30dbda53fb9e841dc996ce
+    merge second-parent: 34c09e3c1454bc9c2f30dbda53fb9e841dc996ce
+    merge commit:       68b7c60d8545dbb23e99085729af9d751a94e822
+
+  Three reviewer subagents ran against the full branch diff vs
+  origin/main before push — all approved with 0 CRITICAL/HIGH/WARN:
+    security-reviewer:        APPROVED WITH NOTES (agentId a2959098f9e58b77b)
+    tenant-isolation-auditor: APPROVED              (agentId acb0075149aa9cf50)
+    privacy-reviewer:         APPROVED              (agentId a1ce5331f7906b307)
+
+  security-reviewer flagged two MEDIUMs as PR-3 prerequisites — both
+  non-blocking for PR-2 per the operator guardrail (no real
+  education_assistant accounts + no ea_caseload_students rows in
+  prod until PR-3). See OPEN ITEMS.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #222 commit OIDs at merge time:
+  6dafbe37dcc5cc02eeb5c150333d9ea93c306fd8
+  073c986466d240b5018c46bb1faf3c86669e92a7
+  00bd7791cb58fb2320da34cfcef37d472f8f0a66
+  99602e087b4e86e745db85c81159f2aba2ef17ad
+  34c09e3c1454bc9c2f30dbda53fb9e841dc996ce
+
+OPEN ITEMS / FOLLOW-UPS
+  MEDIUM-1 (security-reviewer, NEW this session) — canAccessStudent
+    EA branch is a shared predicate; intervention + progressNotes
+    write routes gate only on role != 'parent', so an EA with a
+    caseload row would gain intervention-write capability. Backend
+    positive-role allowlist required in PR-3 before any real
+    education_assistant account is provisioned.
+  MEDIUM-2 (security-reviewer, NEW this session) — FE
+    canManageInterventions = user && user.role !== 'parent' would
+    let an EA mount intervention-management UI buttons. Replace
+    with explicit allowlist mirroring INTERVENTION_MANAGER_ROLES
+    in PR-3. Sibling to MEDIUM-1, same one-PR scope.
+  LOW-1 (security-reviewer + tenant-isolation INFO + privacy INFO)
+    — LIKE-wildcard hardening for %/_ across both routes/students.js
+    :197-199 and routes/disciplineReferrals.js picker. In-lockstep
+    follow-up — fix both sites in one chore PR; banked as
+    followup-like-wildcard-hardening.
+  LOW-2 (security-reviewer, carried) — picker inherits Followup #80
+    rate-limit gap; pre-existing systemic, not a regression.
+  INFO-1 (security-reviewer) — picker error log echoes raw
+    req.params.tenantId. Cosmetic; bump to validated integer.
+  INFO-2 (tenant-isolation, NEW pre-flag for PR-3) — list-endpoint
+    EA branch in routes/students.js GET /tenant/:tenantId should
+    compose as student_id IN (SELECT student_id FROM
+    ea_caseload_students WHERE ea_user_id=$X AND school_tenant_id=
+    $tenantId), binding school_tenant_id from path :tenantId not
+    a per-row column. Mirrors teacher branch reconciliation note.
+  Memory entries banked this session (PR-3 prerequisites):
+    - pr3-ea-caseload-query-no-divergence
+    - no-real-ea-accounts-in-prod-until-pr3
+    - followup-like-wildcard-hardening
+    - pr3-ea-intervention-surface-gates
+
+  OPERATIONAL NOTES (for ops; not a code follow-up):
+    - PROD-SEEDING GUARDRAIL (load-bearing for PR-2 to PR-3 window):
+      no ea_caseload_students rows are to be seeded in prod, no
+      real education_assistant accounts are to be provisioned in
+      prod, until PR-3's intervention gates land. Sandbox/staging
+      only during this window. If broken, MEDIUM-1 + MEDIUM-2
+      become live exposure.
+    - No prod \i needed for PR-2 — M041 already in prod via PR #221.
+
+NEXT SESSION SHOULD
+  Start PR-3 (feat/education-assistant-assignment-ui) covering:
+  (a) caseload assignment UI + grant/revoke CRUD routes with the
+  two-GUC writers contract from M041 header (app.actor_user_id +
+  app.audit_action, single checked-out client per operation);
+  (b) routes/students.js list-endpoint EA branch reusing the
+  canAccessStudent column triple verbatim (per
+  pr3-ea-caseload-query-no-divergence memory); (c) the two MEDIUM
+  gates from this session — backend positive-role gate on
+  intervention + progressNotes write routes, FE
+  canManageInterventions narrowing. All three must land in the
+  same PR so the assignment UI does not ship before the gates
+  are closed.
+================================================================================
