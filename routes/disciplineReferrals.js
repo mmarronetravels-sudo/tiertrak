@@ -320,6 +320,79 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
 });
 
 // ============================================================
+// GET /picker/:tenantId — narrow building-wide student picker for
+// the discipline-referral create flow. Returns the minimum payload
+// to render a typeahead list: id, first_name, last_name, grade.
+// NO tier, NO risk_level, NO history, NO documents, NO external_id,
+// NO dob, NO parent_email.
+//
+// Open to all non-parent roles (requireTenantStaffAccess admits any
+// staff role whose accessible-tenant set includes the path tenant).
+// The shape was chosen to data-minimize the surface that an
+// education_assistant — and every other non-parent staff role —
+// sees when filing a referral. PR-2 of N for the education-assistant
+// feature; the picker landed here so EA's building-wide WRITE
+// capability has a roster source that does not over-disclose.
+//
+// Path :tenantId is int-validated; tenant access is enforced by
+// requireTenantStaffAccess against resolveAccessibleTenantIds(req.user).
+// Cross-tenant probe → 403 at the middleware layer.
+//
+// Query params:
+//   search (optional, string): substring match on first_name OR last_name,
+//     case-insensitive via LOWER(...) LIKE LOWER(...). Behavior matches
+//     routes/students.js:197-199 exactly (no divergence per S115 operator
+//     directive; LIKE-wildcard (%/_) hardening is tracked as a follow-up
+//     across both sites in lockstep). Falsy search → no filter applied.
+//   limit  (optional, positive int): cap on rows returned. Default 50,
+//     max 200 (mirrors GET /queue/:tenantId).
+//
+// PII discipline (§4B):
+//   - SELECT enumerates id, first_name, last_name, grade EXPLICITLY.
+//     No SELECT * or s.* — see picker invariant from PR-1
+//     privacy-reviewer report.
+//   - Error log carries tenant_id (integer) + user_id (integer) +
+//     err.message only. No body echo, no name fragments.
+// ============================================================
+router.get('/picker/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
+  try {
+    const tenantId = Number(req.params.tenantId);
+    if (!isPositiveInt(tenantId)) {
+      return res.status(400).json({ error: 'Invalid tenant id' });
+    }
+
+    const { search } = req.query;
+    const rawLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
+
+    let query = `SELECT id, first_name, last_name, grade
+                   FROM students
+                  WHERE tenant_id = $1`;
+    const params = [tenantId];
+
+    if (search) {
+      params.push(`%${search}%`);
+      query += ` AND (LOWER(first_name) LIKE LOWER($${params.length}) OR LOWER(last_name) LIKE LOWER($${params.length}))`;
+    }
+
+    params.push(limit);
+    query += ` ORDER BY last_name, first_name LIMIT $${params.length}`;
+
+    const result = await pool.query(query, params);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:picker]',
+      'tenant_id=', req.params.tenantId,
+      'user_id=', req.user && req.user.id,
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to load picker' });
+  }
+});
+
+// ============================================================
 // POST / — create a discipline referral.
 //
 // Path-fork by behavior.managed_by:

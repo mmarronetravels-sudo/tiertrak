@@ -14,7 +14,7 @@ const pool = new Pool({
 
 // Valid roles (universe of valid role strings — used for malformed-input
 // 400 rejection).
-const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'];
+const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent', 'education_assistant'];
 
 // Per-creator-role rules: which roles each creator can produce. Dict
 // is the single source of truth for both the caller-allowed gate
@@ -23,7 +23,7 @@ const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 't
 // HIGH-1).
 const CREATE_USER_RULES = {
   district_admin: VALID_ROLES,
-  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'parent']
+  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'parent', 'education_assistant']
 };
 
 function isPositiveInt(n) {

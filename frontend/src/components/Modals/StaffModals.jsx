@@ -140,6 +140,7 @@ credentials: 'include',
               <option value="counselor">Counselor — full admin access</option>
               <option value="school_admin">Admin — full access, manages everything</option>
               <option value="interventionist">Interventionist — sees all students, manages interventions, uploads documents</option>
+              <option value="education_assistant">Education Assistant — files referrals on any student; views assigned students only</option>
             </select>
           </div>
         </div>
@@ -218,6 +219,7 @@ credentials: 'include',
               <option value="counselor">Counselor</option>
               <option value="school_admin">Admin</option>
               <option value="interventionist">Interventionist</option>
+              <option value="education_assistant">Education Assistant</option>
             </select>
           </div>
         </div>

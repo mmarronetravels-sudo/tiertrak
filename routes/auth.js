@@ -18,7 +18,7 @@ const pool = new Pool({
 });
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'];
+const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent', 'education_assistant'];
 
 // Auth cookie options. Prod needs SameSite=None + Secure for the cross-
 // origin frontend↔backend pair; dev uses Lax (no Secure, cross-port

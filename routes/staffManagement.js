@@ -18,7 +18,8 @@ const STAFF_ROLES = [
   'school_admin',
   'counselor',
   'teacher',
-  'interventionist'
+  'interventionist',
+  'education_assistant'
 ];
 
 // Per-creator-role rules: which roles each creator can produce. Dict
@@ -28,7 +29,7 @@ const STAFF_ROLES = [
 // HIGH-1).
 const CREATE_STAFF_RULES = {
   district_admin: STAFF_ROLES,
-  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist']
+  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'education_assistant']
 };
 
 function isPositiveInt(n) {
