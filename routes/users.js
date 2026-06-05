@@ -441,6 +441,22 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
+    // Explicit cleanup for ea_caseload_students rows pointing at this
+    // user. M041 header lines 68-71: for district EAs the composite FK
+    // (ea_user_id, district_id) → users(id, district_id) cascades on
+    // DELETE FROM users below; for legacy EAs (district_id IS NULL)
+    // MATCH SIMPLE skips that cascade, so app-layer cleanup is required
+    // to avoid orphan caseload rows. Runs unconditionally — district
+    // case is a 0-row no-op (FK cascade hasn't fired yet at this point).
+    // The explicit DELETE fires M041's AFTER DELETE trigger on
+    // ea_caseload_students, which captures actor via the app.actor_user_id
+    // GUC set above and labels the audit row 'cascade_user_delete'
+    // (label-of-record for all schema-cascade sources per M041 doctrine).
+    await client.query(
+      'DELETE FROM ea_caseload_students WHERE ea_user_id = $1',
+      [id]
+    );
+
     const result = await client.query(
       'DELETE FROM users WHERE id = $1 RETURNING id',
       [id]
