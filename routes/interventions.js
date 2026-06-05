@@ -9,6 +9,7 @@ const {
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 require('dotenv').config();
 
 const FORBIDDEN_BODY = { error: 'Not authorized' };
@@ -157,10 +158,13 @@ router.delete('/templates/:id', async (req, res) => {
 // Assign an intervention to a student
 router.post('/assign', requireAuth, async (req, res) => {
   try {
-    // Role gate: only school staff can assign. Parents are explicitly
-    // rejected. Sourced from req.user.role (cookie/JWT-verified) rather
-    // than the prior x-user-role header (client-spoofable).
-    if (req.user.role === 'parent') {
+    // Positive role gate: only INTERVENTION_MANAGER_ROLES may assign.
+    // Sourced from req.user.role (cookie/JWT-verified) rather than the
+    // prior x-user-role header (client-spoofable). Excludes 'parent' and
+    // 'education_assistant' by allowlist membership — EA may pass the
+    // downstream applyStudentAccessGate (caseload read), but is not
+    // authorized to write interventions (M041 ROLE-MATRIX PLACEMENT).
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 

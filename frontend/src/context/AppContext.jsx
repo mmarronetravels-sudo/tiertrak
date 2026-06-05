@@ -39,7 +39,10 @@ export function AppProvider({ children }) {
   const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
-  const canManageInterventions = user && user.role !== 'parent';
+  // Explicit allowlist mirrors INTERVENTION_MANAGER_ROLES in
+  // constants/roles.js:39-46 — see App.jsx:482 for the parallel narrowing
+  // and the BE gate references. EA intentionally excluded.
+  const canManageInterventions = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist'].includes(user.role);
   const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const isParent = user && user.role === 'parent';
   const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);

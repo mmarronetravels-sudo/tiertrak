@@ -75,6 +75,7 @@ const districtDashboardRoutes = require('./routes/districtDashboard');
 const disciplineReferralsRoutes = require('./routes/disciplineReferrals');
 const disciplineReportsRoutes = require('./routes/disciplineReports');
 const mtssCoordinatorsRoutes = require('./routes/mtssCoordinators');
+const eaCaseloadRoutes = require('./routes/eaCaseload');
 
 // Initialize pools for routes that need them
 prereferralFormsRoutes.initializePool(pool);
@@ -760,6 +761,7 @@ app.use('/api/districts', districtDashboardRoutes);
 app.use('/api/discipline-referrals', disciplineReferralsRoutes);
 app.use('/api/discipline-reports', disciplineReportsRoutes);
 app.use('/api/mtss-coordinators', mtssCoordinatorsRoutes);
+app.use('/api/ea-caseload', eaCaseloadRoutes);
 
 // Test route
 app.get('/', (req, res) => {

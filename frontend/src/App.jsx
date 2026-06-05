@@ -28,6 +28,7 @@ import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
+import EACaseloadManager from './components/EACaseloadManager';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
@@ -478,8 +479,16 @@ const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'inte
 // Check if user can add students (admins + interventionist)
 const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
 
-// Check if user can assign interventions and log progress (everyone except parent)
-const canManageInterventions = user && user.role !== 'parent';
+// Check if user can assign interventions and log progress.
+// Explicit allowlist mirrors INTERVENTION_MANAGER_ROLES in
+// constants/roles.js:39-46 — the BE gate enforced in
+// middleware/authorizeInterventionAccess.js (write-side) and the inline
+// gates in routes/interventions.js + routes/progressNotes.js. EA is
+// intentionally excluded (M041 ROLE-MATRIX PLACEMENT): EA may pass
+// canStaffAccessStudent for READ via the caseload table, but is not
+// authorized to write interventions or progress notes. FE narrowing is
+// UX; the trust boundary is the BE gate.
+const canManageInterventions = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist'].includes(user.role);
 
 // Check if user can delete documents (admin-level only)
 const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
@@ -5560,6 +5569,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                   <th className="pb-3 font-medium">Role</th>
                   <th className="pb-3 font-medium">Access</th>
                   <th className="pb-3 font-medium">Coordinator</th>
+                  <th className="pb-3 font-medium">Caseload</th>
                   <th className="pb-3 font-medium">SSO</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
@@ -5611,6 +5621,12 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                         tenantId={user.tenant_id}
                         API_URL={API_URL}
                         onChange={() => loadCoordinatorMap(user.tenant_id)}
+                      />
+                    </td>
+                    <td className="py-3">
+                      <EACaseloadManager
+                        staffMember={member}
+                        API_URL={API_URL}
                       />
                     </td>
                     <td className="py-3">
