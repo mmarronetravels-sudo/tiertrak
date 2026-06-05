@@ -112,6 +112,95 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
   return { ok: true };
 }
 
+// Progress-log authorization — PARALLEL to authorizeByInterventionId but
+// widens the staff arm to admit education_assistant via caseload coverage.
+//
+// Used by routes that "log progress" (record observations without changing
+// the intervention's lifecycle): PATCH /interventions/:id/progress (#1),
+// POST /progress-notes (#2; inline gate widening, not this wrapper), POST
+// /weekly-progress (#3), POST /intervention-logs (#8; inline, not this
+// wrapper).
+//
+// NOT used by management routes (assign, status/goal flips, archive/delete,
+// monitoring-flag, plan edits) — those continue to call authorizeByInterventionId
+// with the INTERVENTION_MANAGER_ROLES positive gate, keeping EA at 403.
+//
+// Staff/EA role check is INLINE (isManager || isEA) rather than a new
+// constant — keeps INTERVENTION_MANAGER_ROLES narrow (excludes EA) so that
+// constant's other consumers (FE canManageInterventions, staff-roster reads)
+// are not accidentally widened. Operator-locked decision.
+//
+// Per-student access is delegated to applyStudentAccessGate, which routes
+// through canStaffAccessStudent. That predicate has both the manager branch
+// (ELEVATED_ROLES / teacher-caseload, S114) AND the EA branch
+// (ea_caseload_students at the byte-identical column triple from PR-2/PR-3).
+// No inline branching here — the predicate is the trust boundary.
+//
+// Parent arm is identical to authorizeByInterventionId — parents with an
+// intervention_assignments row carrying can_log_progress=TRUE are permitted
+// (existing semantics preserved).
+async function authorizeProgressLogByInterventionId(req, res, studentInterventionId) {
+  const interventionResult = await pool.query(
+    `SELECT si.id, si.student_id, s.tenant_id, s.tier
+     FROM student_interventions si
+     JOIN students s ON s.id = si.student_id
+     WHERE si.id = $1`,
+    [studentInterventionId]
+  );
+  if (interventionResult.rows.length === 0) {
+    return { ok: false, status: 403, body: FORBIDDEN_BODY };
+  }
+  const {
+    student_id: interventionStudentId,
+    tenant_id: interventionTenantId,
+    tier: interventionStudentTier,
+  } = interventionResult.rows[0];
+
+  if (req.user.role === 'parent') {
+    const assignmentResult = await pool.query(
+      `SELECT 1 FROM intervention_assignments
+       WHERE user_id = $1
+         AND student_intervention_id = $2
+         AND assignment_type = 'parent'
+         AND can_log_progress = TRUE
+       LIMIT 1`,
+      [req.user.id, studentInterventionId]
+    );
+    if (assignmentResult.rows.length === 0) {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
+  } else {
+    // Staff/EA arm: widened role check vs authorizeByInterventionId.
+    // INTERVENTION_MANAGER_ROLES OR education_assistant — no new constant
+    // per operator decision. applyStudentAccessGate (via canStaffAccessStudent)
+    // enforces per-student access for both: manager → ELEVATED_ROLES / teacher-
+    // caseload; EA → ea_caseload_students membership.
+    const isManager = INTERVENTION_MANAGER_ROLES.includes(req.user.role);
+    const isEA = req.user.role === 'education_assistant';
+    if (!isManager && !isEA) {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    const legacyAllowed = accessible.includes(interventionTenantId);
+    const studentRow = {
+      id: interventionStudentId,
+      tenant_id: interventionTenantId,
+      tier: interventionStudentTier,
+    };
+    const gate = await applyStudentAccessGate(req.user, studentRow, { legacyAllowed });
+    if (gate.decision === 'deny') {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
+  }
+
+  req.intervention = {
+    id: studentInterventionId,
+    student_id: interventionStudentId,
+    tenant_id: interventionTenantId
+  };
+  return { ok: true };
+}
+
 // Read-side intervention authorization: parent gate uses parent_student_links
 // (linked to the intervention's student is sufficient — no assignment row
 // required), staff gate uses tenant match. Used by requireInterventionReadAccess.
@@ -220,6 +309,54 @@ async function requireWriteAccessByInterventionId(req, res, next) {
   }
 }
 
+// Progress-log wrapper for routes shaped PATCH /resource/:interventionId.
+// Mirrors requireWriteAccessByInterventionId but delegates to the widened
+// authorizeProgressLogByInterventionId so that education_assistant with
+// ea_caseload_students coverage passes. Mounted on PATCH /interventions/
+// :interventionId/progress (#1) only; management PATCH routes (status, goal,
+// monitoring-flag, archive, unarchive, delete) remain on the original
+// requireWriteAccessByInterventionId and continue to 403 EA.
+async function requireProgressLogAccessByInterventionId(req, res, next) {
+  try {
+    const { interventionId } = req.params;
+    if (!interventionId) {
+      return res.status(400).json({ error: 'Missing required parameter: interventionId' });
+    }
+    const result = await authorizeProgressLogByInterventionId(req, res, interventionId);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    return next();
+  } catch (err) {
+    console.error('[requireProgressLogAccessByInterventionId]', err.message);
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+}
+
+// Progress-log wrapper for routes shaped POST with student_intervention_id
+// in req.body. Mirrors requireWriteAccessByBody but delegates to the widened
+// authorizeProgressLogByInterventionId. Mounted on POST /weekly-progress
+// (#3) only; PUT/DELETE /weekly-progress/:id stay on the original
+// requireWriteAccessByLogId per operator decision.
+//
+// Note: no requireProgressLogAccessByLogId is added in this PR. The original
+// plan listed three wrappers; only two log-progress routes consume wrappers,
+// and the LogId shape would be unused. §9 — not designing for hypothetical
+// future requirements. If a future operator decision admits PUT/DELETE on
+// weekly-progress to EA, the wrapper lands in that PR.
+async function requireProgressLogAccessByBody(req, res, next) {
+  try {
+    const studentInterventionId = req.body?.student_intervention_id;
+    if (!studentInterventionId) {
+      return res.status(400).json({ error: 'Missing required field: student_intervention_id' });
+    }
+    const result = await authorizeProgressLogByInterventionId(req, res, studentInterventionId);
+    if (!result.ok) return res.status(result.status).json(result.body);
+    return next();
+  } catch (err) {
+    console.error('[requireProgressLogAccessByBody]', err.message);
+    return res.status(500).json({ error: 'Authorization check failed' });
+  }
+}
+
 // Read middleware for routes shaped GET /resource/intervention/:interventionId.
 // Wraps authorizeReadByInterventionId; sets req.intervention = { id, student_id,
 // tenant_id } for the route handler to use in defense-in-depth tenant-bound SQL.
@@ -315,6 +452,8 @@ module.exports = {
   requireWriteAccessByBody,
   requireWriteAccessByLogId,
   requireWriteAccessByInterventionId,
+  requireProgressLogAccessByInterventionId,
+  requireProgressLogAccessByBody,
   requireStudentReadAccess,
   requireInterventionReadAccess,
   requireTenantStaffAccess
