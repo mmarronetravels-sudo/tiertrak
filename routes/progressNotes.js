@@ -79,13 +79,21 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
   }
 });
 
-// Create a new progress note.
+// Create a new progress note (#2 in the log-progress classification).
 // Staff-only write surface. Parents are 403 (staff observations are
-// not parent-authored). Inline tenant check mirrors the staff branch
-// of requireStudentReadAccess.
+// not parent-authored). Role gate widened from INTERVENTION_MANAGER_ROLES
+// to (isManager || isEA) — admits education_assistant via the existing
+// applyStudentAccessGate → canStaffAccessStudent EA branch (ea_caseload_
+// students membership). Inline rather than wrapper-based because this
+// route keys on body.student_id, not student_intervention_id, so the
+// new requireProgressLogAccessByBody wrapper would not apply.
+// PUT and DELETE handlers below stay on INTERVENTION_MANAGER_ROLES per
+// operator decision (#4 + #5) — EA blocked on edit/delete.
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+    const isManager = INTERVENTION_MANAGER_ROLES.includes(req.user.role);
+    const isEA = req.user.role === 'education_assistant';
+    if (!isManager && !isEA) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 

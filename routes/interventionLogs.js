@@ -5,6 +5,7 @@ require('dotenv').config();
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
 const { requireStudentReadAccess, requireInterventionReadAccess } = require('../middleware/authorizeInterventionAccess');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -114,7 +115,22 @@ router.get('/intervention/:interventionId', requireInterventionReadAccess, async
 // to a different student/tenant.
 router.post('/', async (req, res) => {
   try {
-    if (req.user && req.user.role === 'parent') {
+    // Role gate — explicit allowlist replacing the prior "not parent"
+    // denylist (#8 in the log-progress classification). Operator-locked
+    // decision: fold this route into the same shape as the new progress-
+    // log middleware. (isManager || isEA) is behavior-equivalent to
+    // "not parent" across the canonical 8-role universe but explicit
+    // about which roles are admitted — closes the "intervention-logs-
+    // style gap" that slipped past PR-3's NO-matrix sweep, by giving
+    // future reviewers a positive allowlist to audit against.
+    //
+    // Per-student access is enforced below via applyStudentAccessGate —
+    // for EA, that routes through canStaffAccessStudent's caseload
+    // branch (ea_caseload_students at the byte-identical column triple).
+    // Caseload coverage is the trust boundary, not this role check.
+    const isManager = INTERVENTION_MANAGER_ROLES.includes(req.user && req.user.role);
+    const isEA = req.user && req.user.role === 'education_assistant';
+    if (!isManager && !isEA) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
