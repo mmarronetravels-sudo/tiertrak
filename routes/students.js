@@ -166,6 +166,31 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
       `;
       params = [pathTenantId, userId];
     }
+    // Education Assistants see only students on their ea_caseload_students
+    // roster for this building. The EXISTS clause filters on the exact column
+    // triple (ea_user_id, student_id, school_tenant_id) used by the per-record
+    // predicate in canAccessStudent.js:134-145 — byte-identical to avoid the
+    // list-vs-per-record divergence bug-shape (S113). school_tenant_id binds
+    // to pathTenantId ($1), the path-validated tenant — NOT a per-row column.
+    // The outer s.tenant_id = $1 prerequisite + the EXISTS school_tenant_id
+    // = $1 filter are belt-and-suspenders: both must hold, so a hypothetical
+    // M041 composite-FK weakening could not surface a cross-building caseload
+    // row into this tenant's list.
+    else if (userRole === 'education_assistant') {
+      query = `
+        SELECT DISTINCT s.*, u.full_name as teacher_name
+        FROM students s
+        LEFT JOIN users u ON s.teacher_id = u.id
+        WHERE s.tenant_id = $1
+          AND EXISTS (
+            SELECT 1 FROM ea_caseload_students
+             WHERE ea_user_id = $2
+               AND student_id = s.id
+               AND school_tenant_id = $1
+          )
+      `;
+      params = [pathTenantId, userId];
+    }
     // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
       query = `
