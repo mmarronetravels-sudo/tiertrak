@@ -28,6 +28,7 @@ import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
+import EACaseloadManager from './components/EACaseloadManager';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
 import PlanTemplatePreviewModal from './components/Modals/PlanTemplatePreviewModal';
@@ -5568,6 +5569,7 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                   <th className="pb-3 font-medium">Role</th>
                   <th className="pb-3 font-medium">Access</th>
                   <th className="pb-3 font-medium">Coordinator</th>
+                  <th className="pb-3 font-medium">Caseload</th>
                   <th className="pb-3 font-medium">SSO</th>
                   <th className="pb-3 font-medium text-right">Actions</th>
                 </tr>
@@ -5619,6 +5621,12 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                         tenantId={user.tenant_id}
                         API_URL={API_URL}
                         onChange={() => loadCoordinatorMap(user.tenant_id)}
+                      />
+                    </td>
+                    <td className="py-3">
+                      <EACaseloadManager
+                        staffMember={member}
+                        API_URL={API_URL}
                       />
                     </td>
                     <td className="py-3">
