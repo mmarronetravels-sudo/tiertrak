@@ -236,6 +236,14 @@ router.get('/by-ea/:eaUserId/school/:tenantId', requireAuth, async (req, res) =>
 router.post('/', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
+    // Role gate FIRST — authorization is decided before any caller-supplied
+    // body field is parsed. A non-grant-role authenticated caller hitting
+    // this endpoint gets 403 without 400-leaking the body-shape validation
+    // logic (PR-3 security-reviewer L-1).
+    if (!GRANT_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const eaUserId = validateIntParam(req.body && req.body.ea_user_id);
     if (eaUserId === null) {
       return res.status(400).json({ error: 'Invalid ea_user_id' });
@@ -247,10 +255,6 @@ router.post('/', requireAuth, async (req, res) => {
     const schoolTenantId = validateIntParam(req.body && req.body.school_tenant_id);
     if (schoolTenantId === null) {
       return res.status(400).json({ error: 'Invalid school_tenant_id' });
-    }
-
-    if (!GRANT_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const actorId = Number(req.user.id);
@@ -378,6 +382,13 @@ router.post('/', requireAuth, async (req, res) => {
 router.delete('/eas/:eaUserId/students/:studentId', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
+    // Role gate FIRST — authorization is decided before any caller-supplied
+    // path param is parsed. Symmetric with the POST ordering, addresses
+    // PR-3 security-reviewer L-1.
+    if (!GRANT_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const eaUserId = validateIntParam(req.params.eaUserId);
     if (eaUserId === null) {
       return res.status(400).json({ error: 'Invalid ea_user_id' });
@@ -385,10 +396,6 @@ router.delete('/eas/:eaUserId/students/:studentId', requireAuth, async (req, res
     const studentId = validateIntParam(req.params.studentId);
     if (studentId === null) {
       return res.status(400).json({ error: 'Invalid student_id' });
-    }
-
-    if (!GRANT_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const actorId = Number(req.user.id);
