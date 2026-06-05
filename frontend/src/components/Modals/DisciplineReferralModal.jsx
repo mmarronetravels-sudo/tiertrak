@@ -96,7 +96,7 @@ var DisciplineReferralModal = function(props) {
       setSearching(true);
       try {
         var res = await apiFetch(
-          API_URL + '/students/tenant/' + user.tenant_id + '?search=' + encodeURIComponent(q)
+          API_URL + '/discipline-referrals/picker/' + user.tenant_id + '?search=' + encodeURIComponent(q)
         );
         if (res.ok) {
           var data = await res.json();
