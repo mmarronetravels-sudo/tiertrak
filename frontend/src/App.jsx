@@ -490,6 +490,16 @@ const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', '
 // UX; the trust boundary is the BE gate.
 const canManageInterventions = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist'].includes(user.role);
 
+// canLogProgress — UX gate for the 4 BE log-progress routes (PATCH
+// /interventions/:id/progress, POST /progress-notes, POST /weekly-progress,
+// POST /intervention-logs). Inline literal mirrors the BE shape
+// (isManager || isEA) from middleware/authorizeInterventionAccess.js
+// authorizeProgressLogByInterventionId and the inline gates in
+// routes/progressNotes.js + routes/interventionLogs.js. EA is admitted
+// here but is caseload-scoped at the BE per-request gate
+// (canStaffAccessStudent EA branch). Trust boundary is the BE.
+const canLogProgress = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist', 'education_assistant'].includes(user.role);
+
 // Check if user can delete documents (admin-level only)
 const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
 
@@ -3393,7 +3403,14 @@ if (!user) {
                     <span className="text-sm font-medium text-slate-600">{intervention.progress || 0}%</span>
                   </div>
                   <div className="flex gap-2 mt-3">
-                    {canManageInterventions && <button
+                    {/* Log Progress button — swapped from canManageInterventions
+                        to canLogProgress so education_assistant with caseload
+                        coverage of selectedStudent can record weekly progress.
+                        Opens ProgressFormModal which POSTs to /weekly-progress
+                        (#3 in the log-progress classification). BE enforces
+                        per-student caseload via canStaffAccessStudent's EA
+                        branch. */}
+                    {canLogProgress && <button
                       onClick={() => {
   setSelectedInterventionForProgress({...intervention, student_id: selectedStudent?.id});
   setEditingProgressLog(null);
