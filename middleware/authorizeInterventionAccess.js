@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const { mutationUserLimiter } = require('./rateLimiters');
 const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('./canAccessStudent');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -81,10 +82,15 @@ async function authorizeByInterventionId(req, res, studentInterventionId) {
       return { ok: false, status: 403, body: FORBIDDEN_BODY };
     }
   } else {
-    // Staff branch: flag-gated through applyStudentAccessGate so the new
-    // canonical predicate can replace the legacy tenant-only check in
-    // strict mode, while dark mode emits would-block telemetry without
-    // changing the decision.
+    // Staff branch: positive role gate first, then flag-gated through
+    // applyStudentAccessGate. INTERVENTION_MANAGER_ROLES excludes
+    // 'education_assistant' by design (M041 ROLE-MATRIX PLACEMENT) — an
+    // EA may PASS canStaffAccessStudent (read) via the caseload table but
+    // must NOT be authorized to WRITE interventions. The role check fires
+    // before any further DB I/O for non-manager staff.
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return { ok: false, status: 403, body: FORBIDDEN_BODY };
+    }
     const accessible = await resolveAccessibleTenantIds(req.user);
     const legacyAllowed = accessible.includes(interventionTenantId);
     const studentRow = {

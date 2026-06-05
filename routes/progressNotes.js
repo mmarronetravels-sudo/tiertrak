@@ -8,6 +8,7 @@ const {
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('../middleware/canAccessStudent');
+const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -84,7 +85,7 @@ router.get('/student/:studentId', requireAuth, requireStudentReadAccess, async (
 // of requireStudentReadAccess.
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (req.user.role === 'parent') {
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
@@ -144,7 +145,7 @@ router.post('/', requireAuth, async (req, res) => {
 // requireWriteAccessByLogId in middleware/authorizeInterventionAccess.js).
 router.put('/:id', requireAuth, async (req, res) => {
   try {
-    if (req.user.role === 'parent') {
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
@@ -196,7 +197,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 // Delete a progress note. Same gate shape as PUT.
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    if (req.user.role === 'parent') {
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
       return res.status(403).json(FORBIDDEN_BODY);
     }
 
