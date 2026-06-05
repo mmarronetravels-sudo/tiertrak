@@ -5,6 +5,7 @@ const {
   requireAuth,
   requireStudentReadAccess,
   requireWriteAccessByInterventionId,
+  requireProgressLogAccessByInterventionId,
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
@@ -211,8 +212,12 @@ router.post('/assign', requireAuth, async (req, res) => {
   }
 });
 
-// Update an intervention's progress
-router.patch('/:interventionId/progress', requireAuth, requireWriteAccessByInterventionId, async (req, res) => {
+// Update an intervention's progress (#1 in the log-progress classification).
+// Uses requireProgressLogAccessByInterventionId — admits education_assistant
+// with ea_caseload_students coverage, in addition to INTERVENTION_MANAGER_ROLES.
+// The four sibling PATCH/PUT/DELETE routes below remain on
+// requireWriteAccessByInterventionId (management gate) and continue to 403 EA.
+router.patch('/:interventionId/progress', requireAuth, requireProgressLogAccessByInterventionId, async (req, res) => {
   try {
     const { progress } = req.body;
     const result = await pool.query(

@@ -3,8 +3,8 @@ const router = express.Router();
 const { Pool } = require('pg');
 const {
   requireAuth,
-  requireWriteAccessByBody,
   requireWriteAccessByLogId,
+  requireProgressLogAccessByBody,
   requireStudentReadAccess,
   requireInterventionReadAccess,
   requireTenantStaffAccess
@@ -288,8 +288,12 @@ router.get('/summary/:studentId', requireAuth, requireStudentReadAccess, async (
   }
 });
 
-// Create a weekly progress log
-router.post('/', requireAuth, requireWriteAccessByBody, async (req, res) => {
+// Create a weekly progress log (#3 in the log-progress classification).
+// Uses requireProgressLogAccessByBody — admits education_assistant with
+// ea_caseload_students coverage, in addition to INTERVENTION_MANAGER_ROLES.
+// PUT and DELETE below remain on requireWriteAccessByLogId (management
+// gate) and continue to 403 EA per operator decision (#6, #7).
+router.post('/', requireAuth, requireProgressLogAccessByBody, async (req, res) => {
   try {
     const {
       student_intervention_id,
