@@ -26,6 +26,13 @@
 //     4. Teacher caseload (role === 'teacher'):
 //        - studentRow.tier === 1, OR
 //        - active intervention_assignments row exists for (user.id, studentRow.id)
+//     5. EA caseload (role === 'education_assistant'):
+//        - ea_caseload_students row exists for
+//          (user.id, studentRow.id, studentRow.tenant_id)
+//        - No tier-1 shortcut: the caseload table is the only path for
+//          this role. The list-endpoint EA branch (deferred to PR-3) must
+//          reuse this exact column triple and table to avoid the divergence
+//          bug-shape that produced S113 (per-record vs list predicate drift).
 //
 // Parent path is NOT in this helper — parent_student_links is a distinct
 // gate doctrine, kept inline in the existing middleware. This helper applies
@@ -120,6 +127,19 @@ async function canStaffAccessStudent(user, studentRow) {
           AND si.status = 'active'
         LIMIT 1`,
       [user.id, studentRow.id]
+    );
+    if (rows.length > 0) return true;
+  }
+
+  if (user.role === 'education_assistant') {
+    const { rows } = await pool.query(
+      `SELECT 1
+         FROM ea_caseload_students
+        WHERE ea_user_id = $1
+          AND student_id = $2
+          AND school_tenant_id = $3
+        LIMIT 1`,
+      [user.id, studentRow.id, studentRow.tenant_id]
     );
     if (rows.length > 0) return true;
   }
