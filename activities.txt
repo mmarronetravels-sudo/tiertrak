@@ -25204,3 +25204,195 @@ NEXT SESSION SHOULD
   roster imports populating the new demographic columns. PR-C
   (backend writes with GUC plumbing) and PR-D (FE) follow.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T11:30:00-07:00
+BRANCH:  feat/student-demographics-csv-import
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/231
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR-B from the M042 student-demographics multi-PR plan. Extended the
+  authenticated student CSV import path to populate the five new M042
+  demographic fields (iep_flag, sec_504_flag, ell_flag, gender,
+  race_ethnicity) and shipped constants/studentDemographics.js as the
+  app-layer mirror of the M042 CHECK allowlists. New fields are all
+  optional; old templates (no new columns) import unchanged with NULL
+  for absent demographics.
+
+FILES TOUCHED
+  constants/studentDemographics.js — NEW. Canonical code lists (gender,
+    race/ethnicity), label maps, FLAG_FIELDS array, boolean coercion
+    token sets, multi-value CSV separator. Byte-identical to M042 CHECK
+    allowlists.
+  routes/csvImport.js — three module-level sanitizers; wired into the
+    parse step after the required-fields guard; widened students INSERT
+    to 12 columns; new student_race_ethnicity child INSERT inside a
+    per-row transaction; extended /template and /template/download for
+    the five new optional columns; redacted per-row DB-error response
+    to drop demographic PII echo and replaced the dbError.message
+    fallback with a generic operator string + server-side log of
+    code+constraint only.
+
+MIGRATIONS RUN
+  none (M042 was applied in the prior PR; this session is app-code only)
+
+TENANT ISOLATION REVIEW
+  Two new SQL writes audited:
+    - Parent students INSERT (12 columns). tenant_id is $1, bound to
+      the per-request value from resolveAndBindTargetTenant(req); never
+      derivable from any CSV-supplied column.
+    - Child student_race_ethnicity INSERT. tenant_id is passed
+      EXPLICITLY from the same per-request bound value, NOT derived
+      from parent.tenant_id from RETURNING *. The M042 composite FK
+      (student_id, tenant_id) -> students(id, tenant_id) is the
+      structural backstop; the explicit binding keeps §5 intent
+      legible at the call site.
+  Per-row BEGIN/COMMIT wraps parent + child together for atomicity;
+  ROLLBACK on any failure leaves no orphan parent. GUC
+  app.actor_user_id is deliberately NOT set on the transaction (per
+  M042 doctrine: import-set audit rows carry actor_user_id = NULL,
+  the "set at import" semantic). Tenant scoping is parameter-driven
+  and unaffected by the GUC posture.
+  tenant-isolation-auditor verdict: APPROVED (0 CRITICAL / 0 HIGH /
+  0 MEDIUM / 0 LOW / 5 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched (write path): iep_flag, sec_504_flag, ell_flag,
+    gender (students scalar columns); category (student_race_ethnicity
+    child table). All extra-sensitive FERPA per CLAUDE.md §4B.
+  Logging audit: zero new console.* calls in the initial commit; one
+    new console.error added in the redaction commit logging pg code +
+    constraint name only — no message body, no row data, no PII.
+  Error-body audit: three new sanitizers cite column name + valid set,
+    NEVER echo offending input. Five new validation-error push sites
+    use narrowed {row, error} shape (no row payload). Per-row catch
+    redacted to drop data: student (which carried new M042 demographic
+    PII) and replace dbError.message fallback with a generic operator
+    string.
+  CSV unlink: every error/rollback path still hits the existing
+    parse-end unlink; no new top-level handler-exit path was
+    introduced.
+  Cross-tenant risk: none identified. tenant_id is per-request bound
+    and passed explicitly on both parent and child INSERTs; composite
+    FK provides structural backstop.
+  §4B grep (narrow + wide) against diff vs origin/main: 0 matches
+    after the redaction commit. Pattern catalog per
+    docs/ai-context/4B_GREP_PATTERNS.md.
+  privacy-reviewer (re-review post-redaction) verdict: APPROVED
+    (0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW / 0 WARN / 3 INFO).
+
+VERIFICATION
+  node --check on both touched files — OK (no lint configured per
+    standing Followups #73/#74).
+  Local dev smoke against one sandbox tenant covering:
+    (a) old CSV no demographic columns: parent row inserted, scalar
+        demographic columns NULL, zero audit rows for absent fields,
+        zero student_race_ethnicity rows
+    (b) bad gender / race / flag values produce row-level errors
+        whose body contains no input value (verified per-sanitizer)
+    (c) multi-race input "asian;WHITE;MENA" -> 3 student_race_ethnicity
+        rows, all carrying the bound tenant_id; audit rows match
+        expected (1+1+1+3=6 with sec_504_flag NULL emitting no row);
+        every audit row has actor_user_id = NULL (import-set semantic
+        preserved)
+    (d) forced mid-row child failure (bypass-sanitizer code triggering
+        23514 student_race_ethnicity_category_check) → ROLLBACK; zero
+        orphan parent rows; zero stray audit rows
+    (e) CSV unlink trace: no new handler-exit path; existing
+        parse-end / bind-error / outer-catch unlinks all still cover
+  merge-sha verification: MATCH for PR #231
+    feature tip:         8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+    merge second-parent: 8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+    merge commit:        9a4546175613863464b9b7c5a2a819352869c4b4
+  Three reviewer subagents ran against the branch diff vs origin/main:
+    privacy-reviewer:        first pass APPROVED WITH NOTES
+                             (0 CRITICAL / 0 HIGH / 2 MEDIUM / 1 LOW /
+                             1 WARN / 4 INFO); redaction shipped to
+                             close both MEDIUMs; re-review APPROVED
+                             (0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW /
+                             0 WARN / 3 INFO)
+    tenant-isolation-auditor: APPROVED (0 CRITICAL / 0 HIGH / 0 MEDIUM /
+                             0 LOW / 5 INFO)
+    security-reviewer:       first pass APPROVED WITH NOTES
+                             (0 CRITICAL / 0 HIGH / 0 MEDIUM / 3 LOW /
+                             5 INFO); two of three LOWs were pre-
+                             existing-and-out-of-scope; the one
+                             in-PR LOW was the dbError.message fallback,
+                             closed by the same redaction commit;
+                             re-review APPROVED WITH NOTES
+                             (0 CRITICAL / 0 HIGH / 0 MEDIUM / 0 LOW /
+                             3 INFO — only the two pre-existing
+                             out-of-scope notes carried forward)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #231 commit OIDs at merge time:
+  02a4331bf23a12f8d2e979267691485b514b519c
+  8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+
+OPEN ITEMS / FOLLOW-UPS
+  In-session findings closed by the redaction commit:
+    - privacy-reviewer pass-1 MEDIUM-1 (csvImport.js:519-531
+      insertErrors widened payload echoing M042 demographic PII via
+      data: student)
+    - privacy-reviewer pass-1 MEDIUM-2 (csvImport.js:519-531
+      dbError.message fallback echoing raw libpq text on unknown
+      pg errors)
+    - security-reviewer pass-1 LOW-1 (same dbError.message fallback
+      surface)
+
+  Banked for downstream PRs (per reviewer subagent INFO / WARN):
+    - PR-C: extend POST/PUT routes/students.js to accept the five
+      demographic fields; wrap PUT in BEGIN -> SET LOCAL
+      app.actor_user_id -> mutation -> COMMIT GUC writer contract
+      so audit rows capture the actor (mirrors M040 writer doctrine
+      at routes/mtssCoordinators.js / routes/staffManagement.js /
+      routes/eaCaseload.js). Plumb the same GUC at every future
+      student_race_ethnicity INSERT/DELETE site outside the CSV
+      import path. Sibling to Followup #118.
+    - PR-D (FE): surface the five fields in student edit / view;
+      enforce role-gate on any students_demographics_audit read
+      endpoint introduced.
+    - docs: privacy-reviewer WARN on PR #231 — PRIVACY_REVIEW.md
+      does not yet document the five M042 demographic columns,
+      the student_race_ethnicity child table, the three-state
+      boolean-flag semantic, the audit-table no-FK doctrine, or
+      the CSV-import "actor_user_id = NULL = set at import"
+      semantic. Doc-only; sibling to banked Followup #120.
+    - chore (sec-LOW pre-existing, from PR #231 review): the
+      per-row pool.connect() loop in routes/csvImport.js
+      serializes connection acquisition over the entire upload.
+      csvImportLimiter at server.js bounds concurrency so this
+      is not exploitable, but consider an explicit max-rows cap
+      (e.g., 5000) on the parse step parallel to the staff-import
+      100-row cap.
+    - chore (sec-LOW pre-existing, predates PR #231): the
+      normalizedRow = {} literal in the CSV row callback inherits
+      Object.prototype; a CSV header literally named __proto__
+      would rebind the prototype. Per-row scope bounds the blast
+      radius; the right shape on next non-trivial touch is
+      Object.create(null).
+    - chore (pre-existing tier/area/risk_level echo): the older
+      validation-error pushes at csvImport.js:339-388 still carry
+      the wider {row, data: normalizedRow, error} shape and echo
+      the offending value in the error string. Out of scope for
+      this PR; bundle when fix/api-dberror-translation is opened.
+
+  Pre-existing standing followups (#73 no backend tests, #74 no
+  backend lint, #80 no app-wide rate-limiting, #81 no CSRF on
+  state-changing routes, #94 untracked ops files) continue to
+  stand; not introduced or worsened here.
+
+  FIXES:
+    privacy-reviewer pass-1 MEDIUM-1 → PR #231 @ 8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+    privacy-reviewer pass-1 MEDIUM-2 → PR #231 @ 8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+    security-reviewer pass-1 LOW-1   → PR #231 @ 8afb036bacb3d5b844e6d65d2bb4f2ed3ddd644c
+
+NEXT SESSION SHOULD
+  PR-C (backend writes on routes/students.js with M040-style GUC
+  plumbing) is the natural next unit. After PR-C lands, PR-D (FE
+  edit/view surfaces) unblocks operator-driven editing of the new
+  fields on already-imported students.
+================================================================================
