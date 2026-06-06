@@ -25749,3 +25749,324 @@ NEXT SESSION SHOULD
   re-run unless the underlying route handlers or M042 triggers are
   touched.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T19:08-2026-06-06T19:16Z (PR-D — student-demographics FE)
+BRANCH:  feat/student-demographics-fe (deleted post-merge)
+DISPOSITION: MERGED + deployed at Vercel side; production-alias CDN
+             promotion still pending at write time (see DEPLOY block).
+             PR #236 cc15bef on main.
+--------------------------------------------------------------------------------
+SCOPE
+  FE half of M042 student demographics. Surfaces the four scalar
+  fields (iep_flag, sec_504_flag, ell_flag, gender) in the student
+  create form, the student edit form, and the CSV-import description
+  panel. Race/ethnicity (the fifth M042 dimension) was intentionally
+  phased to PR-E and kept entirely out of PR-D — including the CSV-
+  description text — to avoid a half-built "settable at create but
+  invisible on edit" state. PR-E is gated on a precursor BE PR that
+  widens GET /students to ARRAY_AGG the race_ethnicity codes.
+
+  Files changed:
+    frontend/src/App.jsx                          | +265 / -16
+    frontend/src/constants/studentDemographics.js | new, +56
+    -------------------------------------------------------
+    2 files changed, 305 insertions(+), 16 deletions(-)
+
+PRESERVE-ON-OMIT (highest-risk §4B correctness invariant)
+  An Unknown demographic flag (NULL in the DB) must NEVER be silently
+  coerced to FALSE on a no-op save. The end-to-end contract:
+
+    startEditStudent → reads student row from GET /students payload
+    → normalizeFlag()/normalizeGender() return null for anything
+      non-canonical (including DB NULL itself)
+    → setStudentForm() loads form
+    → setInitialDemographics() captures snapshot at the same render
+      tick
+    → user opens form; Unknown radio rendered checked via the
+      `value === null` predicate (App.jsx in PR-D)
+    → user saves without touching demographic widgets
+    → handleUpdateStudent builds PUT body and, for each of the four
+      demographic keys, checks studentForm[k] !== initialDemographics[k];
+      identical snapshots → key OMITTED from the body
+    → BE PUT handler (routes/students.js, unchanged in this PR)
+      Object.prototype.hasOwnProperty('iep_flag') = false → CASE WHEN
+      gate fires the ELSE branch → column preserved
+    → AFTER UPDATE trigger does not fire on unchanged column (or fires
+      a no-delta row, but the demographic-audit table only writes
+      rows for actual deltas).
+
+  Net invariant: opening an Unknown-flag student and saving untouched
+  emits ZERO demographic keys on the wire and the DB column stays
+  NULL. "We don't know" stays distinct from "we said no" end-to-end.
+
+TRIAD REVIEW (subagents, pre-§2A signal only)
+  Reports were posted verbatim in the PR #236 body.
+                              CRIT  WARN  INFO  VERDICT
+  privacy-reviewer            0     1     3     APPROVED WITH NOTES
+  security-reviewer           0     0     3     APPROVED
+  tenant-isolation-auditor    0     0     3     APPROVED
+                              -     -     -
+  Totals across triad         0     1     9     3× APPROVED
+
+  Single WARN was a PRIVACY_REVIEW.md doc-staleness item that the
+  reviewer itself scoped out of PR-D ("Do not block PR-D merge on
+  this"). Banked as a docs follow-up; not in-band on PR-D.
+
+§2A REVIEW — EXTERNAL HUMAN REVIEW (NOT SELF-APPROVE)
+  PR #236 received a formal §2A approving review submitted via the
+  shared `scholapathsystems` GitHub collaborator account. The
+  actual human reviewer was Kelsey French, IT Developer at
+  ScholarPath. The author of PR #236 (account: mmarronetravels-sudo)
+  is a distinct person; this was NOT a self-approve. The shared-
+  account ambiguity is recorded on PR #236 as a pinned attribution
+  comment so the audit trail is unambiguous:
+
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/236#issuecomment-4640056413
+
+  Mechanical §2A gate at merge time:
+    gh pr view 236 --json reviewDecision  → "APPROVED"
+    mergeStateStatus                       → CLEAN
+    mergeable                              → MERGEABLE
+
+  Merge path: gh pr merge 236 --squash (no --admin). The branch
+  protection ruleset was satisfied by the approving review; --admin
+  bypass was NOT used. Merge commit on main: cc15bef.
+
+  Process flag for next-session index (see OPEN ITEMS below): the
+  shared scholapathsystems account is currently treated by project
+  records as the operator's own account. PR #236 reveals it is in
+  fact a staffed company account used by multiple people including
+  non-author §2A reviewers. Standing fix: give each §2A-eligible
+  internal reviewer their own personal GitHub account so future
+  approvals are individually attributable from the GitHub API alone,
+  without an attribution-comment workaround.
+
+DEPLOY
+  Merge cc15bef → main at 2026-06-06T19:08:25Z.
+  Vercel deployment status from GitHub commit-status API:
+    state       : success
+    description : Deployment has completed
+    created_at  : 2026-06-06T19:08:41Z (16s post-merge)
+    deployments : 2 (Vercel orgs scholar-path-systems +
+                     meridan-global-travel; both reported success)
+
+  Production alias (tiertrak.scholarpathsystems.org) bundle-hash
+  snapshot at 2026-06-06T19:16:31Z (~8 minutes post-merge):
+    index.html still references /assets/index-D6pLqcFU.js
+      (== the pre-PR-D bundle hash; matched the index.html hash
+       served pre-merge in this same session)
+    x-vercel-cache : HIT
+    age            : 457s
+    last-modified  : 2026-06-06T19:08:54Z
+
+  The new bundle from Vercel's build of cc15bef was NOT YET being
+  served by the production alias at activities-entry-write time.
+  Vercel's success status, the two GitHub Deployment records for
+  cc15bef, and Vercel's auto-promote-on-main-push contract all
+  indicate the deploy artifacts exist on Vercel's side — the
+  observable lag is either CDN-edge propagation or an alias-
+  promotion delay between the deploy completing and the production
+  alias rotating to the new deployment id. No code action required;
+  alias will roll over on its own.
+
+LIVE SMOKE — OPERATOR-DRIVEN (NOT EXECUTED CLI-SIDE)
+  The Unknown-flag round-trip smoke requires:
+    (a) An authenticated browser session as a real role with
+        student-edit access on a real school-tenant — CLI cannot do.
+    (b) A psql session against the production Render DB to confirm
+        the row state pre- and post-save — operator workflow per the
+        TierTrak DB-workflow standard (Render psql + \i; no in-
+        browser Shell).
+
+  Smoke script for operator to run after the production alias rolls
+  to the new bundle:
+
+    PRE
+      Hard-refresh tiertrak.scholarpathsystems.org and confirm the
+      new bundle hash in devtools Network panel differs from
+      index-D6pLqcFU.js (the pre-PR-D hash). If it still matches,
+      wait for CDN rollover and retry.
+
+      Pick a student row where the four demographic columns are
+      all NULL:
+
+        SELECT id, iep_flag, sec_504_flag, ell_flag, gender
+          FROM students
+         WHERE iep_flag IS NULL
+           AND sec_504_flag IS NULL
+           AND ell_flag IS NULL
+           AND gender IS NULL
+         LIMIT 1;
+
+    CONTROL — untouched-save
+      Open the student's Edit modal. Confirm the rendered radios for
+      IEP, Section 504, and ELL all show Unknown selected (NOT No).
+      Confirm Gender select shows "Not recorded". Save without
+      touching any demographic widget.
+
+      In devtools Network panel, inspect the PUT
+      /api/students/<id> request body. EXPECT: zero demographic keys
+      in the JSON body (no iep_flag, no sec_504_flag, no ell_flag,
+      no gender). The body should contain only the non-demographic
+      fields: first_name, last_name, grade, tier, area,
+      secondary_area, risk_level.
+
+      Re-query the DB:
+        SELECT iep_flag, sec_504_flag, ell_flag, gender
+          FROM students WHERE id = <id>;
+      EXPECT: all four columns still NULL. Zero new rows in the
+      demographic audit table for this student.id.
+
+    EXPLICIT-CHANGE — proves the diff path still emits when touched
+      Re-open the Edit modal for the same student. Click the IEP
+      "Yes" radio. Leave the other three widgets untouched. Save.
+      EXPECT in PUT body: { ..., "iep_flag": true }  — ONLY iep_flag,
+      no sec_504_flag, no ell_flag, no gender.
+      EXPECT in DB: iep_flag = true; the other three still NULL;
+      exactly one new audit row for iep_flag.
+
+  Outcome: NOT CAPTURED IN THIS ENTRY. Operator-driven smoke.
+  If smoke fails after CDN rollover, escalate via a corrigendum
+  entry following the PR #233 corrigendum precedent in the prior
+  activities.txt block.
+
+VERIFICATION (honest about #73/#74 substitutions)
+  In-branch verification before the merge:
+
+    npm run lint (frontend, ran on commit 09f1e0f)
+      Result: no new errors in App.jsx introduced by PR-D. The 45
+      pre-existing findings in App.jsx (across no-unused-vars,
+      react-hooks/exhaustive-deps, react-refresh/only-export-
+      components) are unchanged from main and are out of PR-D scope.
+      The legacy dead-code site at App.jsx:~1885 (handleAddStudent —
+      unused since pre-PR-D; lint-flagged) is banked for a separate
+      cleanup chore.
+
+    npx vite build
+      Result: built in 2.94s. 2778 modules transformed. The new ESM
+      import path frontend/src/constants/studentDemographics.js
+      resolved cleanly; no rollup errors; bundle hashes generated
+      correctly.
+
+  No FE test suite exists (Followup #73-sibling — banked
+  alongside PR-D as project_followup_pr_d_fe_test_scaffold). No
+  Vitest, no React Testing Library, no Playwright in this repo. The
+  preserve-on-omit invariant was verified by:
+    1. Code-level trace through normalizeFlag → setStudentForm →
+       setInitialDemographics → handleUpdateStudent diff-omit path,
+       cross-checked against the BE Object.prototype.hasOwnProperty
+       gate in routes/students.js (verified by all three triad
+       reviewers).
+    2. Manual local-build inspection (vite build succeeds, ESM
+       resolution clean).
+    3. Triad reviewer convergent reads of the same diff path:
+       privacy-reviewer's preserve-on-omit Unknown→null trace
+       (verbatim in PR body), security-reviewer's diff-omit trust-
+       boundary commentary, tenant-isolation-auditor's snapshot-
+       lifecycle audit.
+
+  The lint-and-build substitutes the operator's #73 (no backend
+  tests) and #74 (no backend lint) gap for the FE side: there is
+  no equivalent of "npm test" because no FE test scaffold exists,
+  but lint + build + code-level review by three subagents + the
+  external §2A human review by Kelsey French stood in for it.
+  Bundle smoke (verifying the deployed bundle CONTAINS the new
+  code) was attempted via curl + string-grep but the production
+  alias was still serving the pre-PR-D bundle hash at write time —
+  see DEPLOY block.
+
+DEVIATIONS CALLED OUT
+  Three deviations recorded explicitly in the PR #236 description
+  and commit message:
+
+    1. resetStudentForm gained `secondary_area: ''` as part of the
+       reset shape — a latent FE-state bug fix where canceling an
+       edit after touching secondary_area could leak stale state
+       into the next opened form. FE-state-only. Does NOT touch the
+       backend secondary_area drift (DR-1); the wire shape on PUT
+       for secondary_area is unchanged from main.
+
+    2. Introduced a small `DemographicFlagRadioGroup` helper
+       component at module scope rather than inlining 12 identical
+       radio blocks across two forms. Audit said "small helper
+       extraction"; called out explicitly so reviewer sees it.
+
+    3. Race/ethnicity is omitted from the CSV-import FE description
+       text as well as the forms (conservative read of "out of PR-D
+       entirely"). Known UX gap: downloading the BE-supplied CSV
+       template returns a race_ethnicity column the FE doesn't yet
+       document. Lands with PR-E.
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed in this session:
+    PR #236 merged + Vercel deploy artifacts produced. Feature
+    branch feat/student-demographics-fe deleted local + remote
+    (tree-diff against main is empty; squash commit cc15bef
+    contains every line of feat tip 09f1e0f).
+
+  Banked for next session (all indexed under MEMORY.md):
+
+    1. PR-E (race/ethnicity FE, the natural next unit) — requires
+       a precursor BE PR widening GET /students to ARRAY_AGG the
+       race_ethnicity codes, then the FE seven-checkbox group on
+       AddStudentForm + edit form + CSV-description-panel listing.
+       Same full triad + same §2A discipline.
+
+    2. chore/privacy-review-m042-fields — PRIVACY_REVIEW.md line
+       157 ("D9 / IEP / 504 / BIP not stored") is stale post-M042.
+       From privacy-reviewer WARN. Sibling of Followup #120.
+
+    3. chore/esm-cjs-drift-ci-check — three-writer hazard between
+       frontend/src/constants/studentDemographics.js (ESM, new),
+       constants/studentDemographics.js (BE, CJS), and the M042
+       CHECK allowlists. The PR-D drift-warning comment is
+       operational; CI enforcement is the durable fix. Sibling-
+       shape to the S118 #4 sanitizer-hoist drift.
+
+    4. chore/fe-test-scaffold — Vitest + RTL minimal scaffold so
+       the preserve-on-omit invariant has a test, not just a
+       manual smoke. Sibling of Followup #73 (no backend tests)
+       and #74 (no backend lint).
+
+    5. chore/dead-handleAddStudent-cleanup — App.jsx:~1885 defines
+       handleAddStudent and never references it (lint already
+       flags as no-unused-vars). The live POST path is the inline
+       onSave callback on <AddStudentForm>. One-line delete after
+       a grep-confirm.
+
+    6. Process: scholapathsystems shared-account reconciliation +
+       standing fix (personal GH accounts for each §2A-eligible
+       internal reviewer). See attribution-comment on PR #236 and
+       the project memory entry indexed under MEMORY.md.
+
+  Pre-existing standing followups continue to stand:
+    #73 (no backend tests), #74 (no backend lint), #80 (no app-
+    wide rate-limiting), #81 (no CSRF on state-changing routes),
+    #94 (three untracked ops files still in working tree — were
+    NOT swept into either PR-D or this activities-log entry; both
+    commits used explicit-by-filename staging).
+
+  The PR #233 corrigendum's process flag — that §2A reviewers
+  should not bare-approve when a NOT-MERGEABLE-UNTIL block names
+  integration tests — was honored here. PR #236 had no NOT-
+  MERGEABLE-UNTIL block (FE-only PR with no integration-test
+  invariant to verify pre-merge); the §2A review by Kelsey French
+  carried a meaningful body and the attribution-comment shape now
+  documents who the reviewer was even when submitted via the
+  shared account.
+
+NEXT SESSION SHOULD
+  Pick up PR-E once the CDN propagation lag from the DEPLOY block
+  has resolved and the operator has captured the LIVE SMOKE
+  outcome. Verify the production alias is serving the new bundle
+  (hash != index-D6pLqcFU.js) and confirm the smoke result before
+  starting PR-E work. If the smoke fails, write a corrigendum
+  entry per the PR #233 precedent and roll back via a revert PR
+  through the same §2A pipeline. If the smoke passes, the
+  precursor BE PR for race/ethnicity GET-payload widening is the
+  natural first unit for PR-E.
+
+  Also reconcile the scholapathsystems shared-account contradiction
+  flagged above before the next §2A-eligible PR opens.
+================================================================================
