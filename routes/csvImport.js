@@ -19,6 +19,9 @@ const {
   BOOL_TRUE_TOKENS,
   BOOL_FALSE_TOKENS,
   RACE_ETHNICITY_CSV_SEPARATOR,
+  sanitizeBooleanFlag,
+  sanitizeGender,
+  sanitizeRaceEthnicity,
 } = require('../constants/studentDemographics');
 
 const pool = new Pool({
@@ -105,69 +108,11 @@ function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
 }
 
-// ----------------------------------------------------------------------
-// M042 student-demographics CSV sanitizers
-// ----------------------------------------------------------------------
-//
-// All three return { value, error }. error===null on success; value is
-// the normalized form (null for "absent" / "unknown"). Error strings
-// cite the column name and the valid set — they NEVER echo the
-// offending input value (§4B). Blank / whitespace-only input always
-// coerces to null (unknown), NEVER to false for boolean flags — the
-// M042 three-state semantic is load-bearing.
-
-function sanitizeBooleanFlag(raw, columnName) {
-  if (raw === undefined || raw === null || raw === '') {
-    return { value: null, error: null };
-  }
-  const upper = raw.toUpperCase();
-  if (BOOL_TRUE_TOKENS.includes(upper)) return { value: true, error: null };
-  if (BOOL_FALSE_TOKENS.includes(upper)) return { value: false, error: null };
-  return {
-    value: null,
-    error: `Invalid ${columnName}. Must be one of ${BOOL_TRUE_TOKENS.join('/')} or ${BOOL_FALSE_TOKENS.join('/')} (blank = unknown).`,
-  };
-}
-
-function sanitizeGender(raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return { value: null, error: null };
-  }
-  const upper = raw.toUpperCase();
-  for (const code of GENDER_CODES) {
-    if (code.toUpperCase() === upper) return { value: code, error: null };
-  }
-  return {
-    value: null,
-    error: `Invalid gender. Must be one of: ${GENDER_CODES.join(', ')}.`,
-  };
-}
-
-function sanitizeRaceEthnicity(raw) {
-  if (raw === undefined || raw === null || raw === '') {
-    return { value: [], error: null };
-  }
-  const allowed = new Set(RACE_ETHNICITY_CODES);
-  const parts = raw
-    .split(RACE_ETHNICITY_CSV_SEPARATOR)
-    .map((s) => s.trim().toUpperCase())
-    .filter(Boolean);
-  const seen = new Set();
-  const codes = [];
-  for (const part of parts) {
-    if (!allowed.has(part)) {
-      return {
-        value: null,
-        error: `Invalid race_ethnicity code. Must be one or more of: ${RACE_ETHNICITY_CODES.join(', ')} (separated by '${RACE_ETHNICITY_CSV_SEPARATOR}').`,
-      };
-    }
-    if (!seen.has(part)) {
-      seen.add(part);
-      codes.push(part);
-    }
-  }
-  return { value: codes, error: null };
-}
+// M042 student-demographics CSV sanitizers — hoisted to
+// constants/studentDemographics.js in PR-C so the route layer (POST/PUT)
+// and the CSV import path share one source for the three-state semantic
+// and §4B no-echo error doctrine. Imported at the top of this file;
+// behavior here unchanged (commit 8afb036 redaction shape preserved).
 
 /**
  * Resolve and validate the target tenant for a POST write handler.
