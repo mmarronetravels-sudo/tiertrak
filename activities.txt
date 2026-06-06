@@ -25396,3 +25396,217 @@ NEXT SESSION SHOULD
   edit/view surfaces) unblocks operator-driven editing of the new
   fields on already-imported students.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T10:12:42-07:00
+BRANCH:  feat/student-demographics-writes
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/233
+             (PR stays in REVIEW_REQUIRED until §2A human review lands;
+              this entry rides on chore/activities-log-pr233)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR-C from the M042 student-demographics multi-PR plan. Extended the
+  authenticated POST and PUT handlers on routes/students.js to accept
+  the five new M042 demographic fields (iep_flag, sec_504_flag,
+  ell_flag, gender on the students scalar columns; race/ethnicity as
+  an array of codes on the student_race_ethnicity child table). Both
+  handlers now run inside the M040 GUC writer contract so the M042
+  AFTER INSERT/UPDATE triggers on students and student_race_ethnicity
+  capture the real actor_user_id into students_demographics_audit.
+  Companion hoist: the three CSV sanitizers moved out of
+  routes/csvImport.js into constants/studentDemographics.js as a pure
+  byte-for-byte move; three JSON-shape sibling sanitizers added in
+  the same module for the route layer. CSV import behavior unchanged
+  (PR-B redaction shape preserved).
+
+FILES TOUCHED
+  constants/studentDemographics.js — pure-move hoist of three CSV
+    sanitizers from routes/csvImport.js (verified byte-identical
+    against main); three new JSON-shape sanitizers
+    (sanitizeBooleanFlagJson, sanitizeGenderJson,
+    sanitizeRaceEthnicityArray) added alongside; exports widened.
+  routes/csvImport.js — three module-local sanitizer declarations
+    removed; replaced by destructured import from
+    constants/studentDemographics.js plus a 5-line pointer comment.
+    All other csvImport behavior unchanged.
+  routes/students.js — POST and PUT rewritten on pool.connect() +
+    BEGIN/set_config('app.actor_user_id', String(actorId), true)/
+    COMMIT. Five new demographic fields sanitized and written to
+    students (4 scalars) and student_race_ethnicity (multi-select).
+    PUT uses hasOwnProperty + SQL CASE WHEN preserve-on-omit on every
+    nullable demographic field. PUT child reconciliation runs SELECT
+    ... FOR UPDATE on student_race_ethnicity inside the transaction,
+    diffs current vs desired, INSERTs adds and DELETEs removes. The
+    PUT UPDATE WHERE was tightened from tenant_id = ANY(accessible[])
+    to tenant_id = $studentTenantId (the single integer from the
+    pre-flight student lookup). Non-23505 catches now redact to a
+    generic operator-facing string; error code + constraint are
+    logged server-side only.
+  Follow-up commit on the same branch added the M040-style actor-id
+    guard at the top of POST and PUT (per security-reviewer LOW-1):
+      const actorId = Number(req.user.id);
+      if (!Number.isInteger(actorId) || actorId <= 0) {
+        console.error('[students:post|put]', 'invalid req.user.id from JWT');
+        return res.status(500).json({ error: 'Server error' });
+      }
+    String(actorId) is bound at both set_config sites (was
+    String(req.user.id) in the initial commit).
+
+MIGRATIONS RUN
+  none (M042 applied in the prior session/PR; this session is
+  app-code only)
+
+TENANT ISOLATION REVIEW
+  Three new write surfaces audited:
+    - Parent students INSERT in POST. tenant_id is $1, bound to the
+      per-request targetTenantId from resolveAndBindTargetTenant(req);
+      the helper validates body-supplied target_tenant_id against
+      resolveAccessibleTenantIds(req.user) and 403s on out-of-set
+      before any INSERT.
+    - Per-code student_race_ethnicity INSERT in POST (loop). tenant_id
+      bound to the same targetTenantId scalar; composite FK
+      (student_id, tenant_id) -> students(id, tenant_id) is the
+      structural backstop.
+    - Parent students UPDATE in PUT. WHERE clause binds tenant_id =
+      $studentTenantId, the single integer from the pre-flight lookup
+      after the resolveAccessibleTenantIds JS-layer guard. studentTenantId
+      cannot hold an out-of-scope tenant; the guard sits between SELECT
+      and assignment with no intervening statements.
+    - Child reconciliation SELECT FOR UPDATE / INSERT / DELETE on
+      student_race_ethnicity in PUT. Every predicate carries the same
+      studentTenantId scalar.
+  No tenant_id = ANY(accessible) widening at any write — every write
+  in this PR binds a single integer. Composite FK backstop confirmed
+  at migration-042-student-demographics.sql line 87-90.
+  tenant-isolation-auditor verdict on the first commit: APPROVED
+  (0 CRITICAL / 0 WARN / 8 INFO verifications). The LOW-1 follow-up
+  commit only adds a JS-layer integer guard on req.user.id and does
+  not change any SQL.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched (write path): iep_flag, sec_504_flag, ell_flag,
+    gender (students scalar columns); category (student_race_ethnicity
+    child table). All extra-sensitive FERPA per CLAUDE.md §4B; subject
+    to COPPA for any student under 13 and to applicable state student
+    privacy laws.
+  Logging audit: two new console.error sites in the POST and PUT
+    wrapper-catch path log only error.code and error.constraint — no
+    error.message, no error.detail, no row payload, no PII. The LOW-1
+    follow-up commit added two more console.error sites for the
+    invalid-req.user.id-from-JWT path; both log the literal tag and
+    the literal 'invalid req.user.id from JWT' string only.
+  Error-body audit: three new JSON sanitizers cite column name + valid
+    set, NEVER echo offending input. Smoke-replayed with a SQL-injection
+    probe, a canary marker, a student-id-shaped string, and an object
+    payload — zero echoes. The two 23505 catches (POST and PUT) use
+    static literal strings — no interpolation of external_id, no
+    interpolation of the race/ethnicity code. The non-23505 catch
+    blocks return a generic operator-facing string.
+  Trigger-owned audit table: the app NEVER writes to
+    students_demographics_audit; the M042 AFTER INSERT / AFTER UPDATE
+    triggers own it. The GUC writer contract ensures actor_user_id is
+    captured on every POST and PUT path; CSV import retains the "set
+    at import = NULL actor" semantic per M042 doctrine.
+  CSV sanitizer hoist: byte-identical move against main; the PR-B
+    redaction shape and three-state semantic preserved verbatim.
+    Re-ran PR-B smoke (b) against the hoisted sanitizers — bad token,
+    bad gender code, and bad race code each produce a redacted error
+    that does NOT contain the offending input.
+  Cross-tenant risk: none identified. See TENANT ISOLATION REVIEW.
+  §4B grep (narrow + wide) against diff vs main: 0 matches across the
+    full diff, the PR description body, and the commit messages.
+  privacy-reviewer verdict on the first commit: APPROVED (0 CRITICAL
+  / 0 HIGH / 0 MEDIUM / 0 LOW with code change recommended; 2 LOW
+  banked as cosmetic / followup-bank items).
+
+VERIFICATION
+  Verification gate is constrained by Followup #73 (no backend test
+  suite) and Followup #74 (no backend lint). node --check is the
+  substitute syntax gate; the sanitizer-layer smoke is the
+  substitute behavior gate. Integration tests against a live DB and
+  audit-trigger emission tests are documented as OPEN ITEMS in the
+  PR description for the §2A reviewer to drive.
+    node --check constants/studentDemographics.js — OK
+    node --check routes/csvImport.js — OK
+    node --check routes/students.js — OK (clean on both the initial
+      commit and after the LOW-1 follow-up commit)
+    PR-B smoke (b) replay on hoisted CSV sanitizers — no-echo intact
+      on bad-token / bad-gender / bad-race inputs
+    JSON sanitizer smoke (SQL-injection payload, canary marker,
+      student-id-shaped string, object payload) — no-echo intact
+    Three-state happy-path checks for both CSV and JSON sanitizers
+      (blank/TRUE/FALSE for CSV; undef/true/false for JSON; multi-code
+      race-ethnicity for both) — expected shape preserved
+    §4B grep on full diff vs main + PR body + commit message — clean
+    Three reviewer subagents (privacy, security, tenant-isolation)
+      spawned in parallel; all three APPROVED. Reports posted as PR
+      comments on PR #233.
+
+REVIEWER PASS SUMMARY (pre-review signals; not the §2A review itself)
+  privacy-reviewer       APPROVED — 0 blockers; 2 LOW (cosmetic / bank)
+  security-reviewer      APPROVED WITH NOTES — 0 blockers;
+                         LOW-1 actor-id integer guard (applied this
+                         session, follow-up commit on the same
+                         branch); LOW-2 params.id 22P02 (banked to
+                         Followup #76); INFO array-length cap (banked).
+  tenant-isolation-auditor APPROVED — 0 blockers; 8 INFO verifications
+  All three reports + the operator's LOW-1 follow-up note posted as
+  PR comments on PR #233 for the §2A reviewer's transparency.
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed in this session:
+    security-reviewer LOW-1 (actor-id integer guard) — applied as a
+      follow-up commit on the same feature branch; matches M040
+      precedent at routes/mtssCoordinators.js:191-195 verbatim.
+
+  Banked for downstream PRs / chores:
+    - PR-D (FE): surface the five fields in student edit / view;
+      enforce role-gate on any students_demographics_audit read
+      endpoint introduced.
+    - Followup #76 (cross-router): non-integer URL params bubble to
+      500 via SQLSTATE 22P02 from pg. The pre-flight student SELECT
+      in this session's PUT was re-touched and inherits the same
+      shape. Bundle into the future parseIntParam middleware sweep.
+    - input-hygiene chore: cap the race_ethnicity array length in
+      sanitizeRaceEthnicityArray (e.g., 32 entries) before the dedup
+      loop, parallel to the disciplineReferrals staff_notes /
+      admin_notes length cap chore.
+    - docs (sibling to Followup #120): PRIVACY_REVIEW.md still does
+      not document the five M042 demographic columns, the
+      student_race_ethnicity child table, the three-state boolean-
+      flag semantic, the audit-table no-FK doctrine, or the
+      "actor_user_id = NULL = set at import" CSV semantic.
+    - log-redaction hygiene primitive: the two new console.error
+      sites in the POST/PUT wrapper-catch path duplicate the
+      code+constraint-only shape from PR-B. Bundle into the
+      safeLogError(tag, err) helper chore tracked by the
+      log-redaction-hygiene-primitive followup from S116.
+    - Followup #118 (trigger actor capture via current_setting): now
+      has its first non-CSV writer in routes/students.js — POST and
+      PUT both set app.actor_user_id via set_config. Sibling sites
+      that still write to students without the GUC (post-row
+      patch handlers and the archive / unarchive / tier handlers
+      in this same file) are out of PR-C scope; the audit table
+      only covers the four scalars + race/ethnicity diff, so those
+      other handlers do not fire demographic-audit triggers.
+
+  Pre-existing standing followups (#73 no backend tests, #74 no
+  backend lint, #80 no app-wide rate-limiting, #81 no CSRF on
+  state-changing routes, #94 untracked ops files) continue to
+  stand; not introduced or worsened here. The verification gate
+  this session ran into both #73 and #74 — node --check + sanitizer
+  smoke + reviewer subagents + planned dev-DB integration tests is
+  the substitute discipline.
+
+NEXT SESSION SHOULD
+  Drive the OPEN ITEMS / NOT-MERGEABLE-UNTIL block in PR #233's
+  description: three dev-DB integration tests under strict mode
+  (STRICT_STUDENT_ACCESS_PREDICATE=true) — two-tenant cross-tenant
+  write denial, audit row carries the real actor_user_id on POST /
+  PUT / race-ethnicity add / race-ethnicity remove, and forced
+  mid-transaction child-insert failure produces a clean ROLLBACK
+  with no orphan parent and no stray audit rows. After those land
+  and §2A human review approves PR #233, PR-D (FE edit / view
+  surfaces for the five demographic fields) is the natural next
+  unit.
+================================================================================
