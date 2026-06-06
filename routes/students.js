@@ -153,7 +153,13 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     const { elevated } = await applyElevatedViewerGate(req.user, pathTenantId, { legacyElevated });
     if (elevated) {
       query = `
-        SELECT s.*, u.full_name as teacher_name
+        SELECT s.*, u.full_name as teacher_name,
+          COALESCE((
+            SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+            FROM student_race_ethnicity sre
+            WHERE sre.student_id = s.id
+              AND sre.tenant_id = s.tenant_id
+          ), ARRAY[]::varchar[]) AS race_ethnicity
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
@@ -163,7 +169,13 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     // Parents see only their linked children
     else if (userRole === 'parent') {
       query = `
-        SELECT DISTINCT s.*, u.full_name as teacher_name
+        SELECT DISTINCT s.*, u.full_name as teacher_name,
+          COALESCE((
+            SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+            FROM student_race_ethnicity sre
+            WHERE sre.student_id = s.id
+              AND sre.tenant_id = s.tenant_id
+          ), ARRAY[]::varchar[]) AS race_ethnicity
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         INNER JOIN parent_student_links psl ON s.id = psl.student_id
@@ -183,7 +195,13 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     // row into this tenant's list.
     else if (userRole === 'education_assistant') {
       query = `
-        SELECT DISTINCT s.*, u.full_name as teacher_name
+        SELECT DISTINCT s.*, u.full_name as teacher_name,
+          COALESCE((
+            SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+            FROM student_race_ethnicity sre
+            WHERE sre.student_id = s.id
+              AND sre.tenant_id = s.tenant_id
+          ), ARRAY[]::varchar[]) AS race_ethnicity
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
@@ -199,7 +217,13 @@ router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
     // Teachers/staff see all Tier 1 students + their assigned Tier 2/3 students
     else {
       query = `
-        SELECT DISTINCT s.*, u.full_name as teacher_name
+        SELECT DISTINCT s.*, u.full_name as teacher_name,
+          COALESCE((
+            SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+            FROM student_race_ethnicity sre
+            WHERE sre.student_id = s.id
+              AND sre.tenant_id = s.tenant_id
+          ), ARRAY[]::varchar[]) AS race_ethnicity
         FROM students s
         LEFT JOIN users u ON s.teacher_id = u.id
         WHERE s.tenant_id = $1
@@ -521,7 +545,13 @@ router.delete('/referral-monitoring/:studentId', requireAuth, async (req, res) =
 router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res) => {
   try {
     const studentResult = await pool.query(
-      `SELECT s.*, u.full_name as teacher_name 
+      `SELECT s.*, u.full_name as teacher_name,
+         COALESCE((
+           SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+           FROM student_race_ethnicity sre
+           WHERE sre.student_id = s.id
+             AND sre.tenant_id = s.tenant_id
+         ), ARRAY[]::varchar[]) AS race_ethnicity
        FROM students s
        LEFT JOIN users u ON s.teacher_id = u.id
        WHERE s.id = $1`,
