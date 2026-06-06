@@ -26070,3 +26070,264 @@ NEXT SESSION SHOULD
   Also reconcile the scholapathsystems shared-account contradiction
   flagged above before the next §2A-eligible PR opens.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T22:00-2026-06-06T22:35Z (PR-E Piece 1 — race/ethnicity GET-payload widening, BE)
+BRANCH:  feat/students-get-race-ethnicity (deleted post-merge)
+DISPOSITION: MERGED + Render BE deploy LIVE; production rollover verified via
+             operator-driven smoke. PR #238 on main as merge commit c40ece3.
+--------------------------------------------------------------------------------
+SCOPE
+  Backend precursor for the FE race/ethnicity edit form (PR-E Piece 2,
+  next session). Widens GET /api/students/tenant/:tenantId (all four
+  role branches) and GET /api/students/:studentId with a correlated
+  ARRAY_AGG subquery on student_race_ethnicity. The new column is an
+  alphabetized varchar[] per row, COALESCEd to ARRAY[]::varchar[] so
+  the field is always an array and never null. Subquery is bound to
+  the outer student row via (sre.student_id = s.id AND sre.tenant_id =
+  s.tenant_id) — belt-and-suspenders even though M042's composite FK
+  (student_id, tenant_id) REFERENCES students(id, tenant_id) already
+  makes cross-tenant child rows structurally impossible.
+
+  Files changed:
+    routes/students.js | 40 +++++++++++++++++++++++++++++++++++-----
+    -------------------------------------------------------
+    1 file changed, 35 insertions(+), 5 deletions(-)
+
+  Five identical subquery insertions across:
+    - list elevated branch          (1 site)
+    - list parent branch            (1 site)
+    - list education_assistant      (1 site)
+    - list staff/teacher branch     (1 site)
+    - single-student edit-hydrate   (1 site)
+
+TRIAD REVIEW (subagents, pre-§2A signal only)
+  Reports were posted verbatim in the PR #238 body and convergence-
+  checked across the three reviewers.
+                              CRIT  WARN  INFO  VERDICT
+  privacy-reviewer            0     1     3     APPROVED WITH NOTES
+  security-reviewer           0     0     3     APPROVED WITH NOTES
+  tenant-isolation-auditor    0     0     3     APPROVED
+                              -     -     -
+  Totals across triad         0     1     9     3× APPROVED
+
+  Convergence load-bearing across all three reviewers (per CC memory
+  feedback-convergent-grep-verification):
+    - Belt-and-suspenders sre.tenant_id = s.tenant_id is the correct
+      convention for this file (mirrors the existing PUT and EA-branch
+      patterns).
+    - Composite-FK + subquery-rebind makes cross-tenant leakage
+      structurally impossible (verified at three layers: route gate,
+      outer query scope, inner subquery scope, schema FK).
+
+  Single WARN: privacy-reviewer flagged PRIVACY_REVIEW.md M042 doc gap
+  (no entry for student_race_ethnicity or the new read-side projection).
+  Reviewer itself scoped it OUT of this PR: "doc-only; will land as
+  chore/privacy-review-m042-fields covering both PR-D writes and PR-E
+  reads in one M042 demographics section." Banked. Not in-band on
+  PR #238.
+
+§2A REVIEW — EXTERNAL HUMAN REVIEW (NOT SELF-APPROVE)
+  PR #238 received a formal §2A approving review submitted via the
+  shared scholapathsystems GitHub collaborator account at
+  2026-06-06T22:23:00Z. The actual human reviewer was Kelsey French,
+  IT Developer at ScholarPath. The author of PR #238 (account:
+  mmarronetravels-sudo) is a distinct person; this was NOT a self-
+  approve. The shared-account ambiguity is recorded on PR #238 as a
+  pinned attribution comment so the audit trail is unambiguous:
+
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/238#issuecomment-4640634230
+
+  Mechanical §2A gate at merge time:
+    gh pr view 238 --json reviewDecision  → "APPROVED"
+    reviewer account                       → scholapathsystems
+                                              (NOT mmarronetravels-sudo)
+    review submittedAt                     → 2026-06-06T22:23:00Z
+
+  Standing fix from the PR #236 session continues to stand: personal
+  GitHub accounts for each §2A-eligible internal reviewer so future
+  approvals are individually attributable from the GitHub API alone,
+  without the attribution-comment workaround. F-236e remains open.
+
+DEVIATION CALLED OUT
+  Merge mechanism was merge-commit, NOT squash.
+
+  The operator's instruction at the merge step was "squash, NO --admin."
+  In practice the §2A reviewer merged the PR via the shared
+  scholapathsystems account 7 seconds after submitting APPROVED (review
+  at 22:23:00Z; merge at 22:23:07Z) and selected the merge-commit
+  option in the GitHub UI rather than squash. By the time the author-
+  side `gh pr merge 238 --squash` ran, GitHub returned "already
+  merged."
+
+  What is intact:
+    - §2A non-self-approve gate satisfied (reviewer ≠ author).
+    - --admin bypass was NOT used; branch protection ruleset was
+      satisfied by the formal approving review.
+    - Author commit 0397151 is preserved as the second parent of the
+      merge commit c40ece3 — no history was rewritten.
+
+  What deviates:
+    - Main now carries a merge-commit (2 parents) for this PR rather
+      than a single squashed commit. Functionally equivalent in
+      content (empty tree-diff vs feat tip pre-delete); cosmetically
+      different in git log.
+
+  Not reverting: revert is destructive, post-deploy, and would require
+  admin force-push on main. Recording the deviation here is the
+  audit-trail remedy.
+
+DEPLOY
+  Merge c40ece3 → main at 2026-06-06T22:23:07Z.
+  Render backend deploy for this commit:
+    deploy id    : dep-d8i9rj4vikkc73ea0mq0
+    service      : tiertrak-api (srv-d5nc0e94tr6s73d546u0)
+    status       : live
+    startedAt    : 2026-06-06T22:23:08Z (1s post-merge)
+    finishedAt   : 2026-06-06T22:23:37Z (29s build)
+    trigger      : new_commit
+  Vercel FE Production deployment registered on c40ece3 by vercel[bot]
+  at 2026-06-06T22:23:22Z (15s post-merge). The FE bundle does not
+  change in this PR (BE-only); the FE deploy reflects the merge
+  commit only.
+
+  Liveness probe (no-auth, pre-smoke):
+    GET https://tiertrak-api.onrender.com/api/students/1
+      → HTTP 401 "Not authenticated" (auth wall intact;
+        rndr-id header confirms request reached Render;
+        x-powered-by: Express)
+
+  Prod schema confirmation via render psql against
+  dpg-d5nbrjd6ubrc73ap0uig-a (no PII exposed, only the new SQL shape):
+    The exact new ARRAY_AGG subquery executes cleanly against prod:
+      race_ethnicity = {} (empty array)
+      pg_typeof       = character varying[]
+    M042 table present; total_race_rows = 0 in prod (no production
+    user has populated race/ethnicity yet — that is gated on the
+    Piece 2 FE control, which is intentionally next-session work).
+
+LIVE SMOKE — OPERATOR-DRIVEN
+  Authenticated curl against prod requires an httpOnly session cookie
+  the CLI side does not possess. Per CLAUDE.md / CC-memory
+  feedback-post-rotation-self-smoke, "deploy reports live" is not
+  sufficient proof of rollover — the new code must be observed
+  serving a request that exercises the new payload key.
+
+  Operator executed the smoke against prod with their own browser-
+  captured auth_token cookie. Test was the rollover-proof variant
+  (the alphabetized-2-row variant could not be run in prod because
+  no race_ethnicity rows exist there yet):
+
+    A. GET /api/students/:studentId
+       EXPECT: race_ethnicity key present in response body; value [].
+       RESULT: PASS — key present, value [].
+
+    B. GET /api/students/tenant/:tenantId
+       EXPECT: race_ethnicity key present on the target student's
+               row in the array response; value [].
+       RESULT: PASS — key present, value [].
+
+  Rollover proof: the pre-merge code did NOT emit a race_ethnicity
+  key at all on either endpoint; the post-merge code emits it on
+  every row. Observing the key in the live response body confirms
+  the deployed bundle is the new bundle, independent of Render's
+  green-check.
+
+  Alphabetized-2-row case was verified in-branch (local dev curl
+  dance: 0 rows → []; 1 row → ['WHITE']; 2 rows → ['HISP','WHITE']
+  alphabetized; post-cleanup → []). Prod re-verification of the
+  array shape is deferred to first natural use after Piece 2 ships.
+
+VERIFICATION (in-branch, pre-merge)
+  EXPLAIN posture:
+    Natural plan on local dev (small dataset, 0 race rows): bitmap
+    index scan on idx_student_race_ethnicity_tenant_category; not
+    seq-scanning. Planner choice is suboptimal at this scale but
+    structurally indexed.
+
+    EXPLAIN on a 35K-row synthetic populated inside a BEGIN/ROLLBACK
+    (5,000 students × 3 categories per tenant, 4 extra tenants for
+    selectivity): planner switches to student_race_ethnicity_unique
+    Index Scan as predicted. Index Cond on student_id; 3 actual rows
+    touched; 0.013ms execution time. Confirms the UNIQUE index will
+    be selected at production scale.
+
+  Real-data local curl dance (operator-driven script; seed → curl →
+  cleanup; zero remaining race rows post-run):
+    Checkpoint A — 0 race rows           → race_ethnicity = []   PASS
+    Checkpoint B — 1 row inserted        → race_ethnicity = ['WHITE'] PASS
+    Checkpoint C — 2 rows inserted       → race_ethnicity =
+                                            ['HISP','WHITE']     PASS
+    Checkpoint D — both rows DELETEd     → race_ethnicity = []   PASS
+
+  Lint / build:
+    npm run lint (repo root)             → no script (Followup #74)
+    cd frontend && npm run lint          → 93 problems, ZERO in
+                                            touched files (all
+                                            pre-existing baseline FE
+                                            findings in unchanged
+                                            files); routes/students.js
+                                            is backend-only and not
+                                            in frontend lint scope.
+    cd frontend && npm run build         → ✓ built in 2.78s,
+                                            2778 modules transformed.
+
+  §4B grep on diff + PR body + commit message:
+    All three surfaces clean — no tenant names, no student names, no
+    school slugs, no concrete IDs. Re-grep on the PR body post-update
+    (after adding the Deferred section) also clean.
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed in this session:
+    PR #238 merged + Render BE deploy live + operator-driven prod
+    smoke PASS. Feature branch feat/students-get-race-ethnicity
+    deleted local + remote (empty tree-diff against main confirmed
+    before deletion; merge commit c40ece3 carries the change with
+    author commit 0397151 preserved as second parent).
+
+  Newly banked this session (indexed under MEMORY.md):
+
+    1. project_followup_students_error_message_leak — pre-existing
+       error.message leak in four routes/students.js 500 bodies
+       (lines 237 / 261 / 281 / 559). NOT covered by the existing
+       auth.js redaction followup (#114) or by CSV-1. PR-E adds M042
+       extra-sensitive race/ethnicity to 2 of the 4 leaking paths,
+       which increases the leak blast-radius post-merge. Disposition:
+       separate sec/students-redact-500-bodies PR. The security-
+       reviewer's read was explicit: not a blocker for PR-E because
+       (a) leak is pre-existing on main, (b) category values are a
+       fixed 7-value CHECK allowlist (AIAN/ASIAN/BLACK/HISP/MENA/
+       NHPI/WHITE) and are not per-student-identifying alone, and
+       (c) the error fires before res.json(result.rows) so no row
+       payload surfaces. Privacy-reviewer agreed via INFO #3.
+
+  Re-affirmed standing followups continue to stand:
+    F-120 / chore/privacy-review-m042-fields (PR-D sibling that
+      now also needs to cover PR-E reads on the same M042 fields).
+    F-236e / personal GH accounts for §2A-eligible internal
+      reviewers (the shared-account ambiguity recurred this session;
+      worked around via pinned attribution comment as before).
+    #73 (no backend tests), #74 (no backend lint), #80 (no app-wide
+    rate-limiting), #81 (no CSRF on state-changing routes), #94
+    (three untracked ops files still in working tree — were NOT
+    swept into either PR #238 or this activities-log entry; both
+    commits used explicit-by-filename staging).
+
+NEXT SESSION SHOULD
+  Pick up PR-E Piece 2 (the FE control). This is the seven-checkbox
+  race/ethnicity group on AddStudentForm + the same on the edit form
+  + the CSV-description-panel listing. The BE GET payload is now
+  ready to serve the read side; Piece 2 closes the loop end-to-end.
+  Same full triad + same §2A discipline + same activities-log-on-
+  its-own-PR shape.
+
+  Before opening Piece 2, also:
+    - Decide whether to bundle the chore/privacy-review-m042-fields
+      docs PR with Piece 2 or land it as its own chore — there is a
+      reasonable case for either (bundling lets Piece 2 update the
+      doc in lockstep with the user-visible change; separate keeps
+      the docs-vs-code lanes clean).
+    - Confirm whether the F-236e standing fix (personal GH accounts)
+      will be in place before Piece 2's §2A review opens. If not,
+      apply the same attribution-comment workaround used here.
+================================================================================
