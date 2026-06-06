@@ -40,9 +40,18 @@ export function AppProvider({ children }) {
   const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const canAddStudents = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   // Explicit allowlist mirrors INTERVENTION_MANAGER_ROLES in
-  // constants/roles.js:39-46 — see App.jsx:482 for the parallel narrowing
+  // constants/roles.js:39-46 — see App.jsx:491 for the parallel narrowing
   // and the BE gate references. EA intentionally excluded.
   const canManageInterventions = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist'].includes(user.role);
+  // canLogProgress — UX gate for the 4 BE log-progress routes (PATCH
+  // /interventions/:id/progress, POST /progress-notes, POST /weekly-progress,
+  // POST /intervention-logs). Inline literal mirrors the BE shape
+  // (isManager || isEA) from middleware/authorizeInterventionAccess.js
+  // authorizeProgressLogByInterventionId and the inline gates in
+  // routes/progressNotes.js + routes/interventionLogs.js. EA is admitted
+  // here but is caseload-scoped at the BE per-request gate
+  // (canStaffAccessStudent EA branch). Trust boundary is the BE.
+  const canLogProgress = user && ['district_admin', 'district_tech_admin', 'school_admin', 'counselor', 'teacher', 'interventionist', 'education_assistant'].includes(user.role);
   const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const isParent = user && user.role === 'parent';
   const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);
@@ -403,7 +412,7 @@ useEffect(() => {
     mtssMeetings, setMTSSMeetings,
     
     // Derived Values
-    isAdmin, canArchive, canAddStudents, canManageInterventions, canDeleteDocs, isParent, isDistrictAdmin,
+    isAdmin, canArchive, canAddStudents, canManageInterventions, canLogProgress, canDeleteDocs, isParent, isDistrictAdmin,
     
     // Constants
     API_URL,
