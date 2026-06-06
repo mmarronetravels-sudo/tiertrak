@@ -6,6 +6,11 @@ const { requireAuth, requireTenantStaffAccess, requireStudentReadAccess } = requ
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { applyElevatedViewerGate } = require('../middleware/canAccessStudent');
 const { ELEVATED_ROLES } = require('../constants/roles');
+const {
+  sanitizeBooleanFlagJson,
+  sanitizeGenderJson,
+  sanitizeRaceEthnicityArray,
+} = require('../constants/studentDemographics');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -556,98 +561,298 @@ router.get('/:studentId', requireAuth, requireStudentReadAccess, async (req, res
 });
 
 // Create a new student.
+//
+// M042 demographic fields (iep_flag, sec_504_flag, ell_flag, gender,
+// race_ethnicity) are accepted. Body shape: JSON. Boolean flags are
+// real true/false/null primitives; gender is a code string from
+// GENDER_CODES; race_ethnicity is an array of code strings from
+// RACE_ETHNICITY_CODES. Sanitizer errors cite column + valid set
+// only — input is never echoed (§4B).
+//
+// GUC writer contract (M040/M042): a single checked-out client runs
+// BEGIN → set_config('app.actor_user_id', req.user.id, true) →
+// INSERT students → INSERT student_race_ethnicity per code → COMMIT.
+// AFTER INSERT triggers on students + student_race_ethnicity emit one
+// audit row per non-NULL field / per added code with the captured
+// actor. The audit table is NEVER written by the app — triggers own
+// it.
+//
+// Single tenant integer (tenantId from resolveAndBindTargetTenant) is
+// bound to both the parent INSERT and every child INSERT. The M042
+// composite FK on student_race_ethnicity (student_id, tenant_id) →
+// students(id, tenant_id) enforces tenant binding by construction;
+// passing tenantId explicitly keeps intent legible at the call site.
 router.post('/', requireAuth, async (req, res) => {
+  if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  // Actor-id guard — match M040 precedent at
+  // routes/mtssCoordinators.js:191-195. The GUC writer contract carries
+  // String(actorId) into set_config('app.actor_user_id', ...); the
+  // audit trigger casts back to INTEGER. A non-numeric req.user.id from
+  // a malformed JWT would SQLSTATE 22P02 inside the trigger and roll
+  // back the parent INSERT — fails closed, but opaque. Validate up
+  // front and respond 500 explicitly.
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    console.error('[students:post]', 'invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
+  }
+  const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+  if (bindError) return res.status(bindError.status).json(bindError.body);
+  const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id } = req.body;
+  // external_id: trim, empty-after-trim → null. Matches the normalize shape
+  // used by routes/csvImport.js parse loop in commit 9f5c415.
+  const externalIdNormalized = (typeof external_id === 'string' && external_id.trim() !== '')
+    ? external_id.trim()
+    : null;
+
+  // M042 demographic fields — all optional, absent / blank → null
+  // (unknown). Sanitizer errors are 400 with no input echo.
+  const iepResult = sanitizeBooleanFlagJson(req.body.iep_flag, 'iep_flag');
+  if (iepResult.error) return res.status(400).json({ error: iepResult.error });
+  const sec504Result = sanitizeBooleanFlagJson(req.body.sec_504_flag, 'sec_504_flag');
+  if (sec504Result.error) return res.status(400).json({ error: sec504Result.error });
+  const ellResult = sanitizeBooleanFlagJson(req.body.ell_flag, 'ell_flag');
+  if (ellResult.error) return res.status(400).json({ error: ellResult.error });
+  const genderResult = sanitizeGenderJson(req.body.gender);
+  if (genderResult.error) return res.status(400).json({ error: genderResult.error });
+  const raceResult = sanitizeRaceEthnicityArray(req.body.race_ethnicity);
+  if (raceResult.error) return res.status(400).json({ error: raceResult.error });
+
+  const client = await pool.connect();
   try {
-    if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
-    if (bindError) return res.status(bindError.status).json(bindError.body);
-    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id } = req.body;
-    // external_id: trim, empty-after-trim → null. Matches the normalize shape
-    // used by routes/csvImport.js parse loop in commit 9f5c415.
-    const externalIdNormalized = (typeof external_id === 'string' && external_id.trim() !== '')
-      ? external_id.trim()
-      : null;
-    const result = await pool.query(
-      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id, archived)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE)
-       RETURNING *`,
-      [tenantId, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low', externalIdNormalized]
+    await client.query('BEGIN');
+    await client.query(
+      "SELECT set_config('app.actor_user_id', $1, true)",
+      [String(actorId)]
     );
-    res.status(201).json(result.rows[0]);
+
+    const parentResult = await client.query(
+      `INSERT INTO students (tenant_id, first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id, archived,
+                              iep_flag, sec_504_flag, ell_flag, gender)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, $11, $12, $13, $14)
+       RETURNING *`,
+      [tenantId, first_name, last_name, grade, teacher_id, tier || 1, area, secondary_area || null, risk_level || 'low', externalIdNormalized,
+       iepResult.value, sec504Result.value, ellResult.value, genderResult.value]
+    );
+    const parent = parentResult.rows[0];
+
+    for (const code of raceResult.value) {
+      await client.query(
+        `INSERT INTO student_race_ethnicity (student_id, tenant_id, category)
+         VALUES ($1, $2, $3)`,
+        [parent.id, tenantId, code]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json(parent);
   } catch (error) {
-    // Translate the partial UNIQUE index from Migration 035 into a clean
-    // 409. Scoped STRICTLY to this constraint — broader pg-error-code
-    // translation is deferred to fix/api-dberror-translation.
+    await client.query('ROLLBACK').catch(() => {});
+    // Translate known-safe constraints with operator-facing messages.
+    // All other pg errors redact to a generic string; code + constraint
+    // are logged server-side only. pg messages can echo column values
+    // and would surface row context (M042 demographic PII) to the FE.
     if (error.code === '23505' && error.constraint === 'idx_students_tenant_external_id') {
       return res.status(409).json({ error: 'A student with this external_id already exists in this school.' });
     }
-    res.status(500).json({ error: error.message });
+    if (error.code === '23505' && error.constraint === 'student_race_ethnicity_unique') {
+      return res.status(409).json({ error: 'Duplicate race/ethnicity code on the same student.' });
+    }
+    console.error('[students:post] insert error code:', error.code, 'constraint:', error.constraint);
+    res.status(500).json({ error: 'Failed to create student' });
+  } finally {
+    client.release();
   }
 });
 
-// Update a student
+// Update a student.
+//
+// M042 demographic fields (iep_flag, sec_504_flag, ell_flag, gender,
+// race_ethnicity) accepted with preserve-on-omit semantics. Same
+// doctrine as external_id (see comment below): an omitted nullable
+// field MUST NOT be silently cleared. hasOwnProperty gates whether
+// the column is touched in the UPDATE; CASE WHEN $::boolean encodes
+// the gate in SQL. race_ethnicity is reconciled by diffing current
+// vs desired inside the same transaction.
+//
+// GUC writer contract (M040/M042): a single checked-out client runs
+// BEGIN → set_config('app.actor_user_id', req.user.id, true) →
+// UPDATE students → race_ethnicity reconciliation → COMMIT. The
+// AFTER UPDATE trigger on students + the AFTER INSERT/DELETE
+// triggers on student_race_ethnicity emit audit rows reading the
+// captured actor. The audit table is NEVER written by the app —
+// triggers own it.
+//
+// Tenant binding: the single integer studentTenantId pulled from the
+// pre-flight lookup is bound to the UPDATE WHERE and every child
+// SELECT/INSERT/DELETE — NEVER accessible[]. This is tighter than
+// tenant_id = ANY(accessible) because it TOCTOU-detects a hypothetical
+// tenant-move between lookup and write (UPDATE 0-rows → 404).
 router.put('/:id', requireAuth, async (req, res) => {
+  if (!ADMIN_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  // Actor-id guard — match M040 precedent at
+  // routes/mtssCoordinators.js:191-195. See the parallel POST handler
+  // for the rationale.
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    console.error('[students:put]', 'invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
+  }
+  const { id } = req.params;
+  const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
+  // external_id uses DIFFERENT semantics than the fields destructured above.
+  // The other fields are NOT NULL constrained on the students table — an
+  // omitted field in req.body destructures to undefined, pg writes NULL,
+  // and PG's NOT NULL constraint raises a visible error. external_id is
+  // nullable (Migration 035 — partial UNIQUE, NULL allowed), so the same
+  // null-on-omit pattern would SILENTLY clear the column on every PUT that
+  // doesn't include it (e.g., any pre-035 FE code path that doesn't yet
+  // know about external_id). Preserve-on-omit guards that data-loss
+  // hazard via CASE-WHEN in the UPDATE: undefined → keep existing value;
+  // null or empty-string in body → clear; non-empty string → trimmed value.
+  // The M042 demographic fields below follow the same preserve-on-omit
+  // doctrine.
+  const hasExternalId = Object.prototype.hasOwnProperty.call(req.body, 'external_id');
+  const externalIdValue = hasExternalId
+    ? (typeof req.body.external_id === 'string' && req.body.external_id.trim() !== ''
+        ? req.body.external_id.trim()
+        : null)
+    : null;
+
+  // M042 preserve-on-omit gates. hasX === false → ELSE branch keeps the
+  // existing value. hasX === true with explicit null → clears the column
+  // (acknowledged "set to unknown" from the FE). race_ethnicity is
+  // reconciled inside the transaction below, not via CASE WHEN.
+  const hasIepFlag = Object.prototype.hasOwnProperty.call(req.body, 'iep_flag');
+  const hasSec504Flag = Object.prototype.hasOwnProperty.call(req.body, 'sec_504_flag');
+  const hasEllFlag = Object.prototype.hasOwnProperty.call(req.body, 'ell_flag');
+  const hasGender = Object.prototype.hasOwnProperty.call(req.body, 'gender');
+  const hasRaceEthnicity = Object.prototype.hasOwnProperty.call(req.body, 'race_ethnicity');
+
+  const iepResult = hasIepFlag
+    ? sanitizeBooleanFlagJson(req.body.iep_flag, 'iep_flag')
+    : { value: null, error: null };
+  if (iepResult.error) return res.status(400).json({ error: iepResult.error });
+  const sec504Result = hasSec504Flag
+    ? sanitizeBooleanFlagJson(req.body.sec_504_flag, 'sec_504_flag')
+    : { value: null, error: null };
+  if (sec504Result.error) return res.status(400).json({ error: sec504Result.error });
+  const ellResult = hasEllFlag
+    ? sanitizeBooleanFlagJson(req.body.ell_flag, 'ell_flag')
+    : { value: null, error: null };
+  if (ellResult.error) return res.status(400).json({ error: ellResult.error });
+  const genderResult = hasGender
+    ? sanitizeGenderJson(req.body.gender)
+    : { value: null, error: null };
+  if (genderResult.error) return res.status(400).json({ error: genderResult.error });
+  const raceResult = hasRaceEthnicity
+    ? sanitizeRaceEthnicityArray(req.body.race_ethnicity)
+    : { value: [], error: null };
+  if (raceResult.error) return res.status(400).json({ error: raceResult.error });
+
+  // Pre-flight tenant scope. studentTenantId is the SINGLE integer
+  // bound to the UPDATE WHERE and every child SELECT/INSERT/DELETE
+  // below — not accessible[].
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  const studentLookup = await pool.query(
+    'SELECT tenant_id FROM students WHERE id = $1',
+    [id]
+  );
+  if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
+    return res.status(404).json({ error: 'Student not found' });
+  }
+  const studentTenantId = studentLookup.rows[0].tenant_id;
+
+  const client = await pool.connect();
   try {
-    if (!ADMIN_ROLES.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-    const { id } = req.params;
-    const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
-    // external_id uses DIFFERENT semantics than the fields destructured above.
-    // The other fields are NOT NULL constrained on the students table — an
-    // omitted field in req.body destructures to undefined, pg writes NULL,
-    // and PG's NOT NULL constraint raises a visible error. external_id is
-    // nullable (Migration 035 — partial UNIQUE, NULL allowed), so the same
-    // null-on-omit pattern would SILENTLY clear the column on every PUT that
-    // doesn't include it (e.g., any pre-035 FE code path that doesn't yet
-    // know about external_id). Preserve-on-omit guards that data-loss
-    // hazard via CASE-WHEN in the UPDATE: undefined → keep existing value;
-    // null or empty-string in body → clear; non-empty string → trimmed value.
-    // Any future nullable PUT field should follow this pattern — null-on-omit
-    // is unsafe for nullable columns. See fix/students-put-null-on-omit-
-    // broader-investigation followup for the broader audit.
-    const hasExternalId = Object.prototype.hasOwnProperty.call(req.body, 'external_id');
-    const externalIdValue = hasExternalId
-      ? (typeof req.body.external_id === 'string' && req.body.external_id.trim() !== ''
-          ? req.body.external_id.trim()
-          : null)
-      : null;
-    // Pre-flight tenant scope: 404 for both not-found and not-in-accessible
-    // (leak-resistance, mirrors tier1-assessments.js:251 post-PR-S3-C).
-    // Tenant-bound UPDATE WHERE is belt-and-suspenders against the
-    // pre-flight/UPDATE TOCTOU window.
-    const accessible = await resolveAccessibleTenantIds(req.user);
-    const studentLookup = await pool.query(
-      'SELECT tenant_id FROM students WHERE id = $1',
-      [id]
+    await client.query('BEGIN');
+    await client.query(
+      "SELECT set_config('app.actor_user_id', $1, true)",
+      [String(actorId)]
     );
-    if (studentLookup.rows.length === 0 || !accessible.includes(studentLookup.rows[0].tenant_id)) {
-      return res.status(404).json({ error: 'Student not found' });
-    }
-    const result = await pool.query(
+
+    const result = await client.query(
       `UPDATE students
        SET first_name = $1, last_name = $2, grade = $3, teacher_id = $4,
            tier = $5, area = $6, risk_level = $7, secondary_area = $8,
-           external_id = CASE WHEN $9::boolean THEN $10::text ELSE external_id END,
+           external_id   = CASE WHEN $9::boolean  THEN $10::text    ELSE external_id   END,
+           iep_flag      = CASE WHEN $11::boolean THEN $12::boolean ELSE iep_flag      END,
+           sec_504_flag  = CASE WHEN $13::boolean THEN $14::boolean ELSE sec_504_flag  END,
+           ell_flag      = CASE WHEN $15::boolean THEN $16::boolean ELSE ell_flag      END,
+           gender        = CASE WHEN $17::boolean THEN $18::text    ELSE gender        END,
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $11 AND tenant_id = ANY($12::int[])
+       WHERE id = $19 AND tenant_id = $20
        RETURNING *`,
-      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null, hasExternalId, externalIdValue, id, accessible]
+      [first_name, last_name, grade, teacher_id, tier, area, risk_level, secondary_area || null,
+       hasExternalId, externalIdValue,
+       hasIepFlag, iepResult.value,
+       hasSec504Flag, sec504Result.value,
+       hasEllFlag, ellResult.value,
+       hasGender, genderResult.value,
+       id, studentTenantId]
     );
     if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Student not found' });
     }
+
+    // race_ethnicity reconciliation — only when present in body.
+    // FOR UPDATE row-locks existing categories so concurrent PUTs on
+    // the same student serialize. Adds/removes are diffed; identity
+    // PUTs (same set) emit zero rows. tenant_id bound to the same
+    // studentTenantId used by the UPDATE — the composite FK on
+    // student_race_ethnicity enforces this by construction, but the
+    // explicit binding makes the intent legible at the call site.
+    if (hasRaceEthnicity) {
+      const currentRes = await client.query(
+        'SELECT category FROM student_race_ethnicity WHERE student_id = $1 AND tenant_id = $2 FOR UPDATE',
+        [id, studentTenantId]
+      );
+      const current = new Set(currentRes.rows.map((r) => r.category));
+      const desired = new Set(raceResult.value);
+
+      for (const code of desired) {
+        if (!current.has(code)) {
+          await client.query(
+            `INSERT INTO student_race_ethnicity (student_id, tenant_id, category)
+             VALUES ($1, $2, $3)`,
+            [id, studentTenantId, code]
+          );
+        }
+      }
+      for (const code of current) {
+        if (!desired.has(code)) {
+          await client.query(
+            `DELETE FROM student_race_ethnicity
+             WHERE student_id = $1 AND tenant_id = $2 AND category = $3`,
+            [id, studentTenantId, code]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
     res.json(result.rows[0]);
   } catch (error) {
-    // Translate the partial UNIQUE index from Migration 035 into a clean
-    // 409. Scoped STRICTLY to this constraint — broader pg-error-code
-    // translation is deferred to fix/api-dberror-translation.
+    await client.query('ROLLBACK').catch(() => {});
+    // Translate known-safe constraints with operator-facing messages.
+    // All other pg errors redact to a generic string; code + constraint
+    // are logged server-side only. pg messages can echo column values
+    // and would surface row context (M042 demographic PII) to the FE.
     if (error.code === '23505' && error.constraint === 'idx_students_tenant_external_id') {
       return res.status(409).json({ error: 'A student with this external_id already exists in this school.' });
     }
-    res.status(500).json({ error: error.message });
+    if (error.code === '23505' && error.constraint === 'student_race_ethnicity_unique') {
+      return res.status(409).json({ error: 'Duplicate race/ethnicity code on the same student.' });
+    }
+    console.error('[students:put] update error code:', error.code, 'constraint:', error.constraint);
+    res.status(500).json({ error: 'Failed to update student' });
+  } finally {
+    client.release();
   }
 });
 
