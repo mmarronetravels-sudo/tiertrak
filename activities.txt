@@ -24360,3 +24360,558 @@ NEXT SESSION SHOULD
   same PR so the assignment UI does not ship before the gates
   are closed.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-05T16:00:00-07:00
+BRANCH:  feat/education-assistant-assignment-ui
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/224 (merge commit 1b90bfc6d91bf8c242676a43dfcb0927a71c5b28; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR-3 of N for the education_assistant role family. PR-1 (M041
+  schema foundation) + PR-2 (#222 app-layer enforcement) were
+  already in main. PR-3 closed the assignment surface + the two
+  MEDIUM gates that PR-2 review flagged as PR-3 prerequisites.
+  Eight commits — seven scoped feat/fix commits + one inline Step-8
+  fixup addressing a security-reviewer LOW (role-gate ordering on
+  the new caseload routes). Operator drove the PR step-by-step
+  with explicit commit verbs at each gate; no batching, no
+  unauthorized actions.
+
+  Step-by-step contents:
+    Step 1 — backend positive role gate on intervention writes
+      (closes PR-2 MEDIUM-1)
+    Step 2 — EA list-branch on GET /students/tenant/:tenantId
+      (column triple byte-identical to canStaffAccessStudent per
+      banked invariant)
+    Step 3 — new routes/eaCaseload.js with three endpoints (GET
+      by-ea/school, POST grant, DELETE revoke) under the M041
+      two-GUC writers contract
+    Step 4 — legacy-EA cascade cleanup on DELETE FROM users
+      (closes the M041 MATCH SIMPLE gap for legacy district_id
+      IS NULL EAs)
+    Step 5 — FE canManageInterventions narrowed to explicit
+      allowlist (closes PR-2 MEDIUM-2)
+    Step 6 — FE EACaseloadManager modal-based per-staff control
+    Step 6 fixup — hoist hooks above the role-based early return
+      in EACaseloadManager (React Rules of Hooks; surfaced by
+      npm run lint mid-session)
+    Step 8 fixup — move GRANT_ROLES check above the parseInt
+      block in POST + DELETE on routes/eaCaseload.js (security
+      LOW L-1)
+
+FILES TOUCHED
+  middleware/authorizeInterventionAccess.js — INTERVENTION_MANAGER_ROLES
+    positive gate inside the write-only staff arm of
+    authorizeByInterventionId (+14/-4)
+  routes/interventions.js — POST /assign swap from parent-negative
+    to INTERVENTION_MANAGER_ROLES positive allowlist (+12/-4)
+  routes/progressNotes.js — POST/PUT/DELETE positive-allowlist
+    swap, 3 sites (+7/-3)
+  routes/students.js — new EA list-branch on GET /tenant/:tenantId
+    with EXISTS clause filtering on the byte-identical
+    (ea_user_id, student_id, school_tenant_id) triple (+25/-0)
+  routes/eaCaseload.js — NEW (462 lines after Step 8 fixup).
+    Three endpoints under M041 two-GUC writers contract.
+  routes/staffManagement.js — explicit DELETE FROM ea_caseload_students
+    cleanup pre-DELETE-users on the existing checked-out client
+    inside the existing txn (+16/-0)
+  routes/users.js — same cleanup, identical 14-line block (+16/-0)
+  server.js — mount /api/ea-caseload adjacent to mtss-coordinators
+    (+2/-0)
+  frontend/src/App.jsx — narrow canManageInterventions allowlist
+    + EACaseloadManager wiring + new Caseload column (+20/-3)
+  frontend/src/context/AppContext.jsx — narrow canManageInterventions
+    allowlist (+5/-1)
+  frontend/src/components/EACaseloadManager.jsx — NEW (336 lines
+    after Step 6 hooks-hoist fixup). Modal-based per-staff
+    control for the EA caseload-management surface.
+
+MIGRATIONS RUN
+  PR-3 added no schema changes. M041 was already in prod via
+  PR #221 (S114). Operator authorized one-time UPDATE on a
+  pre-existing dev seed-drift row during smoke (see DEV
+  ENVIRONMENT NOTES); no prod migration needed.
+
+TENANT ISOLATION REVIEW
+  Tenant-scoped tables touched in this diff: ea_caseload_students
+  (INSERT in POST, DELETE in route + cascade-cleanup, SELECT in
+  GET + list-branch EXISTS + DELETE existing-row lookup),
+  ea_caseload_students_audit (INSERT 'grant' rows; revoke audit
+  rows written by M041's AFTER DELETE trigger), students (SELECT
+  in POST tenant validation, GET JOIN, list-branch outer query),
+  users (SELECT for target eligibility on POST + GET), tenants
+  (SELECT to server-derive district_id on POST).
+  All scoped via resolveAccessibleTenantIds (§5 dual-path helper)
+  at every scope-decision site — never inlined. Caller-scope +
+  target-scope both flow through the helper in routes/eaCaseload.js.
+  Column-triple invariant (banked
+  pr3-ea-caseload-query-no-divergence): the EA list-branch in
+  routes/students.js uses EXISTS clause with the exact
+  (ea_user_id, student_id, school_tenant_id) triple from the
+  canStaffAccessStudent per-record predicate. tenantId source
+  is the path-validated integer ($1 binds twice), not a per-row
+  column dereference. Outer s.tenant_id = $1 + inner EXISTS
+  school_tenant_id = $1 are belt-and-suspenders against M041
+  composite-FK weakening.
+  Cascade-cleanup ordering on DELETE FROM users in both
+  staffManagement.js and users.js: BEGIN → SET LOCAL
+  app.actor_user_id → SELECT target / verify accessibility →
+  explicit DELETE FROM ea_caseload_students (fires M041 trigger,
+  captures actor via GUC, labels audit row 'cascade_user_delete')
+  → DELETE FROM users → COMMIT. All on the same checked-out
+  client per the M041 GUC contract. For legacy EAs (district_id
+  IS NULL) the explicit DELETE is the only path that fires the
+  trigger; for district EAs it is a 0-row no-op because the FK
+  cascade would also fire later (also captured by trigger).
+  Smoke confirmed: 2 audit rows written with action label
+  'cascade_user_delete' and actor_user_id populated from the
+  GUC on a legacy EA delete.
+  tenant-isolation-auditor verdict: APPROVED, 0 CRITICAL, 0
+  HIGH, 0 MEDIUM, 0 LOW, 3 INFO.
+
+PRIVACY REVIEW (Section 4B)
+  No new DB columns. No schema changes. One new GET endpoint
+  (GET /api/ea-caseload/by-ea/:eaUserId/school/:tenantId) with
+  operator-signed §4B field set:
+    - caseload row identity (3 integer ids + created_at / created_by)
+    - audit-subject metadata (granter.full_name AS granter_full_name
+      via LEFT JOIN; nullable per M041 ON DELETE SET NULL)
+    - student display only (first_name, last_name, grade)
+  Explicitly NOT projected: tier, risk_level, external_id, dob,
+  parent_email, address, archived, intervention/document/meeting
+  history.
+  Operator §4B decision on EA read depth on GET /students/tenant/
+  :tenantId: teacher-equivalent for caseload students (full s.*
+  record). Write authorization is severed at the BE positive role
+  gate from Step 1 + the inline gates in routes/interventions.js
+  + routes/progressNotes.js. Teacher-equivalent read does NOT
+  carry teacher-equivalent write.
+  Picker reuse: assign-student typeahead reuses the existing
+  PR-2 /api/discipline-referrals/picker/:tenantId endpoint
+  (operator-signed §4B minimum: id, first_name, last_name, grade).
+  No new picker route; no new payload surface.
+  Logging audit: 5 BE console.error sites tagged
+  '[eaCaseload:<phase>]' + err.message only. 4 FE logError sites
+  tagged '[EACaseloadManager:<phase>]' + caught err object. No
+  body content, no PII tokens, no SQL row data.
+  Error-body audit: 30 res.status(...).json(...) sites in
+  routes/eaCaseload.js; all static literals or integer-only
+  success-identity bodies. No body echo.
+  FE persistence layer: zero localStorage / sessionStorage /
+  IndexedDB / cookie writes of PII. Modal state in-memory only.
+  FERPA §99.32 audit retention preserved: M041 audit-row
+  generation through the new cascade DELETE path verified by
+  smoke. The M031/M041 no-FK doctrine preserved (denormalized
+  integer columns + action label + actor_user_id; audit rows
+  outlive their referents).
+  Section 4B grep at every commit boundary: 0 PII hits per
+  commit (8 commits checked).
+  Section 4B grep on PR body before gh pr create: 1 PII LEAK
+  CAUGHT — two real staff names ("counselor name" + "school_admin
+  name") had been written into the smoke results paragraph;
+  operator caught it on review; pattern-2-targeted re-grep
+  confirmed all real names removed and replaced with role + id
+  labels. Re-grep clean before push. Lesson banked as a
+  reinforcement of the §4B per-entry-vs-whole-file pattern from
+  banked memory; smoke seed paragraphs must use role+id only.
+  privacy-reviewer verdict: APPROVED, 0 CRITICAL, 0 HIGH, 0
+  MEDIUM, 0 LOW, 4 INFO.
+
+VERIFICATION
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  npm run lint (frontend) — 93 problems whole-repo, all
+    pre-existing in untouched files; PR-3 files: 0 errors in
+    EACaseloadManager.jsx after Step 6 fixup (8 → 0); App.jsx +
+    AppContext.jsx pre-existing debt unchanged.
+  Local smoke test against dev DB with M041 applied + STRICT_
+    STUDENT_ACCESS_PREDICATE=true: PR-3 ran a curated NO-matrix
+    sweep covering 26 routes; 26/26 returned 403 to EA-without-
+    caseload-coverage. Caseload-scoping on the EA list-branch:
+    EA covering 2 caseload students returned exactly those 2
+    student rows; cross-tenant probe returned 403. Cascade
+    audit-table query post DELETE-FROM-users: 2 rows with
+    action='cascade_user_delete' and actor_user_id populated
+    from app.actor_user_id GUC.
+  Section 4B grep at each of the 8 commits — 0 PII hits per
+    commit.
+  Section 4B grep on PR body before gh pr create — 1 PII leak
+    caught and remediated pre-push (see PRIVACY REVIEW).
+  merge-sha verification: MATCH for PR #224
+    feature tip:         a1331d7ee93d81cbd53843dc07fde5a3737841b5
+    merge second-parent: a1331d7ee93d81cbd53843dc07fde5a3737841b5
+    merge commit:        1b90bfc6d91bf8c242676a43dfcb0927a71c5b28
+  Three reviewer subagents ran against the full branch diff vs
+  origin/main before push — all approved with 0 CRITICAL/HIGH/MEDIUM:
+    security-reviewer:        APPROVED WITH NOTES (3 LOW, 4 INFO)
+    tenant-isolation-auditor: APPROVED              (0 LOW, 3 INFO)
+    privacy-reviewer:         APPROVED              (0 LOW, 4 INFO)
+  security-reviewer L-1 (role-gate-before-input-parse on POST +
+  DELETE in routes/eaCaseload.js) was actioned in this PR as
+  Step 8 fixup (commit a1331d7).
+
+DEV ENVIRONMENT NOTES
+  M041 was NOT applied to the local dev DB pre-session — only
+  the schema-foundation prod path had run. Operator authorized
+  pre-flight + apply via the migration file's BEGIN/COMMIT
+  atomic unit.
+  Pre-flight blocked once on a CHECK violation: one dev-only
+  legacy seed row carried a role value that fell outside the
+  canonical 7-role universe inherited by M041's widened CHECK.
+  Operator authorized Option A (UPDATE the offending row to a
+  canonical role) to make M041's validating ADD CONSTRAINT
+  apply cleanly. Row had 0 outbound references (no caseload,
+  no user_school_access, no intervention_assignments). Dev-only
+  drift, not prod (M041 applied prod-clean per banked memory).
+  Server-boot DDL at server.js:438-444 re-DROPs and re-ADDs the
+  CHECK with the 7-role universe on every server restart; M041's
+  widened CHECK survives only until the next boot. The boot
+  CHECK is NOT VALID, so existing EA rows survive
+  revalidation-skip but new EA INSERTs after a boot will fail
+  until the CHECK is re-widened. This is Followup #117
+  (chore/retire-server-boot-ddl-for-users-role-check), banked
+  pre-session and re-banked here as load-bearing for any
+  multi-environment apply.
+  Dev DB has no migration audit table (no schema_migrations /
+  migrations / pgmigrations). The team applies migrations
+  manually with no programmatic gating. Idempotency in each
+  migration's header is the only safety net.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #224 commit OIDs at merge time:
+  566179b6e9bbc7206504d14541f5978c0a247f28
+  5575cb8c81edb5afdc1c75ea5a1016017e3b5d56
+  e465d74066e5e6aecf13593a38d5c8b4fde8943c
+  4bd23b9e920468d5e6b3ea553a4fdd8b1994f4e3
+  81c48ac4424d3fb2a38ec15d63ea91a19a4ae24b
+  7e447a8ba0b5f357f0e689d6ac60fb51a287315c
+  36bb1e35257b1101f30d4ebc1dabb00cdea61fc1
+  a1331d7ee93d81cbd53843dc07fde5a3737841b5
+
+OPEN ITEMS / FOLLOW-UPS
+  chore/role-gate-before-input-parse-sweep — routes/
+    mtssCoordinators.js POST (L178-189) + DELETE (L304-315)
+    have the same body/param-parse-before-role-check ordering
+    PR-3 Step 8 fixed in routes/eaCaseload.js. Pre-existing in
+    M038-era code, not introduced here. Sweep is a 4-line move
+    per handler with no behavior change for authorized callers.
+  Legacy-EA cascade-cleanup sibling on mtss_coordinators —
+    M038/M039's composite FK shape is the same as M041's, so
+    the same MATCH SIMPLE legacy-skip likely applies. Not
+    verified in PR-3 scope; banked as
+    chore/mtss-coordinators-legacy-cascade-cleanup sibling to
+    the PR-3 Step 4 fix.
+  Followup #117 (re-banked) — chore/retire-server-boot-ddl-for-
+    users-role-check. server.js:438-444 boot DDL is the reason
+    M041's widened CHECK survives only until the next server
+    restart. Pre-session bank; re-flagged here as load-bearing.
+  Dev seed-drift + no-migration-audit-table — dev-only, not
+    prod. Banked as dev-environment-state observations.
+  chore/like-wildcard-escape-sweep — pre-existing banked item
+    from PR-2 era (banked
+    project-followup-like-wildcard-hardening). %/ _ in user
+    input get interpreted as LIKE patterns at both routes/
+    students.js:197-199 and the picker; fix in lockstep, not
+    single-site. Banked, not actioned in this PR.
+
+NEXT SESSION SHOULD
+  Resolve PR-2 review MEDIUMs are now closed by PR-3, so the
+  prod-seeding guardrail from S115 (no real education_assistant
+  accounts in prod, no ea_caseload_students rows in prod) is
+  now safely lifted. Operator may seed real EA accounts + grant
+  caseload coverage in prod once the operational onboarding
+  sequence is finalized.
+================================================================================
+
+================================================================================
+SESSION: 2026-06-05T17:30:00-07:00
+BRANCH:  feat/education-assistant-progress-logging
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/225 (merge commit 0e71b67e854f68d051cc6727f9b8029822731e4d; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR-4 of N for the education_assistant role family — a
+  deliberate, scoped REOPENING of part of PR-3 Step 1's
+  intervention-write gate, for education_assistant only, for the
+  four log-progress write routes only, caseload-scoped via the
+  existing PR-2/PR-3 ea_caseload_students predicate. PR-3 closed
+  the gate too tight for the EA log-progress use case (EAs are
+  the staff who execute Tier 2/3 intervention plans in seat and
+  need to record observations); PR-4 re-opens it surgically.
+
+  Operator-locked route classification:
+    LOG-PROGRESS (admit EA on caseload):
+      PATCH /api/interventions/:id/progress     — #1
+      POST  /api/progress-notes                 — #2
+      POST  /api/weekly-progress                — #3
+      POST  /api/intervention-logs              — #8
+    AMBIGUOUS (operator decided BLOCK):
+      PUT/DELETE /api/progress-notes/:id        — #4 / #5
+      PUT/DELETE /api/weekly-progress/:id       — #6 / #7
+    MANAGEMENT (stay BLOCKED):
+      Routes #9 through #22 (14 routes covering assign, status,
+      goal, monitoring-flag, archive, unarchive, delete on
+      student_interventions, intervention-assignments grant/
+      revoke, plan edit/complete/reopen, template create/
+      delete, admin template bulk-update)
+
+  Approach: new authorizeProgressLogByInterventionId helper
+  PARALLEL to authorizeByInterventionId (no mutation of existing
+  function or its three consumers), inline (isManager || isEA)
+  allowlist with no new role constant added (INTERVENTION_
+  MANAGER_ROLES stays narrow, EA excluded), per-student decision
+  delegated to the existing applyStudentAccessGate →
+  canStaffAccessStudent EA branch (PR-2 column triple). Two new
+  wrappers consume the new helper; two inline gates (progress-
+  Notes POST, intervention-logs POST) use the same shape. Five
+  commits.
+
+  Step-by-step contents:
+    Step 1 — middleware/authorizeInterventionAccess.js adds
+      authorizeProgressLogByInterventionId + 2 wrappers
+      (requireProgressLogAccessByInterventionId,
+      requireProgressLogAccessByBody). Existing helpers + 3
+      existing requireWriteAccessBy* wrappers UNCHANGED. No new
+      role constant.
+    Step 2 — swap wrappers on PATCH /:interventionId/progress
+      and POST /weekly-progress. Other 6 management routes in
+      interventions.js + PUT/DELETE in weeklyProgress.js
+      UNCHANGED. Dropped one orphaned import (requireWrite-
+      AccessByBody from weeklyProgress.js).
+    Step 3 — inline-gate widening in progressNotes.js POST and
+      interventionLogs.js POST. progressNotes.js PUT/DELETE
+      UNCHANGED (operator decisions #4 + #5). intervention-
+      logs.js POST swap replaces a "not parent" denylist with
+      an explicit (isManager || isEA) allowlist — closes the
+      "intervention-logs-style gap" that slipped past PR-3's
+      curated NO-matrix sweep (operator-noted verification-
+      doctrine lesson).
+    Step 4 — exhaustive smoke (see VERIFICATION).
+    Step 5 — FE canLogProgress derived value
+      (INTERVENTION_MANAGER_ROLES ∪ education_assistant); swap
+      one render-gate ("Log Progress" button) from
+      canManageInterventions to canLogProgress. Other 4
+      canManageInterventions callsites in App.jsx untouched.
+    Step 5.5 fixup — UX gate for the Pencil + Trash icons on
+      logged weekly_progress entries. Were ungated entirely
+      (rendered for every role); now gated on
+      canManageInterventions, hiding them from EA + parent.
+      Pre-existing UX bug (BE 403s parent too); fix is a side
+      benefit for both.
+
+FILES TOUCHED
+  middleware/authorizeInterventionAccess.js — NEW helper
+    (parallel to authorizeByInterventionId, byte-identical SQL
+    and parent arm) + 2 new wrappers + module.exports
+    additions (+139/-0)
+  routes/interventions.js — single wrapper swap on PATCH
+    /:interventionId/progress. Other 6 management routes
+    UNCHANGED (+8/-2)
+  routes/weeklyProgress.js — single wrapper swap on POST /;
+    orphaned import removed. PUT/DELETE UNCHANGED (+7/-3)
+  routes/progressNotes.js — POST inline gate widened from
+    INTERVENTION_MANAGER_ROLES-only to (isManager || isEA).
+    PUT + DELETE UNCHANGED (+12/-4)
+  routes/interventionLogs.js — POST inline gate replaced from
+    "not parent" denylist to explicit (isManager || isEA)
+    allowlist + new import of INTERVENTION_MANAGER_ROLES
+    (+17/-1)
+  frontend/src/App.jsx — new canLogProgress derived value +
+    one render-gate swap (Log Progress button) + UX-gate
+    addition on previously-ungated Pencil + Trash icons
+    (+32/-5)
+  frontend/src/context/AppContext.jsx — canLogProgress
+    declaration + addition to exported context value (+11/-2)
+
+MIGRATIONS RUN
+  none. PR-4 adds no schema changes. M041 was already in prod.
+  Dev DB CHECK had to be re-widened twice during smoke
+  (Followup #117); existing EA rows survived because the boot
+  CHECK is NOT VALID.
+
+TENANT ISOLATION REVIEW
+  No new tenant-scoped SQL queries introduced. The new helper's
+  student_interventions JOIN students SELECT and
+  intervention_assignments parent-arm SELECT are byte-identical
+  to authorizeByInterventionId's queries (same column list,
+  same JOIN, same WHERE, same parameterization).
+  No new query on ea_caseload_students. The single canonical
+  query lives at middleware/canAccessStudent.js:134-145 (PR-2).
+  PR-4 reaches the EA per-student decision via
+  applyStudentAccessGate → canStaffAccessStudent — delegation,
+  not duplication. The column-triple invariant
+  (ea_user_id, student_id, school_tenant_id) is preserved by
+  construction (no second copy of the predicate to drift from).
+  §5 dual-path helper (resolveAccessibleTenantIds) consumed at
+  every scoping site in the new helper. Never inlined. Zero
+  inline users.district_id == target.district_id constructs
+  anywhere in the diff.
+  Management-route invariant preserved: authorizeByIntervention-
+  Id byte-identical to pre-PR-4 main; all 3 existing
+  requireWriteAccessBy* wrappers still delegate to the
+  un-widened helper. No accidental widening of management
+  routes.
+  New-helper consumer scope confined: authorizeProgressLogBy-
+  InterventionId consumed only by the two new wrappers, mounted
+  only on PATCH /interventions/:interventionId/progress and
+  POST /weekly-progress. No management route picks up the
+  widened helper.
+  tenant-isolation-auditor verdict: APPROVED, 0 CRITICAL, 0
+  HIGH, 0 MEDIUM, 0 LOW, 4 INFO.
+
+PRIVACY REVIEW (Section 4B)
+  No new DB columns. No schema changes. No new GET endpoint.
+  No new payload projection. No new PII flow. RETURNING * on
+  each affected INSERT/UPDATE is pre-existing.
+  Operator §4B decision recorded explicitly in the PR body:
+  EA caseload-scoped progress logging — no edit, no delete, no
+  management. The four newly-permitted writes (PATCH progress,
+  POST progress-notes, POST weekly-progress, POST intervention-
+  logs) enforce caseload coverage at the BE per-request gate
+  via the existing applyStudentAccessGate → canStaffAccessStudent
+  EA branch (PR-2 column triple). PUT/DELETE on /progress-notes
+  /:id, PUT/DELETE on /weekly-progress/:id, and the 14
+  management routes stay 403 for EA.
+  Logging audit: 2 new console.error lines in the new wrappers,
+  both [wrapper-name] err.message-only — consistent with the 7
+  existing sibling wrappers in the same module. No body content,
+  no PII tokens.
+  Error-body audit: all new error bodies are static literals or
+  forwarded FORBIDDEN_BODY (the module's existing static
+  constant). Zero PII, zero DB-error echo, zero stack-trace
+  exposure in new lines.
+  FE persistence layer: zero localStorage / sessionStorage /
+  IndexedDB / cookie writes introduced.
+  FERPA legitimate-educational-interest framing (privacy-
+  reviewer acknowledgement): the four newly-permitted writes are
+  observational record-keeping operations on students for whom
+  the EA has been explicitly assigned via the ea_caseload_students
+  roster. EAs commonly deliver Tier 2/3 interventions in seat
+  and are the primary observer of student response. The scope
+  is appropriately narrow; EAs are held OUT of management
+  actions (decisional authority the EA role does not have).
+  STRICT_STUDENT_ACCESS_PREDICATE=true dependency call-out:
+  PR-4's caseload-scoping property depends on the flag being
+  set in the deployed environment (LIVE in prod since S114 per
+  banked memory). In dark mode the EA branch of
+  canStaffAccessStudent degrades to tenant-membership only.
+  Tied to the N3 flag-strip discipline: the flag cannot be
+  stripped without a parallel decision to either restrict EA
+  writes back to PR-3 shape or explicitly accept tenant-wide
+  EA writes (which would expand FERPA exposure).
+  Section 4B grep at every commit boundary: 0 PII hits per
+  commit (5 commits checked).
+  Section 4B grep on PR body before gh pr create: 0 PII hits
+  (smoke-section was pattern-2-screened with extra vigilance
+  after the PR-3 leak class — seed paragraph uses role + table
+  + integer-id language only).
+  privacy-reviewer verdict: APPROVED WITH NOTES, 0 CRITICAL,
+  0 HIGH, 0 MEDIUM, 1 LOW (log-redaction primitive hygiene —
+  banked), 3 INFO.
+
+VERIFICATION
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  Local smoke against dev DB with M041 applied + STRICT_
+    STUDENT_ACCESS_PREDICATE=true (after operator authorization
+    to re-apply post-#117-revert): EXHAUSTIVE 31-assertion
+    sweep across all 22 intervention-write routes, designed
+    explicitly so the "intervention-logs-style gap" that
+    slipped past PR-3's curated NO-matrix cannot recur. Per
+    route:
+      Four log routes (#1, #2, #3, #8): EA + caseload-covered
+        student → 200/201 (4/4); EA + same-tenant non-caseload
+        student → 403 (4/4). Both halves proven on every log
+        route. Caseload-scoping verified at the BE per-request
+        gate.
+      Four ambiguous-blocked routes (#4 PUT progress-notes, #5
+        DELETE progress-notes, #6 PUT weekly-progress, #7
+        DELETE weekly-progress): EA → 403 (4/4).
+      Fourteen management routes (#9-#22): EA → 403 (13/14).
+        One anomaly at #21a (POST /api/interventions/templates)
+        returned 400 not 403 because the route lacks a role
+        allowlist (auth middleware IS present via router-level
+        mount per security-reviewer correction; the gap is
+        role-coverage, not auth-coverage). Pre-existing M030-
+        era code; NOT introduced by this PR. Banked as
+        chore/sec-interventions-templates-role-gate follow-up.
+      Counselor positive control on the four log routes (#1+,
+        #2+, #3+, #8+): all 4 returned 200/201, confirming the
+        new middleware does not regress manager access.
+      Totals: pass=30 / fail=1 / total=31.
+  Section 4B grep at each of the 5 commits — 0 PII hits per
+    commit.
+  Section 4B grep on PR body before gh pr create — 0 PII hits;
+    pattern-2 (real PII values) given extra vigilance after
+    the PR-3 leak.
+  merge-sha verification: MATCH for PR #225
+    feature tip:         d677f5ebc14c84a724fe71cc5b54e2ef5cee6eab
+    merge second-parent: d677f5ebc14c84a724fe71cc5b54e2ef5cee6eab
+    merge commit:        0e71b67e854f68d051cc6727f9b8029822731e4d
+  Three reviewer subagents ran against the full branch diff vs
+  origin/main before push — all approved with 0 CRITICAL/HIGH/MEDIUM:
+    security-reviewer:        APPROVED WITH NOTES (1 LOW, 3 INFO)
+    tenant-isolation-auditor: APPROVED              (0 LOW, 4 INFO)
+    privacy-reviewer:         APPROVED WITH NOTES (1 LOW, 3 INFO)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #225 commit OIDs at merge time:
+  c43454401346f73542534159bf5b1dc2c60f3592
+  cfb1688643befced7ab12255486491fab39f56f6
+  729e4f8c5bc01d09dfc2da906027ff34742b1d22
+  bdd277567b86e38fb605e326706fac29a0303e45
+  d677f5ebc14c84a724fe71cc5b54e2ef5cee6eab
+
+OPEN ITEMS / FOLLOW-UPS
+  chore/sec-interventions-templates-role-gate — security-
+    reviewer LOW, surfaced by PR-4 exhaustive smoke at #21a.
+    routes/interventions.js POST /templates and DELETE
+    /templates/:id ARE authenticated (router-level requireAuth
+    at server.js:738; CORRECTED from earlier "unauthenticated"
+    framing during PR-4 Step 4 report). Neither handler has
+    a role allowlist; an authenticated EA hitting POST
+    /templates with a valid body would receive 201. Fix is a
+    one-line INTERVENTION_MANAGER_ROLES-only inline gate at
+    the top of each handler. Pre-existing M030-era code.
+  Repo-wide log-redaction hygiene primitive — privacy-reviewer
+    LOW. The count of console.error('[wrapper-name]',
+    err.message) sites in middleware/authorizeInterventionAccess
+    .js is now 9. err.message from pg does not interpolate
+    parameter values in the standard error path, but a project-
+    wide safeLogError(tag, err) helper that strips known
+    PII-shaped patterns would harden against future pg error
+    variants or new error sources. Repo-wide hygiene item.
+  Verification-doctrine note — PR-3's curated NO-matrix sweep
+    missed POST /api/intervention-logs (the route had no PR-3
+    Step 1 positive gate because it pre-dated the audit; it
+    quietly admitted EA via applyStudentAccessGate's caseload
+    branch). PR-4's exhaustive 22-route enumeration caught it.
+    Lesson for future EA-or-similar role expansions:
+    enumerate every write route from the router source, not a
+    curated list. A curated NO-matrix is acceptable for a
+    quick spot-check but never for the pre-merge sec-PR
+    verification gate.
+  STRICT_STUDENT_ACCESS_PREDICATE flag dependency — PR-4's
+    caseload-scoping requires the flag to remain true. Tied
+    to N3 flag-strip discipline.
+  Re-banked from PR-3 (same session, prior entry above):
+    chore/role-gate-before-input-parse-sweep
+      (mtssCoordinators ordering)
+    chore/mtss-coordinators-legacy-cascade-cleanup
+      (M038 MATCH SIMPLE sibling)
+    Followup #117 (server.js boot DDL)
+    chore/like-wildcard-escape-sweep
+    Dev seed-drift + no-migration-audit-table observations
+
+NEXT SESSION SHOULD
+  Education_assistant role rollout is now functionally complete
+  for the assignment + caseload-scoped progress-logging surface.
+  No PR-5 has been scoped at this time. Operator-discretion
+  follow-ups (per OPEN ITEMS above) are available as
+  independent chore PRs whenever convenient.
+================================================================================
