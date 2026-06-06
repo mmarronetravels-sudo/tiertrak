@@ -25610,3 +25610,142 @@ NEXT SESSION SHOULD
   surfaces for the five demographic fields) is the natural next
   unit.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T10:59:10-07:00 (CORRIGENDUM to the prior PR #233 entry)
+BRANCH:  chore/activities-log-pr233-corrigendum
+DISPOSITION: docs-lane corrigendum; the PR-C feature work is already on main
+--------------------------------------------------------------------------------
+CORRIGENDUM TARGET
+  The immediately-prior PR #233 entry recorded DISPOSITION as
+  "pr-opened / REVIEW_REQUIRED" and OPEN ITEMS as work the §2A
+  reviewer must drive before merge. Both statements were stale at
+  the moment the entry was written.
+
+WHAT WAS ACTUALLY TRUE AT WRITE TIME
+  PR #233 had already merged to main at commit 2d960a2 at
+  2026-06-06T17:11:43Z, and the auto-deploy on the main branch had
+  already fired. The corrected disposition is:
+
+    DISPOSITION (corrected): MERGED + deployed
+    Merge commit:            2d960a2
+    Schema change:           none (M042 was already live on main; PR-C
+                             is app-code only on routes/students.js +
+                             constants/studentDemographics.js +
+                             routes/csvImport.js)
+
+PROCESS NOTE
+  The merge was a bare self-approve by the operational account: the
+  review body is the empty string, and the elapsed time between
+  approve submission and merge click was ~6 seconds. Per CLAUDE.md
+  §2A, a §2A human review must carry substance, not just a
+  reviewDecision flip. The §2A substance gate was not met at merge
+  time. The PR description's NOT-MERGEABLE-UNTIL block (three
+  dev-DB integration tests under strict mode) had no evidence of
+  being run pre-merge in any artifact attached to the PR — no
+  review-body narrative, no PR comment, no commit, no CI run.
+
+REMEDIATION (executed post-merge on dev)
+  All three NOT-MERGEABLE-UNTIL invariants from the PR description
+  were exercised against the dev DB on localhost with
+  STRICT_STUDENT_ACCESS_PREDICATE=true, against the real route
+  handlers via HTTP through the full requireAuth + CSRF + role-gate
+  stack. Seeded two synthetic school-typed tenant rows (tenant 1,
+  tenant 2), one school_admin user per tenant, one student row per
+  tenant. All seed data uses integer ids + placeholder strings only;
+  no real names, no slugs, no SIS identifiers. All seed rows torn
+  down inside the same script run.
+
+  Test 1 — cross-tenant write denial.
+    Acting as the tenant-1 school_admin:
+      PUT /api/students/<tenant-2 student id>
+        → 404 "Student not found"
+      POST /api/students with target_tenant_id = tenant-2 id
+        → 403 "Not authorized for target tenant"
+    Post-test row counts in tenant 2:
+      students row count             : 1   (the unmodified seed row)
+      iep_flag on that students row  : NULL (PUT payload was rejected)
+      student_race_ethnicity rows    : 0
+      students_demographics_audit rows for the tenant-2 student : 0
+    Verdict: PASS — zero writes to tenant 2.
+
+  Test 2 — audit actor capture (GUC reaches the trigger).
+    Acting as the tenant-1 school_admin (acting user id = U1.id):
+      POST /api/students with 4 demographic fields set
+        → 201 + new students row id S3
+      PUT  /api/students/<S3> with 3 demographic fields changed
+        → 200
+    students_demographics_audit row count for S3 : 7
+      4 initial-set rows from POST (iep_flag, gender, race_ethnicity
+      x 2 categories) + 3 delta rows from PUT (iep_flag flip,
+      sec_504_flag new, race_ethnicity 1-category remove).
+    actor_user_id on every one of those 7 rows : equals U1.id
+    Final student_race_ethnicity for S3 : 1 row (the kept category).
+    Verdict: PASS — the M040 GUC writer contract delivers the actor
+    integer to the M042 AFTER INSERT/UPDATE/DELETE triggers on both
+    students and student_race_ethnicity.
+
+  Test 3 — rollback atomicity on mid-transaction child failure.
+    Installed a temporary BEFORE INSERT trigger on
+    student_race_ethnicity that RAISEs for one specific test
+    students.id; left every other student write path unaffected.
+    PUT /api/students/<that test student id> with a payload that
+    mutates 8 fields including a race_ethnicity add → child INSERT
+    raises mid-transaction.
+      Response   : 500 "Failed to update student" (generic, redacted)
+      Parent row : byte-identical pre/post (every column, including
+                   updated_at, matches)
+      student_race_ethnicity child rows : 0 added, 0 removed
+      students_demographics_audit rows  : 0 added (count unchanged)
+    Verdict: PASS — ROLLBACK is clean across parent UPDATE, child
+    INSERT, and the trigger-emitted audit rows.
+
+  After the test run, teardown removed every test row and dropped
+  the test trigger and test function. Post-teardown query confirms:
+    leftover tenants     : 0
+    leftover users       : 0
+    leftover students    : 0
+    leftover race_ethnicity rows : 0
+    leftover audit rows  : 0
+    leftover test trigger: 0
+    leftover test function: 0
+
+  No app code modified. No revert. No merge. Working tree clean
+  except for three pre-existing untracked files unrelated to this
+  session.
+
+NET
+  The merged PR-C code behaves correctly under all three
+  NOT-MERGEABLE-UNTIL invariants. The audit-trail gap on the
+  pre-merge §2A review (bare approve, empty body, ~6 second window,
+  no evidence of integration tests) is recorded here as a process
+  observation, not as a code issue. No code change is being
+  proposed off the back of this remediation.
+
+OPEN ITEMS / FOLLOW-UPS
+  Process:
+    - §2A reviewer protocol: when a NOT-MERGEABLE-UNTIL block names
+      integration tests, an APPROVED review must carry a non-empty
+      body that quotes the test results or links to a CI/test
+      artifact. A bare approve does not meet the §2A substance gate
+      even when the merge button is clicked by the reviewer. Worth
+      writing this expectation into CLAUDE.md §2A's "what counts as
+      a review" subsection if it is not already explicit there.
+  Code:
+    - All three PR #233 review findings still stand:
+      privacy-reviewer LOW-1 (comment at students.js:737-739 does
+      not document the TOCTOU mitigation), privacy-reviewer LOW-2
+      (the log-redaction-hygiene-primitive followup), security-
+      reviewer LOW-2 (params.id 22P02 → 500, Followup #76),
+      security-reviewer INFO (sanitizeRaceEthnicityArray length cap,
+      bundle with disciplineReferrals notes-length-cap). LOW-1 from
+      security-reviewer (actor-id integer guard) was already applied
+      pre-merge in commit e54d958 on the feature branch.
+
+NEXT SESSION SHOULD
+  PR-D (FE edit / view surfaces for the five M042 demographic
+  fields) is the natural next unit. Treat the PR #233 NOT-MERGEABLE-
+  UNTIL invariants as already verified per this corrigendum; do not
+  re-run unless the underlying route handlers or M042 triggers are
+  touched.
+================================================================================
