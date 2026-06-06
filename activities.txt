@@ -25027,3 +25027,180 @@ NEXT SESSION SHOULD
   ITEMS remain available; no specific next-step required from
   this PR.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T08:36:18-0700
+BRANCH:  migration/student-demographics
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/229 (merge commit 4370ec6; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time). Prod-applied via Render External PSQL + \i after merge.
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  M042 student demographics — foundation schema layer for
+  downstream discipline reporting. Adds 4 scalar columns to the
+  students table (iep_flag / sec_504_flag / ell_flag as 3-state
+  BOOLEAN, gender as VARCHAR(20) with a 4-value CHECK allowlist),
+  1 multi-select child table (student_race_ethnicity) holding
+  stable codes against a 7-code CHECK allowlist (2024 OMB SPD
+  15 minima), and 1 append-only audit table
+  (students_demographics_audit) mirroring the M039/M040/M041
+  no-FK denormalized-actor doctrine. Three trigger functions
+  with 4 bindings (AFTER INSERT + AFTER UPDATE on students;
+  AFTER INSERT + AFTER DELETE on the race child table) capture
+  initial-set and per-column-diff mutations.
+
+  PR-A of a multi-PR sequence (schema -> CSV import -> backend
+  writes -> FE). This entry covers PR-A only; PR-B / PR-C /
+  PR-D are future units.
+
+FILES TOUCHED
+  migration-042-student-demographics.sql — NEW, 339 lines
+    wrapped in a single BEGIN/COMMIT (no other files modified).
+
+MIGRATIONS RUN
+  M042 applied to prod via Render External PSQL one-shot
+  command + \i migration-042-student-demographics.sql.
+  Identical token sequence to dev apply: BEGIN ... DO ...
+  5 ALTER TABLE ... 2 CREATE TABLE ... 3 CREATE INDEX ...
+  3 CREATE FUNCTION ... 4 CREATE TRIGGER ... COMMIT.
+  Pre-flight verified: students_id_tenant_unique precondition
+  present; iep_flag column / student_race_ethnicity table /
+  students_demographics_audit table all absent (no partial
+  prior apply). Post-apply schema verification confirmed
+  4 scalar columns, 2 new tables, 3 CHECK constraints,
+  4 trigger bindings, the composite FK shape, and 6 indexes.
+
+TENANT ISOLATION REVIEW
+  Composite FK (student_id, tenant_id) -> students(id, tenant_id)
+  on the race child table is the §5 anchor; cross-tenant child
+  rows impossible by construction. Verified by smoke (cross-
+  tenant INSERT returns 23503 foreign_key_violation in both
+  dev and prod). students_demographics_audit carries denormalized
+  tenant_id NOT NULL plus nullable district_id (no FKs per
+  FERPA §99.32 retention). Every trigger-body INSERT sources
+  tenant from NEW/OLD of the firing row, never from external
+  input; v_district lookup is same-tenant self-lookup of
+  tenants.district_id with an EXCEPTION WHEN OTHERS THEN
+  v_district := NULL fallback. All three trigger functions
+  run SECURITY INVOKER (no privilege escalation surface).
+  tenant-isolation-auditor verdict: APPROVED, 0 CRITICAL,
+  0 WARN, 5 INFO (all banking-for-PR-B/C).
+
+PRIVACY REVIEW (Section 4B)
+  Sensitive demographic PII surface (race / IEP / 504 / ELL +
+  gender). Smallest-viable shape: 3 BOOLEANs, 1 short-code
+  VARCHAR, 1 normalized child table with a 7-code CHECK
+  allowlist. No DOB, no address, no parent identifiers, no
+  free-text. Race codes are opaque without app-side label
+  map (privacy-improving — labels live in app constants,
+  deferred to PR-B with first consumer).
+  students_demographics_audit captures old_value / new_value
+  from OLD.<col> / NEW.<col> / NEW.category only — no row
+  echo, no body interpolation, no SQL fragment capture.
+  field_name CHECK allowlist (5 values) bounds the field-name
+  dimension. Audit table has zero FKs per FERPA §99.32
+  record-of-disclosure retention.
+  Schema-only PR: no console.* calls added, no error-body
+  PII exposure surface introduced, no URL/query-string PII.
+  Section 4B grep on PR body before gh pr create: 0 hits;
+  on each subagent report before posting to PR thread: 0 hits
+  (with eyeballed false-positives on cross-school security-
+  property prose and a real-repo file path).
+  Section 4B grep on this activities entry before commit:
+  0 hits.
+  privacy-reviewer verdict: APPROVED, 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 1 LOW (comment-only nit on gender VARCHAR(20)
+  sizing), 5 INFO (all banking-for-downstream-PRs).
+
+VERIFICATION
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  Local dev apply via psql + \i: clean (single BEGIN/COMMIT;
+    every statement returned expected token). Dev smoke covered
+    5 scenarios (insert + demographics no-GUC, update with GUC
+    set, race add+remove, all-NULL insert emits 0 rows, cross-
+    tenant FK rejection); raw output banked in PR #229 body.
+    A 6th dev smoke (district-id propagation) inserted a
+    synthetic districts row, pointed a tenant at it, verified
+    audit row carried the auto-id, then restored.
+  Prod apply via Render External PSQL one-shot command + \i:
+    clean (identical token sequence; precondition met;
+    no partial prior apply).
+  Prod smoke: 6 scenarios pass.
+    Smoke 1: INSERT in district-bearing school tenant
+      with iep + sec_504 + gender, no GUC -> 3 audit rows
+      with district_id propagated from the real district-
+      bearing tenant (this is the new prod-only signal
+      dev could not exercise).
+    Smoke 2: UPDATE iep_flag TRUE->FALSE with
+      app.actor_user_id GUC set -> 1 audit row with
+      actor_user_id populated (GUC writer contract
+      end-to-end verified in prod).
+    Smoke 3: race ADD then DELETE (no GUC) -> 1 add row
+      and 1 remove row sharing field_name='race_ethnicity';
+      direction encoded by which of old_value / new_value
+      is NULL.
+    Smoke 4: INSERT in NULL-district single-tenant -> 2
+      audit rows with district_id=NULL (single-tenant org
+      path preserved in prod).
+    Smoke 5: INSERT with ALL demographics NULL -> 0 audit
+      rows (no spurious emit from the trigger).
+    Smoke 6: cross-tenant FK rejection -> 23503
+      foreign_key_violation (§5 anchor verified in prod).
+    Synthetic-data discipline: every smoke row used a
+    fixed synthetic first-name token + role labels + the
+    fake actor id 999991. Zero real names, zero real IDs.
+  Cleanup verified post-smoke:
+    - 3 synthetic student rows deleted by id
+    - their audit rows deleted
+    - residual checks: students with synthetic first-name=0,
+      orphan audit rows=0, orphan race rows=0, total M042
+      audit rows=0, total M042 race rows=0 (virgin tables)
+  Section 4B grep at each commit boundary: 0 PII hits.
+  merge-sha verification: MATCH for PR #229
+    feature tip:         d934316
+    merge second-parent: d934316
+    merge commit:        4370ec6
+  Three reviewer subagents ran against the full branch diff
+  vs origin/main before push — all APPROVED with
+  0 CRITICAL / 0 HIGH / 0 WARN:
+    security-reviewer:        APPROVED (0 CRITICAL, 0 WARN, 4 INFO)
+    tenant-isolation-auditor: APPROVED (0 CRITICAL, 0 WARN, 5 INFO)
+    privacy-reviewer:         APPROVED (0 CRITICAL, 0 HIGH,
+                              0 MEDIUM, 1 LOW, 5 INFO)
+
+OPEN ITEMS / FOLLOW-UPS
+  Banked for downstream PRs (per reviewer subagent INFO):
+    - PR-B: extend csvImport.js with 5 new optional CSV
+      columns + per-field sanitization + CHECK-allowlist
+      pre-INSERT validation; ship constants/student-
+      Demographics.js (code -> label maps for race + gender)
+      with its first consumer.
+    - PR-C: extend POST/PUT students.js to accept demographic
+      fields; wrap PUT in BEGIN -> SET LOCAL app.actor_user_id
+      -> mutation -> COMMIT GUC writer contract so audit
+      rows capture the actor (mirrors M040 writer doctrine
+      at routes/mtssCoordinators.js / routes/staffManagement.js /
+      routes/eaCaseload.js). Plumb the same GUC at every
+      future student_race_ethnicity INSERT/DELETE site.
+      Sibling to Followup #118.
+    - PR-D (FE): surface the 5 fields in student edit / view;
+      enforce role-gate on any students_demographics_audit
+      read endpoint introduced.
+    - documentation: privacy-reviewer INFO note that
+      district_id on an audit row is a historical snapshot
+      taken at trigger fire time, not necessarily the
+      tenant's current district_id; downstream district-
+      roll-up reports must not assume currency.
+    - chore (privacy LOW): inline schema comment near
+      gender column documenting why VARCHAR(20) is sized
+      for the 17-char 'prefer_not_to_say' literal.
+  Pre-existing standing followups (#73 no backend tests,
+  #74 no backend lint, #81 no CSRF on state-changing routes,
+  #94 untracked ops files with real surnames) continue to
+  stand; not introduced or worsened here.
+
+NEXT SESSION SHOULD
+  PR-B (CSV import extension + constants/studentDemographics.js)
+  is the natural next unit and unblocks operator-driven student-
+  roster imports populating the new demographic columns. PR-C
+  (backend writes with GUC plumbing) and PR-D (FE) follow.
+================================================================================
