@@ -512,21 +512,27 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
           // already failed. Swallow the secondary error so the
           // primary one reaches the operator.
         }
-        // Translate the partial UNIQUE index from Migration 035 into a clean
-        // operator-facing message. Same text as POST/PUT 409 path in
-        // routes/students.js. Scoped STRICTLY to known constraints — broader
-        // pg-error-code translation is deferred to fix/api-dberror-translation.
+        // Whitelist known-safe constraints with translated, operator-
+        // facing messages. All other pg errors redact to a generic
+        // string; code + constraint are logged server-side only — pg
+        // messages can echo column values and would surface row context
+        // (now including M042 demographic PII) to the FE. Shape mirrors
+        // the sibling staff-import handler below.
         let errorMessage;
         if (dbError.code === '23505' && dbError.constraint === 'idx_students_tenant_external_id') {
           errorMessage = 'A student with this external_id already exists in this school.';
         } else if (dbError.code === '23505' && dbError.constraint === 'student_race_ethnicity_unique') {
           errorMessage = 'Duplicate race/ethnicity code on the same student.';
         } else {
-          errorMessage = dbError.message;
+          errorMessage = 'Failed to import student';
+          console.error('[csv:student-import] insert error code:', dbError.code, 'constraint:', dbError.constraint);
         }
+        // data: student is intentionally omitted — the row object now
+        // carries M042 demographic PII (iep/504/ell/gender/race) and
+        // must not be echoed back in the response. row number is
+        // sufficient for the operator to locate the offending CSV row.
         insertErrors.push({
           row: student.row,
-          data: student,
           error: errorMessage
         });
       } finally {
