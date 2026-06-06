@@ -39,6 +39,12 @@ import DistrictDashboardView from './views/DistrictDashboardView';
 import Section504Tab from './components/Section504/Section504Tab';
 import TeacherAccommodationsView from './components/Section504/TeacherAccommodationsView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
+import {
+  GENDER_CODES,
+  GENDER_LABELS,
+  FLAG_FIELDS,
+  FLAG_LABELS,
+} from './constants/studentDemographics';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
@@ -71,7 +77,56 @@ const FERPABadge = ({ compact = false }) => (
   </div>
 );
 
+// Three-state demographic flag widget. State values are the wire shape
+// (true / false / null), NEVER stringly-typed at this layer. Default for
+// a new student is null (Unknown) — M042 three-state semantic; blank
+// must never coerce to false. Pattern mirrors the radio-group shape used
+// across the Section 504 form modals (FormJ / FormI / FormC).
+function DemographicFlagRadioGroup({ name, label, value, onChange }) {
+  return (
+    <fieldset className="border-0 p-0 m-0">
+      <legend className="block text-sm font-medium text-slate-700 mb-1">{label}</legend>
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-1 text-sm text-slate-700">
+          <input
+            type="radio"
+            name={name}
+            checked={value === true}
+            onChange={() => onChange(true)}
+          />
+          <span>Yes</span>
+        </label>
+        <label className="flex items-center gap-1 text-sm text-slate-700">
+          <input
+            type="radio"
+            name={name}
+            checked={value === false}
+            onChange={() => onChange(false)}
+          />
+          <span>No</span>
+        </label>
+        <label className="flex items-center gap-1 text-sm text-slate-700">
+          <input
+            type="radio"
+            name={name}
+            checked={value === null}
+            onChange={() => onChange(null)}
+          />
+          <span>Unknown</span>
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
 function AddStudentForm({ onSave, onCancel, gradeOptions }) {
+  // M042 demographic defaults: flags default to null (Unknown), gender
+  // defaults to null (Not recorded). Wire shape on POST matches PR-C
+  // sanitizers: booleans are real true/false/null primitives; gender is
+  // a code from GENDER_CODES or null. The empty-string '' sentinel for
+  // gender's "Not recorded" select option is converted to null at submit
+  // time (the BE's sanitizeGenderJson also collapses '' → null, but the
+  // FE wire shape stays clean — no '' on the wire).
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
@@ -79,7 +134,11 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
     tier: '1',
     area: '',
     secondary_area: '',
-    risk_level: 'low'
+    risk_level: 'low',
+    iep_flag: null,
+    sec_504_flag: null,
+    ell_flag: null,
+    gender: null,
   });
 
   const handleSave = () => {
@@ -179,6 +238,47 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
             <option value="moderate">Moderate</option>
             <option value="high">High</option>
           </select>
+        </div>
+      </div>
+
+      {/* M042 demographic fields — separate section so the visual grouping
+          signals "protected status / identity" distinct from intervention
+          program data above. Race/ethnicity is intentionally deferred to
+          PR-E (gated on the GET /students payload widening). */}
+      <div className="mt-6 pt-4 border-t border-indigo-200">
+        <h4 className="text-sm font-semibold text-slate-700 mb-3">Student Demographics <span className="text-xs font-normal text-slate-500">(all optional — leave Unknown / Not recorded if you don't have the data)</span></h4>
+        <div className="grid grid-cols-2 gap-4">
+          <DemographicFlagRadioGroup
+            name="add-iep-flag"
+            label={FLAG_LABELS.iep_flag}
+            value={form.iep_flag}
+            onChange={(v) => setForm({ ...form, iep_flag: v })}
+          />
+          <DemographicFlagRadioGroup
+            name="add-sec-504-flag"
+            label={FLAG_LABELS.sec_504_flag}
+            value={form.sec_504_flag}
+            onChange={(v) => setForm({ ...form, sec_504_flag: v })}
+          />
+          <DemographicFlagRadioGroup
+            name="add-ell-flag"
+            label={FLAG_LABELS.ell_flag}
+            value={form.ell_flag}
+            onChange={(v) => setForm({ ...form, ell_flag: v })}
+          />
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Gender</label>
+            <select
+              value={form.gender === null ? '' : form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value === '' ? null : e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Not recorded</option>
+              {GENDER_CODES.map((code) => (
+                <option key={code} value={code}>{GENDER_LABELS[code]}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -383,6 +483,9 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     // Student management state
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
+  // studentForm carries the edit-form state. M042 demographic fields are
+  // appended to the existing shape; flags + gender default to null
+  // (Unknown / Not recorded), never false / empty string.
   const [studentForm, setStudentForm] = useState({
     first_name: '',
     last_name: '',
@@ -390,7 +493,25 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     tier: '1',
     area: '',
     secondary_area: '',
-    risk_level: 'low'
+    risk_level: 'low',
+    iep_flag: null,
+    sec_504_flag: null,
+    ell_flag: null,
+    gender: null,
+  });
+  // initialDemographics is the per-student snapshot captured at the
+  // moment startEditStudent runs. handleUpdateStudent diffs the current
+  // studentForm demographic values against this snapshot and only emits
+  // keys whose value changed. This is what makes the BE's preserve-on-
+  // omit semantic (Object.prototype.hasOwnProperty gate in routes/
+  // students.js PUT) observable end-to-end: an untouched flag yields no
+  // key on the wire, the BE skips the CASE-WHEN, the column is preserved
+  // as-is. Race/ethnicity intentionally absent until PR-E.
+  const [initialDemographics, setInitialDemographics] = useState({
+    iep_flag: null,
+    sec_504_flag: null,
+    ell_flag: null,
+    gender: null,
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   // Parent account creation state
@@ -1787,22 +1908,47 @@ const handleUnlinkParent = async (linkId) => {
     }
   };
 
-  // Update student
+  // Update student.
+  //
+  // Preserve-on-omit contract (M042 / PR-C / PR-D):
+  // The four demographic keys (iep_flag, sec_504_flag, ell_flag, gender)
+  // are only included in the PUT body when their current form value
+  // differs from the initialDemographics snapshot captured by
+  // startEditStudent. When unchanged, the key is OMITTED — not sent as
+  // null. The BE PUT handler uses Object.prototype.hasOwnProperty to
+  // distinguish "not present" (preserve) from "present and null" (clear
+  // back to Unknown). Sending {iep_flag: null} for an unchanged Unknown
+  // flag would still preserve the column at the DB level (null === null),
+  // but it would emit a no-op audit row and break the smoke-test invariant
+  // that "untouched-save emits zero demographic keys." Diffing is the
+  // only correct shape.
+  //
+  // The non-demographic fields keep their pre-PR-D "always send" shape —
+  // that's out of PR-D scope to change.
   const handleUpdateStudent = async () => {
     if (!editingStudent || !studentForm.first_name || !studentForm.last_name || !studentForm.grade) return;
     try {
+      const body = {
+        first_name: studentForm.first_name,
+        last_name: studentForm.last_name,
+        grade: studentForm.grade,
+        tier: parseInt(studentForm.tier),
+        area: studentForm.area || null,
+        secondary_area: studentForm.secondary_area || null,
+        risk_level: studentForm.risk_level,
+      };
+      for (const field of FLAG_FIELDS) {
+        if (studentForm[field] !== initialDemographics[field]) {
+          body[field] = studentForm[field];
+        }
+      }
+      if (studentForm.gender !== initialDemographics.gender) {
+        body.gender = studentForm.gender;
+      }
       const res = await apiFetch(`${API_URL}/students/${editingStudent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: studentForm.first_name,
-          last_name: studentForm.last_name,
-          grade: studentForm.grade,
-          tier: parseInt(studentForm.tier),
-          area: studentForm.area || null,
-          secondary_area: studentForm.secondary_area || null,
-          risk_level: studentForm.risk_level
-        })
+        body: JSON.stringify(body)
       });
       if (res.ok) {
         fetchStudents(user.tenant_id, showArchived);
@@ -1829,9 +1975,27 @@ const handleUnlinkParent = async (linkId) => {
     }
   };
 
-  // Start editing student
+  // Start editing student. Captures an initialDemographics snapshot at
+  // the same moment as the studentForm load so handleUpdateStudent can
+  // perform a clean diff at submit time. Source for the snapshot is the
+  // student row returned by GET /students/tenant/:tenantId (which is a
+  // SELECT s.*, so the four M042 scalar columns come back natively).
+  // Note: race_ethnicity is NOT in the GET payload and NOT in PR-D scope.
+  // Normalize undefined → null for the demographic keys: legacy student
+  // rows pre-M042 may have NULL columns in the DB, which pg returns as
+  // null; new rows from PR-C also write null for unknown. Anything other
+  // than true / false / a known gender code becomes null — the canonical
+  // "Unknown" wire value.
+  const normalizeFlag = (v) => (v === true ? true : v === false ? false : null);
+  const normalizeGender = (v) => (typeof v === 'string' && GENDER_CODES.includes(v) ? v : null);
  const startEditStudent = (student) => {
     setEditingStudent(student);
+    const snap = {
+      iep_flag: normalizeFlag(student.iep_flag),
+      sec_504_flag: normalizeFlag(student.sec_504_flag),
+      ell_flag: normalizeFlag(student.ell_flag),
+      gender: normalizeGender(student.gender),
+    };
     setStudentForm({
       first_name: student.first_name,
       last_name: student.last_name,
@@ -1839,8 +2003,10 @@ const handleUnlinkParent = async (linkId) => {
       tier: student.tier.toString(),
       area: student.area || '',
       secondary_area: student.secondary_area || '',
-      risk_level: student.risk_level || 'low'
+      risk_level: student.risk_level || 'low',
+      ...snap,
     });
+    setInitialDemographics(snap);
     setShowAddStudent(false);
   };
 
@@ -1852,7 +2018,18 @@ const handleUnlinkParent = async (linkId) => {
       grade: '',
       tier: '1',
       area: '',
-      risk_level: 'low'
+      secondary_area: '',
+      risk_level: 'low',
+      iep_flag: null,
+      sec_504_flag: null,
+      ell_flag: null,
+      gender: null,
+    });
+    setInitialDemographics({
+      iep_flag: null,
+      sec_504_flag: null,
+      ell_flag: null,
+      gender: null,
     });
   };
 
@@ -5233,6 +5410,10 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
               gradeOptions={gradeOptions}
               onSave={async (formData) => {
                 try {
+                  // M042 demographic fields are always included in the
+                  // POST body. POST has no preserve-on-omit semantic —
+                  // a new student has no prior state. Wire shape:
+                  // flags = true/false/null; gender = code or null.
                   const res = await apiFetch(`${API_URL}/students`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -5243,7 +5424,11 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
                       grade: formData.grade,
                       tier: parseInt(formData.tier),
                       area: formData.area || null,
-                      risk_level: formData.risk_level
+                      risk_level: formData.risk_level,
+                      iep_flag: formData.iep_flag,
+                      sec_504_flag: formData.sec_504_flag,
+                      ell_flag: formData.ell_flag,
+                      gender: formData.gender,
                     })
                   });
                   if (res.ok) {
@@ -5339,6 +5524,47 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
           <option value="moderate">Moderate</option>
           <option value="high">High</option>
         </select>
+      </div>
+    </div>
+    {/* M042 demographic fields — preserve-on-omit at submit. An untouched
+        widget leaves studentForm[field] === initialDemographics[field],
+        and handleUpdateStudent skips emitting that key. Loading an
+        Unknown flag (null) renders the Unknown radio selected — never
+        coerced to No. */}
+    <div className="mt-6 pt-4 border-t border-slate-300">
+      <h4 className="text-sm font-semibold text-slate-700 mb-3">Student Demographics <span className="text-xs font-normal text-slate-500">(leave Unknown / Not recorded if no data on file)</span></h4>
+      <div className="grid grid-cols-2 gap-4">
+        <DemographicFlagRadioGroup
+          name="edit-iep-flag"
+          label={FLAG_LABELS.iep_flag}
+          value={studentForm.iep_flag}
+          onChange={(v) => setStudentForm({ ...studentForm, iep_flag: v })}
+        />
+        <DemographicFlagRadioGroup
+          name="edit-sec-504-flag"
+          label={FLAG_LABELS.sec_504_flag}
+          value={studentForm.sec_504_flag}
+          onChange={(v) => setStudentForm({ ...studentForm, sec_504_flag: v })}
+        />
+        <DemographicFlagRadioGroup
+          name="edit-ell-flag"
+          label={FLAG_LABELS.ell_flag}
+          value={studentForm.ell_flag}
+          onChange={(v) => setStudentForm({ ...studentForm, ell_flag: v })}
+        />
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Gender</label>
+          <select
+            value={studentForm.gender === null ? '' : studentForm.gender}
+            onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value === '' ? null : e.target.value })}
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">Not recorded</option>
+            {GENDER_CODES.map((code) => (
+              <option key={code} value={code}>{GENDER_LABELS[code]}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
     <div className="flex gap-3 mt-4">
@@ -6155,9 +6381,16 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                   <li><code className="bg-slate-200 px-1 rounded">tier</code> (1, 2, or 3 — default: 1)</li>
                   <li><code className="bg-slate-200 px-1 rounded">area</code> (Academic, Behavior, Social-Emotional)</li>
                   <li><code className="bg-slate-200 px-1 rounded">risk_level</code> (low, moderate, high — default: low)</li>
+                  <li><code className="bg-slate-200 px-1 rounded">iep_flag</code> (TRUE/FALSE — see note below)</li>
+                  <li><code className="bg-slate-200 px-1 rounded">sec_504_flag</code> (TRUE/FALSE — see note below)</li>
+                  <li><code className="bg-slate-200 px-1 rounded">ell_flag</code> (TRUE/FALSE — see note below)</li>
+                  <li><code className="bg-slate-200 px-1 rounded">gender</code> (M, F, X, prefer_not_to_say)</li>
                 </ul>
               </div>
             </div>
+            <p className="mt-3 text-xs text-slate-500 italic">
+              For <code className="bg-slate-200 px-1 rounded">iep_flag</code>, <code className="bg-slate-200 px-1 rounded">sec_504_flag</code>, and <code className="bg-slate-200 px-1 rounded">ell_flag</code>: a blank cell means <strong>Unknown</strong> — it is NOT auto-coerced to FALSE. Accepted truthy tokens: TRUE/T/1/YES/Y. Accepted falsy tokens: FALSE/F/0/NO/N. Same shape for <code className="bg-slate-200 px-1 rounded">gender</code> — blank means not recorded.
+            </p>
             <button
               onClick={downloadCsvTemplate}
               className="mt-4 flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
