@@ -24915,3 +24915,115 @@ NEXT SESSION SHOULD
   follow-ups (per OPEN ITEMS above) are available as
   independent chore PRs whenever convenient.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-06T06:48:57-0700
+BRANCH:  chore/sec-interventions-templates-role-gate
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/227 (merge commit 564c50cd5e4243cc1f86f20ddd75330383b677d2; §2A external human review APPROVED before merge; reviewDecision=APPROVED at merge time).
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Surgical sec-chore closing the templates-routes role-gate
+  followup banked S116. Pre-PR, POST /api/interventions/templates
+  and DELETE /api/interventions/templates/:id were authenticated
+  (router-level requireAuth at server.js mount) but lacked a role
+  allowlist — any authenticated education_assistant or parent
+  could create or delete custom intervention_templates rows
+  within their accessible tenant set. Post-PR, both roles
+  collapse to 403 via a positive INTERVENTION_MANAGER_ROLES
+  check placed at the very top of each handler's try-block,
+  before any input parsing or DB I/O.
+
+  One commit. Mirrors the precedent at routes/interventions.js
+  POST /assign and the sibling routers
+  (routes/interventionAssignments.js, routes/interventionPlans.js)
+  — same constant, same FORBIDDEN_BODY shape, same 403 body for
+  byte-identical probe resistance with the existing tenant-scope
+  rejections. Role gate placed BEFORE input parsing per S116
+  role-gate-before-input-parse lesson — no 400-vs-403 format-of-id
+  signal on DELETE, no body-shape signal on POST.
+
+FILES TOUCHED
+  routes/interventions.js — adds an 8-line positive
+    INTERVENTION_MANAGER_ROLES check at the top of POST
+    /templates and DELETE /templates/:id try-blocks (+16/-0).
+    No other changes.
+
+MIGRATIONS RUN
+  None. No schema change.
+
+TENANT ISOLATION REVIEW
+  No new SQL. The existing tenant-scope checks (via
+  resolveAccessibleTenantIds, §5 dual-path helper) at both
+  handlers are unchanged and still fire for allow-case
+  callers. Role gate runs before scope resolution but does
+  not replace it — both gates are still present, ordered
+  correctly. No new query on intervention_templates, no
+  change to the existing SELECT / INSERT / DELETE shapes.
+
+PRIVACY REVIEW (Section 4B)
+  No new DB columns, no new fields read or written, no new
+  logging, no new error-body content. Existing console.error
+  lines unchanged (integer user_id + err.message only).
+  Denial body is the existing FORBIDDEN_BODY static literal
+  ({ error: 'Not authorized' }). Zero PII.
+  Section 4B grep on PR body before gh pr create — 0 PII hits
+  (only proper-noun match was "Claude Code" in the generator
+  trailer). Smoke output in PR body written with role + integer
+  user_id only — no seed names, no school slug, no email
+  addresses.
+  Activities-log entry (this one) also §4B-clean — role +
+  table + row counts only; zero ids of any kind.
+
+VERIFICATION
+  No backend test suite (Followup #73) — honest acknowledgement
+  No backend lint config (Followup #74) — honest acknowledgement
+  Local smoke test against dev DB — direct router-layer
+    invocation, 4 roles × 2 routes = 8 calls. Two
+    INTERVENTION_MANAGER_ROLES members (counselor +
+    interventionist) succeeded on both routes (201 on POST,
+    200 on DELETE); two non-manager roles (education_assistant
+    + parent) returned 403 on both routes with byte-identical
+    FORBIDDEN_BODY. DELETE deny cases targeted a real
+    existing custom intervention_templates row in 1 test
+    tenant that the allow-case counselor then deleted
+    successfully — confirms the 403 on the deny cases came
+    from the role gate, not from row-not-found / tenant-scope
+    / system-default filtering. Temp users (2) + temp
+    intervention_templates rows inserted for the smoke; all
+    deleted post-run; residual-row queries returned 0 rows
+    in both tables.
+  Section 4B grep on PR body before gh pr create — 0 PII hits.
+  merge-sha verification: MATCH for PR #227
+    feature tip:         90ea8d04898d24450d8b3dced4cb7549e2350088
+    merge second-parent: 90ea8d04898d24450d8b3dced4cb7549e2350088
+    merge commit:        564c50cd5e4243cc1f86f20ddd75330383b677d2
+  security-reviewer subagent ran against branch diff vs
+  origin/main before push — APPROVED, 0 CRITICAL, 0 WARN,
+  3 INFO (positive-gate placement on POST, placement on DELETE,
+  constant import correctness) plus OK panel covering role-
+  source integrity, JWT validation, router-mount authentication,
+  probe-resistance / 403 body parity, secrets scan, SQL
+  parameterization, rate limiting, §4B PII, §5 tenant isolation,
+  and attack-surface scan.
+
+OPEN ITEMS / FOLLOW-UPS
+  None new from this PR. The S116-banked templates-routes
+  followup
+  (project_followup_sec_interventions_templates_role_gate)
+  is now CLOSED. Pre-existing followups (#73 no backend tests,
+  #74 no backend lint, #81 no CSRF on state-changing routes)
+  continue to stand; not introduced or worsened here.
+  Out-of-scope note carried in PR body: a teacher remains in
+  INTERVENTION_MANAGER_ROLES and can therefore create/delete
+  custom intervention_templates within their accessible
+  tenant set. This matches POST /assign and the FE
+  canManageInterventions predicate. If product wants templates
+  to be school_admin+ only, that is a separate constants
+  change with full reviewer-triad routing — explicitly out of
+  scope for this PR.
+
+NEXT SESSION SHOULD
+  Operator-discretion follow-ups from earlier session OPEN
+  ITEMS remain available; no specific next-step required from
+  this PR.
+================================================================================
