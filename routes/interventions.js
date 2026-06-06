@@ -70,6 +70,14 @@ router.get('/templates/tenant/:tenantId', requireTenantStaffAccess, async (req, 
 // byte-identical 403 — no existence disclosure across tenants.
 router.post('/templates', async (req, res) => {
   try {
+    // Positive role gate: only INTERVENTION_MANAGER_ROLES may create
+    // templates. Mirrors POST /assign (line 168) and the sibling routers
+    // (interventionAssignments.js:16, interventionPlans.js:27). Excludes
+    // 'parent' and 'education_assistant' by allowlist membership.
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const { tenant_id, name, description, area, tier } = req.body || {};
 
     // Coerce + validate body.tenant_id per the #204 lesson. FE at App.jsx:1693
@@ -111,6 +119,14 @@ router.post('/templates', async (req, res) => {
 // The :id path param is Number()-coerced per the PR #204 lesson.
 router.delete('/templates/:id', async (req, res) => {
   try {
+    // Positive role gate: only INTERVENTION_MANAGER_ROLES may delete
+    // templates. Mirrors POST /assign (line 168) and the sibling routers
+    // (interventionAssignments.js:16, interventionPlans.js:27). Excludes
+    // 'parent' and 'education_assistant' by allowlist membership.
+    if (!INTERVENTION_MANAGER_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
     const idInt = Number(req.params.id);
     if (!Number.isInteger(idInt) || idInt <= 0) {
       return res.status(400).json({ error: 'Invalid template id' });
