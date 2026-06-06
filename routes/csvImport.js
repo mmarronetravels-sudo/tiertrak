@@ -12,6 +12,14 @@ const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { STAFF_ROLES, CREATE_STAFF_RULES } = require('./staffManagement');
 const { ELEVATED_ROLES } = require('../constants/roles');
+const {
+  GENDER_CODES,
+  RACE_ETHNICITY_CODES,
+  FLAG_FIELDS,
+  BOOL_TRUE_TOKENS,
+  BOOL_FALSE_TOKENS,
+  RACE_ETHNICITY_CSV_SEPARATOR,
+} = require('../constants/studentDemographics');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -97,6 +105,70 @@ function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
 }
 
+// ----------------------------------------------------------------------
+// M042 student-demographics CSV sanitizers
+// ----------------------------------------------------------------------
+//
+// All three return { value, error }. error===null on success; value is
+// the normalized form (null for "absent" / "unknown"). Error strings
+// cite the column name and the valid set — they NEVER echo the
+// offending input value (§4B). Blank / whitespace-only input always
+// coerces to null (unknown), NEVER to false for boolean flags — the
+// M042 three-state semantic is load-bearing.
+
+function sanitizeBooleanFlag(raw, columnName) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: null, error: null };
+  }
+  const upper = raw.toUpperCase();
+  if (BOOL_TRUE_TOKENS.includes(upper)) return { value: true, error: null };
+  if (BOOL_FALSE_TOKENS.includes(upper)) return { value: false, error: null };
+  return {
+    value: null,
+    error: `Invalid ${columnName}. Must be one of ${BOOL_TRUE_TOKENS.join('/')} or ${BOOL_FALSE_TOKENS.join('/')} (blank = unknown).`,
+  };
+}
+
+function sanitizeGender(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: null, error: null };
+  }
+  const upper = raw.toUpperCase();
+  for (const code of GENDER_CODES) {
+    if (code.toUpperCase() === upper) return { value: code, error: null };
+  }
+  return {
+    value: null,
+    error: `Invalid gender. Must be one of: ${GENDER_CODES.join(', ')}.`,
+  };
+}
+
+function sanitizeRaceEthnicity(raw) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { value: [], error: null };
+  }
+  const allowed = new Set(RACE_ETHNICITY_CODES);
+  const parts = raw
+    .split(RACE_ETHNICITY_CSV_SEPARATOR)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  const seen = new Set();
+  const codes = [];
+  for (const part of parts) {
+    if (!allowed.has(part)) {
+      return {
+        value: null,
+        error: `Invalid race_ethnicity code. Must be one or more of: ${RACE_ETHNICITY_CODES.join(', ')} (separated by '${RACE_ETHNICITY_CSV_SEPARATOR}').`,
+      };
+    }
+    if (!seen.has(part)) {
+      seen.add(part);
+      codes.push(part);
+    }
+  }
+  return { value: codes, error: null };
+}
+
 /**
  * Resolve and validate the target tenant for a POST write handler.
  *
@@ -139,33 +211,60 @@ async function resolveAndBindTargetTenant(req) {
 // Get CSV template info
 router.get('/template', requireAuth, (req, res) => {
   res.json({
-    columns: ['first_name', 'last_name', 'grade', 'external_id', 'tier', 'area', 'risk_level'],
+    columns: [
+      'first_name', 'last_name', 'grade', 'external_id', 'tier', 'area', 'risk_level',
+      ...FLAG_FIELDS, 'gender', 'race_ethnicity'
+    ],
     required: ['first_name', 'last_name', 'grade'],
-    optional: ['external_id', 'tier', 'area', 'risk_level'],
+    optional: [
+      'external_id', 'tier', 'area', 'risk_level',
+      ...FLAG_FIELDS, 'gender', 'race_ethnicity'
+    ],
     defaults: {
       tier: 1,
       area: null,
-      risk_level: 'low'
+      risk_level: 'low',
+      iep_flag: null,
+      sec_504_flag: null,
+      ell_flag: null,
+      gender: null,
+      race_ethnicity: null
     },
     validValues: {
       tier: [1, 2, 3],
       area: ['Academic', 'Behavior', 'Social-Emotional'],
-      risk_level: ['low', 'moderate', 'high']
+      risk_level: ['low', 'moderate', 'high'],
+      iep_flag: { trueTokens: BOOL_TRUE_TOKENS, falseTokens: BOOL_FALSE_TOKENS, blankMeansUnknown: true },
+      sec_504_flag: { trueTokens: BOOL_TRUE_TOKENS, falseTokens: BOOL_FALSE_TOKENS, blankMeansUnknown: true },
+      ell_flag: { trueTokens: BOOL_TRUE_TOKENS, falseTokens: BOOL_FALSE_TOKENS, blankMeansUnknown: true },
+      gender: GENDER_CODES,
+      race_ethnicity: RACE_ETHNICITY_CODES
     },
     helpText: {
       grade: "Required. Free text — any non-empty value is accepted and stored as-is; there is no format check. Follow the convention shown in the example rows (ordinal labels like '3rd' and '5th', and 'K'/'Pre-K' for early grades); downstream sorting and display depend on that convention, not on validation.",
-      external_id: "Optional. The student's SIS-issued ID (PowerSchool, Skyward, Infinite Campus, Aeries, etc.), stored verbatim as text. Blank coerces to null, and multiple blank rows are allowed. Must be unique within this school/tenant — a value repeated within the upload is rejected before insert with both row numbers surfaced, and a value already used by another student here is rejected as 'A student with this external_id already exists in this school.' Different tenants may legitimately reuse the same external_id."
+      external_id: "Optional. The student's SIS-issued ID (PowerSchool, Skyward, Infinite Campus, Aeries, etc.), stored verbatim as text. Blank coerces to null, and multiple blank rows are allowed. Must be unique within this school/tenant — a value repeated within the upload is rejected before insert with both row numbers surfaced, and a value already used by another student here is rejected as 'A student with this external_id already exists in this school.' Different tenants may legitimately reuse the same external_id.",
+      iep_flag: `Optional. Accepted as ${BOOL_TRUE_TOKENS.join('/')} or ${BOOL_FALSE_TOKENS.join('/')} (case-insensitive). Blank means unknown — it is NOT auto-coerced to FALSE. Canonical token sets in constants/studentDemographics.js.`,
+      sec_504_flag: 'Optional. Same shape as iep_flag.',
+      ell_flag: 'Optional. Same shape as iep_flag.',
+      gender: `Optional. One of: ${GENDER_CODES.join(', ')} (case-insensitive match against the canonical codes). Blank means unknown. Canonical codes in constants/studentDemographics.js.`,
+      race_ethnicity: `Optional. One or more of: ${RACE_ETHNICITY_CODES.join(', ')}, separated by '${RACE_ETHNICITY_CSV_SEPARATOR}' (case-insensitive). Repeats within the cell are silently collapsed. Blank means none recorded. Canonical codes in constants/studentDemographics.js.`
     },
     exampleRows: [
-      { first_name: 'John', last_name: 'Smith', grade: '3rd', external_id: 'STU-12345', tier: 1, area: 'Academic', risk_level: 'low' },
-      { first_name: 'Jane', last_name: 'Doe', grade: '5th', external_id: 'STU-67890', tier: 2, area: 'Behavior', risk_level: 'moderate' }
+      { first_name: 'John', last_name: 'Smith', grade: '3rd', external_id: 'STU-12345', tier: 1, area: 'Academic', risk_level: 'low', iep_flag: 'TRUE', sec_504_flag: 'FALSE', ell_flag: 'FALSE', gender: 'M', race_ethnicity: `ASIAN${RACE_ETHNICITY_CSV_SEPARATOR}WHITE` },
+      { first_name: 'Jane', last_name: 'Doe', grade: '5th', external_id: 'STU-67890', tier: 2, area: 'Behavior', risk_level: 'moderate', iep_flag: '', sec_504_flag: '', ell_flag: '', gender: '', race_ethnicity: '' }
     ]
   });
 });
 
 // Download CSV template
 router.get('/template/download', requireAuth, (req, res) => {
-  const csvContent = 'first_name,last_name,grade,external_id,tier,area,risk_level\nJohn,Smith,3rd,STU-12345,1,Academic,low\nJane,Doe,5th,STU-67890,2,Behavior,moderate';
+  const headers = [
+    'first_name', 'last_name', 'grade', 'external_id', 'tier', 'area', 'risk_level',
+    ...FLAG_FIELDS, 'gender', 'race_ethnicity'
+  ].join(',');
+  const row1 = ['John', 'Smith', '3rd', 'STU-12345', '1', 'Academic', 'low', 'TRUE', 'FALSE', 'FALSE', 'M', `ASIAN${RACE_ETHNICITY_CSV_SEPARATOR}WHITE`].join(',');
+  const row2 = ['Jane', 'Doe', '5th', 'STU-67890', '2', 'Behavior', 'moderate', '', '', '', '', ''].join(',');
+  const csvContent = `${headers}\n${row1}\n${row2}`;
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=student_import_template.csv');
   res.send(csvContent);
@@ -310,6 +409,35 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
             externalIdFirstRow.set(externalId, rowNumber);
           }
 
+          // M042 demographic fields — all OPTIONAL, absent / blank → null
+          // (unknown). Bad values rejected pre-INSERT with column + valid-set
+          // error messages; the offending value is NEVER echoed (§4B).
+          const iepResult = sanitizeBooleanFlag(normalizedRow.iep_flag, 'iep_flag');
+          if (iepResult.error) {
+            errors.push({ row: rowNumber, error: iepResult.error });
+            return;
+          }
+          const sec504Result = sanitizeBooleanFlag(normalizedRow.sec_504_flag, 'sec_504_flag');
+          if (sec504Result.error) {
+            errors.push({ row: rowNumber, error: sec504Result.error });
+            return;
+          }
+          const ellResult = sanitizeBooleanFlag(normalizedRow.ell_flag, 'ell_flag');
+          if (ellResult.error) {
+            errors.push({ row: rowNumber, error: ellResult.error });
+            return;
+          }
+          const genderResult = sanitizeGender(normalizedRow.gender);
+          if (genderResult.error) {
+            errors.push({ row: rowNumber, error: genderResult.error });
+            return;
+          }
+          const raceResult = sanitizeRaceEthnicity(normalizedRow.race_ethnicity);
+          if (raceResult.error) {
+            errors.push({ row: rowNumber, error: raceResult.error });
+            return;
+          }
+
           results.push({
             row: rowNumber,
             first_name: normalizedRow.first_name,
@@ -318,7 +446,12 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
             tier: tier,
             area: area,
             risk_level: riskLevel,
-            external_id: externalId
+            external_id: externalId,
+            iep_flag: iepResult.value,
+            sec_504_flag: sec504Result.value,
+            ell_flag: ellResult.value,
+            gender: genderResult.value,
+            race_ethnicity: raceResult.value
           });
         })
         .on('end', () => resolve())
@@ -327,34 +460,77 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
 
     await parsePromise;
 
-    // Insert valid students into database
+    // Insert valid students into database.
+    //
+    // Per-row transaction wraps the parent students INSERT and any child
+    // student_race_ethnicity INSERTs together for atomicity: a mid-row
+    // child failure rolls the parent back so there is no orphan student
+    // with partial race/ethnicity rows. Per M042 doctrine (lines 22-24,
+    // 124-126) the GUC `app.actor_user_id` is deliberately NOT set —
+    // import-set audit rows must carry actor_user_id = NULL, the
+    // documented "set at import" semantic.
     const inserted = [];
 
     for (const student of results) {
+      const client = await pool.connect();
       try {
-        const result = await pool.query(
-          `INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level, external_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        await client.query('BEGIN');
+
+        const parentResult = await client.query(
+          `INSERT INTO students (tenant_id, first_name, last_name, grade, tier, area, risk_level, external_id, iep_flag, sec_504_flag, ell_flag, gender)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            RETURNING *`,
-          [tenantId, student.first_name, student.last_name, student.grade, student.tier, student.area, student.risk_level, student.external_id]
+          [tenantId, student.first_name, student.last_name, student.grade, student.tier, student.area, student.risk_level, student.external_id,
+           student.iep_flag, student.sec_504_flag, student.ell_flag, student.gender]
         );
+        const parent = parentResult.rows[0];
+
+        // tenant_id is passed EXPLICITLY from the per-request bound
+        // tenantId — never derived from `parent.tenant_id` — so the §5
+        // composite-FK enforcement is an explicit author decision at
+        // this call site. The composite FK on student_race_ethnicity
+        // would reject a mismatch by construction, but binding here
+        // keeps the intent legible at the read.
+        for (const code of student.race_ethnicity) {
+          await client.query(
+            `INSERT INTO student_race_ethnicity (student_id, tenant_id, category)
+             VALUES ($1, $2, $3)`,
+            [parent.id, tenantId, code]
+          );
+        }
+
+        await client.query('COMMIT');
         inserted.push({
           row: student.row,
-          student: result.rows[0]
+          student: parent
         });
       } catch (dbError) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (_rollbackErr) {
+          // ROLLBACK on a broken connection can throw; the row has
+          // already failed. Swallow the secondary error so the
+          // primary one reaches the operator.
+        }
         // Translate the partial UNIQUE index from Migration 035 into a clean
         // operator-facing message. Same text as POST/PUT 409 path in
-        // routes/students.js. Scoped STRICTLY to this constraint — broader
+        // routes/students.js. Scoped STRICTLY to known constraints — broader
         // pg-error-code translation is deferred to fix/api-dberror-translation.
-        const errorMessage = (dbError.code === '23505' && dbError.constraint === 'idx_students_tenant_external_id')
-          ? 'A student with this external_id already exists in this school.'
-          : dbError.message;
+        let errorMessage;
+        if (dbError.code === '23505' && dbError.constraint === 'idx_students_tenant_external_id') {
+          errorMessage = 'A student with this external_id already exists in this school.';
+        } else if (dbError.code === '23505' && dbError.constraint === 'student_race_ethnicity_unique') {
+          errorMessage = 'Duplicate race/ethnicity code on the same student.';
+        } else {
+          errorMessage = dbError.message;
+        }
         insertErrors.push({
           row: student.row,
           data: student,
           error: errorMessage
         });
+      } finally {
+        client.release();
       }
     }
 
