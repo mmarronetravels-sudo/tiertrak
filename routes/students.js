@@ -586,6 +586,18 @@ router.post('/', requireAuth, async (req, res) => {
   if (!ROLES_WHO_CAN_EDIT.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
+  // Actor-id guard — match M040 precedent at
+  // routes/mtssCoordinators.js:191-195. The GUC writer contract carries
+  // String(actorId) into set_config('app.actor_user_id', ...); the
+  // audit trigger casts back to INTEGER. A non-numeric req.user.id from
+  // a malformed JWT would SQLSTATE 22P02 inside the trigger and roll
+  // back the parent INSERT — fails closed, but opaque. Validate up
+  // front and respond 500 explicitly.
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    console.error('[students:post]', 'invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
+  }
   const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
   if (bindError) return res.status(bindError.status).json(bindError.body);
   const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level, external_id } = req.body;
@@ -613,7 +625,7 @@ router.post('/', requireAuth, async (req, res) => {
     await client.query('BEGIN');
     await client.query(
       "SELECT set_config('app.actor_user_id', $1, true)",
-      [String(req.user.id)]
+      [String(actorId)]
     );
 
     const parentResult = await client.query(
@@ -681,6 +693,14 @@ router.post('/', requireAuth, async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   if (!ADMIN_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
+  }
+  // Actor-id guard — match M040 precedent at
+  // routes/mtssCoordinators.js:191-195. See the parallel POST handler
+  // for the rationale.
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    console.error('[students:put]', 'invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
   }
   const { id } = req.params;
   const { first_name, last_name, grade, teacher_id, tier, area, secondary_area, risk_level } = req.body;
@@ -752,7 +772,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     await client.query('BEGIN');
     await client.query(
       "SELECT set_config('app.actor_user_id', $1, true)",
-      [String(req.user.id)]
+      [String(actorId)]
     );
 
     const result = await client.query(
