@@ -78,10 +78,25 @@ function formatHour(h) {
 // is missing or doesn't match the simple `filename="..."` form. The
 // export route sets a static ASCII filename so we don't handle the
 // RFC 6266 extended `filename*=UTF-8''...` form.
+//
+// Defense-in-depth sanitization (PR #246 security-reviewer WARN-1):
+// the captured filename flows into `a.download`. Modern browsers
+// sanitize path separators, but bidi-override characters (U+202A..E,
+// U+2066..9) can mask the real extension in the OS Downloads UI
+// (e.g. `report<U+202E>fdp.exe` rendered as `reportexe.pdf`). We
+// strip path separators, ASCII control bytes (\x00-\x1f, \x7f), and
+// the bidi overrides; cap at 100 chars. Empty after cleaning → null
+// so the call-site falls back to the static literal.
 function parseFilenameFromContentDisposition(header) {
   if (!header) return null;
   const m = /filename\s*=\s*"([^"]+)"/i.exec(header);
-  return m ? m[1] : null;
+  if (!m) return null;
+  // \uXXXX escapes (not literal chars) so the source itself is safe to
+  // display in editors and code-review surfaces — the literal bidi
+  // chars would re-render the line above to its right.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = m[1].replace(/[\\/\x00-\x1f\x7f\u202A-\u202E\u2066-\u2069]/g, '_').slice(0, 100);
+  return cleaned || null;
 }
 
 // hasDataRows — does the export response contain at least one data row
