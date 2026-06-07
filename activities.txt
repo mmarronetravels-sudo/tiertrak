@@ -26854,3 +26854,150 @@ NEXT SESSION SHOULD
   branch off main (bundle with PR #241 if that one has not landed
   yet).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-07T13:02:53-0700
+BRANCH:  feat/fe-discipline-referral-export-button
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/246 (merge commit 2de0c0c)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added "Export CSV" button to the DisciplineReports frontend view,
+  wiring existing on-screen filter state (school, date range, status)
+  to GET /api/discipline-referrals/export shipped in PR #244. Read-only
+  GET via the global apiFetch wrapper; empty-result UX surfaces an
+  inline notice instead of triggering a header-only download. Defense-
+  in-depth filename sanitization (path separators, ASCII control bytes,
+  bidi overrides; 100-char cap) landed in-branch as a second commit in
+  response to a security-reviewer WARN. 1 file changed, 2 commits.
+
+FILES TOUCHED
+  frontend/src/components/DisciplineReports.jsx — added Export CSV
+    button + parseFilenameFromContentDisposition + hasDataRows helpers
+    + handleExport + buildExportQuery + inline error/empty banners
+    (commit 1); narrowed parseFilenameFromContentDisposition to
+    sanitize the parsed filename before it flows into a.download
+    (commit 2)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — FE-only. buildExportQuery sends school_tenant_id ONLY
+  when the school picker is visible (>1 accessible AND active selection);
+  single-school + legacy single-tenant users omit the param so the
+  server's resolveAccessibleTenantIds returns their full accessible set.
+  FE never becomes the trust boundary. Tenant-isolation auditor not
+  invoked for this PR — no SQL/DB changes — per reviewer-invocation
+  criteria in .claude/agents/tenant-isolation-auditor.md.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none added to FE state. The /export response is
+    read as text only for a header-row check (hasDataRows), then either
+    discarded (empty path) or rewrapped as a Blob and downloaded; the
+    CSV body never enters React state, refs, or persistent storage.
+  Logging audit: 1 new console.error path (logError(err,
+    '[disciplineReports:export]')); err is locally constructed
+    'export status ' + res.status — never the response body. CSV body
+    is never passed to logError or console.
+  Cross-tenant risk: none identified. selectedTenantId is server-
+    authoritative (originates from /auth/me/schools or user.tenant_id);
+    if a spoofed id were sent, the server collapses to 403 (static-
+    analysis stands; live verification deferred — see OPEN ITEMS).
+  §4B grep (narrow + wide) against the new entry's diff vs origin/main:
+    0 matches. Pattern catalog: docs/ai-context/4B_GREP_PATTERNS.md.
+
+VERIFICATION
+  npx eslint frontend/src/components/DisciplineReports.jsx — clean
+    (0 findings on touched file); pre-existing repo-wide lint issues
+    in other files unchanged and out-of-scope.
+  npm test (backend) — honest skip per Followup #73 (no test suite;
+    "test" script in root package.json is the placeholder error stub).
+  npm test (frontend) — honest skip per Followup #73 / PR-D scaffold
+    note (frontend/package.json has no "test" script at all).
+  Scratch verifier (Node, in /tmp, deleted post-run): hasDataRows
+    4/4 PASS (header-only with trailing CRLF → false; header-only no
+    trailing newline → false; header + one data row → true; header +
+    quoted comma + internal CRLF row → true). Blob fidelity round-trip:
+    OWASP leading-' preserved, accented chars preserved, UTF-8 BOM
+    STRIPPED via default TextDecoder behavior (latent caveat — server
+    emits no BOM today, so no current bug; see OPEN ITEMS).
+  Reviewer coverage: privacy + security (tenant-isolation auditor not
+    invoked — no SQL/DB changes).
+    Privacy first-pass: APPROVED-WITH-NOTES (0 CRIT / 0 WARN / 3 INFO
+      — all 3 INFO are pre-existing carryovers, none new). Privacy was
+      NOT re-run after the WARN-1 fix because the narrowing of
+      parseFilenameFromContentDisposition can only reduce exposure,
+      not expand it.
+    Security first-pass: APPROVED-WITH-NOTES (0 CRIT / 2 WARN / 5 INFO);
+      WARN-1 (Content-Disposition filename → a.download sanitization)
+      fixed in-branch via commit 5f31115; WARN-2 (no AbortController
+      on the export request) deliberately deferred — bundled with
+      backend row-cap Q5.
+    Security re-review (post-WARN-1 fix): APPROVED-WITH-NOTES (0 CRIT
+      / 1 WARN-deferred / 3 INFO) — WARN-1 confirmed RESOLVED, no new
+      findings introduced, WARN-2 reconfirmed as deferred.
+  Live prod smoke (PR #244 /export endpoint, run this session, 2026-06-07):
+    single-school path PASS — route live, 16-column header shape
+    correct, free-text staff_notes/admin_notes columns correctly
+    absent from projection. Result recorded as counts only: 4 referral
+    rows, 1 tenant, status=submitted. NOT exercised in prod: district-
+    user multi-school dual-path (no district account available);
+    demographic columns populated states (blank in test data); OWASP
+    formula-injection guard (no triggering data seeded). District
+    multi-school §5 live proof carried forward from PR #244.
+  PR §2A: reviewDecision=APPROVED at merge time (passes the mechanical
+    §2A test). Human review + approve by Kelsey French (IT Dev,
+    ScholarPath) via the shared scholapathsystems account — same
+    pattern as PR #244 / PR #236 (F-236e operator decision stands).
+  merge-sha verification: PASS — true merge commit (2 parents);
+    PARENT2 == HEAD_OID == 5f31115762f3b09bbba859cb3af59be0eb8b33ed;
+    merge commit 2de0c0c8ad8fa09b4141bfbecc1e8cc0d170c499 on main.
+  misattribution check: PASS — FIXES: line SHA verified as a member
+    of `gh pr view 246 --json commits`.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #246 commit OIDs at merge time:
+  d09d50c3ee2ae617416b7405620103d6efcbb442
+  5f31115762f3b09bbba859cb3af59be0eb8b33ed
+
+OPEN ITEMS / FOLLOW-UPS
+  - District multi-school dual-path of /export — §5 live proof STILL
+    OWED, carried forward from PR #244. Static analysis stands; live
+    verification against served bytes requires a real district user
+    with multi-school user_school_access. Test matrix is enumerated
+    in the PR #244 entry and the prior session's chat record.
+  - WARN-2 banked: AbortController on the FE export request — bundle
+    with backend row-cap Q5 (routes/disciplineReferrals.js:827-829)
+    when row-cap lands. Thread an AbortController through apiFetch,
+    abort from useEffect cleanup, handle AbortError silently.
+    Memory pointer: project_followup_export_abortcontroller.md.
+  - BOM-strip latent caveat: FE reads /export with res.text() which
+    strips a UTF-8 BOM via default TextDecoder. Server emits no BOM
+    today, so no current bug. Fix path when needed: res.text() →
+    res.arrayBuffer(), decode a leading slice for hasDataRows, build
+    Blob from the original ArrayBuffer. Likely trigger: Excel-on-
+    Windows UTF-8 detection for accented names.
+  - INFO carryover from privacy first-pass: Cache-Control: no-store
+    on the server response (defense-in-depth alongside the FE's
+    cache: 'no-store'). Belongs on the BE-side review cycle, not
+    this FE PR.
+
+  FIXES:
+    security-reviewer-WARN-1 → PR #246 @ 5f31115762f3b09bbba859cb3af59be0eb8b33ed
+
+NEXT SESSION SHOULD
+  Run and record the district-user multi-school dual-path live prod
+  smoke against /export — owed since PR #244 and reaffirmed in this
+  PR's review. Specifically exercise the resolveAccessibleTenantIds
+  district branch (SELECT school_tenant_id FROM user_school_access
+  WHERE user_id=$1 AND district_id=$2) with a real multi-school
+  district user. The static-analysis-only claim stands until that
+  live proof is recorded. The FE Export button itself needs no
+  further work, but the prod-smoke result feeds back into whether
+  the backend /export tenant-scoping invariant is sound under load.
+  Append the result as a new activities.txt entry (do not rewrite
+  this one — append-only).
+================================================================================
