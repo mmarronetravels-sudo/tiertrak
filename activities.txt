@@ -27001,3 +27001,202 @@ NEXT SESSION SHOULD
   Append the result as a new activities.txt entry (do not rewrite
   this one — append-only).
 ================================================================================
+SESSION: 2026-06-07T14:56:55-0700
+BRANCH:  chore/sandbox-district-multitenant-fixture + fix/sandbox-seed-missing-required-columns
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/248 (merge commit be8bae6) + merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/249 (merge commit 114d893)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Closed the §5 multi-school export non-leakage proof owed since
+  PR #244. Built a synthetic sandbox-district fixture (PR #248) — one
+  district, three schools A/B/C, district-admin user with
+  user_school_access=[A,B], counselor user with user_school_access=[A],
+  three referring-staff teachers, six students, seven discipline
+  referrals across A/B/C with School C row #6 deliberately overlapping
+  School A row #1 on date+status+behavior so a broken isolation path
+  would surface side-by-side. Two local-only SQL emitters (no DB
+  connection, bcrypt locally, password table to stderr, FK-aware
+  teardown that retains user_school_access_audit per FERPA §99.32).
+  Local DB dress rehearsal tripped M034 districts.auth_mode NOT NULL
+  gap; one-stanza fix landed as PR #249 (auth_mode='password', the
+  only enum value consistent with the seed's pre-bcrypted accounts).
+  Both PRs landed via §2A with Kelsey French review. Then ran the
+  fixture on local and prod, recorded the proof, tore down clean.
+
+FILES TOUCHED
+  data/sandbox-district-roster-template.js — new (PR #248); synthetic
+    fixture roster (sandbox-district.example, RFC 2606 reserved). +10
+    line school_wide_access semantics note in PR #248's reviewer-LOW
+    follow-up commit b75446e.
+  scripts/seed-district-sandbox.js — new (PR #248); local-only SQL
+    emitter. +10 lines in PR #248 follow-up b75446e (slug regex check
+    parallel to subdomain + invariant-anchoring comment at INTERVAL
+    interpolation). +5/-2 in PR #249 (auth_mode='password' added to
+    districts INSERT with 3-line rationale comment).
+  scripts/teardown-district-sandbox.js — new (PR #248); local-only
+    teardown emitter. Unchanged by PR #249.
+
+MIGRATIONS RUN
+  none (fixture uses existing schema; no new tables or columns)
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor invoked on both PRs.
+    PR #248: APPROVED (0 CRIT / 0 HIGH / 0 MED; 1 LOW doc-only =
+      school_wide_access semantics clarification, addressed in
+      follow-up commit b75446e; 2 INFO).
+    PR #249: APPROVED (0 findings of any severity). Confirmed
+      districts.auth_mode is not consulted by resolveAccessibleTenantIds
+      or any route / middleware (zero grep hits outside M034 and the
+      seed). The value choice is correctness/usability, not isolation.
+  Composite-FK invariants from M028 (users_id_district_unique +
+    tenants_id_district_unique + user_school_access composite FKs)
+    enforce same-district at the schema layer; cross-district rows
+    are schema-rejected regardless of any future route bug.
+  Bidirectional sandbox↔real customer isolation verified by audit:
+    real customers have no user_school_access rows to sandbox tenants;
+    sandbox users have no user_school_access rows to real tenants;
+    the fixture introduces no platform-admin user.
+
+PRIVACY REVIEW (Section 4B)
+  privacy-reviewer invoked on both PRs.
+    PR #248: APPROVED (0 findings; 5 INFO documenting verification of
+      synthetic-only PII surface, RAISE channel cleanliness, audit-
+      retention preservation, password-table parity with precedent
+      scripts, data minimization).
+    PR #249: APPROVED (0 findings; 4 INFO confirming the added literal
+      'password' is a CHECK enum value, not a credential; no FERPA/
+      COPPA implication from the value choice; posture from PR #248
+      unchanged).
+  §4B grep gate run on both PRs' diffs and PR bodies. Convergent
+    result: all emails @sandbox-district.example (RFC 2606 reserved
+    .example TLD); all names "Sandbox X" / "Synthetic StudentXY";
+    all student IDs SBX-* (sandbox-prefixed, cannot collide with
+    real roster); zero real-world domain mentions.
+  Teardown audit-row retention verified: user_school_access_audit
+    rows from cascade_user_delete trigger are retained per M031
+    + FERPA §99.32; teardown DELETE list explicitly excludes the
+    audit table.
+
+VERIFICATION
+  Reviewer coverage: all three subagents (privacy + tenant-iso +
+    security) on both PRs. Convergent verdict on both: APPROVED.
+    Security on PR #248: APPROVED-WITH-NOTES (0 CRIT / 0 HIGH / 0 MED;
+      1 LOW preventative = INTERVAL literal invariant, addressed in
+      follow-up commit b75446e; 3 INFO).
+    Security on PR #249: APPROVED (0 CRIT / 0 WARN / 0 INFO);
+      'password' literal byte-identical pattern to pre-existing
+      'school' literal at tenants INSERT; PR #248's escape-helper
+      invariant preserved.
+
+  Local DB dress rehearsal (full §5 triad, counts-only):
+    Seed applied; preflights cleared; district + 3 schools + 5 users
+    + 6 students + per-school discipline vocab (7 tables × 3 schools)
+    + 7 referrals committed in one transaction.
+    Subject 1: district_admin (user_school_access=[A,B]).
+      GET /api/discipline-referrals/export → 5 data rows from 2
+        schools (3 from A, 2 from B), 0 from the 3rd school.
+      GET /api/discipline-referrals/export?school_tenant_id=<A> →
+        3 data rows.
+      GET /api/discipline-referrals/export?school_tenant_id=<B> →
+        2 data rows.
+      GET /api/discipline-referrals/export?school_tenant_id=<C> →
+        403 Forbidden.
+      GET /api/discipline-referrals/export?school_tenant_id=<nonexistent>
+        → 403 Forbidden, response body byte-identical to the
+        forbidden-school case (probe-resistant collapse holds).
+    Subject 2: counselor (user_school_access=[A]).
+      GET /api/discipline-referrals/export → 3 data rows (School A
+        only); 0 from B; 0 from C.
+      GET /api/discipline-referrals/export?school_tenant_id=<B> →
+        403 Forbidden.
+    Teardown applied; preflight passed; FK-aware delete order
+      executed; 0 residual rows across districts/tenants/users/
+      students/discipline_referrals/discipline_<vocab>; audit table
+      retained as designed.
+
+  Live prod smoke (full §5 triad, counts-only): IDENTICAL RESULTS
+    to local dress rehearsal. Both subjects' row counts and 403
+    response-body equality verified against the served bytes on
+    the Render-hosted prod DB. Prod fixture footprint: 1 synthetic
+    district / 3 schools / 5 users / 7 referrals — all seeded under
+    sandbox-district.example, all torn down clean (0 residual rows
+    in prod confirmed by post-teardown SELECT counts). User_school_
+    access_audit rows retained per FERPA §99.32 as expected.
+
+  §5 dual-path live proof: CLOSED. Owed since PR #244, carried
+    forward in PR #246's NEXT SESSION SHOULD. Both the
+    resolveAccessibleTenantIds district branch (SELECT
+    school_tenant_id FROM user_school_access WHERE user_id=$1 AND
+    district_id=$2) AND the in-set narrowing collapse (403 for
+    not-in-accessible-set school_tenant_id) are now verified
+    against served bytes in prod, not just static analysis.
+
+  npm test (backend) — honest skip per Followup #73 (no test suite).
+  npm test (frontend) — honest skip per Followup #73.
+  npx eslint on changed files — no FE files touched; backend lint
+    not configured per Followup #74; node syntax validated via
+    successful emitter runs (exit 0, 329 SQL lines, expected
+    INSERT shape).
+
+PR §2A:
+  PR #248: reviewDecision=APPROVED at merge time; review submitted
+    by Kelsey French (scholapathsystems) against HEAD b75446e via
+    the shared ScholarPath account — same pattern as PR #246 / PR
+    #244 / PR #236.
+  PR #249: reviewDecision=APPROVED at merge time; review submitted
+    by Kelsey French (scholapathsystems) against HEAD d8a065d.
+
+merge-sha verification:
+  PR #248: PASS — true merge commit (2 parents); merge commit
+    be8bae61caa70be757b40e838bd69b09e9804ba6 on main;
+    PARENT1 = 2dd96a5 (previous main from PR #246's merge);
+    PARENT2 = HEAD_OID = b75446e838cc6fc9b38308ba4964aefab461dc41.
+  PR #249: PASS — true merge commit (2 parents); merge commit
+    114d89389bb20f86e8dde3f28f01e34759be9bd4 on main;
+    PARENT1 = be8bae6 (PR #248's merge commit);
+    PARENT2 = HEAD_OID = d8a065da36f15e01e1404e263dfdc44b7b66f3e9.
+
+misattribution check: PASS for both — every commit SHA referenced
+  here verified as a member of `gh pr view <N> --json commits` for
+  its respective PR.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #248 commit OIDs at merge time:
+  b874cf1 (initial fixture: roster + seed + teardown)
+  b75446e (reviewer-LOW responses: slug regex + INTERVAL invariant
+           comment + school_wide_access semantics note)
+
+PR #249 commit OIDs at merge time:
+  d8a065d (one-stanza auth_mode='password' fix)
+
+OPEN ITEMS / FOLLOW-UPS
+  - seed-humble-isd-sandbox.js M034 auth_mode gap audit — banked as
+    [[project_followup_seed_humble_isd_m034_gap]]. Humble seed inserts
+    into tenants (single-tenant pattern), not districts; may be a
+    no-op close, but needs deliberate audit before next use.
+    Predates M034.
+  - scripts/ops/ → .gitignore — Followup #94 still stands; three
+    untracked ops files surface in `gh pr create` warnings on every
+    PR open. Independent chore.
+  - export AbortController — Followup #115 from PR #246 still
+    open; bundle with backend row-cap Q5 at
+    routes/disciplineReferrals.js:827-829.
+  - The fixture is committed code, not gitignored. If future proof
+    work needs different scope (e.g., add a fourth school, exercise
+    the write path), edit the roster + re-run the seed; no out-of-
+    band ops change required.
+
+NEXT SESSION SHOULD
+  Land work whatever the next operator-prioritized task is. The §5
+  proof debt closed by this session was the only known live-proof
+  gap blocking confidence in the export endpoint's tenant scoping;
+  static-analysis-only claims for the district branch can now cite
+  this entry as the served-bytes verification. Any future change to
+  resolveAccessibleTenantIds, /export, or the user_school_access
+  read path should re-run this fixture's four-step smoke (steps
+  enumerated in scripts/seed-district-sandbox.js header) as a
+  regression guard before merge. The fixture's teardown is idempotent
+  and clean; re-seeding mints fresh passwords each run.
+================================================================================
