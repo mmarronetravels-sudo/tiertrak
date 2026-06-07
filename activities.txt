@@ -26331,3 +26331,344 @@ NEXT SESSION SHOULD
       will be in place before Piece 2's §2A review opens. If not,
       apply the same attribution-comment workaround used here.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-07T13:00-2026-06-07T14:00Z (PR-E Piece 2 — race/ethnicity FE control on Add + Edit + CSV-description)
+BRANCH:  feat/student-demographics-fe-race-ethnicity (deleted post-merge)
+DISPOSITION: MERGED + Vercel FE deploy LIVE; bundle alias rollover verified +
+             operator-driven Network-tab smoke PASS for preserve-on-omit and
+             SPD-15 visual render order. PR #240 on main as merge commit f8290a1.
+--------------------------------------------------------------------------------
+SCOPE
+  Frontend control for the OMB SPD-15 (2024 revised) seven race/
+  ethnicity checkboxes. Lands on three surfaces:
+
+    1. AddStudentForm — full-width fieldset below the demographics
+       grid; seven checkboxes iterating RACE_ETHNICITY_CODES in the
+       declared SPD-15 order; toggle handler runs the value through
+       canonicalRace (sort + dedupe + allowlist-filter) before
+       setState.
+    2. Edit-student form — same fieldset, same iteration order, bound
+       to studentForm + setStudentForm; submit-time set-diff at
+       handleUpdateStudent emits race_ethnicity ONLY when the canonical
+       form differs from the snapshot captured at startEditStudent.
+    3. CSV-import description panel — adds a 9th <li> for
+       race_ethnicity with the seven codes and the ';' separator;
+       extends the italic note to cover "blank means none recorded".
+
+  Files changed:
+    frontend/src/App.jsx                          | 108 +++++++++++++++++++++++++-
+    frontend/src/constants/studentDemographics.js |  16 ++--
+    -------------------------------------------------------
+    2 files changed, 117 insertions(+), 7 deletions(-)
+
+  Render iteration is INTENTIONALLY DISTINCT from the wire-canonical
+  sort. RACE_ETHNICITY_CODES is declared in OMB SPD-15 (2024 revised)
+  order (AIAN → ASIAN → BLACK → HISP → MENA → NHPI → WHITE) and the
+  checkbox group iterates it directly. canonicalRace sorts
+  alphabetically + dedupes + filters through the FE allowlist for the
+  wire form and the snapshot set-diff only — it is never called inside
+  a render iteration. The declared-order intent is locked with a
+  comment at the constant declaration so a future reordering fails
+  review against the comment, not against silent regression.
+
+  Preserve-on-omit (the user-visible invariant):
+    - startEditStudent captures snap.race_ethnicity =
+      canonicalRace(student.race_ethnicity) — alphabetized, deduped,
+      allowlist-filtered.
+    - studentForm.race_ethnicity is a defensive copy
+      [...snap.race_ethnicity] so in-place mutation can't bleed into
+      the snapshot.
+    - handleUpdateStudent: if
+      JSON.stringify(canonicalRace(form)) === JSON.stringify(snap),
+      the key is OMITTED entirely from the PUT body.
+    - BE Object.prototype.hasOwnProperty.call(req.body,
+      'race_ethnicity') gate at routes/students.js:764 (unchanged
+      from PR-E Piece 1) preserves the student_race_ethnicity rows.
+
+TRIAD REVIEW (subagents, pre-§2A signal only)
+  Reports posted verbatim in the PR #240 body.
+
+                              CRIT  WARN  INFO  VERDICT
+  privacy-reviewer            0     1     3     APPROVED WITH NOTES
+  security-reviewer           0     0     3     APPROVED WITH NOTES
+  tenant-isolation-auditor    0     0     3     APPROVED
+                              -     -     -
+  Totals across triad         0     1     9     3× APPROVED
+
+  Single WARN (privacy-reviewer): PRIVACY_REVIEW.md still lacks an
+  entry for the M042 race/ethnicity surface — same doc-gap shape as
+  Followup #120 and the PR-D-banked doc gap. Doc-only; explicitly
+  scoped OUT of PR #240 by the reviewer. Disposition: opened
+  chore/privacy-review-race-ethnicity-fields as a tracked follow-up
+  PR (see OPEN ITEMS).
+
+  Convergence load-bearing across all three reviewers (per CC memory
+  feedback-convergent-grep-verification):
+    - canonicalRace's allowlist filter on BOTH the wire form and the
+      snapshot is the right shape; the "future BE-only code silently
+      dropped on edit" footgun is correctly flagged and banked as
+      F-236b.
+    - JSON.stringify-canonical-form set-diff is order-invariant; the
+      preserve-on-omit invariant holds end-to-end against the BE
+      hasOwnProperty gate.
+    - studentForm and initialDemographics are session-scoped React
+      useState hooks — no module-level singleton, no localStorage
+      write of the demographics blob, no cross-tenant sharing
+      surface.
+
+§2A REVIEW — EXTERNAL HUMAN REVIEW (NOT SELF-APPROVE)
+  PR #240 received a formal §2A approving review submitted via the
+  shared scholapathsystems GitHub collaborator account at
+  2026-06-07T13:15:43Z, state APPROVED, body "Reviewed. No concerns."
+  The actual human reviewer was Kelsey French, IT Developer at
+  ScholarPath. The author of PR #240 (account: mmarronetravels-sudo)
+  is a distinct person; this was NOT a self-approve. The shared-
+  account ambiguity is recorded on PR #240 as a pinned attribution
+  comment per the F-236e standing fix shape:
+
+    https://github.com/mmarronetravels-sudo/tiertrak/pull/240#issuecomment-4642872602
+
+  Mechanical §2A gate at merge time:
+    gh pr view 240 --json reviewDecision  → "APPROVED"
+    reviewer account                       → scholapathsystems
+                                              (NOT mmarronetravels-sudo)
+    review submittedAt                     → 2026-06-07T13:15:43Z
+    mergedBy                               → mmarronetravels-sudo
+    merge mechanism                        → squash, NO --admin
+                                              (branch protection ruleset
+                                               satisfied by the formal
+                                               approving review)
+
+  Standing F-236e from PR-D + Piece 1 still open: personal GitHub
+  accounts for each §2A-eligible internal reviewer so future approvals
+  are individually attributable from the GitHub API alone, without the
+  attribution-comment workaround.
+
+WORK-PR COMMITS (F-238b — SHA-only manifest)
+  Feature-branch commits (pre-squash):
+    3ac976f
+  Merge commit on main:
+    f8290a1
+
+DEPLOY
+  Merge f8290a1 → main during the §2A approval window
+  (reviewDecision APPROVED at 2026-06-07T13:15:43Z; merge shortly
+  thereafter via the standard squash path).
+
+  Vercel FE Production deployment:
+    last-modified on prod index            → Sun, 07 Jun 2026
+                                              13:30:13 GMT
+    pre-merge served bundle                → /assets/index-Bbo54Mt-.js
+                                              (LOCAL pre-merge build
+                                              hash for reference; the
+                                              prior prod hash before
+                                              Piece 2 differed by
+                                              Vercel build env)
+    post-merge served bundle               → /assets/index-BPT-dkhc.js
+                                              (sha256 c279e745…
+                                              1,593,985 bytes)
+    edge-cache age (two probes)            → 145s → 242s (propagation
+                                              age, NOT stale alias —
+                                              served bytes carry the
+                                              new content)
+
+  Render backend deploy: NOT triggered — this PR is FE-only;
+  routes/students.js was not touched. The BE bundle on Render carries
+  the PR-E Piece 1 (PR #238) state from the previous session.
+
+LIVE SMOKE — OPERATOR-DRIVEN
+  Smoke captured as a re-runnable script at
+  scripts/ops/2026-06-07-pr240-smoke.sh (gitignored-banked under
+  Followup #94; not committed). Five sections; pass/fail explicit.
+
+  Section 1 — bundle freshness (hard-refresh equivalent, un-authed,
+  automated):
+    PASS — Prod is serving /assets/index-BPT-dkhc.js, a distinct hash
+    from the pre-merge bundle. The last-modified header on the prod
+    HTML index advanced to 2026-06-07T13:30:13Z. Edge-cache age is
+    propagation, not stale alias.
+
+  Section 2 — PR-E Piece 2 strings + SPD-15 declared order in the
+  served bundle (un-authed, automated):
+    PASS — all 7 distinctive label strings present in the live bundle
+      ("American Indian or Alaska Native", "Middle Eastern or North
+      African", "Native Hawaiian or Pacific Islander", "Hispanic or
+      Latino", "Black or African American", "race_ethnicity",
+      "Race / Ethnicity").
+    PASS — SPD-15 array literal "AIAN","ASIAN","BLACK","HISP","MENA",
+      "NHPI","WHITE" present in declared OMB order in the minified
+      bundle. terser minification did not reorder the array.
+
+  Section 3 — preserve-on-omit PUT smoke (operator-driven, authed
+  Network-tab against a seed test student row in a single tenant —
+  referred to here as "the test row" with no name or external_id
+  echoed; §4B-clean):
+    PASS — untouched-save (open Edit modal, click Save without any
+      click on the demographics group) → PUT body has NO
+      race_ethnicity key. BE hasOwnProperty gate held; row preserved.
+    PASS — toggle-and-revert (check a code, uncheck the same code,
+      save) → PUT body has NO race_ethnicity key. canonicalRace
+      cancellation produced byte-equal canonical forms and the set-
+      diff omitted the key.
+    PASS — add codes (check ASIAN and WHITE, save) → PUT body emitted
+      race_ethnicity: ["ASIAN","WHITE"] (canonical alphabetized form).
+      BE accepted; row updated.
+    PASS — clear-all (uncheck all codes, save) → PUT body emitted
+      race_ethnicity: []. BE accepted; per-code rows DELETEd inside
+      the reconciliation transaction.
+    PASS — reload after save → checkbox state restored from the GET
+      payload; the persisted change survived round-trip.
+
+  Section 4 — dual-tenant cross-school deny (NOT RUN):
+    Operator did not have a second-tenant browser session at smoke
+    time, so the cross-school 403/404 assertions in the script were
+    gated-skipped (env-var presence check held). Honest framing rather
+    than claiming a pass: the diff for PR #240 adds zero new SQL
+    queries, zero new routes, zero middleware changes, and zero
+    modifications to the existing tenant-scoping chain at
+    routes/students.js (requireAuth + requireStudentReadAccess /
+    requireTenantStaffAccess + the M042 composite FK on
+    student_race_ethnicity). Tenant-isolation-auditor (verdict
+    APPROVED, 0 CRIT, 0 WARN) flagged this surface as untouched. The
+    cross-school deny is still the right invariant to verify on a
+    future session that has dual-tenant browser context; the smoke
+    script gates Section 4 on env-var presence so it will only run
+    when those creds exist.
+
+  Section 5 — visual SPD-15 checkbox render order (operator browser):
+    PASS — operator confirmed the seven checkboxes render top-to-
+    bottom on both the AddStudentForm and the Edit modal in declared
+    SPD-15 order:
+      1. American Indian or Alaska Native
+      2. Asian
+      3. Black or African American
+      4. Hispanic or Latino
+      5. Middle Eastern or North African
+      6. Native Hawaiian or Pacific Islander
+      7. White
+    CSV-import description panel also renders the seven codes in the
+    same order with the ';' separator visible in the example token.
+
+  §4B note on test data: the smoke targeted a single seed test student
+  row in a single tenant. Referred to here as "the test row" with no
+  name or external_id echoed. No real student data was touched; no
+  PII surfaces in this entry.
+
+  F-236f (PR-D prod-smoke PASS, retroactive): PR-D's post-deploy smoke
+  was not recorded as a discrete result in the PR-D session entry
+  because the bundle alias was still serving the pre-PR-D hash at
+  write time. The operator's subsequent re-smoke confirmed PR-D's
+  four-scalar control (iep_flag, sec_504_flag, ell_flag, gender) is
+  in-product on prod and preserves on omit at the same Network-tab
+  level. Recording the retroactive PASS here so the audit trail for
+  PR-D's user-visible outcome is complete.
+
+VERIFICATION (in-branch, pre-merge)
+  npm run lint (frontend):
+    93 problems (74 errors, 19 warnings) — byte-equal to the PR-D
+    baseline. No new findings in App.jsx or studentDemographics.js.
+    The pre-existing App.jsx:379 / 381 / 454 react-hooks +
+    react-refresh findings are unchanged from main.
+
+  npx vite build (frontend):
+    Built in 2.87s. 2778 modules transformed. RACE_ETHNICITY_CODES +
+    RACE_ETHNICITY_LABELS imports resolved cleanly from the FE mirror.
+
+  §4B grep with -i on the diff (git diff main...HEAD) and on the PR
+  body draft (pre-submit):
+    Pattern: humble|thomas|@gmail|@yahoo|@hotmail|@outlook|@scholarpath
+    |@school|\bisd\b|\bsmith\b|\bdoe\b|\bjane\b|\bjohn\b
+    Both surfaces clean — zero hits.
+
+  No FE test suite exists (Followup #73-sibling banked as
+  project_followup_pr_d_fe_test_scaffold). Preserve-on-omit was
+  verified by:
+    1. Triad reviewer code-level traces (verbatim in PR #240 body).
+    2. Operator Network-tab smoke (Section 3 above).
+    3. The bundle SPD-15 string-literal assertion in scripts/ops/
+       2026-06-07-pr240-smoke.sh (Section 2) — proves the source-of-
+       truth array survived minification.
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed in this session:
+    PR #240 merged + Vercel FE deploy live + bundle alias verified
+    rolled over + operator-driven Network-tab smoke PASS for
+    preserve-on-omit (Section 3) and SPD-15 visual render order
+    (Section 5). Feature branch
+    feat/student-demographics-fe-race-ethnicity ready for deletion
+    (empty tree-diff against main; merge SHA f8290a1 carries the
+    change). PR-D retroactive prod-smoke PASS recorded (F-236f).
+
+  Newly opened as a tracked PR this session:
+
+    chore/privacy-review-race-ethnicity-fields → PR #241. Doc-only
+      follow-up for the privacy-reviewer WARN on PR #240. Adds a new
+      "Student demographics — race/ethnicity" section to
+      docs/ai-context/PRIVACY_REVIEW.md covering: alphabetized
+      varchar[] shape, staff-visibility decision (every
+      requireStudentReadAccess receiver gets the array), parent-
+      visibility decision (NOT projected on parentLinks.js routes in
+      v1), write-path inventory (POST + PUT preserve-on-omit + CSV
+      ';'-delimited), M042 CHECK allowlist + composite-FK doctrine,
+      and the FE↔BE↔M042 three-writer drift hazard (F-236b) with
+      failure-mode breakdown for each drift direction. Sibling of
+      Followup #120 and of the PR-D-banked
+      chore/privacy-review-m042-fields follow-up that covers the
+      four scalar M042 flags. Disposition at session close: open,
+      awaiting operator decision on the --admin docs lane vs holding
+      open as a tracked follow-up. URL:
+      https://github.com/mmarronetravels-sudo/tiertrak/pull/241
+
+  Re-affirmed standing followups continue to stand:
+    F-120 / chore/privacy-review-m042-fields (PR-D sibling — covers
+      the four scalar M042 flags). PR #241 above and this F-120
+      sibling are independent doc sections; either can land first.
+    F-236b / ESM↔CJS drift CI check. Three drift hazards now in
+      explicit scope: (1) the ';' CSV separator literal at FE / BE,
+      (2) the FE allowlist filter that silently drops BE-only codes
+      on edit, and (3) the SPD-15 render-order intent at the
+      RACE_ETHNICITY_CODES declaration. One CI check can assert all
+      three.
+    F-236e / personal GH accounts for §2A-eligible internal
+      reviewers (the shared-account ambiguity recurred this session;
+      attribution comment posted on PR #240 as the standing
+      workaround).
+    F-236f / retroactive PR-D prod-smoke PASS recorded above.
+    F-238b / WORK-PR COMMITS SHA-only manifest — this entry carries
+      that section. Standing convention going forward.
+    project_followup_students_error_message_leak — pre-existing
+      error.message leak at routes/students.js:237 / 261 / 281 / 559.
+      PR-E grew the blast radius by adding M042 race/ethnicity to two
+      of the four leaking paths. Separate sec/ PR; not gated by PR-E
+      being live.
+    #73 (no backend tests), #74 (no backend lint), #80 (no app-wide
+    rate-limiting), #81 (no CSRF on state-changing routes), #94
+    (three pre-existing untracked ops files plus the new
+    2026-06-07-pr240-smoke.sh — all four left untracked; commits
+    used explicit-by-filename staging on both this session's PRs).
+
+NEXT SESSION SHOULD
+  PR-E is now end-to-end live (Piece 1 read + Piece 2 write/render).
+  Natural next units:
+
+    1. Land chore/privacy-review-race-ethnicity-fields (PR #241,
+       opened this session). Decide bundling vs separate-land vs
+       the PR-D-sibling chore/privacy-review-m042-fields — bundling
+       lets one PR cover the entire M042 demographic doc shape;
+       separate keeps the chore lane cleaner.
+    2. Run Section 4 dual-tenant smoke from
+       scripts/ops/2026-06-07-pr240-smoke.sh when a second-tenant
+       browser session is available. The deny-invariant is
+       structurally enforced by the M042 composite FK + the existing
+       route gates, so a deferred run is acceptable — but the audit
+       trail is incomplete until it is exercised on prod.
+    3. F-236b drift-CI work — three drift hazards now in scope makes
+       a stronger case. Could land as a single CI check that asserts
+       FE ≡ BE list + canonical SPD-15 order + separator literal
+       sync, or as three discrete checks.
+    4. sec/students-redact-500-bodies — separate sec/ PR to fix the
+       four error.message leaks at routes/students.js:237 / 261 /
+       281 / 559. Leak is pre-existing on main; PR-E grew its blast
+       radius.
+================================================================================
