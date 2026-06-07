@@ -45,6 +45,16 @@ const SCHOOLS = [
 //   - school-a-counselor@... → access to A only. Secondary proof:
 //     a single-school district user stays confined to one school.
 //
+// IMPORTANT — school_wide_access semantics: both proof subjects above
+// are in ELEVATED_ROLES (district_admin, counselor), so the seed will
+// flip users.school_wide_access = TRUE for both. That flag is an
+// IN-TENANT-SET caseload bypass (governs per-student-record visibility
+// WITHIN the user's already-resolved tenant set per routes/students.js,
+// routes/weeklyProgress.js, routes/studentDocuments.js), NOT a
+// cross-tenant scope override. It does not widen the export's tenant
+// scope past user_school_access membership. The §5 proof — "district
+// admin sees A+B and never C" — holds even with the flag set.
+//
 // Three referring-staff teachers (one per school). Required so each
 // discipline_referrals row has a non-NULL referring_staff_id FK that
 // points to a real users row.

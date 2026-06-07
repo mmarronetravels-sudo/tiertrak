@@ -124,6 +124,12 @@ function sanityCheckRoster(r) {
     if (!/^[a-z0-9-]+$/.test(s.subdomain)) {
       throw new Error(`roster.SCHOOLS[].subdomain must match /^[a-z0-9-]+$/; got: ${s.subdomain}`);
     }
+    // slug is interpolated into PL/pgSQL variable names (v_school_<slug>_id),
+    // so it must be a safe identifier shape. Parallel discipline to the
+    // subdomain regex above.
+    if (!/^[a-z0-9_]+$/i.test(s.slug)) {
+      throw new Error(`roster.SCHOOLS[].slug must match /^[a-z0-9_]+$/i; got: ${s.slug}`);
+    }
     slugSet.add(s.slug);
   }
   if (!Array.isArray(r.USERS) || r.USERS.length === 0) {
@@ -406,6 +412,10 @@ async function buildSql() {
     lines.push(`  -- Referral ${i + 1}: school ${student.tenant_slug}, status=${ref.status}, date=CURRENT_DATE${ref.incident_date_offset}, behavior=${ref.behavior_label}`);
     lines.push('  INSERT INTO discipline_referrals (tenant_id, student_id, referring_staff_id, grade, incident_date, location_id, behavior_id, status)');
     lines.push(`  VALUES (${tenantVar}, ${studentVar}, ${staffVar}, ${sqlString(student.grade)},`);
+    // INTERVAL literal interpolation is safe because sanityCheckRoster requires
+    // Number.isInteger(incident_date_offset) && offset <= 0. Math.abs + sqlInt
+    // (parseInt → digits) gives a safe day count. If the validator is ever
+    // loosened, this line becomes an injection vector — keep the invariant.
     lines.push(`         CURRENT_DATE - INTERVAL '${sqlInt(Math.abs(ref.incident_date_offset))} days',`);
     lines.push(`         (SELECT id FROM discipline_locations WHERE tenant_id = ${tenantVar} AND label = ${sqlString(ref.location_label)} AND is_active = TRUE),`);
     lines.push(`         (SELECT id FROM discipline_behaviors WHERE tenant_id = ${tenantVar} AND label = ${sqlString(ref.behavior_label)} AND is_active = TRUE),`);
