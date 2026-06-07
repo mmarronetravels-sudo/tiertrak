@@ -333,8 +333,11 @@ async function buildSql() {
 
   // -- District --
   lines.push('  -- ----- District -----');
-  lines.push('  INSERT INTO districts (name)');
-  lines.push(`  VALUES (${sqlString(roster.DISTRICT.name)})`);
+  lines.push('  -- auth_mode required NOT NULL since M034 (no DEFAULT — fail-safe).');
+  lines.push('  -- \'password\' matches the seed\'s pre-bcrypted password flow; \'sso\'');
+  lines.push('  -- would imply password_hash=NULL, \'disabled\' would block login.');
+  lines.push('  INSERT INTO districts (name, auth_mode)');
+  lines.push(`  VALUES (${sqlString(roster.DISTRICT.name)}, 'password')`);
   lines.push('  RETURNING id INTO v_district_id;');
   lines.push('');
 
