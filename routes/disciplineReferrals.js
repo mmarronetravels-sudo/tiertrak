@@ -966,11 +966,21 @@ router.get('/export', requireAuth, async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="discipline-referrals.csv"');
     res.status(200).send(body);
   } catch (error) {
+    // Strict err.code + err.name only — never err.message — per
+    // security-reviewer WARN-1 (post-triad redaction). PG error
+    // messages can embed parameter literals and, in unanticipated
+    // error classes, row content; this route's projection includes
+    // student names, school name, and behavior labels (all §4B PII),
+    // so a future failure mode whose err.message echoed a row value
+    // would leak that value into application logs. err.code (e.g.
+    // '22008' for invalid datetime) + err.name preserve operator
+    // debug signal without the literal-passthrough risk.
     console.error(
       '[disciplineReferrals:export]',
       'user_id=', req.user && req.user.id,
       'tenant_count=', accessible ? accessible.length : 'unresolved',
-      'err=', error.message
+      'err_code=', error.code,
+      'err_name=', error.name
     );
     res.status(500).json({ error: 'Failed to export referrals' });
   }
