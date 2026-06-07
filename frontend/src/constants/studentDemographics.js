@@ -13,11 +13,10 @@
 // BE list against the M042 CHECKs. If you change one, change all three.
 // A CI drift-check follow-up is banked alongside this PR.
 //
-// Race/ethnicity is included for completeness but PR-D does NOT consume
-// it from the FE — the create + edit forms render only the four scalar
-// demographic fields (iep_flag, sec_504_flag, ell_flag, gender). Race/
-// ethnicity ships in PR-E, after the GET /students payload is widened
-// to include the codes array (separate triad).
+// Race/ethnicity is consumed by the create + edit forms as of PR-E
+// (Piece 2). GET /students returns an alphabetized varchar[] (PR-E
+// Piece 1 / PR #238); the FE renders checkboxes in the declared
+// RACE_ETHNICITY_CODES order — see the comment at that constant.
 
 export const GENDER_CODES = ['M', 'F', 'X', 'prefer_not_to_say'];
 
@@ -28,6 +27,13 @@ export const GENDER_LABELS = {
   prefer_not_to_say: 'Prefer not to say',
 };
 
+// Declared order is OMB SPD-15 (2024 revised). The FE renders the
+// race/ethnicity checkbox group in this exact order — DO NOT reorder.
+// Wire-form sort (canonicalRace, in App.jsx) is independent: it
+// alphabetizes + dedupes for the POST/PUT body and for the snapshot
+// set-diff. The two never collide because canonicalRace is never used
+// at render. (For the seven current codes SPD-15 order happens to also
+// be alphabetical-by-code — preserve the intent, not the coincidence.)
 export const RACE_ETHNICITY_CODES = ['AIAN', 'ASIAN', 'BLACK', 'HISP', 'MENA', 'NHPI', 'WHITE'];
 
 export const RACE_ETHNICITY_LABELS = {
