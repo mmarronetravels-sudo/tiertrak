@@ -396,9 +396,6 @@ const createTables = async () => {
     `);
     console.log('Migration 014: referral_monitoring table ready');
 
-    // Role constraint update moved to Migration 017 (includes all roles)
-    console.log('Role constraint updated (see Migration 017)');
-
     // Seed test users (only if they don't exist)
     const testUsers = await pool.query(`SELECT id FROM users WHERE email = 'teacher1@lincoln.edu'`);
     if (testUsers.rows.length === 0) {
@@ -434,15 +431,6 @@ const createTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_tenant_bank_template ON tenant_intervention_bank(template_id);
     `);
     console.log('Migration 016: Intervention bank tables ready');
-
- // Migration 017: Add mtss_support role
-    await pool.query(`
-      ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-      ALTER TABLE users ADD CONSTRAINT users_role_check
-        CHECK (role IN ('district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent'))
-        NOT VALID;
-    `);
-    console.log('Migration 017: mtss_support role added');
 
     // Migration 018: Per-tenant plan template overrides
     await pool.query(`
