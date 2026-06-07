@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch';
 import { logError } from '../utils/logError';
 
@@ -71,6 +71,47 @@ function formatHour(h) {
   if (h === 12) return '12:00 PM';
   if (h < 12) return h + ':00 AM';
   return (h - 12) + ':00 PM';
+}
+
+// parseFilenameFromContentDisposition — extract the quoted filename
+// token from a Content-Disposition header value, or null if the header
+// is missing or doesn't match the simple `filename="..."` form. The
+// export route sets a static ASCII filename so we don't handle the
+// RFC 6266 extended `filename*=UTF-8''...` form.
+//
+// Defense-in-depth sanitization (PR #246 security-reviewer WARN-1):
+// the captured filename flows into `a.download`. Modern browsers
+// sanitize path separators, but bidi-override characters (U+202A..E,
+// U+2066..9) can mask the real extension in the OS Downloads UI
+// (e.g. `report<U+202E>fdp.exe` rendered as `reportexe.pdf`). We
+// strip path separators, ASCII control bytes (\x00-\x1f, \x7f), and
+// the bidi overrides; cap at 100 chars. Empty after cleaning → null
+// so the call-site falls back to the static literal.
+function parseFilenameFromContentDisposition(header) {
+  if (!header) return null;
+  const m = /filename\s*=\s*"([^"]+)"/i.exec(header);
+  if (!m) return null;
+  // \uXXXX escapes (not literal chars) so the source itself is safe to
+  // display in editors and code-review surfaces — the literal bidi
+  // chars would re-render the line above to its right.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = m[1].replace(/[\\/\x00-\x1f\x7f\u202A-\u202E\u2066-\u2069]/g, '_').slice(0, 100);
+  return cleaned || null;
+}
+
+// hasDataRows — does the export response contain at least one data row
+// beyond the header line? The server builds the body as
+// `${headers.join(',')}\r\n${row1}\r\n${row2}\r\n...` so the first CRLF
+// always terminates the header. We slice after it, drop any trailing
+// CRLFs, and treat any non-empty remainder as proof of a row. Tolerates
+// RFC-4180 fields that quote-wrap internal CRLF because we only care
+// about content existence, not line count.
+function hasDataRows(csvText) {
+  if (!csvText) return false;
+  const firstCRLF = csvText.indexOf('\r\n');
+  if (firstCRLF === -1) return false;
+  const afterHeader = csvText.slice(firstCRLF + 2).replace(/(\r\n)+$/, '');
+  return afterHeader.length > 0;
 }
 
 // EmptyOrTable — render a small empty-state caption when there are zero
@@ -149,6 +190,17 @@ export default function DisciplineReports(props) {
   const [inFlight, setInFlight] = useState(0);
   const loading = inFlight > 0;
 
+  // Export-CSV state. Kept independent of `loading` because a discipline-
+  // reports refetch and an export download are unrelated operations —
+  // the user might trigger Export while aggregates are still loading for
+  // a different filter, and we don't want either to disable the other.
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
+  // exportEmptyNotice surfaces the deliberate "no rows matched" outcome —
+  // distinct from exportError so a zero-result download doesn't read as
+  // a failure.
+  const [exportEmptyNotice, setExportEmptyNotice] = useState(null);
+
   // FE role-gate for the by-staff card. UX-only: server enforces
   // STAFF_VIEW_ROLES = ['school_admin', 'district_admin'] independently
   // on routes/disciplineReports.js. Counselor/interventionist would 403
@@ -199,6 +251,26 @@ export default function DisciplineReports(props) {
     if (status && status !== 'all') parts.push('status=' + encodeURIComponent(status));
     return parts.length > 0 ? '?' + parts.join('&') : '';
   }, [startDate, endDate, status]);
+
+  // buildExportQuery — parallel to buildQuery() above, but for
+  // /api/discipline-referrals/export. Same omission rules for date+status,
+  // PLUS the school_tenant_id narrowing param: included only when the
+  // school picker is visible (the user has >1 accessible school AND has
+  // an active selection). Single-school users omit the param so the
+  // server's resolveAccessibleTenantIds returns the user's full
+  // accessible set — correct dual-path behavior for both legacy
+  // single-tenant users and district users with one school grant.
+  const buildExportQuery = useCallback(() => {
+    const pickerShown = Array.isArray(schools) && schools.length > 1;
+    const parts = [];
+    if (startDate) parts.push('start_date=' + encodeURIComponent(startDate));
+    if (endDate)   parts.push('end_date=' + encodeURIComponent(endDate));
+    if (status && status !== 'all') parts.push('status=' + encodeURIComponent(status));
+    if (pickerShown && selectedTenantId) {
+      parts.push('school_tenant_id=' + encodeURIComponent(String(selectedTenantId)));
+    }
+    return parts.length > 0 ? '?' + parts.join('&') : '';
+  }, [schools, startDate, endDate, status, selectedTenantId]);
 
   // Three independent fetch functions so a filter that only affects one
   // cut (e.g. minCount → repeat-offenders) doesn't re-fire the others.
@@ -329,6 +401,62 @@ export default function DisciplineReports(props) {
     fetchByStaff(selectedTenantId);
   };
 
+  // handleExport — fetch the row-level CSV via
+  // /api/discipline-referrals/export and trigger a browser download.
+  //
+  // Empty-result path: the server returns 200 with a header-only body
+  // when filters match zero rows (spec §5 — header-only, not 404). We
+  // detect that via hasDataRows() and surface an inline notice instead
+  // of triggering a one-line download that would read as "did this work?"
+  //
+  // PII / log discipline (§4B):
+  //   - Query string carries integers + ISO dates + status enum only.
+  //   - logError carries the static tag + the Error (status code) — the
+  //     CSV body is NEVER passed to logError or console.
+  //   - The blob is downloaded then revoked; nothing persisted to
+  //     localStorage / sessionStorage / IndexedDB.
+  //   - Filename comes from the server's Content-Disposition (static
+  //     `discipline-referrals.csv`), falling back to the same literal
+  //     if parsing fails — avoids 2-writer drift if the server filename
+  //     ever changes.
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    setExportError(null);
+    setExportEmptyNotice(null);
+    try {
+      const url = API_URL + '/discipline-referrals/export' + buildExportQuery();
+      const res = await apiFetch(url, { cache: 'no-store' });
+      if (!res.ok) {
+        throw new Error('export status ' + res.status);
+      }
+      const csvText = await res.text();
+      if (!hasDataRows(csvText)) {
+        setExportEmptyNotice('No rows matched these filters.');
+        return;
+      }
+      const filename =
+        parseFilenameFromContentDisposition(res.headers.get('Content-Disposition')) ||
+        'discipline-referrals.csv';
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = filename;
+      // Anchor must be in the DOM at click time for Firefox; remove it
+      // immediately after. setTimeout(0) defers revocation past the
+      // current task so the browser has already started the transfer.
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch (err) {
+      logError(err, '[disciplineReports:export]');
+      setExportError('Could not export referrals.');
+    } finally {
+      setExporting(false);
+    }
+  }, [API_URL, buildExportQuery]);
+
   const showPicker = Array.isArray(schools) && schools.length > 1;
 
   return (
@@ -338,15 +466,26 @@ export default function DisciplineReports(props) {
           <h1 className="text-3xl font-semibold text-slate-800 tracking-tight">Discipline Reports</h1>
           <p className="text-slate-500 mt-1">Totals across the school, plus reports that list specific students or staff. What you see depends on your role.</p>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
-          title="Refresh"
-        >
-          <RefreshCw size={16} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+            title="Refresh"
+          >
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors disabled:opacity-50"
+            title="Export filtered referrals as CSV"
+          >
+            <Download size={16} />
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        </div>
       </div>
 
       {/* School picker (only when >1 accessible) */}
@@ -421,6 +560,18 @@ export default function DisciplineReports(props) {
       {loadError && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
           {loadError}
+        </div>
+      )}
+
+      {exportError && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+          {exportError}
+        </div>
+      )}
+
+      {exportEmptyNotice && (
+        <div className="bg-slate-50 border border-slate-200 text-slate-700 rounded-lg p-3 text-sm">
+          {exportEmptyNotice}
         </div>
       )}
 
