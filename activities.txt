@@ -26672,3 +26672,185 @@ NEXT SESSION SHOULD
        281 / 559. Leak is pre-existing on main; PR-E grew its blast
        radius.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-07T18:38:13Z
+BRANCH:  feat/r1-discipline-referral-export
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/244
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  R-1 Phase 2: added one read-only CSV export route to the
+  discipline-referrals router. Filters: date range, status, behavior
+  id, optional school-tenant id. Structured fields only — free-text
+  notes columns excluded as the central §4B control. Demographic
+  fields included per operator decision, deviating from R-1 spec §9
+  (race/ethnicity and gender added to v1).
+
+FILES TOUCHED
+  routes/disciplineReferrals.js — adds EXPORT_ROLES (alias of the
+    file's existing VIEW_ROLES), EXPORT_STATUS_VALUES, parseDateParam,
+    csvEscapeField (RFC 4180 + OWASP formula-injection guard),
+    formatBooleanForCsv, and GET /export handler (registered before
+    GET /:id to avoid pattern collision). +287 / -0, single file.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  GET /export consumes resolveAccessibleTenantIds (§5 dual-path
+  helper, never inlined). All joined vocab/student tables use
+  composite tenant predicates; student_race_ethnicity correlated
+  subquery uses composite predicate even where the M042 composite FK
+  enforces it (§5 stays visible in the query). users LEFT JOIN is
+  unscoped on the staff side per the file's M021/M036 convention —
+  same shape as the existing queue/detail/student-history handlers.
+  Tenant-isolation auditor reviewed and AFFIRMED the file convention
+  (0 CRITICAL / 0 WARN / 3 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: 9 columns of structured student data
+    (first/last name, internal id, grade, three boolean flags,
+    gender code, race/ethnicity code array), 2 columns of staff
+    PII (full name + id), and 1 tenant-name column.
+  Logging audit: 1 new console.error path; carries integers +
+    err.code + err.name only. Post-triad redaction (commit 2 of 2)
+    swapped err.message for err.code+err.name per security-reviewer
+    WARN-1. Smoke confirmed §4B grep on the log line returns 0 hits
+    across all seeded student/staff/tenant names.
+  Cross-tenant risk: none identified. Privacy reviewer and
+    tenant-isolation auditor both clean on the §5 boundary; the §9
+    deviation was assessed directly by privacy-reviewer and ruled
+    acceptable (field set does not exceed what EXPORT_ROLES already
+    see on the file's detail/student-history surfaces).
+
+VERIFICATION
+  node -c routes/disciplineReferrals.js — SYNTAX OK
+  npm test — honest skip per Followup #73 (no backend test suite)
+  npm run lint — honest skip per Followup #74 (no backend lint)
+  Local smoke matrix — 13 cases, 12 PASS + 1 honest skip (an
+    interventionist user does not exist in the local dev DB; same
+    EXPORT_ROLES code path as the counselor case which passed). All
+    cases ran against 1 test tenant; cross-tenant assertion (case
+    12) was exercised by seeding a canary referral in a non-
+    accessible tenant. Seeded state fully reverted via paired unseed
+    script and verified by a read-only re-inspection — non-accessible
+    tenant referral count returned to zero, canary student row
+    absent, mutated vocab label restored to its prior value, all
+    seed-targeted demographic rows restored to NULL.
+  Reviewer triad: privacy / security / tenant-isolation auditors all
+    APPROVED. Aggregate 0 CRITICAL, 4 WARN (2 doc-only deferrals,
+    1 fixed in-branch, 1 inherited rate-limit gap), 7 INFO.
+  PR §2A: reviewDecision=APPROVED at merge time (passes the mechanical
+    §2A test). 1 submitted review, state=APPROVED, author=scholapathsystems
+    (COLLABORATOR, is_bot=false), body "No concerns. Looks clean.",
+    submitted 2026-06-07T18:37:13Z. Merge at 2026-06-07T18:37:18Z by
+    scholapathsystems, autoMergeRequest=null, no --admin override
+    (normal merge button after gate cleared). PR opener per GitHub:
+    mmarronetravels-sudo; approver+merger: scholapathsystems — distinct
+    GitHub accounts, so GitHub's self-review block was not bypassed.
+    Substantive caveats recorded for the audit trail:
+      (a) commit authorship maps to scholapathsystems via email; the
+          committer and the reviewer are the same GitHub identity even
+          though the PR opener is not (GitHub's self-review block keys
+          off PR opener);
+      (b) scholapathsystems is the shared external-review account per
+          project_pr_236 precedent (operated by Kelsey French, IT Dev,
+          ScholarPath) — attribution to a specific human depends on
+          out-of-band knowledge, not the GitHub record;
+      (c) 5-second submit-to-merge gap, at the edge of plausible
+          deliberate-review pacing.
+    Per 2026-06-07 operator decision (F-236e closed), the shared
+    scholapathsystems account is accepted as the §2A mechanism; the
+    standing "personal GH accounts for §2A reviewers" recommendation
+    from project_pr_236 is RETIRED. Residual hygiene items tracked
+    under OPEN ITEMS.
+  merge-sha verification: PASS — true merge commit; PARENT2 ==
+    HEAD_OID == 693a0a9f075e708200a5f16985d7852e931111f5; merge
+    commit 3a695ff4ea5d2ca4e0d35257221aed7ea87cd1ed on main.
+  misattribution check: PASS — FIXES: line SHA verified as a member
+    of `gh pr view 244 --json commits`.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #244 commit OIDs at branch tip:
+  b2c68c6a8109d3e7baf06cd9a0855425aa8cf848
+  693a0a9f075e708200a5f16985d7852e931111f5
+
+OPEN ITEMS / FOLLOW-UPS
+  - Live prod smoke for PR #244 — REQUIRED, PR is merged on main
+    as of 2026-06-07T18:37:18Z (this entry's compose-time window
+    crossed the merge boundary). See NEXT SESSION SHOULD for the
+    specific district-user multi-school path that needs exercise.
+    Verification doctrine: merge is not the finish line.
+  - chore/fix-git-author-email-attribution (NEW) — root cause of
+    §2A caveat (a) above. The working-tree git user.email currently
+    resolves via GitHub email-association to scholapathsystems
+    (the shared §2A reviewer account), so work commits get stamped
+    with the §2A reviewer's account identity. Fix: set git
+    user.email at the working-tree (or project) level to the
+    operator/author identity so future PR commits attribute to a
+    non-reviewer account. The shared scholapathsystems review
+    account itself is unchanged (F-236e operator decision stands).
+  - §2A reviewer habit (residual, NOT a blocker per F-236e):
+    reviewers using the shared scholapathsystems account should
+    name themselves in the PR review body (e.g., "Reviewed by
+    Kelsey French / IT Dev, ScholarPath") so the human attribution
+    is in the GitHub record rather than relying on out-of-band
+    knowledge. Surfaces in the activities log this session as
+    caveat (b) above.
+  - Followup #80 (no app-wide rate-limiting) — when it lands,
+    /export should receive a tighter-than-default per-user limiter
+    (suggested 10/min or 50/hour per user). The surface is a
+    higher-value scrape target than typical JSON GETs because each
+    successful request yields N rows of named students with linked
+    demographic fields.
+  - chore/privacy-review-r1-export (NEW doc-only chore) — per
+    privacy WARN-1 + WARN-2: add the /export surface to the
+    discipline-referrals section of PRIVACY_REVIEW.md; document the
+    operator-locked widening (race/ethnicity + gender in v1);
+    refresh the "Future widening triggers" entry; explicitly state
+    the v1 referring_staff_id tenant-alignment invariant
+    (application-layer-only, not schema-FK-enforced). Bundle with
+    the existing privacy-docs cluster (see prior session's
+    chore/privacy-review-race-ethnicity-fields PR #241).
+  - R-1b (teacher caseload-scoped discipline-referral export) —
+    deferred per spec; would carry its own narrower role allowlist
+    and apply the per-student STRICT_STUDENT_ACCESS_PREDICATE gate.
+  - R-1 spec §8 xlsx output — deferred; would require an exceljs §8
+    dependency ask.
+  - R-1 spec §4 resolution column — omitted from v1 because no
+    single structured "resolution" column exists on
+    discipline_referrals; the consequence set is a join table.
+  - R-1 spec Q5 row-volume handling — v1 is uncapped; revisit if a
+    real-world large export ever exceeds reasonable size.
+
+  FIXES:
+    security-reviewer-WARN-1 → PR #244 @ 693a0a9f075e708200a5f16985d7852e931111f5
+
+NEXT SESSION SHOULD
+  Run and record the live prod smoke for PR #244 BEFORE any
+  follow-on work — merge is not the finish line, and PR #244 went
+  green-and-merged during the session-close window. Specifically
+  exercise the district-user multi-school dual-path of
+  resolveAccessibleTenantIds: this session's dev-DB smoke only hit
+  the legacy single-tenant branch (users.district_id IS NULL →
+  [users.tenant_id]) because no district users existed locally;
+  the district-user branch (SELECT school_tenant_id FROM
+  user_school_access WHERE user_id=$1 AND district_id=$2) was
+  static-analyzed only. Confirm with a real multi-school district
+  user that GET /export returns exactly the rows whose dr.tenant_id
+  is in that user's accessible school-tenant set, with zero leakage
+  to non-accessible tenants in the same district AND zero leakage
+  across districts. Also re-verify the ?school_tenant_id= narrowing
+  path against the district user. Append the prod-smoke result as a
+  NEW activities.txt entry whose TASK SUMMARY cross-references PR
+  #244 (do not rewrite the original PR #244 entry — activities.txt
+  is append-only per skill guardrails).
+
+  Once the prod smoke is recorded clean, start the
+  chore/privacy-review-r1-export doc PR as a separate docs-only
+  branch off main (bundle with PR #241 if that one has not landed
+  yet).
+================================================================================
