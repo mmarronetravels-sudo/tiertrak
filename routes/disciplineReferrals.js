@@ -50,6 +50,24 @@ const VIEW_ROLES = ['school_admin', 'district_admin', 'counselor', 'intervention
 // in routes/prereferralForms.js.
 const ACT_ROLES = ['school_admin', 'district_admin'];
 
+// EXPORT_ROLES aliases VIEW_ROLES — the row-level CSV export at
+// GET /export is open to the same role set that can read the queue
+// and detail surfaces. Aliased (not copied) so any future widening
+// of one widens both intentionally; if v2 ever needs to diverge
+// (e.g. carving counselor out of export specifically), break the
+// alias into its own array AT THAT TIME and document why.
+// Teacher caseload-scoped export is deferred to a separate route
+// (R-1b) and would carry its own narrower allowlist.
+const EXPORT_ROLES = VIEW_ROLES;
+
+// EXPORT_STATUS_VALUES mirrors the M036 status CHECK
+// (migration-036-discipline-referrals-foundation.sql:261-263)
+// byte-for-byte. Declared locally rather than imported from
+// routes/disciplineReports.js so the two routers stay
+// independently reviewable, matching the disciplineReports
+// rationale at routes/disciplineReports.js:36-38.
+const EXPORT_STATUS_VALUES = ['submitted', 'under_review', 'resolved'];
+
 // admin_notes length cap, enforced from-the-start at the route layer
 // (no schema change). Mirrors the banked staff_notes/admin_notes
 // length-cap follow-up, applied here for the first surface that needs
@@ -60,6 +78,50 @@ const STAFF_NOTES_MAX_LENGTH = 5000;
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
+}
+
+// parseDateParam(raw, fieldName) — validate an optional YYYY-MM-DD
+// query param for the GET /export filter. Mirrors the shape used in
+// routes/disciplineReports.js:68-76; declared locally to keep the
+// two routers independently reviewable. Generic error string — never
+// echoes the bad input.
+function parseDateParam(raw, fieldName) {
+  if (raw === undefined || raw === null || raw === '') {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return { ok: false, error: `Invalid ${fieldName}` };
+  }
+  return { ok: true, value: raw };
+}
+
+// csvEscapeField — RFC 4180 quoting + OWASP spreadsheet-formula-
+// injection guard for the GET /export handler.
+//   - null / undefined → '' (empty cell)
+//   - Non-string values stringified via String(v).
+//   - If the cell starts with one of = + - @ TAB CR, prefix a single
+//     quote so Excel / Sheets / Numbers treat it as text, not a
+//     formula. (LF can't be the leading char on a wire-format cell
+//     that already passed CSV parsing; included in the quote-wrap
+//     trigger set for safety, not the prefix set.)
+//   - If the cell contains , " CR LF, wrap in double quotes and
+//     double any internal double quotes.
+function csvEscapeField(value) {
+  if (value === null || value === undefined) return '';
+  let s = typeof value === 'string' ? value : String(value);
+  if (s.length > 0 && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+// formatBooleanForCsv — 3-state boolean to CSV cell.
+// NULL/undefined → '' (empty cell, meaning "unknown" per M042 doctrine).
+// TRUE / FALSE → 'true' / 'false' (matches the M042 audit table's
+// BOOLEAN::TEXT canonical form so the export wire form aligns with
+// the audit-log wire form).
+function formatBooleanForCsv(value) {
+  if (value === null || value === undefined) return '';
+  return value === true ? 'true' : value === false ? 'false' : '';
 }
 
 // parseAdminNotes(raw) — validate + normalize an admin_notes payload.
@@ -696,6 +758,221 @@ router.get('/queue/:tenantId', requireAuth, requireTenantStaffAccess, async (req
       'err=', error.message
     );
     res.status(500).json({ error: 'Failed to load queue' });
+  }
+});
+
+// ============================================================
+// GET /export — CSV download of discipline referrals matching the
+// supplied filters. Structured fields only — staff_notes and
+// admin_notes are NEVER projected (§4B hard line; the SELECT
+// enumerates an explicit column list, no SELECT *).
+//
+// MUST be registered BEFORE GET /:id below — Express matches routes
+// in registration order, and 'export' would otherwise match the /:id
+// pattern and fail isPositiveInt with a misleading 400.
+//
+// Visibility gate: EXPORT_ROLES (alias of VIEW_ROLES — school_admin,
+// district_admin, counselor, interventionist). Parent + teacher + EA
+// + any other role → 403. Teacher caseload-scoped export is deferred
+// to R-1b.
+//
+// Role gate fires BEFORE any input parsing (S116 role-gate-before-
+// input-parse lesson), so a probing parent/teacher gets a clean 403
+// even on malformed params, never a 400 that would confirm endpoint
+// existence.
+//
+// Tenant scope: resolveAccessibleTenantIds(req.user) is the trust
+// boundary (§5 dual-path doctrine; never inlined). The optional
+// school_tenant_id query param narrows WITHIN the accessible set; an
+// id outside the accessible set returns a byte-identical 403 with
+// no existence disclosure.
+//
+// Joins:
+//   - students INNER (NOT NULL + NO ACTION FK ⇒ a referral cannot
+//     exist whose student row is missing — safe against silent drops)
+//   - discipline_behaviors INNER (NOT NULL + NO ACTION composite FK)
+//   - tenants INNER (NOT NULL + NO ACTION FK)
+//   - users (referring_staff) LEFT — matches the file's existing
+//     queue/detail/student-history precedent (defense in depth even
+//     though the FK is NOT NULL + NO ACTION); the user-tenant
+//     boundary lives in user_school_access at the application layer,
+//     not in this join. CALLED OUT FOR TENANT-ISOLATION-AUDITOR.
+//   - student_race_ethnicity correlated subquery uses the composite
+//     predicate (sre.student_id = s.id AND sre.tenant_id = s.tenant_id)
+//     so §5 stays visible in the query even though the M042 composite
+//     FK enforces it at the schema layer.
+//
+// Demographic fields per operator decision: grade, iep_flag,
+// sec_504_flag, ell_flag, gender, race_ethnicity. The latter two
+// are a DEVIATION from R-1 spec §9 (which excluded race/ethnicity
+// from v1 and didn't list gender). Surfaced in the PR body for
+// privacy-reviewer assessment.
+//
+// CSV discipline (§4B):
+//   - Every cell run through csvEscapeField — RFC 4180 quoting on
+//     , " CR LF with quote-doubling, plus an OWASP formula-injection
+//     guard prefixing ' on a leading = + - @ TAB CR.
+//   - Filename in Content-Disposition is static; HTTP headers can be
+//     logged by intermediaries, so no school name or date range
+//     there. Operator renames on save.
+//   - 3-state flag rendering: NULL → empty cell; TRUE/FALSE →
+//     'true'/'false' (aligned with the M042 audit table's TEXT form).
+//   - race_ethnicity rendered as semicolon-joined stable codes, NOT
+//     display labels — labels live in app constants per M042.
+//   - Empty result set returns a valid header-only file (per spec §5),
+//     not a 404.
+//   - Error log carries integers + err.message only — no names, no
+//     school slug, no labels, no row contents.
+//
+// Open from spec Q5: row-volume handling. v1 is uncapped — the
+// first real-world large export will tell us if a cap/stream is
+// needed.
+// ============================================================
+router.get('/export', requireAuth, async (req, res) => {
+  let accessible;
+  try {
+    if (req.user.role === 'parent') return res.status(403).json(FORBIDDEN_BODY);
+    if (!EXPORT_ROLES.includes(req.user.role)) {
+      return res.status(403).json(FORBIDDEN_BODY);
+    }
+
+    accessible = await resolveAccessibleTenantIds(req.user);
+
+    const startParsed = parseDateParam(req.query.start_date, 'start_date');
+    if (!startParsed.ok) return res.status(400).json({ error: startParsed.error });
+    const endParsed = parseDateParam(req.query.end_date, 'end_date');
+    if (!endParsed.ok) return res.status(400).json({ error: endParsed.error });
+
+    const status = typeof req.query.status === 'string' ? req.query.status : null;
+    if (status !== null && !EXPORT_STATUS_VALUES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+
+    let behaviorId = null;
+    if (req.query.behavior_id !== undefined && req.query.behavior_id !== '') {
+      const parsed = parseInt(req.query.behavior_id, 10);
+      if (!isPositiveInt(parsed)) {
+        return res.status(400).json({ error: 'Invalid behavior_id' });
+      }
+      behaviorId = parsed;
+    }
+
+    // school_tenant_id narrows WITHIN the accessible set. Not-in-set
+    // collapses to 403 with no existence disclosure (matches the
+    // probe-resistance idiom used throughout this file).
+    let scopeIds = accessible;
+    if (req.query.school_tenant_id !== undefined && req.query.school_tenant_id !== '') {
+      const parsed = parseInt(req.query.school_tenant_id, 10);
+      if (!isPositiveInt(parsed)) {
+        return res.status(400).json({ error: 'Invalid school_tenant_id' });
+      }
+      if (!accessible.includes(parsed)) {
+        return res.status(403).json(FORBIDDEN_BODY);
+      }
+      scopeIds = [parsed];
+    }
+
+    const result = await pool.query(
+      `SELECT
+         dr.id                                                AS referral_id,
+         TO_CHAR(dr.incident_date, 'YYYY-MM-DD')              AS incident_date,
+         s.first_name                                         AS student_first_name,
+         s.last_name                                          AS student_last_name,
+         s.id                                                 AS student_internal_id,
+         s.grade                                              AS grade,
+         s.iep_flag                                           AS iep_flag,
+         s.sec_504_flag                                       AS sec_504_flag,
+         s.ell_flag                                           AS ell_flag,
+         s.gender                                             AS gender,
+         COALESCE(
+           (SELECT ARRAY_AGG(sre.category ORDER BY sre.category)
+              FROM student_race_ethnicity sre
+             WHERE sre.student_id = s.id
+               AND sre.tenant_id  = s.tenant_id),
+           ARRAY[]::varchar[]
+         )                                                    AS race_ethnicity,
+         t.name                                               AS school_name,
+         db.label                                             AS behavior_label,
+         dr.status                                            AS status,
+         rs.full_name                                         AS referring_staff_name,
+         dr.referring_staff_id                                AS referring_staff_id
+       FROM discipline_referrals dr
+       JOIN students s
+         ON s.id        = dr.student_id
+        AND s.tenant_id = dr.tenant_id
+       JOIN discipline_behaviors db
+         ON db.id        = dr.behavior_id
+        AND db.tenant_id = dr.tenant_id
+       JOIN tenants t
+         ON t.id = dr.tenant_id
+       LEFT JOIN users rs
+         ON rs.id = dr.referring_staff_id
+       WHERE dr.tenant_id = ANY($1::int[])
+         AND ($2::date IS NULL OR dr.incident_date >= $2::date)
+         AND ($3::date IS NULL OR dr.incident_date <= $3::date)
+         AND ($4::int  IS NULL OR dr.behavior_id    = $4::int)
+         AND ($5::text IS NULL OR dr.status         = $5::text)
+       ORDER BY dr.incident_date DESC, dr.id DESC`,
+      [scopeIds, startParsed.value, endParsed.value, behaviorId, status]
+    );
+
+    const headers = [
+      'referral_id',
+      'incident_date',
+      'student_first_name',
+      'student_last_name',
+      'student_internal_id',
+      'grade',
+      'iep_flag',
+      'sec_504_flag',
+      'ell_flag',
+      'gender',
+      'race_ethnicity',
+      'school_name',
+      'behavior_label',
+      'status',
+      'referring_staff_name',
+      'referring_staff_id',
+    ];
+
+    const lines = [headers.join(',')];
+    for (const row of result.rows) {
+      const raceCodes = Array.isArray(row.race_ethnicity)
+        ? row.race_ethnicity.join(';')
+        : '';
+      const cells = [
+        csvEscapeField(row.referral_id),
+        csvEscapeField(row.incident_date),
+        csvEscapeField(row.student_first_name),
+        csvEscapeField(row.student_last_name),
+        csvEscapeField(row.student_internal_id),
+        csvEscapeField(row.grade),
+        csvEscapeField(formatBooleanForCsv(row.iep_flag)),
+        csvEscapeField(formatBooleanForCsv(row.sec_504_flag)),
+        csvEscapeField(formatBooleanForCsv(row.ell_flag)),
+        csvEscapeField(row.gender),
+        csvEscapeField(raceCodes),
+        csvEscapeField(row.school_name),
+        csvEscapeField(row.behavior_label),
+        csvEscapeField(row.status),
+        csvEscapeField(row.referring_staff_name),
+        csvEscapeField(row.referring_staff_id),
+      ];
+      lines.push(cells.join(','));
+    }
+    const body = lines.join('\r\n') + '\r\n';
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="discipline-referrals.csv"');
+    res.status(200).send(body);
+  } catch (error) {
+    console.error(
+      '[disciplineReferrals:export]',
+      'user_id=', req.user && req.user.id,
+      'tenant_count=', accessible ? accessible.length : 'unresolved',
+      'err=', error.message
+    );
+    res.status(500).json({ error: 'Failed to export referrals' });
   }
 });
 
