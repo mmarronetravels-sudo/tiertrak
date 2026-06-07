@@ -44,6 +44,8 @@ import {
   GENDER_LABELS,
   FLAG_FIELDS,
   FLAG_LABELS,
+  RACE_ETHNICITY_CODES,
+  RACE_ETHNICITY_LABELS,
 } from './constants/studentDemographics';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -63,6 +65,21 @@ const getExpirationUrgency = (expirationDate) => {
   
   return { daysRemaining, urgency };
 };
+
+// Canonical wire form for the race/ethnicity codes array: deduped,
+// alphabetized, and filtered through the FE code list. Used by both
+// the create POST body and the edit set-diff against the
+// initialDemographics snapshot — same canonical shape on both sides so
+// the diff is a string-equality check on the canonical form. Render
+// order at the checkbox group is OMB SPD-15 (RACE_ETHNICITY_CODES
+// declared order) and is INDEPENDENT of this sort — canonicalRace is
+// never used at render. Filtering through RACE_ETHNICITY_CODES is
+// defense-in-depth: a future BE-only code not yet FE-mirrored would
+// be silently dropped on edit. Sync check banked as F-236b.
+const canonicalRace = (arr) =>
+  Array.isArray(arr)
+    ? [...new Set(arr.filter((c) => RACE_ETHNICITY_CODES.includes(c)))].sort()
+    : [];
 
 // FERPA Compliance Badge Component
 const FERPABadge = ({ compact = false }) => (
@@ -139,6 +156,7 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
     sec_504_flag: null,
     ell_flag: null,
     gender: null,
+    race_ethnicity: [],
   });
 
   const handleSave = () => {
@@ -279,6 +297,34 @@ function AddStudentForm({ onSave, onCancel, gradeOptions }) {
               ))}
             </select>
           </div>
+        </div>
+        {/* Race / Ethnicity — full-width block below the demographics
+            grid. Render iteration is OMB SPD-15 (RACE_ETHNICITY_CODES
+            declared order); canonicalRace's alphabetical sort is for
+            the wire form / set-diff only and is never used here. */}
+        <div className="mt-4">
+          <fieldset className="border-0 p-0 m-0">
+            <legend className="block text-sm font-medium text-slate-700 mb-2">
+              Race / Ethnicity <span className="text-xs font-normal text-slate-500">(check all that apply — leave all unchecked if no data on file)</span>
+            </legend>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {RACE_ETHNICITY_CODES.map((code) => (
+                <label key={code} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={form.race_ethnicity.includes(code)}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? canonicalRace([...form.race_ethnicity, code])
+                        : canonicalRace(form.race_ethnicity.filter((c) => c !== code));
+                      setForm({ ...form, race_ethnicity: next });
+                    }}
+                  />
+                  <span>{RACE_ETHNICITY_LABELS[code]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         </div>
       </div>
 
@@ -498,6 +544,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     sec_504_flag: null,
     ell_flag: null,
     gender: null,
+    race_ethnicity: [],
   });
   // initialDemographics is the per-student snapshot captured at the
   // moment startEditStudent runs. handleUpdateStudent diffs the current
@@ -512,6 +559,7 @@ const [parentLinksLoading, setParentLinksLoading] = useState(false);
     sec_504_flag: null,
     ell_flag: null,
     gender: null,
+    race_ethnicity: [],
   });
   const [adminStudentSearch, setAdminStudentSearch] = useState('');
   // Parent account creation state
@@ -1945,6 +1993,17 @@ const handleUnlinkParent = async (linkId) => {
       if (studentForm.gender !== initialDemographics.gender) {
         body.gender = studentForm.gender;
       }
+      // Race/ethnicity set-diff: compare canonical-form (sorted +
+      // deduped) arrays as strings. initialDemographics.race_ethnicity
+      // is already canonical from startEditStudent's snap. Untouched
+      // edit → same canonical form → no key on the wire → BE's
+      // hasOwnProperty gate at routes/students.js PUT preserves the
+      // existing student_race_ethnicity rows.
+      const currentRace = canonicalRace(studentForm.race_ethnicity);
+      const snapRace = initialDemographics.race_ethnicity;
+      if (JSON.stringify(currentRace) !== JSON.stringify(snapRace)) {
+        body.race_ethnicity = currentRace;
+      }
       const res = await apiFetch(`${API_URL}/students/${editingStudent.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -1980,7 +2039,14 @@ const handleUnlinkParent = async (linkId) => {
   // perform a clean diff at submit time. Source for the snapshot is the
   // student row returned by GET /students/tenant/:tenantId (which is a
   // SELECT s.*, so the four M042 scalar columns come back natively).
-  // Note: race_ethnicity is NOT in the GET payload and NOT in PR-D scope.
+  // Race/ethnicity comes back as an alphabetized varchar[] (PR #238);
+  // canonicalRace re-applies sort+dedupe so the snapshot is in canonical
+  // form and handleUpdateStudent's set-diff is order-invariant. The
+  // studentForm's race_ethnicity is a defensive copy so in-place
+  // mutation can't bleed into the snapshot. Filtering through
+  // RACE_ETHNICITY_CODES is defense-in-depth — a future BE-only code
+  // not yet FE-mirrored would be silently dropped on edit. Sync check
+  // banked as F-236b.
   // Normalize undefined → null for the demographic keys: legacy student
   // rows pre-M042 may have NULL columns in the DB, which pg returns as
   // null; new rows from PR-C also write null for unknown. Anything other
@@ -1995,6 +2061,7 @@ const handleUnlinkParent = async (linkId) => {
       sec_504_flag: normalizeFlag(student.sec_504_flag),
       ell_flag: normalizeFlag(student.ell_flag),
       gender: normalizeGender(student.gender),
+      race_ethnicity: canonicalRace(student.race_ethnicity),
     };
     setStudentForm({
       first_name: student.first_name,
@@ -2005,6 +2072,7 @@ const handleUnlinkParent = async (linkId) => {
       secondary_area: student.secondary_area || '',
       risk_level: student.risk_level || 'low',
       ...snap,
+      race_ethnicity: [...snap.race_ethnicity],
     });
     setInitialDemographics(snap);
     setShowAddStudent(false);
@@ -2024,12 +2092,14 @@ const handleUnlinkParent = async (linkId) => {
       sec_504_flag: null,
       ell_flag: null,
       gender: null,
+      race_ethnicity: [],
     });
     setInitialDemographics({
       iep_flag: null,
       sec_504_flag: null,
       ell_flag: null,
       gender: null,
+      race_ethnicity: [],
     });
   };
 
@@ -5429,6 +5499,11 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
                       sec_504_flag: formData.sec_504_flag,
                       ell_flag: formData.ell_flag,
                       gender: formData.gender,
+                      // Always sent — POST has no preserve-on-omit
+                      // semantic. canonicalRace at the wire is
+                      // defense-in-depth (form state should already be
+                      // canonical from the toggle handler).
+                      race_ethnicity: canonicalRace(formData.race_ethnicity),
                     })
                   });
                   if (res.ok) {
@@ -5565,6 +5640,34 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
             ))}
           </select>
         </div>
+      </div>
+      {/* Race / Ethnicity — full-width block below the demographics
+          grid. Render iteration is OMB SPD-15 (RACE_ETHNICITY_CODES
+          declared order); canonicalRace's alphabetical sort is for the
+          wire form / set-diff only and is never used here. */}
+      <div className="mt-4">
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="block text-sm font-medium text-slate-700 mb-2">
+            Race / Ethnicity <span className="text-xs font-normal text-slate-500">(check all that apply — leave all unchecked if no data on file)</span>
+          </legend>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {RACE_ETHNICITY_CODES.map((code) => (
+              <label key={code} className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={studentForm.race_ethnicity.includes(code)}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? canonicalRace([...studentForm.race_ethnicity, code])
+                      : canonicalRace(studentForm.race_ethnicity.filter((c) => c !== code));
+                    setStudentForm({ ...studentForm, race_ethnicity: next });
+                  }}
+                />
+                <span>{RACE_ETHNICITY_LABELS[code]}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       </div>
     </div>
     <div className="flex gap-3 mt-4">
@@ -6385,11 +6488,12 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
                   <li><code className="bg-slate-200 px-1 rounded">sec_504_flag</code> (TRUE/FALSE — see note below)</li>
                   <li><code className="bg-slate-200 px-1 rounded">ell_flag</code> (TRUE/FALSE — see note below)</li>
                   <li><code className="bg-slate-200 px-1 rounded">gender</code> (M, F, X, prefer_not_to_say)</li>
+                  <li><code className="bg-slate-200 px-1 rounded">race_ethnicity</code> (one or more of AIAN, ASIAN, BLACK, HISP, MENA, NHPI, WHITE — separated by <code className="bg-slate-200 px-1 rounded">;</code>)</li>
                 </ul>
               </div>
             </div>
             <p className="mt-3 text-xs text-slate-500 italic">
-              For <code className="bg-slate-200 px-1 rounded">iep_flag</code>, <code className="bg-slate-200 px-1 rounded">sec_504_flag</code>, and <code className="bg-slate-200 px-1 rounded">ell_flag</code>: a blank cell means <strong>Unknown</strong> — it is NOT auto-coerced to FALSE. Accepted truthy tokens: TRUE/T/1/YES/Y. Accepted falsy tokens: FALSE/F/0/NO/N. Same shape for <code className="bg-slate-200 px-1 rounded">gender</code> — blank means not recorded.
+              For <code className="bg-slate-200 px-1 rounded">iep_flag</code>, <code className="bg-slate-200 px-1 rounded">sec_504_flag</code>, and <code className="bg-slate-200 px-1 rounded">ell_flag</code>: a blank cell means <strong>Unknown</strong> — it is NOT auto-coerced to FALSE. Accepted truthy tokens: TRUE/T/1/YES/Y. Accepted falsy tokens: FALSE/F/0/NO/N. Same shape for <code className="bg-slate-200 px-1 rounded">gender</code> — blank means not recorded. For <code className="bg-slate-200 px-1 rounded">race_ethnicity</code>: list one or more codes separated by <code className="bg-slate-200 px-1 rounded">;</code> (e.g., <code className="bg-slate-200 px-1 rounded">ASIAN;WHITE</code>); blank means none recorded.
             </p>
             <button
               onClick={downloadCsvTemplate}
