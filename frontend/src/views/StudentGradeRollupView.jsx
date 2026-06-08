@@ -231,9 +231,16 @@ export default function StudentGradeRollupView() {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         setCommitError(commitErrorMessage(res.status, body));
-        // 409 / 410 / 422 all mean "re-preview required" — clear the
-        // token so the operator can't keep retrying the same one.
-        if ([409, 410, 422].includes(res.status)) {
+        // Clear the preview (and its dead token) on every status that
+        // means "re-preview required": 409 (stale snapshot), 410 (token
+        // expired), 422 (unclassified remains), AND 401 carrying
+        // 'Invalid preview token' (token tampered or signed with a
+        // rotated secret). All four leave the operator with a dead
+        // token; clearing forces them through /preview again rather
+        // than letting them re-click Commit on the same dead token.
+        const invalidToken401 =
+          res.status === 401 && body?.error === 'Invalid preview token';
+        if ([409, 410, 422].includes(res.status) || invalidToken401) {
           updateDraft({ preview: null });
         }
         return;
