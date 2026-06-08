@@ -66,6 +66,12 @@ export function AppProvider({ children }) {
   const canDeleteDocs = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const isParent = user && user.role === 'parent';
   const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);
+  // canRunRollup — admits district_admin + school_admin to the EOY
+  // grade roll-up surface. Mirrors ROLLUP_ROLES in constants/roles.js
+  // (BE source of truth). Scope of authority is enforced server-side
+  // via resolveAccessibleTenantIds at the rollup endpoints; this
+  // derived value gates only the FE nav button + view mount.
+  const canRunRollup = !!(user && ['district_admin', 'school_admin'].includes(user.role));
 
   // === REFS (shared across components) ===
   const googleButtonRef = useRef(null);
@@ -428,7 +434,7 @@ useEffect(() => {
     rollupDraft, setRollupDraft,
     
     // Derived Values
-    isAdmin, canArchive, canAddStudents, canManageInterventions, canLogProgress, canDeleteDocs, isParent, isDistrictAdmin,
+    isAdmin, canArchive, canAddStudents, canManageInterventions, canLogProgress, canDeleteDocs, isParent, isDistrictAdmin, canRunRollup,
     
     // Constants
     API_URL,
