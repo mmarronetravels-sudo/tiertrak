@@ -355,6 +355,24 @@ const csvImportLimiter = rateLimit({
   handler: makeRateLimitHandler('csv-import')
 });
 
+// rollupOperationLimiter — POST /api/student-grade-rollup/commit + /undo
+// per-req.user.id, 10 / 15min. mutationUserLimiter (300/min) already
+// covers these via requireAuth, but commit/undo are batch operations
+// that touch every active student in a school in one shot — a runaway
+// operator-script could burn through quota in seconds. This tighter
+// cap is the rollup-specific safety boundary.
+// Mounted at the route level on /commit + /undo only (NOT on /preview,
+// which is cheap and read-only).
+const rollupOperationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  store: initializeRateLimitStore('rl:rollup-op:'),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.id ?? req.ip),
+  handler: makeRateLimitHandler('rollup-op')
+});
+
 module.exports = {
   initializeRateLimitStore,
   getLogIpPepper,
@@ -367,5 +385,6 @@ module.exports = {
   authLoginCompoundLimiter,
   contactLimiter,
   mutationUserLimiter,
-  csvImportLimiter
+  csvImportLimiter,
+  rollupOperationLimiter
 };
