@@ -35,6 +35,17 @@ export function AppProvider({ children }) {
   const [studentDocuments, setStudentDocuments] = useState([]);
   const [mtssMeetings, setMTSSMeetings] = useState([]);
 
+  // === GRADE ROLL-UP DRAFT ===
+  // Lifted so the StudentGradeRollupView's in-progress state (school
+  // selection, terminal grade, exit designations, the /preview response
+  // including its preview_token, and any post-commit run_id +
+  // post-undo results) survives a round-trip to a student profile and
+  // back. Without this, fixing an unclassified student via the
+  // unclassified banner would force the operator to rebuild the entire
+  // form on return. Reset on logout below; otherwise persists for the
+  // duration of the SPA session.
+  const [rollupDraft, setRollupDraft] = useState(null);
+
   // === DERIVED VALUES ===
   const isAdmin = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
   const canArchive = user && ['district_admin', 'school_admin', 'counselor', 'interventionist'].includes(user.role);
@@ -368,6 +379,7 @@ credentials: 'include'
   setStudents([]);
   setSelectedStudent(null);
   setInterventionLogs([]);
+  setRollupDraft(null);
 };
 
   // ============================================
@@ -410,6 +422,10 @@ useEffect(() => {
     weeklyProgressLogs, setWeeklyProgressLogs,
     studentDocuments, setStudentDocuments,
     mtssMeetings, setMTSSMeetings,
+
+    // Grade Roll-up Draft (persists in-progress form state across
+    // round-trips to student profile)
+    rollupDraft, setRollupDraft,
     
     // Derived Values
     isAdmin, canArchive, canAddStudents, canManageInterventions, canLogProgress, canDeleteDocs, isParent, isDistrictAdmin,

@@ -36,6 +36,7 @@ import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
 import DistrictDashboardView from './views/DistrictDashboardView';
+import StudentGradeRollupView from './views/StudentGradeRollupView';
 import Section504Tab from './components/Section504/Section504Tab';
 import TeacherAccommodationsView from './components/Section504/TeacherAccommodationsView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
@@ -7622,6 +7623,16 @@ if (isParent) {
                     My District
                   </button>
                 )}
+                {isDistrictAdmin && (
+                  <button
+                    onClick={() => setView('grade-rollup')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                      view === 'grade-rollup' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Grade Roll-up
+                  </button>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => setView('admin')}
@@ -7667,6 +7678,7 @@ if (isParent) {
         {view === 'admin' && <AdminView />}
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
+        {view === 'grade-rollup' && isDistrictAdmin && <StudentGradeRollupView />}
         {view === 'discipline-queue' && canViewDisciplineReview && (
           <DisciplineReferralQueue
             user={user}
