@@ -27200,3 +27200,156 @@ NEXT SESSION SHOULD
   regression guard before merge. The fixture's teardown is idempotent
   and clean; re-seeding mints fresh passwords each run.
 ================================================================================
+SESSION: 2026-06-08T15:30:00-07:00
+BRANCH:  migration/students-enrollment-status
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/251 + prod-applied 2026-06-08
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Foundation migration for the upcoming EOY grade roll-up feature. Adds a
+  structured enrollment-state triple to the students table (enrollment_status
+  with CHECK allowlist, exit_reason, exit_date) so the follow-on feature
+  branch can mark students graduated or exited as distinct from the existing
+  free-text archived_reason surface. Schema-only; no app code, no triggers,
+  no audit table (those land with the feature PR).
+
+FILES TOUCHED
+  migration-044-students-enrollment-status.sql — new migration (+113 / -0),
+    BEGIN/COMMIT unit, IF NOT EXISTS guards on every object, commented
+    -- ROLLBACK block at file bottom in reverse dependency order
+
+MIGRATIONS RUN
+  migration-044-students-enrollment-status.sql — applied to prod via Render
+    External PSQL Command, operator-driven (Path A). Adds enrollment_status
+    VARCHAR(20) NOT NULL DEFAULT 'active' with named CHECK constraint,
+    exit_reason VARCHAR(50) NULL, exit_date DATE NULL, and partial b-tree
+    index (tenant_id, enrollment_status) WHERE enrollment_status <> 'active'.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor subagent on diff vs origin/main: APPROVED,
+  0 CRITICAL / 0 WARN / 1 INFO. Schema-only change to a table already
+  tenant-scoped via the existing tenant column with the M021 composite
+  uniqueness constraint. New partial index leads with the tenant column,
+  satisfying §5's index-on-tenant rule. No new tables, no cross-tenant FK
+  affordance.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: 3 added on students (enrollment_status / exit_reason
+    / exit_date). All per-student state, none directly identifying. Privacy-
+    reviewer classified as state-only or PII-adjacent.
+  Logging audit: 0 log statements in diff (schema-only). 0 res.* calls.
+  Cross-tenant risk: none identified. No app-layer queries added; existing
+    tenant scoping preserved.
+  §4B grep (narrow + wide) against added activities-entry lines vs
+    origin/main: see VERIFICATION below.
+  privacy-reviewer subagent on diff: APPROVED, 0 CRITICAL / 0 WARN / 3
+  forward-looking INFO. INFO items captured under OPEN ITEMS.
+
+VERIFICATION
+  Local dress rehearsal (localhost dev DB, 15-row sample):
+    first apply — clean; verification SELECT returned expected 3-row column
+      shape; backfill: 15/15 rows enrollment_status='active'; 0 graduated;
+      0 exited; 0 NULL status; 0 exit_reason set; 0 exit_date set.
+    CHECK enforcement — INSERT with bogus enrollment_status rejected with
+      SQLSTATE 23514 (violates students_enrollment_status_check).
+    second apply — idempotency clean: no duplicate-object errors;
+      pg_constraint count for students_enrollment_status_check = 1;
+      pg_indexes count for idx_students_tenant_enrollment_status = 1.
+
+  Reviewer subagents on git diff main...migration/students-enrollment-status:
+    privacy-reviewer:           APPROVED         (0 CRIT / 0 WARN / 3 INFO)
+    security-reviewer:          APPROVED W/NOTES (0 CRIT / 2 WARN / 4 INFO)
+    tenant-isolation-auditor:   APPROVED         (0 CRIT / 0 WARN / 1 INFO)
+
+  §2A formal review: PR #251 reviewDecision APPROVED by the shared external-
+    review COLLABORATOR account (non-author; see
+    project_pr_236_external_human_review_attribution) against commit
+    8f1730965f76ca3f8d9a34aafe2c2783ac71fb2f.
+
+  Prod apply (Render External PSQL Command, operator-driven, off-peak):
+    three-pronged absence check returned 0 / 0 / 0 (column / constraint /
+      index all absent — not previously applied; the migration-number gap
+      banked under project_followup_m035_skip_mystery did not collide).
+    apply: succeeded. Columns, named CHECK constraint, and partial index
+      all created.
+    backfill smoke: re-run by hand because the apply block's trailing
+      verification SELECTs ended up on the same line as the \i include
+      command in the operator's psql session, so psql parsed them as
+      extra arguments to \i and discarded them (emitting "\i: extra
+      argument ... ignored" notices). They never executed. Manual SELECT
+      of grouped enrollment_status against students returned a single
+      row: ('active', 577). 0 graduated, 0 exited.
+    app-level smoke: roster endpoint loads normally post-migration; no
+      500s, no regression.
+
+  Tests / lint: N/A (no backend test suite per followup #73; no backend
+    lint per followup #74; schema-only change with no app code).
+
+  merge-sha verification: PASS — true merge commit; PR head
+    8f1730965f76ca3f8d9a34aafe2c2783ac71fb2f equals merge second-parent
+    8f1730965f76ca3f8d9a34aafe2c2783ac71fb2f.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #251 commit OIDs at merge time:
+  8f1730965f76ca3f8d9a34aafe2c2783ac71fb2f
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup — apply-block trailing-SELECTs swallowed by \i: the apply
+    block's post-apply verification SELECTs (column / constraint / index
+    presence + GROUP BY count) ended up on the same line as the \i
+    include command in the operator's psql session, so psql parsed them
+    as extra arguments to \i and discarded them (emitting "\i: extra
+    argument ... ignored" notices in the session output). They never
+    executed — this is the same-line-as-\i failure mode, NOT a silent-
+    inside-include failure. Lesson for future migration apply blocks:
+    post-apply verification SELECTs MUST be separate top-level statements
+    on their own lines, never on the same line as \i, or psql swallows
+    them. Documentation-only workflow fix; no code or schema change.
+
+  - Followup — sec/exit-reason-route-allowlist (PR 2 obligation, banked
+    from privacy-reviewer INFO on PR #251): when the EOY roll-up feature
+    PR wires writes to exit_reason, it MUST enforce a route-layer
+    allowlist before INSERT/UPDATE, MUST NOT allow exit_reason to absorb
+    free-form PII, and MUST NOT echo exit_reason into log lines or error
+    bodies. Mirrors archived_reason route-validation precedent.
+
+  - Followup — chore/privacy-review-m044-fields docs PR (banked from
+    privacy-reviewer INFO on PR #251): PRIVACY_REVIEW.md does not yet
+    enumerate enrollment_status / exit_reason / exit_date. Doc update
+    appropriately deferred to a chore PR sibling to followup #120 (M031)
+    and project_followup_pr_d_privacy_review_doc_m042 (M042). LOW
+    priority, doc-only.
+
+  - Followup — future-mutation audit plan for the new columns (banked
+    from privacy-reviewer foresight INFO on PR #251): if any future PR
+    adds a mid-year manual-mutation endpoint on enrollment_status /
+    exit_reason / exit_date (distinct from the EOY bulk roll-up), it
+    MUST land with a paired audit plan. The PR 2 audit table only
+    captures bulk transitions, not subsequent edits.
+
+  - Followup — security-reviewer WARN-2 (CREATE INDEX without
+    CONCURRENTLY): non-blocking at M044 because the partial index is
+    empty at apply time. Flagged for future-extension awareness: if a
+    later migration extends the partial-index predicate or changes the
+    default value of enrollment_status, this safety assumption breaks
+    and the index build will not be empty.
+
+  - PR 2 next-unit constraint: feat/student-grade-rollup-eoy writes to
+    these columns MUST consume resolveAccessibleTenantIds — never inline
+    the district-id comparison (per
+    feedback_helper_consume_dont_inline_5_branch). Schema-side has no
+    cross-tenant write affordance; the discipline lives entirely at the
+    call site.
+
+NEXT SESSION SHOULD
+  Pick up feat/student-grade-rollup-eoy (branch created earlier this
+  session, 0 commits). PR 2 scope per operator decisions logged in-
+  conversation: dedicated EOY-rollup-events audit table (header + per-
+  student child rows, no-FK doctrine matching M039/M040/M041/M042);
+  preview + commit two-call endpoint with HMAC preview_token; block
+  commit on unclassified rows; undo in v1 scope; operator supplies
+  terminal grade per run. Full triad of reviewer subagents + formal
+  §2A approval required (PR 2 is also §4B + §5).
+================================================================================
