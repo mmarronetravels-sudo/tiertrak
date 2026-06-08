@@ -27353,3 +27353,220 @@ NEXT SESSION SHOULD
   terminal grade per run. Full triad of reviewer subagents + formal
   §2A approval required (PR 2 is also §4B + §5).
 ================================================================================
+SESSION: 2026-06-08T18:30:00-07:00
+BRANCH:  feat/student-grade-rollup-eoy
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/253 + prod-applied 2026-06-08
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR 1 of the EOY grade roll-up: audit-table substrate only. Adds
+  student_grade_rollup_runs (header — one row per run) and
+  student_grade_rollup_event_rows (child — one row per affected
+  student), with the action allowlist CHECK constrained to
+  'promoted' | 'graduated' | 'exited' ('unclassified' deliberately
+  excluded — commit endpoint blocks before INSERT). Header + children
+  split deviates from the M041/M042 flat per-event audit shape;
+  justified by batch-undo identity + HMAC preview_snapshot_hash
+  binding, documented inline in the migration header. No FKs across
+  either table per the M039–M042 no-FK doctrine (FERPA §99.32
+  record-of-disclosure retention). No application code added —
+  backend writers land in PR 2 (feat/student-grade-rollup-eoy
+  endpoints).
+
+FILES TOUCHED
+  migration-045-student-grade-rollup-events.sql — new migration
+    (+173 / -0), BEGIN/COMMIT unit, IF NOT EXISTS guards on every
+    object, DO-block conditional CHECK constraint guard, two inline
+    verification SELECTs (column shape + index list), commented
+    -- ROLLBACK block at file bottom in reverse dependency order.
+
+MIGRATIONS RUN
+  migration-045-student-grade-rollup-events.sql — applied to prod
+    via Render External PSQL Command, operator-driven (Path A).
+    Creates student_grade_rollup_runs (13 columns), student_grade_
+    rollup_event_rows (11 columns), 5 b-tree indexes (school-scoped
+    + district-scoped on header; run/student/school on child), and 1
+    named CHECK constraint (student_grade_rollup_event_rows_action_
+    check). No DML; both tables empty post-apply.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor subagent on diff vs origin/main:
+  APPROVED, 0 CRITICAL / 0 WARN / 3 INFO. Both tables carry
+  school_tenant_id + district_id (INTEGER NOT NULL on both —
+  deliberate tightening relative to M041 NULL-tolerance for legacy
+  single-tenant rows, justified by the district_admin-only role gate
+  planned for PR 2). Every scope column indexed. No DML in this PR;
+  write-time scope enforcement is PR 2's responsibility. M021
+  composite-FK rule deliberately not applied — audit-table no-FK
+  doctrine takes precedence for FERPA §99.32 retention, documented
+  inline. Carryover watch-items recorded under OPEN ITEMS.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: 0. No name, email, DOB, document-reference,
+    or free-text-notes columns added on either table. exit_reason
+    VARCHAR(50) is route-layer-allowlisted in PR 2 (mirrors
+    archived_reason precedent at routes/students.js:937-953); not a
+    free-text PII sink.
+  Logging audit: 0 log statements in diff (schema-only).
+    0 res.* calls.
+  Cross-tenant risk: none introduced; no app-layer queries added.
+  §4B grep (narrow + wide) against added activities-entry lines vs
+    origin/main: see VERIFICATION below.
+  privacy-reviewer subagent on diff: APPROVED WITH NOTES,
+  0 CRITICAL / 2 WARN / 3 INFO. Both WARNs are forward-looking docs
+  obligations (PRIVACY_REVIEW.md M045 doc subsection +
+  preview_snapshot_hash salting/equality documentation); folded into
+  PR 2 review obligation under OPEN ITEMS.
+
+VERIFICATION
+  Local dress rehearsal (localhost dev DB):
+    first apply — clean; column-shape SELECT returned expected
+      24-row total (11 columns on event_rows + 13 on runs); index-
+      list SELECT returned 7 rows (2 PKEY + 5 explicit indexes).
+    CHECK enforcement — INSERT with action='foo' and
+      action='unclassified' both rejected with SQLSTATE 23514.
+      INSERT with action='promoted' succeeded; row deleted in
+      cleanup.
+    second apply — idempotency clean: every CREATE TABLE /
+      CREATE INDEX emitted "relation already exists, skipping";
+      DO-block guard detected pg_constraint hit and silently passed;
+      ON_ERROR_STOP=1 did not fire.
+
+  Reviewer subagents on git diff main...feat/student-grade-rollup-eoy:
+    privacy-reviewer:           APPROVED W/NOTES (0 CRIT / 2 WARN / 3 INFO)
+    security-reviewer:          APPROVED W/NOTES (0 CRIT / 2 WARN / 4 INFO)
+    tenant-isolation-auditor:   APPROVED         (0 CRIT / 0 WARN / 3 INFO)
+
+  §2A formal review: PR #253 reviewDecision APPROVED by the shared
+    scholapathsystems external-review COLLABORATOR account (non-
+    author; see project_pr_236_external_human_review_attribution —
+    the standing fix to give §2A reviewers personal GH accounts
+    remains open) against commit
+    6c3906dcb2e3c88da588ff9083ebda9c78169922.
+
+  Prod apply (Render External PSQL Command, operator-driven, off-
+    peak):
+    complete 8-object absence check returned 8/8 zero (2 tables +
+      1 CHECK constraint + 5 indexes all absent — not previously
+      applied; no partial-state collision with the M035-skip
+      caution).
+    apply: succeeded. Both tables, 5 explicit indexes, and the
+      named CHECK constraint all created. In-file verification
+      SELECTs (column shape + index list) fired inside the
+      migration's own BEGIN/COMMIT block and provided post-apply
+      shape confirmation directly in the operator's session.
+    post-apply standalone SELECTs (the apply-block's trailing
+      column-shape + index-list + empty-table queries) were again
+      swallowed by psql parsing them as extra arguments to the
+      preceding \i — same failure mode as the M044 apply. See
+      OPEN ITEMS for the strengthened durable fix.
+
+  Tests / lint: N/A (no backend test suite per followup #73; no
+    backend lint per followup #74; schema-only change with no app
+    code).
+
+  merge-sha verification: PASS — true merge commit; PR head
+    6c3906dcb2e3c88da588ff9083ebda9c78169922 equals merge second-
+    parent 6c3906dcb2e3c88da588ff9083ebda9c78169922.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #253 commit OIDs at merge time:
+  6c3906dcb2e3c88da588ff9083ebda9c78169922
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup — apply-block post-\i SELECTs swallowed (RECURRENCE;
+    same failure mode flagged on the M044 apply): for the second
+    consecutive migration, the standalone post-apply verification
+    SELECTs in the apply block were parsed by psql as extra
+    arguments to the preceding \i meta-command and discarded. The
+    in-file verification SELECTs inside the migration's BEGIN/COMMIT
+    block still fired and provided the only eyeball confirmation.
+    The M044 follow-up's prescription ("on their own lines, never
+    on the same line as \i") was not sufficient — the recurrence
+    proves psql's \i argument parsing can still absorb trailing
+    statements depending on prompt/buffer state when issued in the
+    same paste. DURABLE FIX (strengthened, operator workflow only,
+    no code or schema change): post-apply verification SELECTs MUST
+    be issued as a fully separate psql command — separate paste,
+    separate execution from the \i line — never bundled into the
+    same block or paste. Adoption rule for all future migration
+    apply blocks starting now. Belt-and-suspenders option: keep the
+    migration's in-file verification SELECTs inside BEGIN/COMMIT
+    (already standard since M042) so post-COMMIT standalone
+    verification is a check, not the only signal.
+
+  - Followup — PRIVACY_REVIEW.md M045 doc subsection (banked from
+    privacy-reviewer WARN-1 on PR #253): no entry yet for either
+    new audit table. Sibling-shape to followup #120 (M031) and
+    project_followup_pr_d_privacy_review_doc_m042 (M042). LOW
+    priority, doc-only; should land in PR 2's window so the M045
+    subsection can describe the full read/write contract including
+    preview_snapshot_hash semantics, not just the schema shape.
+
+  - Followup — preview_snapshot_hash salting + equality
+    documentation (banked from privacy-reviewer WARN-2 on PR #253):
+    the M045 doc subsection above MUST explicitly state (a) the
+    hash is HMAC-SHA-256 keyed by PREVIEW_TOKEN_SECRET per PR 2's
+    locked decision (not plain SHA-256), (b) that hash equality
+    across runs is intended metadata ("same cohort previewed
+    twice") and is not a §4B re-identification surface, and (c)
+    that the hash is never decoded back to student_ids on either
+    side of the wire.
+
+  - Followup — preview_snapshot_hash format CHECK as defense-in-
+    depth (banked from security-reviewer WARN-1 on PR #253):
+    VARCHAR(64) accepts any string ≤64 chars; a future second
+    writer could land a truncated or mis-encoded digest. Either
+    add CHECK (preview_snapshot_hash ~ '^[0-9a-f]{64}$') alongside
+    PR 2 route validation, or document the single-writer invariant
+    in PR 2 with a route file/line citation.
+
+  - Followup — exit_reason DB-layer CHECK as defense-in-depth
+    (banked from security-reviewer WARN-2 on PR #253): exit_reason
+    has no DB CHECK in this PR (mirrors archived_reason precedent).
+    A future second writer (backfill, ops script, sandbox seed)
+    could land an off-allowlist value into an audit table that
+    outlives application code by FERPA §99.32 design. Add either a
+    DB CHECK once PR 2 finalizes the allowlist, or document the
+    single-writer invariant.
+
+  - Followup — PR 2 tenant-isolation carryover watch-items (banked
+    from tenant-isolation-auditor INFO on PR #253): INSERTs into
+    student_grade_rollup_runs MUST source target_school_tenant_id +
+    district_id from resolveAccessibleTenantIds(req.user) — never
+    req.body. INSERTs into student_grade_rollup_event_rows MUST
+    source school_tenant_id + district_id from the parent run
+    header within the same transaction — never from request input
+    or per-student lookup. preview_snapshot_hash HMAC payload MUST
+    include target_school_tenant_id so a school-A preview cannot
+    replay against school-B. Every read endpoint MUST WHERE-scope
+    on target_school_tenant_id / school_tenant_id. Undo MUST verify
+    actor's accessible-tenant set against the run header's
+    target_school_tenant_id before reversal.
+
+  - Standing fix carryforward —
+    project_pr_236_external_human_review_attribution: PR #253 was
+    again approved through the shared scholapathsystems COLLABORATOR
+    account (non-author, satisfies §2A reviewDecision). Personal GH
+    accounts for §2A reviewers remain the documented standing fix;
+    not blocking, but the audit-attribution gap persists across
+    consecutive PRs and should land before the next sec/ class PR.
+
+NEXT SESSION SHOULD
+  Pick up PR 2 of the EOY grade roll-up: backend endpoints
+  (POST /api/rollups/preview, /api/rollups/commit, /api/rollups/
+  undo), the server-owned grade progression module
+  (constants/gradeProgression.js with Pre-K → K → ... → 12th +
+  ADVANCE_MAP + classifyTransition), the HMAC token helper
+  (lib/previewToken.js bound to backend-only PREVIEW_TOKEN_SECRET —
+  Render only, never Vercel, never client bundle), and the
+  district_admin-only role gate applied before req.body parse.
+  Carry every PR 2 watch-item above into the preflight: helper-
+  consume not inline (feedback_helper_consume_dont_inline_5_branch);
+  HMAC payload includes school_tenant_id; exit_reason route
+  allowlist before INSERT; no PII in error bodies. Full triad of
+  reviewer subagents + formal §2A approval required (PR 2 is §4B
+  + §5 + auth/role-gate).
+================================================================================
