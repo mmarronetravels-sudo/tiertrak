@@ -141,8 +141,14 @@ function verifyPreviewToken(token) {
     .createHmac('sha256', getPreviewTokenSecret())
     .update(payloadB64)
     .digest('base64url');
-  const sigBuf = Buffer.from(sigStr);
-  const expectedBuf = Buffer.from(expectedSig);
+  // Explicit 'utf8' on both sides: sigStr arrived via token.slice (utf8
+  // string in memory); expectedSig is digest('base64url') (ASCII string).
+  // Comparing the utf8-byte forms of two ASCII base64url strings is
+  // semantically correct and length-safe; the explicit encoding makes
+  // the intent unambiguous to readers and forecloses any future
+  // refactor accidentally redefining the default.
+  const sigBuf = Buffer.from(sigStr, 'utf8');
+  const expectedBuf = Buffer.from(expectedSig, 'utf8');
   if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
     return { ok: false, status: 401, body: { error: 'Invalid preview token' } };
   }
@@ -735,28 +741,11 @@ router.post('/undo/:runId', requireAuth, rollupOperationLimiter, async (req, res
     return res.status(500).json({ error: 'Server error' });
   }
 
-  // Header load — must succeed, must not already be undone, must be
-  // in scope. Refinement #2: scope-mismatch returns 404, not 403, to
-  // match the existence-disclosure doctrine.
-  const headerRes = await pool.query(
-    `SELECT id, district_id, target_school_tenant_id, undone_at
-       FROM student_grade_rollup_runs
-      WHERE id = $1`,
-    [runId]
-  );
-  if (headerRes.rows.length === 0) {
-    return res.status(404).json({ error: 'Run not found' });
-  }
-  const header = headerRes.rows[0];
-  if (!accessible.includes(header.target_school_tenant_id)) {
-    // 404, not 403 — existence-disclosure doctrine. 403 is reserved
-    // for the role-gate failure above.
-    return res.status(404).json({ error: 'Run not found' });
-  }
-  if (header.undone_at !== null) {
-    return res.status(409).json({ error: 'Run already undone' });
-  }
-
+  // Header load runs INSIDE the transaction with FOR UPDATE so concurrent
+  // /undo on the same runId serialize: the second caller blocks on the
+  // row lock, then observes undone_at set by the first commit → 409.
+  // Scope-mismatch returns 404 (existence-disclosure doctrine); 403 is
+  // reserved for the role-gate failure above.
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -764,6 +753,27 @@ router.post('/undo/:runId', requireAuth, rollupOperationLimiter, async (req, res
       "SELECT set_config('app.actor_user_id', $1, true)",
       [String(req.user.id)]
     );
+
+    const headerRes = await client.query(
+      `SELECT id, district_id, target_school_tenant_id, undone_at
+         FROM student_grade_rollup_runs
+        WHERE id = $1
+        FOR UPDATE`,
+      [runId]
+    );
+    if (headerRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Run not found' });
+    }
+    const header = headerRes.rows[0];
+    if (!accessible.includes(header.target_school_tenant_id)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Run not found' });
+    }
+    if (header.undone_at !== null) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Run already undone' });
+    }
 
     const { rows: childRows } = await client.query(
       `SELECT student_id, action, old_grade, new_grade, exit_reason
@@ -863,12 +873,22 @@ router.post('/undo/:runId', requireAuth, rollupOperationLimiter, async (req, res
       }
     }
 
-    await client.query(
+    // Belt-and-suspenders: the FOR UPDATE above serializes concurrent
+    // /undo callers, so this branch reaches here only when undone_at
+    // was NULL at lock time. The `undone_at IS NULL` filter + rowCount
+    // === 1 enforcement defends against a future refactor accidentally
+    // dropping the FOR UPDATE — if zero rows match, ROLLBACK + 409
+    // rather than silently re-stamping a previously undone run.
+    const finalUpd = await client.query(
       `UPDATE student_grade_rollup_runs
           SET undone_at = now(), undone_by_user_id = $1
-        WHERE id = $2`,
+        WHERE id = $2 AND undone_at IS NULL`,
       [req.user.id, runId]
     );
+    if (finalUpd.rowCount !== 1) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Run already undone' });
+    }
 
     await client.query('COMMIT');
 
