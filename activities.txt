@@ -27570,3 +27570,232 @@ NEXT SESSION SHOULD
   reviewer subagents + formal §2A approval required (PR 2 is §4B
   + §5 + auth/role-gate).
 ================================================================================
+SESSION: 2026-06-08T18:00:00-07:00
+BRANCH:  feat/student-grade-rollup-api
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/255 + prod-applied 2026-06-08 + prod-proof validated 2026-06-08
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Shipped the EOY student grade roll-up backend (POST /preview, /commit,
+  /undo/:runId) on top of M044 + M045. Three endpoints, district_admin-
+  only, HMAC-signed preview_token binding the (target_school_tenant_id,
+  terminal_grade, exits, snapshot) tuple for 15min; commit refuses on
+  snapshot drift (409) or unclassified rows (422); undo skip-and-reports
+  any student edited post-rollup. Followed PR-merge work with a marker-
+  keyed synthetic-tenant proof-of-correctness run on production
+  (preview / commit / undo / teardown, including a §5 isolation control)
+  before any real school is onboarded.
+
+FILES TOUCHED
+  constants/gradeProgression.js                NEW (+91 / -0)  BE auth
+  frontend/src/constants/gradeProgression.js   NEW (+47 / -0)  ESM mirror, codes+labels only
+  middleware/rateLimiters.js                   +21 / -1        rollupOperationLimiter (10/15min/user)
+  routes/studentGradeRollup.js                 NEW (+911 / -0) preview + commit + undo handlers (incl. WARN fix delta)
+  server.js                                    +2 / -0         import + mount at /api/student-grade-rollup
+  Totals: +1072 / -1 across 5 files (initial +1051/-1 + WARN delta +46/-26).
+
+MIGRATIONS RUN
+  None this session. M044 (PR #251) + M045 (PR #253) already prod-applied
+  earlier this calendar day; this PR depends on them but adds no new
+  schema. PREVIEW_TOKEN_SECRET set on the Render backend service as a
+  prerequisite of the live-deploy step.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor subagent on diff vs origin/main: APPROVED,
+  0 CRITICAL / 0 WARN / 4 INFO. All five §5 contract criteria verified
+  literally in code: (1) header scope from lookupTargetSchool helper not
+  body / req.user.district_id; (2) child rows inherit scope from header
+  in-transaction; (3) preview_token payload carries
+  target_school_tenant_id and /commit ignores body fields with that
+  name; (4) every read SELECT scopes on tenant_id as single integer (no
+  ANY array); (5) /undo resolves scope against the run header and
+  returns 404 not 403 on out-of-scope (existence-disclosure doctrine).
+  resolveAccessibleTenantIds consumed at three call sites, never
+  inlined.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: zero new fields stored. Writes only to the M044
+    enrollment triple (enrollment_status / exit_reason / exit_date) and
+    the canonical students.grade column; all enumerated codes.
+  Logging audit: 7 console.error sites, all `[ctx]', err.message` shape;
+    err.message is pg/runtime string, not user-supplied PII; no exit_reason
+    echo, no terminal_grade echo, no student names in any log.
+  Response bodies: 30 res.status(*).json(...) call sites cataloged. All
+    generic strings ('Server error', 'Invalid preview token', 'Preview
+    snapshot stale', 'Run not found', 'Unclassified students remain',
+    etc.) or pre-built generic bodies from helpers. Zero error bodies
+    echo exit_reason / terminal_grade / student.grade / error.message.
+  Student IDs in /preview unclassified[] + /undo skipped[]: tenant-
+    internal integers, consistent with disciplineReferrals precedent.
+  PREVIEW_TOKEN_SECRET: prod fail-fast (process.exit(1)) at first use;
+    dev fallback gated by !isProdLike(); secret value never logged or
+    echoed.
+  privacy-reviewer subagent on diff: APPROVED, 0 CRITICAL / 0 WARN / 3
+    INFO.
+
+SECURITY REVIEW
+  Initial security-reviewer subagent on diff: APPROVED W/NOTES,
+    0 CRITICAL / 2 WARN / 3 INFO.
+  Both WARNs fixed in-branch before human review and re-reviewed:
+    WARN-1 (HMAC verify Buffer encoding): explicit 'utf8' on both
+      Buffer.from calls in verifyPreviewToken. Semantically equivalent
+      to prior default; intent now load-bearing in source.
+    WARN-2 (/undo double-undo race): pre-transaction pool.query header
+      SELECT removed; header SELECT now runs inside the transaction
+      with FOR UPDATE so concurrent /undo on the same runId serialize
+      on the row lock. ROLLBACK on all three early-return branches
+      (row missing / scope mismatch / already undone). Final header
+      UPDATE adds `AND undone_at IS NULL` + `rowCount !== 1 → ROLLBACK
+      + 409` guard (belt-and-suspenders against a future refactor
+      dropping FOR UPDATE).
+  Security-reviewer delta re-review on the WARN-fix commit
+    (55da9b7c874f282dc9dc1a174b37f88092fdc925): APPROVED,
+    0 CRITICAL / 0 WARN / 0 INFO. Both fixes verified clean; no
+    regressions; tenant isolation unchanged.
+  HMAC verify confirmed using crypto.timingSafeEqual with explicit
+    length-gate; single 401 body for every signature/format failure (no
+    oracle).
+  Two INFO findings banked as project memory: own pg pool vs shared
+    pool (chore/pg-pool-consolidation candidate); per-child INSERT loop
+    UNNEST batch (perf/student-grade-rollup-batch-insert candidate).
+
+PROD PROOF (synthetic-tenant validation on live prod)
+  Fixture (all marker-keyed 'PR255 PROD PROOF'; emails on .test.invalid):
+    1 synthetic district (auth_mode='password')
+    2 synthetic school tenants (A = roll-up target, B = isolation control)
+    1 synthetic district_admin (bcrypt-hashed test password,
+      user_school_access into both schools)
+    14 synthetic students:
+      10 in School A: 3 Pre-K + 2 3rd + 3 2nd + 2 5th, all active
+      4 in School B: 2 Pre-K + 2 5th, all active (control)
+    All names visibly synthetic; zero real PII anywhere in seed,
+      runner stdout, audit rows, or teardown residual check.
+  Scripts (all untracked under scripts/ops/ per #94):
+    2026-06-08-pr255-prod-proof-seed.sql       DO block, bcrypt hash inlined
+    2026-06-08-pr255-prod-proof-runner.sh      curl + jq driver, operator pauses
+    2026-06-08-pr255-prod-proof-verify.sql     Sections A/B/C verification queries
+    2026-06-08-pr255-prod-proof-teardown.sql   FK-aware delete + residual check
+  Runner endpoint fix (encoded in the untracked runner only):
+    GET /api/tenants is platformAdminOnly (routes/tenants.js:18) and
+      403s a district_admin. Swapped to GET /api/auth/me/schools
+      (routes/auth.js:218-236), role-gated to ['school_admin',
+      'district_admin', 'counselor', 'interventionist'] and sourced
+      from resolveAccessibleTenantIds. Same endpoint the PR-3 FE
+      grade-rollup picker should consume (returns [{id, name}, ...]).
+    Runner also hardened to pure ASCII (em-dashes + ellipsis swept to
+      '--' / '...') to close a bash-3.2 + non-UTF-8-locale tokenizer
+      class of issue that produced a hard-to-reproduce 'unbound
+      variable' shape; defensive `:= ` form replaces `:-` so source
+      env vars stay bound for any later reference.
+  Results (counts only):
+    /preview (terminal_grade='5th', 2 exits supplied):
+      transition counts: 6 promoted / 2 graduated / 2 exited /
+        0 unclassified
+      preview_token issued; expires_at = issue + 15min
+    /commit (after operator typed verb at the gate):
+      audit run header inserted: total_promoted=6, total_graduated=2,
+        total_exited=2, completed_at set, undone_at NULL
+      audit child rows: 6 promoted + 2 graduated + 2 exited
+        (1 transferred + 1 withdrew)
+      School A student state: 3 K active + 1 3rd active + 2 4th
+        active + 2 5th graduated + 2 2nd exited (1 transferred +
+        1 withdrew). Matches expected.
+      School B (isolation control): unchanged from seed (2 Pre-K
+        active + 2 5th active).
+      §5 isolation proof: 0 audit rows scoped to School B in either
+        the rollup_runs or event_rows tables.
+    /undo (after operator typed verb at the second gate):
+      reversed_count = 10, skipped = [] (no mid-window edits)
+      audit run header: undone_at stamped, undone_by_user_id =
+        synthetic admin
+      School A student state restored to pre-commit baseline
+        (matches Section A3 seed counts exactly).
+      School B still unchanged (re-confirmed post-undo isolation).
+    /teardown (FK-aware DO block + residual UNION ALL across 7 tables):
+      Residual count on every table: 0 / 0 / 0 / 0 / 0 / 0 / 0.
+      Clean prod state; zero synthetic rows surviving.
+
+VERIFICATION
+  Local smoke matrix (scripts/ops/2026-06-08-pr254-smoke.sh, untracked):
+    15/15 PASS. Cases:
+      01 non-district_admin → 403
+      02 cross-tenant target → 403
+      03 happy-path commit → 200 (promoted=5, graduated=2, exited=1
+         on the smaller local fixture)
+      04 stale snapshot (mid-window edit) → 409
+      05 expired token → 410
+      06 unclassified present → 422
+      07 exit_reason outside allowlist → 400
+      08 undo happy path → 200
+      09 already-undone run → 409
+      10 undo with post-edited student → skip-and-report
+      11 school-A preview replayed to school-B → 403
+         (criterion-5 re-check defense)
+      12 tampered token → 401
+      13 CSRF missing → 403
+      14 rate-limit burn (11 commits) → 429 on 11th
+      15 (added post-WARN-fix) two concurrent /undo on same runId
+         → 1×200 + 1×409 + DB single-undo verified
+  Reviewer subagents on git diff main...feat/student-grade-rollup-api:
+    privacy-reviewer:           APPROVED         (0 CRIT / 0 WARN / 3 INFO)
+    security-reviewer (initial):APPROVED W/NOTES (0 CRIT / 2 WARN / 3 INFO)
+    security-reviewer (delta):  APPROVED         (0 CRIT / 0 WARN / 0 INFO)
+    tenant-isolation-auditor:   APPROVED         (0 CRIT / 0 WARN / 4 INFO)
+  §2A formal review: PR #255 reviewDecision APPROVED by the shared
+    external-review COLLABORATOR account (non-author; see
+    project_pr_236_external_human_review_attribution) against merge
+    commit 2e1847c36207673269f75b27e64497a1a08f8982.
+  Prod deploy: Render backend service redeployed with
+    PREVIEW_TOKEN_SECRET set; service live; no boot-time FATAL,
+    no 500 regression on existing routes.
+  Prod proof exercise: 15/15 expected behaviors observed on live prod
+    via the runner (see PROD PROOF section above). Zero residual after
+    teardown.
+  Tests / lint: N/A (no backend test suite per followup #73; no backend
+    lint per followup #74; local smoke matrix is the regression gate).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #255 commit OIDs at merge time:
+  e093655627088cc28e14d5afab1c528c3cf20bab
+  55da9b7c874f282dc9dc1a174b37f88092fdc925
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup -- studentGradeRollup own pg pool vs shared pool (security-
+    reviewer INFO-1 on PR #255). Pattern divergence with rest of repo;
+    chore/pg-pool-consolidation candidate. Siblings:
+    resolveAccessibleTenantIds, authorizeInterventionAccess. Banked as
+    project_followup_studentgraderollup_own_pool.
+
+  - Followup -- per-child INSERT loop UNNEST batch (security-reviewer
+    INFO-2 on PR #255). Perf scaling cliff at large-building / high-
+    school sites. perf/student-grade-rollup-batch-insert candidate.
+    Banked as project_followup_studentgraderollup_unnest_batch_insert.
+
+  - Note for PR-3 FE picker: GET /api/auth/me/schools is the canonical
+    district_admin-accessible school-list endpoint (already used by the
+    auth-flow school picker). Returns [{id, name}, ...] sourced from
+    the §5 helper. No new BE endpoint required for the PR-3 grade-
+    rollup target-school picker.
+
+  - Note for the runner pattern: any future cross-session prod-proof
+    runner targeting a non-platform_admin role MUST use
+    /api/auth/me/schools (or another role-appropriate accessible-set
+    primitive), NOT /api/tenants which is platformAdminOnly. Encoded
+    in the untracked scripts/ops/2026-06-08-pr255-prod-proof-runner.sh
+    comment block.
+
+NEXT SESSION SHOULD
+  Open PR-3 (feat/student-grade-rollup-fe): district_admin UI surface
+  for the grade roll-up workflow. School picker via
+  GET /api/auth/me/schools, terminal-grade dropdown driven by
+  frontend/src/constants/gradeProgression.js GRADE_SEQUENCE, exit-
+  candidate multiselect, /preview eyeball with transition counts +
+  unclassified list, /commit confirmation gate, post-commit /undo
+  affordance. BE contract is now prod-validated; PR-3 is a pure FE
+  consumption of existing primitives. Same full triad of reviewer
+  subagents + formal §2A approval required (PR-3 is FE-only but still
+  §4B-adjacent because the UI surfaces transition counts + student IDs
+  for the operator).
+================================================================================
