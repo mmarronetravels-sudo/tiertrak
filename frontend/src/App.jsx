@@ -681,6 +681,10 @@ const isParent = user && user.role === 'parent';
 // this role since Admin scopes to a single users.tenant_id and would
 // silently misrepresent the district admin's scope (S81 PR A audit).
 const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.district_id);
+// canRunRollup mirrors ROLLUP_ROLES in constants/roles.js (BE source).
+// BE gates at routes/studentGradeRollup.js are the trust boundary;
+// this derivation only controls FE nav visibility + view mount.
+const canRunRollup = !!(user && ['district_admin', 'school_admin'].includes(user.role));
 
 // Check if logged in on load
   useEffect(() => {
@@ -7623,7 +7627,7 @@ if (isParent) {
                     My District
                   </button>
                 )}
-                {isDistrictAdmin && (
+                {canRunRollup && (
                   <button
                     onClick={() => setView('grade-rollup')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
@@ -7678,7 +7682,7 @@ if (isParent) {
         {view === 'admin' && <AdminView />}
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
-        {view === 'grade-rollup' && isDistrictAdmin && <StudentGradeRollupView />}
+        {view === 'grade-rollup' && canRunRollup && <StudentGradeRollupView />}
         {view === 'discipline-queue' && canViewDisciplineReview && (
           <DisciplineReferralQueue
             user={user}

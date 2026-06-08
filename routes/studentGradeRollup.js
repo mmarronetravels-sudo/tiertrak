@@ -1,6 +1,9 @@
 // routes/studentGradeRollup.js — EOY student grade roll-up endpoints.
 //
-// Three endpoints, all role-gated to district_admin:
+// Three endpoints, all role-gated to ROLLUP_ROLES (district_admin +
+// school_admin per constants/roles.js). Scope of authority per caller
+// is determined by resolveAccessibleTenantIds at the per-endpoint
+// scope check — see §5 / criterion 4 below:
 //
 //   POST /api/student-grade-rollup/preview
 //     Read-only. Classifies every active student at the target school
@@ -73,6 +76,7 @@ const {
   EXIT_REASONS,
   classifyTransition,
 } = require('../constants/gradeProgression');
+const { ROLLUP_ROLES } = require('../constants/roles');
 
 const router = express.Router();
 
@@ -280,8 +284,10 @@ function classifyAll(studentsRows, terminalGrade, exits) {
 // ---------------------------------------------------------------------
 router.post('/preview', requireAuth, async (req, res) => {
   // Role gate FIRES BEFORE body parse (memory:
-  // feedback_role_gate_before_input_parse_sweep). district_admin only.
-  if (req.user.role !== 'district_admin') {
+  // feedback_role_gate_before_input_parse_sweep). ROLLUP_ROLES
+  // (district_admin + school_admin); scope is enforced separately at
+  // the resolveAccessibleTenantIds check below.
+  if (!ROLLUP_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
@@ -400,7 +406,7 @@ router.post('/preview', requireAuth, async (req, res) => {
 // POST /commit — token-bound
 // ---------------------------------------------------------------------
 router.post('/commit', requireAuth, rollupOperationLimiter, async (req, res) => {
-  if (req.user.role !== 'district_admin') {
+  if (!ROLLUP_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 
@@ -724,7 +730,7 @@ router.post('/commit', requireAuth, rollupOperationLimiter, async (req, res) => 
 // POST /undo/:runId
 // ---------------------------------------------------------------------
 router.post('/undo/:runId', requireAuth, rollupOperationLimiter, async (req, res) => {
-  if (req.user.role !== 'district_admin') {
+  if (!ROLLUP_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Not authorized' });
   }
 

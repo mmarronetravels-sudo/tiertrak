@@ -45,4 +45,26 @@ const INTERVENTION_MANAGER_ROLES = [
   'interventionist',
 ];
 
-module.exports = { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES };
+// Canonical list of roles authorized to run the End-of-Year grade
+// roll-up (POST /api/student-grade-rollup/{preview,commit,undo/:runId}).
+// Scope of authority is determined by resolveAccessibleTenantIds at the
+// per-endpoint scope check (lines ~308/436/769 in routes/studentGradeRollup.js)
+// — this constant only controls WHO may run the roll-up at all, not
+// WHICH schools each caller may target. district_admin gets their
+// full district set; school_admin gets their building (legacy single-
+// tenant path) or their user_school_access grants (district path).
+//
+// Consumed by:
+//   - routes/studentGradeRollup.js  (3 role gates: preview/commit/undo)
+//   - frontend/src/context/AppContext.jsx  (derived canRunRollup)
+//
+// Adding or removing a role here changes who can perform a destructive
+// bulk write to students.grade / enrollment_status / exit_reason /
+// exit_date for an entire school in one transaction. Route as a §4B /
+// §5 PR with all three reviewer subagents.
+const ROLLUP_ROLES = [
+  'district_admin',
+  'school_admin',
+];
+
+module.exports = { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES, ROLLUP_ROLES };
