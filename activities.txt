@@ -27799,3 +27799,122 @@ NEXT SESSION SHOULD
   §4B-adjacent because the UI surfaces transition counts + student IDs
   for the operator).
 ================================================================================
+SESSION: 2026-06-08T20:00:00-07:00
+BRANCH:  sec/rollup-role-scoping
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/258
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Widened the EOY grade roll-up role gate from district_admin only to
+  ROLLUP_ROLES (district_admin + school_admin). Implements PR 1 of the
+  sec/rollup-role-scoping audit; the MTSS coordinator path is
+  intentionally deferred to a separate follow-up PR. No schema change;
+  the §5 dual-path scope mechanism is consumed verbatim at the three
+  rollup endpoints — only the role allowlist widens.
+
+FILES TOUCHED
+  constants/roles.js                  — adds ROLLUP_ROLES constant + §4B/§5 header (+24 / -1)
+  routes/studentGradeRollup.js        — 3 role gates widen; docstring + comments refreshed (+10 / -5)
+  frontend/src/context/AppContext.jsx — adds canRunRollup derived value; exported in context (+8 / -1)
+  frontend/src/App.jsx                — local canRunRollup mirror; 2 site swaps (nav + view mount) (+5 / -2)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No new SQL queries; no schema change. resolveAccessibleTenantIds is
+  consumed unchanged at all three rollup endpoints. school_admin's
+  accessible set is bounded by the existing §5 dual-path helper (legacy
+  single-tenant -> [user.tenant_id]; district path -> user_school_access
+  membership). The 5-criterion §5 contract from PR #255 is preserved
+  verbatim: header scope from helper + lookupTargetSchool (C1), child
+  rows inherit scope in-transaction (C2), token carries
+  target_school_tenant_id (C3), every read scopes on tenant_id single
+  integer (C4), undo scope from header with 404 not 403 on out-of-scope
+  (C5). Cross-school amplifier for school_admin is structurally tighter
+  than for district_admin: caller can only target schools they hold
+  user_school_access for. Cross-district structurally impossible at the
+  M028 composite-FK schema layer.
+  tenant-isolation-auditor on diff: APPROVED, 0 CRITICAL / 0 WARN / 2
+  INFO (stale-doc only, on a file not in this diff).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. No new fields stored, read, or transmitted.
+  Logging audit: verified no new console.* statements added by this PR;
+    the pre-existing console.error sites in routes/studentGradeRollup.js
+    are untouched.
+  Cross-tenant risk: none identified. The widening expands WHO may run
+    the roll-up; it does not expand WHICH schools any caller may target.
+    school_admin's preview/commit/undo target a strict subset of what
+    they already read via existing routes (GET /api/students/tenant/:id,
+    GET /api/auth/me/schools).
+  privacy-reviewer on diff: APPROVED, 0 CRITICAL / 0 WARN / 2 INFO (1
+    pre-existing console err.message pattern siblings; 1 FE-local role-
+    literal duplication consistent with house style and the existing
+    FE/BE role-list drift-guard follow-up).
+  §4B grep (narrow + wide) against added activities-entry lines vs
+    origin/main: see VERIFICATION below.
+
+VERIFICATION
+  BE module load: require OK on the changed routes + constants module.
+  Smoke matrix (scripts/ops/2026-06-08-pr254-smoke.sh, untracked per #94):
+    17 / 17 PASS — 15 pre-existing cases unchanged + 2 new role-widening
+    cases:
+      Case 16 — school_admin own-school preview/commit/undo -> 200 / 200 / 200
+      Case 17 — school_admin cross-tenant target -> 403
+  FE build: npm run build -> 2781 modules transformed, built in 3.00s.
+  FE lint:  npm run lint  -> 93 problems (74 errors, 19 warnings),
+    exact PR #257 baseline preserved; zero new hits on changed files.
+
+  Reviewer subagents on git diff main...sec/rollup-role-scoping:
+    privacy-reviewer:           APPROVED  (0 CRIT / 0 WARN / 2 INFO)
+    security-reviewer:          APPROVED  (0 CRIT / 0 WARN / 5 INFO)
+    tenant-isolation-auditor:   APPROVED  (0 CRIT / 0 WARN / 2 INFO)
+
+  §2A formal review: PR #258 reviewDecision APPROVED; merged into main
+    at merge commit 382c30d2c39772e5c7d5f16b3535ead0879b39d0 (true
+    merge; HEAD_OID == merge second-parent verified by the landing
+    skill's merge-SHA gate).
+
+  merge-sha verification: PASS — HEAD_OID == merge second-parent
+    (8dbbf18a47c6df7a9a617b2fd7ac48041388d283).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #258 commit OIDs at merge time:
+  08636d134d05915d8cc9533af5268e019e263aec
+  8dbbf18a47c6df7a9a617b2fd7ac48041388d283
+
+OPEN ITEMS / FOLLOW-UPS
+  - Stale-doc cleanup in frontend/src/views/StudentGradeRollupView.jsx
+    header (lines 1 + 27): header comment still says "district_admin-
+    only" and references "isDistrictAdmin" in the mount-gate
+    description. Both are inside comment blocks (not executable code);
+    the file's behavior renders identically for school_admin and
+    district_admin. Low priority; bundle into a chore/ PR with any
+    other doc-debt touches.
+
+  - MTSS coordinator roll-up admission (PR 2 from the audit):
+    deferred. Decision needed first on whether granting an
+    mtss_coordinators row should imply roll-up authority (today it
+    grants only per-student READ via middleware/canAccessStudent.js).
+    If yes, inline an mtss_coordinators-membership check at the three
+    role gates alongside the ROLLUP_ROLES check. No schema change
+    required because mtss_coordinators table shape (M038) already
+    supports building + district-spanning shape via row cardinality.
+
+  - FE/BE role-list drift guard: continued under
+    project_followup_fe_be_role_list_drift_guard. The new inline
+    role-literal duplication in App.jsx + AppContext.jsx (mirroring
+    the existing isDistrictAdmin pattern) increments the drift surface
+    by one more pair. Folds into the existing follow-up.
+
+NEXT SESSION SHOULD
+  Decide on the MTSS-coordinator-roll-up admission question above. If
+  the operator wants to proceed, branch sec/rollup-mtss-coordinator-
+  admission off main, inline a `EXISTS (mtss_coordinators row for
+  (user, target_school))` check alongside the ROLLUP_ROLES allowlist
+  at routes/studentGradeRollup.js, and extend the smoke matrix with
+  cases 18-19 (MTSS coordinator own-school happy / cross-tenant 403).
+================================================================================
