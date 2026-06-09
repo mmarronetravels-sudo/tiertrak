@@ -10,8 +10,19 @@
 -- Columns (IDs + role strings only — §4B-compliant by construction):
 --   audit_id          BIGSERIAL PK    — append-only-unbounded, M031 precedent
 --   user_id           INTEGER NOT NULL — target of the role change
---   old_role          VARCHAR(32) NOT NULL — role string at start of change
---   new_role          VARCHAR(32) NOT NULL — role string at end of change
+--   old_role          VARCHAR(50) NOT NULL — role string at start of change
+--   new_role          VARCHAR(50) NOT NULL — role string at end of change
+--                                       (VARCHAR(50) matches users.role
+--                                       exactly per schema.sql:21. Closes
+--                                       PR #260 security-reviewer LOW-2:
+--                                       a narrower audit-column width
+--                                       would hard-fail INSERTs after a
+--                                       future role-widening migration
+--                                       admitted a longer role name,
+--                                       creating an asymmetric-failure
+--                                       partial-commit hazard if the
+--                                       writer's transaction handling
+--                                       regresses.)
 --   actor_user_id     INTEGER          — nullable (M031 precedent: cascade
 --                                       /admin-script writes have no actor)
 --   school_tenant_id  INTEGER NOT NULL — target's tenant_id at time of change
@@ -64,8 +75,8 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS user_role_change_audit (
   audit_id         BIGSERIAL PRIMARY KEY,
   user_id          INTEGER NOT NULL,
-  old_role         VARCHAR(32) NOT NULL,
-  new_role         VARCHAR(32) NOT NULL,
+  old_role         VARCHAR(50) NOT NULL,
+  new_role         VARCHAR(50) NOT NULL,
   actor_user_id    INTEGER,
   school_tenant_id INTEGER NOT NULL,
   district_id      INTEGER,
