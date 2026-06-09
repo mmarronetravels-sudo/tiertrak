@@ -454,9 +454,8 @@ router.put('/:id', requireAuth, async (req, res) => {
     // canAssignRole here means actor outranks target iff actor could
     // (re-)assign that role. Encodes operator bypass + strict-below-
     // rank + school_admin peer exception. Stricter than the prior
-    // CREATE_USER_RULES gate: a peer district_admin can no longer
-    // edit another peer; aligns with the spec's "strictly below"
-    // principle.
+    // caller-role gate: a peer district_admin can no longer edit
+    // another peer; aligns with the spec's "strictly below" principle.
     if (!canAssignRole(req.user.role, targetRow.role, actorIsOperator)) {
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Forbidden' });

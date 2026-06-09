@@ -628,9 +628,27 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
 
           // district_id derivation — NEVER read from CSV. Derived from
           // req.user.district_id only for district-scoped roles per §5.
-          const districtId = ['district_admin', 'district_tech_admin'].includes(normalizedRow.role)
-            ? req.user.district_id
-            : null;
+          const isDistrictScopedRole = ['district_admin', 'district_tech_admin'].includes(normalizedRow.role);
+          const districtId = isDistrictScopedRole ? req.user.district_id : null;
+
+          // Fail-safe — symmetric to routes/staffManagement.js POST and
+          // routes/users.js POST (C5). When operator bypass admits a
+          // district-scoped role row and the operator's own
+          // users.district_id is NULL, the INSERT below would land a
+          // mis-scoped district admin (district_id IS NULL → degrades
+          // to legacy single-tenant scope path). Per-row error pattern:
+          // push to errors collector and return to skip this row without
+          // aborting the whole upload. Proper fix tracked as follow-up:
+          // source target_district_id explicitly rather than inheriting
+          // the creator's.
+          if (isDistrictScopedRole && districtId == null) {
+            errors.push({
+              row: rowNumber,
+              data: normalizedRow,
+              error: `Row ${rowNumber}: district_id is required for district-scoped role assignment; target_district_id is missing or cannot be derived from the creator.`
+            });
+            return;
+          }
 
           results.push({
             row: rowNumber,

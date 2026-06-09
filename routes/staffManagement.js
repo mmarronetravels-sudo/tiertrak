@@ -184,10 +184,26 @@ router.post('/', requireAuth, async (req, res) => {
     const schoolWideAccess = ELEVATED_ROLES.includes(role);
 
     // district_id binding: district-scoped roles inherit creator's
-    // district_id. The role-rank gate above ensures only district_admin
-    // (which has non-null district_id) can reach this path with role IN
-    // district-scoped roles, so districtId is non-null when needed.
-    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+    // district_id. For non-operator actors the rank gate above ensures
+    // only a district_admin (with non-null district_id) reaches this
+    // path with role IN district-scoped roles, so districtId is non-null
+    // when needed. Operator bypass closes that invariant: a platform-
+    // level operator (users.district_id IS NULL) could land a district-
+    // scoped role row with null district_id, degrading the new user to
+    // the legacy single-tenant scope path. The fail-safe immediately
+    // below catches that case with a 400. Symmetric to routes/users.js
+    // POST (C5). Proper fix tracked as follow-up: source target_district_id
+    // explicitly from a body field or the target tenant's districts.id.
+    const isDistrictScopedRole = ['district_admin', 'district_tech_admin'].includes(role);
+    const districtId = isDistrictScopedRole ? req.user.district_id : null;
+
+    // Fail-safe — operator edge case (see comment above). Rejects with
+    // 400 rather than landing a mis-scoped district-scoped role row.
+    if (isDistrictScopedRole && districtId == null) {
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or cannot be derived from the creator'
+      });
+    }
 
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
@@ -298,7 +314,7 @@ router.put('/:id', requireAuth, async (req, res) => {
     // canAssignRole here means actor outranks target iff actor could
     // (re-)assign that role. Encodes operator bypass + strict-below-
     // rank + school_admin peer exception. Stricter than the prior
-    // CREATE_STAFF_RULES gate: a peer district_admin (or peer
+    // caller-role gate: a peer district_admin (or peer
     // district_tech_admin) can no longer edit another peer; aligns
     // with the spec's "strictly below" principle.
     if (!canAssignRole(req.user.role, targetRow.role, actorIsOperator)) {
@@ -315,6 +331,25 @@ router.put('/:id', requireAuth, async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(403).json({ error: 'Forbidden' });
       }
+    }
+
+    // Fail-safe — symmetric to routes/users.js PUT (C6). Promoting the
+    // target to a district-scoped role while the locked target row's
+    // district_id is NULL would land role=district_admin (or
+    // district_tech_admin) with district_id IS NULL. The PUT statement
+    // below does not touch district_id, so the target keeps whatever
+    // they already have — a NULL existing district leaves them in the
+    // legacy single-tenant scope path. Triggers only when the new role
+    // is district-scoped AND the target has no existing district; fires
+    // AFTER the rank check so a 403 takes precedence when the actor
+    // isn't authorized in the first place. Proper fix tracked as
+    // follow-up: PUT should source target_district_id explicitly from
+    // a body field or the target tenant's districts.id.
+    if (roleChanging && ['district_admin', 'district_tech_admin'].includes(role) && targetRow.district_id == null) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or the target has no existing district'
+      });
     }
 
     // Recalculate school_wide_access if role changed. ELEVATED_ROLES
