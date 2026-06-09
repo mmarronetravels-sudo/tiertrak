@@ -2,7 +2,24 @@ import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { logError } from '../../utils/logError';
 import { apiFetch } from '../../utils/apiFetch';
+import { canAssignRole } from '../../constants/staffRoles';
 
+// Display-only role universe for the staff modals. Mirrors the BE
+// STAFF_ROLES at routes/staffManagement.js (excludes 'parent'; parent
+// users are managed via the /api/users surface). Order matches the
+// rank descent so the picker reads top-down by authority. The modals
+// filter this list by canAssignRole(user.role, opt.role, user.is_operator)
+// — the BE remains the trust boundary and re-runs the same predicate
+// server-side on every POST/PUT.
+const STAFF_ROLE_OPTIONS = [
+  { role: 'district_admin', label: 'District Admin — full district access' },
+  { role: 'district_tech_admin', label: 'District Tech Admin — district configuration and integrations' },
+  { role: 'school_admin', label: 'Admin — full access, manages everything' },
+  { role: 'counselor', label: 'Counselor — full admin access' },
+  { role: 'teacher', label: 'Teacher — sees assigned + all Tier 1 students' },
+  { role: 'interventionist', label: 'Interventionist — sees all students, manages interventions, uploads documents' },
+  { role: 'education_assistant', label: 'Education Assistant — files referrals on any student; views assigned students only' },
+];
 
 // ============================================
 // ADD STAFF MODAL
@@ -10,7 +27,16 @@ import { apiFetch } from '../../utils/apiFetch';
 
 export const AddStaffModal = ({ onClose, user, token, API_URL, loadStaffList, isDistrictAdmin }) => {
 
-  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: 'teacher' });
+  // Display-only filter: canAssignRole mirrors the BE predicate.
+  // BE re-runs the same check at POST /api/staff and returns 403 if
+  // the actor isn't authorized — this filter just hides options the
+  // user wouldn't be able to submit. Three-writer drift hazard noted
+  // in frontend/src/constants/staffRoles.js header.
+  const assignableOptions = STAFF_ROLE_OPTIONS.filter((opt) =>
+    canAssignRole(user.role, opt.role, user.is_operator)
+  );
+  const initialRole = assignableOptions[0]?.role || '';
+  const [newStaff, setNewStaff] = useState({ email: '', full_name: '', role: initialRole });
   const [staffError, setStaffError] = useState('');
   const [accessibleSchools, setAccessibleSchools] = useState([]);
   const [selectedSchool, setSelectedSchool] = useState(null);
@@ -135,18 +161,20 @@ credentials: 'include',
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-            <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-              <option value="teacher">Teacher — sees assigned + all Tier 1 students</option>
-              <option value="counselor">Counselor — full admin access</option>
-              <option value="school_admin">Admin — full access, manages everything</option>
-              <option value="interventionist">Interventionist — sees all students, manages interventions, uploads documents</option>
-              <option value="education_assistant">Education Assistant — files referrals on any student; views assigned students only</option>
+            <select value={newStaff.role} onChange={(e) => setNewStaff({...newStaff, role: e.target.value})} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" disabled={assignableOptions.length === 0}>
+              {assignableOptions.length === 0 ? (
+                <option value="">No assignable roles</option>
+              ) : (
+                assignableOptions.map((opt) => (
+                  <option key={opt.role} value={opt.role}>{opt.label}</option>
+                ))
+              )}
             </select>
           </div>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="flex-1 px-4 py-2 border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition">Cancel</button>
-          <button onClick={handleAddStaff} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">Create Account</button>
+          <button onClick={handleAddStaff} disabled={assignableOptions.length === 0} className={`flex-1 px-4 py-2 rounded-lg transition ${assignableOptions.length === 0 ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}>Create Account</button>
         </div>
       </div>
     </div>
@@ -158,6 +186,19 @@ credentials: 'include',
 // ============================================
 
 export const EditStaffModal = ({ staffMember, onClose, user, token, API_URL, loadStaffList }) => {
+
+  // Display-only filter mirroring BE canAssignRole. BE PUT /api/staff/:id
+  // re-runs the same predicate against the locked target row's CURRENT
+  // role (outranks check) AND the new role (new-role rank check); this
+  // filter just hides options the user couldn't submit.
+  const assignableOptions = STAFF_ROLE_OPTIONS.filter((opt) =>
+    canAssignRole(user.role, opt.role, user.is_operator)
+  );
+  // Self-edit guard. The BE PUT 403s id === req.user.id; the modal
+  // mirrors the guard so the Save button shows-but-disabled with an
+  // explanation rather than silently 403ing on submit.
+  const isSelfEdit = staffMember.id === user.id;
+  const saveDisabled = isSelfEdit || assignableOptions.length === 0;
 
   // Local copy of staff member for editing
   const [editData, setEditData] = useState({
@@ -194,6 +235,11 @@ credentials: 'include',
             <X size={20} />
           </button>
         </div>
+        {isSelfEdit && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
+            You can't edit your own staff record.
+          </div>
+        )}
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
@@ -201,7 +247,8 @@ credentials: 'include',
               type="text"
               value={editData.full_name}
               onChange={(e) => setEditData({...editData, full_name: e.target.value})}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              disabled={isSelfEdit}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
             />
           </div>
           <div>
@@ -213,13 +260,16 @@ credentials: 'include',
             <select
               value={editData.role}
               onChange={(e) => setEditData({...editData, role: e.target.value})}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              disabled={saveDisabled}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
             >
-              <option value="teacher">Teacher</option>
-              <option value="counselor">Counselor</option>
-              <option value="school_admin">Admin</option>
-              <option value="interventionist">Interventionist</option>
-              <option value="education_assistant">Education Assistant</option>
+              {assignableOptions.length === 0 ? (
+                <option value={editData.role}>No assignable roles</option>
+              ) : (
+                assignableOptions.map((opt) => (
+                  <option key={opt.role} value={opt.role}>{opt.label.split(' — ')[0]}</option>
+                ))
+              )}
             </select>
           </div>
         </div>
@@ -232,7 +282,8 @@ credentials: 'include',
           </button>
           <button
             onClick={handleUpdateStaff}
-            className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            disabled={saveDisabled}
+            className={`flex-1 px-4 py-2 rounded-lg transition ${saveDisabled ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
           >
             Save Changes
           </button>
