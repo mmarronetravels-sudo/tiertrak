@@ -11,6 +11,7 @@ const { setCsrfCookie, clearCsrfCookie } = require('../middleware/csrfProtection
 const { authLoginCompoundLimiter } = require('../middleware/rateLimiters');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -187,7 +188,13 @@ router.get('/me', async (req, res) => {
     }
     
     setCsrfCookie(req, res);
-    res.json(result.rows[0]);
+    // is_operator is a derived, server-computed field that drives FE
+    // display only (role-picker dropdown filtering in the staff
+    // modals). The backend re-derives operator status from req.user.id
+    // on every assignment request via isOperator(); the FE never gets
+    // to assert it. Snake_case matches the rest of the /me response
+    // shape (tenant_name, school_wide_access, district_name).
+    res.json({ ...result.rows[0], is_operator: isOperator(decoded.id) });
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ error: 'Invalid token' });
