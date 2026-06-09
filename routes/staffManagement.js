@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+const { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES, canAssignRole } = require('../constants/roles');
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 let pool;
 
@@ -123,16 +124,31 @@ router.get('/:tenantId', requireAuth, async (req, res) => {
 });
 
 // POST /api/staff - Create a new staff member. Gated by requireAuth +
-// caller-role gate (Object.keys(CREATE_STAFF_RULES)) + role-validity
-// (STAFF_ROLES → 400 on malformed) + role-rank gate
-// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection) + §5
-// target_tenant_id binding via resolveAndBindTargetTenant. district_id
-// inherited from creator on district-scoped role INSERTs. Closes the
-// POST half of Followup #116 + role-escalation finding from PR #129
-// triad re-review.
+// canAssignRole canary (actor has any assignment authority → 403 if
+// not) + role-validity (STAFF_ROLES → 400 on malformed) + canAssignRole
+// rank check (operator bypass / strict-below-rank / school_admin peer
+// exception → 403 on rank-rejection) + §5 target_tenant_id binding
+// via resolveAndBindTargetTenant. district_id inherited from creator
+// on district-scoped role INSERTs. Closes the POST half of Followup
+// #116 + role-escalation finding from PR #129 triad re-review +
+// delegated-role-assignment trust rule (operator > district_admin >
+// district_tech_admin > school_admin > sub-roles, with school_admin
+// peer exception).
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+    // Operator status is recomputed server-side every request via the
+    // PLATFORM_ADMIN_USER_IDS env allowlist. Never read from req.body
+    // or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side gate: BEFORE body parse, to keep probe traffic out of
+    // the input reader and the required-fields shape it would leak
+    // (per S116 [[feedback_role_gate_before_input_parse_sweep]]).
+    // 'parent' (the rank-floor) is the canary: every assignment-capable
+    // non-operator actor can assign 'parent' (sub-roles can't); operators
+    // bypass to true. So this single call holds iff the actor has any
+    // assignment authority at all.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -145,7 +161,13 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    if (!CREATE_STAFF_RULES[req.user.role].includes(role)) {
+    // Role-rank gate — condition (3) of the three-condition delegated-
+    // assignment guard. Condition (1) (target tenant scope) is enforced
+    // below by resolveAndBindTargetTenant. Condition (2) (self-mutation)
+    // is N/A for POST since the target is being created. canAssignRole
+    // encodes operator bypass + strict-below-rank + school_admin peer
+    // exception.
+    if (!canAssignRole(req.user.role, role, actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
