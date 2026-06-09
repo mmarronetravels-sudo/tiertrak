@@ -38,4 +38,25 @@ function platformAdminOnly(req, res, next) {
   return next();
 }
 
-module.exports = { platformAdminOnly };
+// isOperator — predicate form of the same allowlist check, for callers
+// that need a boolean rather than a middleware short-circuit. Reads
+// from the same frozen ALLOWLIST Set parsed at module load; there is no
+// second source of truth for who counts as an operator.
+//
+// Consumers:
+//   - canAssignRole's third arg (constants/roles.js) — the role-rank
+//     check bypasses to true when the actor is an operator.
+//   - GET /api/auth/me — surfaces an isOperator boolean so the FE can
+//     filter the role-picker dropdown. Display-only on the FE; the BE
+//     re-derives operator status from req.user.id on every assignment
+//     request. The /me field is NEVER read back from the client.
+//
+// Inputs that are not valid integers (null, undefined, non-numeric
+// strings) coerce to NaN, and ALLOWLIST.has(NaN) is false — so the
+// predicate is closed by default. Matches the middleware's Number()
+// coercion to handle JWT payloads where id may be string-shaped.
+function isOperator(userId) {
+  return ALLOWLIST.has(Number(userId));
+}
+
+module.exports = { platformAdminOnly, isOperator };
