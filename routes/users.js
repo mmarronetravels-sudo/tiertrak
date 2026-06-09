@@ -5,7 +5,8 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+const { INTERVENTION_MANAGER_ROLES, canAssignRole } = require('../constants/roles');
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -264,19 +265,30 @@ router.get('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Create a new user. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + role-validity (VALID_ROLES → 400
-// on malformed) + role-rank gate (CREATE_USER_RULES[caller] → 403 on
-// rank-rejection) + §5 target_tenant_id binding via
+// Create a new user. Gated by requireAuth + canAssignRole canary
+// (actor has any assignment authority → 403 if not) + role-validity
+// (VALID_ROLES → 400 on malformed) + canAssignRole rank check
+// (operator bypass / strict-below-rank / school_admin peer exception
+// → 403 on rank-rejection) + §5 target_tenant_id binding via
 // resolveAndBindTargetTenant. district_id inherited from creator on
 // district-scoped role INSERTs. Closes POST half of Followup #116 +
-// role-escalation finding from PR #129 triad re-review. Password-
-// required (non-SSO) identity model preserved — staff onboarding via
-// Google SSO uses POST /api/staff; this surface remains the password-
-// required path (parents, etc.).
+// role-escalation finding from PR #129 triad re-review +
+// delegated-role-assignment trust rule. Password-required (non-SSO)
+// identity model preserved — staff onboarding via Google SSO uses
+// POST /api/staff; this surface remains the password-required path
+// (parents, etc.).
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Operator status is recomputed server-side every request via the
+    // PLATFORM_ADMIN_USER_IDS env allowlist. Never read from req.body
+    // or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side canary BEFORE body parse (per S116
+    // [[feedback_role_gate_before_input_parse_sweep]]). 'parent' is
+    // the rank-floor canary: every assignment-capable non-operator
+    // actor can assign 'parent' (sub-roles can't); operators bypass.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -292,7 +304,11 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
-    if (!CREATE_USER_RULES[req.user.role].includes(role)) {
+    // Role-rank gate — condition (3) of the three-condition delegated-
+    // assignment guard. Condition (1) (target tenant scope) is enforced
+    // below by resolveAndBindTargetTenant. Condition (2) (self-mutation)
+    // is N/A for POST since the target is being created.
+    if (!canAssignRole(req.user.role, role, actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -305,10 +321,32 @@ router.post('/', requireAuth, async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // district_id binding: district-scoped roles inherit creator's
-    // district_id. The role-rank gate above ensures only district_admin
-    // (which has non-null district_id) can reach this path with role IN
-    // district-scoped roles, so districtId is non-null when needed.
-    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+    // district_id. For non-operator actors the rank gate above ensures
+    // only a district_admin (with non-null district_id) reaches this
+    // path with role IN district-scoped roles, so districtId is non-null
+    // when needed. Operator bypass closes that invariant: a platform-
+    // level operator (users.district_id IS NULL) could land a district-
+    // scoped role row with null district_id, degrading the new user to
+    // the legacy single-tenant scope path (resolveAccessibleTenantIds
+    // returns [tenant_id] when district_id IS NULL). The fail-safe
+    // immediately below catches that case with a 400; the proper fix —
+    // sourcing target_district_id explicitly from a body field or the
+    // target tenant's districts.id rather than inheriting the creator's
+    // — is banked as a follow-up.
+    const isDistrictScopedRole = ['district_admin', 'district_tech_admin'].includes(role);
+    const districtId = isDistrictScopedRole ? req.user.district_id : null;
+
+    // Fail-safe — operator edge case (see comment above). Rejects the
+    // request with 400 rather than landing a mis-scoped district-scoped
+    // role row whose access surface would silently degrade post-INSERT.
+    // Triggers only when the role is district-scoped AND the derived
+    // district_id is NULL; the non-operator path is unreachable here
+    // because the rank gate above blocks it. Defense in depth.
+    if (isDistrictScopedRole && districtId == null) {
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or cannot be derived from the creator'
+      });
+    }
 
     const result = await pool.query(
       `INSERT INTO users (tenant_id, email, password_hash, full_name, role, district_id)
