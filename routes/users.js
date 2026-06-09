@@ -51,12 +51,16 @@ async function resolveAndBindTargetTenant(req) {
 }
 
 // Get all users for a tenant. Gated by requireAuth + caller-role
-// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// canAssignRole canary + positive-int :tenantId
 // validation + §5 tenant-scope check via resolveAccessibleTenantIds
 // (404 'Not found' on miss).
 router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -168,13 +172,17 @@ router.get('/parents', requireAuth, async (req, res) => {
   }
 });
 // Get users by role for a tenant. Gated by requireAuth + caller-role
-// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// canAssignRole canary + positive-int :tenantId
 // validation + :role validation against VALID_ROLES (400 on malformed)
 // + §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
 // found' on miss).
 router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -210,12 +218,16 @@ router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
 });
 
 // Get a single user by ID. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation +
+// canAssignRole canary + positive-int :id validation +
 // §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
 // found' on miss).
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 

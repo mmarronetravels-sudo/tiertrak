@@ -10,8 +10,9 @@ const { Resend } = require('resend');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { STAFF_ROLES, CREATE_STAFF_RULES } = require('./staffManagement');
-const { ELEVATED_ROLES } = require('../constants/roles');
+const { STAFF_ROLES } = require('./staffManagement');
+const { ELEVATED_ROLES, canAssignRole } = require('../constants/roles');
+const { isOperator } = require('../middleware/platformAdminOnly');
 const {
   GENDER_CODES,
   RACE_ETHNICITY_CODES,
@@ -98,7 +99,10 @@ const blockParentRole = (req, res, next) => {
 };
 
 const blockNonStaffCreator = (req, res, next) => {
-  if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+  // Caller-side canary mirroring routes/staffManagement.js POST.
+  // 'parent' as rank-floor proves any-assignment-authority; operator
+  // bypasses to true. See [[feedback_role_gate_before_input_parse_sweep]].
+  if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   next();
@@ -572,7 +576,10 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
             return;
           }
 
-          if (!CREATE_STAFF_RULES[req.user.role].includes(normalizedRow.role)) {
+          // Per-row rank check mirroring routes/staffManagement.js POST.
+          // Operator status recomputed once per row (cheap, env-cached).
+          // Never sourced from CSV body.
+          if (!canAssignRole(req.user.role, normalizedRow.role, isOperator(req.user.id))) {
             errors.push({
               row: rowNumber,
               data: normalizedRow,
