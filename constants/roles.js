@@ -67,4 +67,91 @@ const ROLLUP_ROLES = [
   'school_admin',
 ];
 
-module.exports = { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES, ROLLUP_ROLES };
+// Role rank for delegated role assignment. Numeric tiers (powers of 20
+// for headroom; absolute values are not semantically meaningful, only
+// the ordering is):
+//
+//   district_admin       80    — district-wide; only operator assigns
+//   district_tech_admin  60    — district-wide; tech surface
+//   school_admin         40    — building-level
+//   teacher / counselor / interventionist / education_assistant / parent
+//                        20    — sub-roles (peer tier among themselves)
+//
+// "operator" is intentionally absent from this map. Operator status is
+// a synthetic privilege carried by the PLATFORM_ADMIN_USER_IDS env-var
+// allowlist (middleware/platformAdminOnly.js), not a DB role. It is
+// recomputed server-side per request via isOperator(req.user.id) and
+// passed as the third arg to canAssignRole.
+//
+// Adding or removing a role here changes who can assign whom — route
+// as a §4B / §5 PR with all three reviewer subagents. Three-writer
+// drift hazard with users.role's DB CHECK (M041/M043) and the FE mirror
+// at frontend/src/constants/staffRoles.js; keep all three in lockstep.
+const ROLE_RANK = {
+  district_admin: 80,
+  district_tech_admin: 60,
+  school_admin: 40,
+  teacher: 20,
+  counselor: 20,
+  interventionist: 20,
+  education_assistant: 20,
+  parent: 20,
+};
+
+// canAssignRole — pure predicate for the role-rank condition of the
+// delegated role assignment guard. Three independent conditions must
+// ALL hold for an assignment to be authorized; this function answers
+// ONLY the rank condition. The other two MUST be enforced at the call
+// site:
+//
+//   (1) Target user is within the actor's accessible-school set via
+//       middleware/resolveAccessibleTenantIds (never inlined per §5
+//       dual-path doctrine). NOT checked here.
+//   (2) Target user is not the actor (self-mutation guard).
+//       NOT checked here.
+//   (3) The role being assigned is permitted given the actor's rank
+//       and operator status. THIS function.
+//
+// Operator bypass: when actorIsOperator is true, any role in ROLE_RANK
+// is assignable. The operator's DB role is irrelevant; an operator's
+// users.role could be any string and the bypass still fires. Unknown
+// target role strings are rejected even for operators — only roles in
+// ROLE_RANK are assignable.
+//
+// Non-operator rank check: targetRole must be strictly below actorRole
+// by numeric rank. Equal-rank assignments are rejected by default; the
+// only exception is the school_admin peer rule — a school_admin may
+// assign a peer school_admin. Within-tenant scope of that exception is
+// enforced by condition (1) at the call site (the target's
+// school_tenant_id must be in the actor's accessible-school set
+// returned by resolveAccessibleTenantIds), not here.
+//
+// Unknown or missing actor/target roles return false (defense in depth
+// for malformed JWT payloads or callers that forget the universe
+// check upstream). Display-only consumers on the FE must mirror this
+// predicate exactly — see frontend/src/constants/staffRoles.js.
+function canAssignRole(actorRole, targetRole, actorIsOperator) {
+  if (actorIsOperator === true) {
+    return Object.prototype.hasOwnProperty.call(ROLE_RANK, targetRole);
+  }
+  const actorRank = ROLE_RANK[actorRole];
+  const targetRank = ROLE_RANK[targetRole];
+  if (actorRank === undefined || targetRank === undefined) {
+    return false;
+  }
+  if (targetRank < actorRank) {
+    return true;
+  }
+  if (actorRole === 'school_admin' && targetRole === 'school_admin') {
+    return true;
+  }
+  return false;
+}
+
+module.exports = {
+  ELEVATED_ROLES,
+  INTERVENTION_MANAGER_ROLES,
+  ROLLUP_ROLES,
+  ROLE_RANK,
+  canAssignRole,
+};

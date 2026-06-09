@@ -5,7 +5,8 @@ const bcrypt = require('bcrypt');
 require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+const { INTERVENTION_MANAGER_ROLES, canAssignRole } = require('../constants/roles');
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -15,16 +16,6 @@ const pool = new Pool({
 // Valid roles (universe of valid role strings — used for malformed-input
 // 400 rejection).
 const VALID_ROLES = ['district_admin', 'school_admin', 'district_tech_admin', 'teacher', 'counselor', 'interventionist', 'parent', 'education_assistant'];
-
-// Per-creator-role rules: which roles each creator can produce. Dict
-// is the single source of truth for both the caller-allowed gate
-// (Object.keys) and the per-call role-rank check. Closes role-
-// escalation gap from PR #129 triad re-review (security-reviewer
-// HIGH-1).
-const CREATE_USER_RULES = {
-  district_admin: VALID_ROLES,
-  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'parent', 'education_assistant']
-};
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -60,12 +51,16 @@ async function resolveAndBindTargetTenant(req) {
 }
 
 // Get all users for a tenant. Gated by requireAuth + caller-role
-// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// canAssignRole canary + positive-int :tenantId
 // validation + §5 tenant-scope check via resolveAccessibleTenantIds
 // (404 'Not found' on miss).
 router.get('/tenant/:tenantId', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -177,13 +172,17 @@ router.get('/parents', requireAuth, async (req, res) => {
   }
 });
 // Get users by role for a tenant. Gated by requireAuth + caller-role
-// gate (Object.keys(CREATE_USER_RULES)) + positive-int :tenantId
+// canAssignRole canary + positive-int :tenantId
 // validation + :role validation against VALID_ROLES (400 on malformed)
 // + §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
 // found' on miss).
 router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -219,12 +218,16 @@ router.get('/tenant/:tenantId/role/:role', requireAuth, async (req, res) => {
 });
 
 // Get a single user by ID. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation +
+// canAssignRole canary + positive-int :id validation +
 // §5 tenant-scope check via resolveAccessibleTenantIds (404 'Not
 // found' on miss).
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Caller-side canary mirroring this file's POST/PUT. 'parent' as
+    // rank-floor proves any-assignment-authority; operator bypasses to
+    // true. Operator status recomputed server-side per request — never
+    // from req.body.
+    if (!canAssignRole(req.user.role, 'parent', isOperator(req.user.id))) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -264,19 +267,30 @@ router.get('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Create a new user. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + role-validity (VALID_ROLES → 400
-// on malformed) + role-rank gate (CREATE_USER_RULES[caller] → 403 on
-// rank-rejection) + §5 target_tenant_id binding via
+// Create a new user. Gated by requireAuth + canAssignRole canary
+// (actor has any assignment authority → 403 if not) + role-validity
+// (VALID_ROLES → 400 on malformed) + canAssignRole rank check
+// (operator bypass / strict-below-rank / school_admin peer exception
+// → 403 on rank-rejection) + §5 target_tenant_id binding via
 // resolveAndBindTargetTenant. district_id inherited from creator on
 // district-scoped role INSERTs. Closes POST half of Followup #116 +
-// role-escalation finding from PR #129 triad re-review. Password-
-// required (non-SSO) identity model preserved — staff onboarding via
-// Google SSO uses POST /api/staff; this surface remains the password-
-// required path (parents, etc.).
+// role-escalation finding from PR #129 triad re-review +
+// delegated-role-assignment trust rule. Password-required (non-SSO)
+// identity model preserved — staff onboarding via Google SSO uses
+// POST /api/staff; this surface remains the password-required path
+// (parents, etc.).
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Operator status is recomputed server-side every request via the
+    // PLATFORM_ADMIN_USER_IDS env allowlist. Never read from req.body
+    // or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side canary BEFORE body parse (per S116
+    // [[feedback_role_gate_before_input_parse_sweep]]). 'parent' is
+    // the rank-floor canary: every assignment-capable non-operator
+    // actor can assign 'parent' (sub-roles can't); operators bypass.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -292,7 +306,11 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
-    if (!CREATE_USER_RULES[req.user.role].includes(role)) {
+    // Role-rank gate — condition (3) of the three-condition delegated-
+    // assignment guard. Condition (1) (target tenant scope) is enforced
+    // below by resolveAndBindTargetTenant. Condition (2) (self-mutation)
+    // is N/A for POST since the target is being created.
+    if (!canAssignRole(req.user.role, role, actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -305,10 +323,32 @@ router.post('/', requireAuth, async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // district_id binding: district-scoped roles inherit creator's
-    // district_id. The role-rank gate above ensures only district_admin
-    // (which has non-null district_id) can reach this path with role IN
-    // district-scoped roles, so districtId is non-null when needed.
-    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+    // district_id. For non-operator actors the rank gate above ensures
+    // only a district_admin (with non-null district_id) reaches this
+    // path with role IN district-scoped roles, so districtId is non-null
+    // when needed. Operator bypass closes that invariant: a platform-
+    // level operator (users.district_id IS NULL) could land a district-
+    // scoped role row with null district_id, degrading the new user to
+    // the legacy single-tenant scope path (resolveAccessibleTenantIds
+    // returns [tenant_id] when district_id IS NULL). The fail-safe
+    // immediately below catches that case with a 400; the proper fix —
+    // sourcing target_district_id explicitly from a body field or the
+    // target tenant's districts.id rather than inheriting the creator's
+    // — is banked as a follow-up.
+    const isDistrictScopedRole = ['district_admin', 'district_tech_admin'].includes(role);
+    const districtId = isDistrictScopedRole ? req.user.district_id : null;
+
+    // Fail-safe — operator edge case (see comment above). Rejects the
+    // request with 400 rather than landing a mis-scoped district-scoped
+    // role row whose access surface would silently degrade post-INSERT.
+    // Triggers only when the role is district-scoped AND the derived
+    // district_id is NULL; the non-operator path is unreachable here
+    // because the rank gate above blocks it. Defense in depth.
+    if (isDistrictScopedRole && districtId == null) {
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or cannot be derived from the creator'
+      });
+    }
 
     const result = await pool.query(
       `INSERT INTO users (tenant_id, email, password_hash, full_name, role, district_id)
@@ -326,14 +366,39 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// Update a user. Gated by requireAuth + caller-role gate
-// (Object.keys(CREATE_USER_RULES)) + positive-int :id validation +
-// self-PUT block + role-validity (VALID_ROLES → 400) + role-rank gate
-// (CREATE_USER_RULES[caller] → 403) + §5 tenant-scope check via
-// resolveAccessibleTenantIds (404 'Not found' on miss).
+// Update a user. Gated by requireAuth + canAssignRole canary +
+// positive-int :id + self-PUT block + VALID_ROLES universe check (400
+// on malformed role) + (inside a single transaction against a SELECT
+// ... FOR UPDATE-locked target row) §5 tenant-scope check, outranks
+// check (actor must outrank target's CURRENT role), and new-role rank
+// check (when role is changing).
+//
+// One locked read drives §5 scope, outranks, new-role rank, and the
+// audit-row provenance (operator hold #3). UPDATE users + INSERT INTO
+// user_role_change_audit run inside the same transaction — both or
+// neither (M046 security review LOW-1, operator constraint b).
+//
+// Audit-row provenance per M046 security review: user_id,
+// school_tenant_id, old_role, district_id are sourced from the locked
+// target row; actor_user_id from req.user.id (JWT). Never from
+// req.body. The audit row fires only when role is supplied AND
+// differs from the target's current role.
+//
+// Replacement-not-COALESCE PUT semantics preserved: caller must
+// provide email + full_name + role together. Partial PUTs without
+// role land NULL → 500 (existing behavior).
 router.put('/:id', requireAuth, async (req, res) => {
+  let client = null;
   try {
-    if (!Object.keys(CREATE_USER_RULES).includes(req.user.role)) {
+    // Operator status — recomputed server-side every request from the
+    // PLATFORM_ADMIN_USER_IDS env allowlist (operator hold #2). Never
+    // from req.body or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side canary BEFORE body parse (per S116
+    // [[feedback_role_gate_before_input_parse_sweep]]). 'parent' is
+    // the rank-floor canary: only assignment-capable actors pass.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -342,12 +407,14 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid user id' });
     }
 
+    // Self-mutation guard — condition (2) of the three-condition
+    // delegated-assignment guard (operator hold #1).
     if (id === req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
     const { email, full_name, role } = req.body;
-    
+
     // Validate role if provided
     if (role && !VALID_ROLES.includes(role)) {
       return res.status(400).json({
@@ -355,39 +422,113 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    if (role && !CREATE_USER_RULES[req.user.role].includes(role)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    // Single locked read drives §5 scope, outranks check, new-role
+    // rank check, and audit-row provenance (operator hold #3). A
+    // concurrent PUT cannot interleave with stale old_role state.
+    client = await pool.connect();
+    await client.query('BEGIN');
 
-    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
-    // not inlined, per the §5 dual-path doctrine. 404 'Not found' on
-    // miss for probe-resistance, matching DELETE :290-303 / PR #142.
-    const target = await pool.query(
-      'SELECT tenant_id FROM users WHERE id = $1',
+    const target = await client.query(
+      `SELECT id, tenant_id, role, district_id
+       FROM users WHERE id = $1
+       FOR UPDATE`,
       [id]
     );
     if (target.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
+    const targetRow = target.rows[0];
+
+    // Condition (1) — §5 tenant scope via resolveAccessibleTenantIds,
+    // consumed not inlined per the dual-path doctrine. 404 for probe-
+    // resistance, matching DELETE :290-303 / PR #142.
     const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(target.rows[0].tenant_id)) {
+    if (!accessible.includes(targetRow.tenant_id)) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const result = await pool.query(
+    // Condition (3a) — outranks check. Actor must have authority over
+    // the target's CURRENT role to edit any of their fields. Reusing
+    // canAssignRole here means actor outranks target iff actor could
+    // (re-)assign that role. Encodes operator bypass + strict-below-
+    // rank + school_admin peer exception. Stricter than the prior
+    // caller-role gate: a peer district_admin can no longer edit
+    // another peer; aligns with the spec's "strictly below" principle.
+    if (!canAssignRole(req.user.role, targetRow.role, actorIsOperator)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Condition (3b) — new-role rank check. Fires only when role is
+    // being changed (no-op PUTs with role == current target role skip
+    // this check and the audit write below).
+    const roleChanging = role && role !== targetRow.role;
+    if (roleChanging) {
+      if (!canAssignRole(req.user.role, role, actorIsOperator)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    // Fail-safe — symmetric to C5's POST guard. Promoting the target
+    // to a district-scoped role while the locked target row's
+    // district_id is NULL would land role=district_admin (or
+    // district_tech_admin) with district_id IS NULL. The PUT statement
+    // below does not touch district_id, so the target keeps whatever
+    // they already have — and a NULL existing district leaves them in
+    // the legacy single-tenant scope path (resolveAccessibleTenantIds
+    // returns [tenant_id] when district_id IS NULL), the same mis-
+    // scoped-admin problem the POST guard prevents. Triggers only when
+    // the new role is district-scoped AND the target has no existing
+    // district; fires AFTER the rank check so a 403 takes precedence
+    // when the actor isn't authorized in the first place. Proper fix
+    // tracked as follow-up: PUT should source target_district_id
+    // explicitly from a body field or the target tenant's districts.id
+    // rather than relying on the existing row's district_id.
+    if (roleChanging && ['district_admin', 'district_tech_admin'].includes(role) && targetRow.district_id == null) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or the target has no existing district'
+      });
+    }
+
+    const result = await client.query(
       `UPDATE users
        SET email = $1, full_name = $2, role = $3, updated_at = CURRENT_TIMESTAMP
        WHERE id = $4
        RETURNING id, tenant_id, email, full_name, role, updated_at`,
       [email, full_name, role, id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+
+    // Audit-row provenance — operator hold #3 + M046 security review
+    // LOW-1: user_id, school_tenant_id, old_role, district_id sourced
+    // from the locked target row; actor_user_id from req.user.id (JWT);
+    // new_role from the validated request body. None from req.body for
+    // the historical-state columns.
+    if (roleChanging) {
+      await client.query(
+        `INSERT INTO user_role_change_audit
+           (user_id, old_role, new_role, actor_user_id, school_tenant_id, district_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [targetRow.id, targetRow.role, role, req.user.id, targetRow.tenant_id, targetRow.district_id]
+      );
     }
+
+    await client.query('COMMIT');
+
     res.json(result.rows[0]);
   } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (_rollbackError) { /* swallow; original error wins */ }
+    }
     console.error('[users:put] error code:', error.code);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 });
 

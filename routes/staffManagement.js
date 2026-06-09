@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES } = require('../constants/roles');
+const { ELEVATED_ROLES, INTERVENTION_MANAGER_ROLES, canAssignRole } = require('../constants/roles');
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 let pool;
 
@@ -21,16 +22,6 @@ const STAFF_ROLES = [
   'interventionist',
   'education_assistant'
 ];
-
-// Per-creator-role rules: which roles each creator can produce. Dict
-// is the single source of truth for both the caller-allowed gate
-// (Object.keys) and the per-call role-rank check. Closes role-
-// escalation gap from PR #129 triad re-review (security-reviewer
-// HIGH-1).
-const CREATE_STAFF_RULES = {
-  district_admin: STAFF_ROLES,
-  school_admin: ['school_admin', 'counselor', 'teacher', 'interventionist', 'education_assistant']
-};
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -123,16 +114,31 @@ router.get('/:tenantId', requireAuth, async (req, res) => {
 });
 
 // POST /api/staff - Create a new staff member. Gated by requireAuth +
-// caller-role gate (Object.keys(CREATE_STAFF_RULES)) + role-validity
-// (STAFF_ROLES → 400 on malformed) + role-rank gate
-// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection) + §5
-// target_tenant_id binding via resolveAndBindTargetTenant. district_id
-// inherited from creator on district-scoped role INSERTs. Closes the
-// POST half of Followup #116 + role-escalation finding from PR #129
-// triad re-review.
+// canAssignRole canary (actor has any assignment authority → 403 if
+// not) + role-validity (STAFF_ROLES → 400 on malformed) + canAssignRole
+// rank check (operator bypass / strict-below-rank / school_admin peer
+// exception → 403 on rank-rejection) + §5 target_tenant_id binding
+// via resolveAndBindTargetTenant. district_id inherited from creator
+// on district-scoped role INSERTs. Closes the POST half of Followup
+// #116 + role-escalation finding from PR #129 triad re-review +
+// delegated-role-assignment trust rule (operator > district_admin >
+// district_tech_admin > school_admin > sub-roles, with school_admin
+// peer exception).
 router.post('/', requireAuth, async (req, res) => {
   try {
-    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+    // Operator status is recomputed server-side every request via the
+    // PLATFORM_ADMIN_USER_IDS env allowlist. Never read from req.body
+    // or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side gate: BEFORE body parse, to keep probe traffic out of
+    // the input reader and the required-fields shape it would leak
+    // (per S116 [[feedback_role_gate_before_input_parse_sweep]]).
+    // 'parent' (the rank-floor) is the canary: every assignment-capable
+    // non-operator actor can assign 'parent' (sub-roles can't); operators
+    // bypass to true. So this single call holds iff the actor has any
+    // assignment authority at all.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -145,7 +151,13 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    if (!CREATE_STAFF_RULES[req.user.role].includes(role)) {
+    // Role-rank gate — condition (3) of the three-condition delegated-
+    // assignment guard. Condition (1) (target tenant scope) is enforced
+    // below by resolveAndBindTargetTenant. Condition (2) (self-mutation)
+    // is N/A for POST since the target is being created. canAssignRole
+    // encodes operator bypass + strict-below-rank + school_admin peer
+    // exception.
+    if (!canAssignRole(req.user.role, role, actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -172,10 +184,26 @@ router.post('/', requireAuth, async (req, res) => {
     const schoolWideAccess = ELEVATED_ROLES.includes(role);
 
     // district_id binding: district-scoped roles inherit creator's
-    // district_id. The role-rank gate above ensures only district_admin
-    // (which has non-null district_id) can reach this path with role IN
-    // district-scoped roles, so districtId is non-null when needed.
-    const districtId = ['district_admin', 'district_tech_admin'].includes(role) ? req.user.district_id : null;
+    // district_id. For non-operator actors the rank gate above ensures
+    // only a district_admin (with non-null district_id) reaches this
+    // path with role IN district-scoped roles, so districtId is non-null
+    // when needed. Operator bypass closes that invariant: a platform-
+    // level operator (users.district_id IS NULL) could land a district-
+    // scoped role row with null district_id, degrading the new user to
+    // the legacy single-tenant scope path. The fail-safe immediately
+    // below catches that case with a 400. Symmetric to routes/users.js
+    // POST (C5). Proper fix tracked as follow-up: source target_district_id
+    // explicitly from a body field or the target tenant's districts.id.
+    const isDistrictScopedRole = ['district_admin', 'district_tech_admin'].includes(role);
+    const districtId = isDistrictScopedRole ? req.user.district_id : null;
+
+    // Fail-safe — operator edge case (see comment above). Rejects with
+    // 400 rather than landing a mis-scoped district-scoped role row.
+    if (isDistrictScopedRole && districtId == null) {
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or cannot be derived from the creator'
+      });
+    }
 
     // Insert without password — they'll use Google SSO
     const result = await pool.query(
@@ -196,13 +224,38 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PUT /api/staff/:id - Update a staff member's role or name. Gated by
-// requireAuth + caller-role gate (Object.keys(CREATE_STAFF_RULES)) +
-// self-PUT block + role-validity (STAFF_ROLES → 400) + role-rank gate
-// (CREATE_STAFF_RULES[caller] → 403 on rank-rejection). Closes the PUT
-// half of Followup #116 and PR #140 security-reviewer WARN-1.
+// requireAuth + canAssignRole canary + positive-int :id + self-PUT
+// block + STAFF_ROLES universe check (400 on malformed role) +
+// (inside a single transaction against a SELECT ... FOR UPDATE-locked
+// target row) §5 tenant-scope check, outranks check (actor must
+// outrank target's CURRENT role), and new-role rank check (when role
+// is changing).
+//
+// One locked read drives §5 scope, outranks, new-role rank, and the
+// audit-row provenance (operator hold #3). UPDATE users + INSERT INTO
+// user_role_change_audit run inside the same transaction — both or
+// neither (M046 security review LOW-1, operator constraint b).
+//
+// Audit-row provenance per M046 security review: user_id,
+// school_tenant_id, old_role, district_id are sourced from the locked
+// target row; actor_user_id from req.user.id (JWT). Never from
+// req.body. The audit row fires only when role is supplied AND
+// differs from the target's current role.
+//
+// Closes the PUT half of Followup #116, PR #140 security-reviewer
+// WARN-1, and the delegated-role-assignment trust rule.
 router.put('/:id', requireAuth, async (req, res) => {
+  let client = null;
   try {
-    if (!Object.keys(CREATE_STAFF_RULES).includes(req.user.role)) {
+    // Operator status — recomputed server-side every request from the
+    // PLATFORM_ADMIN_USER_IDS env allowlist (operator hold #2). Never
+    // from req.body or any client-controlled field.
+    const actorIsOperator = isOperator(req.user.id);
+
+    // Actor-side canary BEFORE body parse (per S116
+    // [[feedback_role_gate_before_input_parse_sweep]]). 'parent' is
+    // the rank-floor canary: only assignment-capable actors pass.
+    if (!canAssignRole(req.user.role, 'parent', actorIsOperator)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -211,6 +264,8 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid user id' });
     }
 
+    // Self-mutation guard — condition (2) of the three-condition
+    // delegated-assignment guard (operator hold #1).
     if (id === req.user.id) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -221,40 +276,92 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${STAFF_ROLES.join(', ')}` });
     }
 
-    if (role && !CREATE_STAFF_RULES[req.user.role].includes(role)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    // Single locked read drives §5 scope, outranks check, new-role
+    // rank check, and audit-row provenance (operator hold #3). A
+    // concurrent PUT cannot interleave with stale old_role state.
+    client = await pool.connect();
+    await client.query('BEGIN');
 
-    // §5 tenant scope check via resolveAccessibleTenantIds — consumed,
-    // not inlined, per the §5 dual-path doctrine (legacy single-tenant
-    // users vs district users on user_school_access). 404 'Not found'
-    // rather than 403 for probe-resistance, matching DELETE :249 / :257.
-    // Parents are not staff and are deletable/editable via /api/users/:id.
-    const target = await pool.query(
-      'SELECT id, tenant_id, role FROM users WHERE id = $1',
+    const target = await client.query(
+      `SELECT id, tenant_id, role, district_id
+       FROM users WHERE id = $1
+       FOR UPDATE`,
       [id]
     );
     if (target.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
-    if (target.rows[0].role === 'parent') {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const accessible = await resolveAccessibleTenantIds(req.user);
-    if (!accessible.includes(target.rows[0].tenant_id)) {
+    const targetRow = target.rows[0];
+
+    // Parents are not staff and are deletable/editable via /api/users/:id.
+    if (targetRow.role === 'parent') {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
 
-    // Recalculate school_wide_access if role changed. ELEVATED_ROLES is
-    // the canonical 5-role allowlist exported from constants/roles.js.
-    // Healing on name-only PUTs (re-check current row's role) is NOT in
-    // scope here — banked as followup.
+    // Condition (1) — §5 tenant scope via resolveAccessibleTenantIds,
+    // consumed not inlined per the dual-path doctrine. 404 for
+    // probe-resistance, matching the read paths in this file.
+    const accessible = await resolveAccessibleTenantIds(req.user);
+    if (!accessible.includes(targetRow.tenant_id)) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // Condition (3a) — outranks check. Actor must have authority over
+    // the target's CURRENT role to edit any of their fields. Reusing
+    // canAssignRole here means actor outranks target iff actor could
+    // (re-)assign that role. Encodes operator bypass + strict-below-
+    // rank + school_admin peer exception. Stricter than the prior
+    // caller-role gate: a peer district_admin (or peer
+    // district_tech_admin) can no longer edit another peer; aligns
+    // with the spec's "strictly below" principle.
+    if (!canAssignRole(req.user.role, targetRow.role, actorIsOperator)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Condition (3b) — new-role rank check. Fires only when role is
+    // being changed (no-op PUTs with role == current target role skip
+    // this check and the audit write below).
+    const roleChanging = role && role !== targetRow.role;
+    if (roleChanging) {
+      if (!canAssignRole(req.user.role, role, actorIsOperator)) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    // Fail-safe — symmetric to routes/users.js PUT (C6). Promoting the
+    // target to a district-scoped role while the locked target row's
+    // district_id is NULL would land role=district_admin (or
+    // district_tech_admin) with district_id IS NULL. The PUT statement
+    // below does not touch district_id, so the target keeps whatever
+    // they already have — a NULL existing district leaves them in the
+    // legacy single-tenant scope path. Triggers only when the new role
+    // is district-scoped AND the target has no existing district; fires
+    // AFTER the rank check so a 403 takes precedence when the actor
+    // isn't authorized in the first place. Proper fix tracked as
+    // follow-up: PUT should source target_district_id explicitly from
+    // a body field or the target tenant's districts.id.
+    if (roleChanging && ['district_admin', 'district_tech_admin'].includes(role) && targetRow.district_id == null) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: 'district_id is required for district-scoped role assignment; target_district_id is missing or the target has no existing district'
+      });
+    }
+
+    // Recalculate school_wide_access if role changed. ELEVATED_ROLES
+    // is the canonical 5-role allowlist exported from constants/roles.js.
+    // Healing on name-only PUTs (re-check current row's role) is NOT
+    // in scope here — banked as followup.
     const schoolWideAccess = role
       ? ELEVATED_ROLES.includes(role)
       : undefined;
 
-    const result = await pool.query(
-      `UPDATE users 
+    const result = await client.query(
+      `UPDATE users
        SET full_name = COALESCE($1, full_name),
            role = COALESCE($2, role),
            school_wide_access = COALESCE($3, school_wide_access)
@@ -263,14 +370,33 @@ router.put('/:id', requireAuth, async (req, res) => {
       [full_name || null, role || null, schoolWideAccess, id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    // Audit-row provenance — operator hold #3 + M046 security review
+    // LOW-1: user_id, school_tenant_id, old_role, district_id sourced
+    // from the locked target row; actor_user_id from req.user.id (JWT);
+    // new_role from the validated request body. None from req.body for
+    // the historical-state columns.
+    if (roleChanging) {
+      await client.query(
+        `INSERT INTO user_role_change_audit
+           (user_id, old_role, new_role, actor_user_id, school_tenant_id, district_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [targetRow.id, targetRow.role, role, req.user.id, targetRow.tenant_id, targetRow.district_id]
+      );
     }
+
+    await client.query('COMMIT');
 
     res.json(result.rows[0]);
   } catch (error) {
+    if (client) {
+      try { await client.query('ROLLBACK'); } catch (_rollbackError) { /* swallow; original error wins */ }
+    }
     console.error('[staff:put] error code:', error.code);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 });
 
@@ -366,5 +492,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 router.initializePool = initializePool;
 router.STAFF_ROLES = STAFF_ROLES;
-router.CREATE_STAFF_RULES = CREATE_STAFF_RULES;
 module.exports = router;
