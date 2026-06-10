@@ -27918,3 +27918,138 @@ NEXT SESSION SHOULD
   at routes/studentGradeRollup.js, and extend the smoke matrix with
   cases 18-19 (MTSS coordinator own-school happy / cross-tenant 403).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-10T07:30:00-07:00
+BRANCH:  feat/operator-create-district
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/262
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  First slice of a future self-serve operator onboarding console: add an
+  operator-only POST /api/operator/districts endpoint that creates a single
+  row in the districts table. No tenant attachment, no first-admin user, no
+  frontend — those are separate later slices. Schema for the districts table
+  + the auth_mode CHECK is already in production (M028 + M034), so no
+  migration in this PR.
+
+FILES TOUCHED
+  routes/operatorDistricts.js — new route handler (+68 lines), single POST /
+    that mirrors the existing operator-only route conventions used by
+    routes/tenants.js: pool with conditional SSL, router.use(requireAuth,
+    platformAdminOnly), 23514 / 23505 PG-code redirects, redacted 500 with a
+    bracketed scope tag.
+  server.js — 2-line addition: route import + mount at /api/operator/districts.
+    Mount sits adjacent to the existing /api/districts mounts so the URL
+    namespace is co-located; prefix-disjoint per the tenant-isolation audit.
+
+MIGRATIONS RUN
+  none — districts table from M028 and auth_mode NOT NULL + CHECK from M034
+  are already in production. This PR adds no schema.
+
+TENANT ISOLATION REVIEW
+  Endpoint writes to the districts table only (the top-level parent in the
+  layered tenant model). No reads or writes against tenants, users,
+  user_school_access, students, staff, or any school-scoped table. The
+  middleware chain is requireAuth -> platformAdminOnly, with
+  resolveAccessibleTenantIds deliberately omitted: operators have no
+  user_school_access rows by construction, and the endpoint creates a
+  top-level entity with no FK that could be cross-wired. Body destructure
+  is strict (only name + auth_mode are read); INSERT column list is static.
+  tenant-isolation-auditor on diff: APPROVED, 0 CRITICAL / 0 WARN / 3 INFO.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. The handler reads only the districts.name field
+    (a legal-entity name for a local education agency, not an individual
+    identifier) and districts.auth_mode (a policy enum). No individual
+    identifier is read, written, logged, or transmitted.
+  Logging audit: one new console.error site, scope-tagged, emits err.message
+    only to server logs. Response body in the 500 path is the static string
+    'Server error' — err.message never reaches the wire. All five 4xx
+    response bodies are static string literals; no caller input is echoed.
+  Cross-tenant risk: none identified. No school-scoped table is read or
+    written.
+  privacy-reviewer on diff: APPROVED, 0 CRITICAL / 0 WARN / 3 INFO.
+  §4B grep (narrow + wide) against added activities-entry lines vs
+    origin/main: see VERIFICATION below.
+
+VERIFICATION
+  Static syntax check:
+    node --check routes/operatorDistricts.js — OK.
+    node --check server.js — OK.
+  Backend test suite: not run; npm test is a no-op in this repo (Followup
+    #73, package.json scripts.test is the placeholder echo + exit).
+  Backend lint: not run; npm run lint is unconfigured (Followup #74).
+  Curl smoke (untracked per Followup #94, off the work-PR branch):
+    6 / 6 PASS — six cases exercised against a local server on port 3001
+    with a freshly-seeded synthetic fixture + two test users (one made an
+    operator via PLATFORM_ADMIN_USER_IDS override at boot, one not). Cases
+    covered: unauthenticated -> 401, authed-non-operator -> 403, operator
+    missing name -> 400, operator invalid auth_mode -> 400, operator valid
+    fresh -> 201 with the RETURNING projection, operator same name -> 409
+    via the best-effort pre-flight. Synthetic fixture rows + the row
+    created by the endpoint during smoke are both torn down on trap EXIT.
+
+  Reviewer subagents on git diff main...feat/operator-create-district:
+    security-reviewer:          APPROVED  (0 CRIT / 1 WARN / 2 INFO)
+    tenant-isolation-auditor:   APPROVED  (0 CRIT / 0 WARN / 3 INFO)
+    privacy-reviewer:           APPROVED  (0 CRIT / 0 WARN / 3 INFO)
+    All three converged on the same INFO: per-route new pg.Pool() instance
+    (pattern divergence already banked under the pg-pool-consolidation
+    followup). Security's single WARN points to the documented best-effort
+    409 race window pending Followup #107's UNIQUE(name) migration; no
+    code change required this PR.
+
+  §2A formal review: PR #262 reviewDecision APPROVED; merged into main at
+    merge commit 8ab780d9a65292b608c2170191c358254c84c7b0 (true merge;
+    HEAD_OID == merge second-parent verified by the landing skill's
+    merge-SHA gate).
+
+  merge-sha verification: PASS — HEAD_OID == merge second-parent
+    (5b8abcae15f3cdb048e746c2937edcef63abe378).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #262 commit OIDs at merge time:
+  5b8abcae15f3cdb048e746c2937edcef63abe378
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup #107 (UNIQUE on districts.name): called out in the PR body and
+    in the security-reviewer's single WARN as the structural fix for the
+    409 race window. The current pre-flight SELECT is best-effort only; two
+    concurrent operator clicks can race-insert duplicates between the SELECT
+    and the INSERT. Recommend the #107 migration (case-folded UNIQUE + trim
+    decisions) land before this endpoint is exposed to more than one
+    operator concurrently, or before any FE binds to it.
+
+  - Followups #73 / #74 (no backend test suite, no backend lint): reiterated
+    as the verification-approach drivers this session. Until those land,
+    sec/operator/migration PRs lean on node --check + curl smoke as
+    evidence. Sibling cluster still open.
+
+  - pg-pool-consolidation followup: all three reviewers independently
+    flagged the per-route new pg.Pool() instance as a pattern divergence
+    consistent with several other route modules. Folds into the existing
+    follow-up; no action this PR.
+
+  - Operator-onboarding next slices (queued, not blocked by anything in
+    this PR): (a) POST /api/operator/districts/:id/schools to attach a
+    school-tenant under a district; (b) POST /api/operator/districts/:id/
+    first-admin to mint the first district_admin + seed user_school_access
+    across the district's schools; (c) frontend operator console.
+
+  - Remote branch feat/operator-create-district was NOT deleted from origin
+    at session close; repo policy deleteBranchOnMerge is false. Operator
+    can delete manually if desired.
+
+NEXT SESSION SHOULD
+  Pick up the operator-onboarding work with slice (a): POST /api/operator/
+  districts/:id/schools. Same operator-only middleware chain, same
+  schema-already-in-prod pattern (tenants.district_id from M028 + tenants
+  itself pre-existing). The composite-FK design from M028 makes
+  cross-district leakage structurally impossible at the schema layer; the
+  endpoint must take district_id from the path param, never from req.body
+  — that is the single biggest correctness hazard called out in the prior
+  read-only audit.
+================================================================================
