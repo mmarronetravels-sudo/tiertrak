@@ -692,6 +692,14 @@ const canRunRollup = !!(user && ['district_admin', 'school_admin'].includes(user
 // derivation only controls FE nav visibility + view mount.
 const isOperator = !!(user && user.is_operator);
 
+// Operators (whose account role is 'parent') land on the operator
+// console rather than the staff dashboard, which is empty for them.
+// One-shot: isOperator only transitions false->true once on /me load,
+// so this does not trap the operator on the console afterward.
+  useEffect(() => {
+    if (isOperator) setView('operator');
+  }, [isOperator, setView]);
+
 // Check if logged in on load
   useEffect(() => {
 fetchUserInfo();
@@ -7557,8 +7565,9 @@ const handleChildDocumentDelete = async (docId) => {
 // END OF PARENT PORTAL VIEW COMPONENT
 // ============================================
   
-  // Show parent portal for parent users
-if (isParent) {
+  // Show parent portal for parent users — except operators, whose
+  // account role is 'parent' but who must reach the operator console.
+if (isParent && !isOperator) {
   return <ParentPortalView />;
 }
   return (
