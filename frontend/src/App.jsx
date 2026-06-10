@@ -38,6 +38,7 @@ import ResourcesView from './views/ResourcesView';
 import DistrictDashboardView from './views/DistrictDashboardView';
 import StudentGradeRollupView from './views/StudentGradeRollupView';
 import OperatorConsoleView from './views/OperatorConsoleView';
+import OperatorSchoolsView from './views/OperatorSchoolsView';
 import Section504Tab from './components/Section504/Section504Tab';
 import TeacherAccommodationsView from './components/Section504/TeacherAccommodationsView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
@@ -426,6 +427,12 @@ const [screenerLoading, setScreenerLoading] = useState(false);
   // modal needs (id, tenant_id, admin_notes); null when the modal is closed.
   const [selectedReferralId, setSelectedReferralId] = useState(null);
   const [selectedQueueTenantId, setSelectedQueueTenantId] = useState(null);
+  // Operator schools drill-in. selectedOperatorDistrict holds { id, name }
+  // of the district row clicked in OperatorConsoleView; null when the
+  // operator is on the districts list. name is for the header only — id
+  // drives the GET/POST .../districts/:id/schools requests. Org-level
+  // only; no student/staff PII.
+  const [selectedOperatorDistrict, setSelectedOperatorDistrict] = useState(null);
   const [referralDetailRefreshToken, setReferralDetailRefreshToken] = useState(0);
   const [resolveModalReferral, setResolveModalReferral] = useState(null);
   const [logOptions, setLogOptions] = useState({ timeOfDay: [], location: [] });
@@ -1630,6 +1637,17 @@ const openDisciplineReferral = (referralId, tenantId) => {
 const backToDisciplineQueue = () => {
   setSelectedReferralId(null);
   setView('discipline-queue');
+};
+
+// Operator schools drill-in handlers. Parallel to the discipline
+// open/back pair. district = { id, name } from the console row.
+const openOperatorSchools = (district) => {
+  setSelectedOperatorDistrict(district);
+  setView('operator-schools');
+};
+const backToOperatorConsole = () => {
+  setSelectedOperatorDistrict(null);
+  setView('operator');
 };
 const openResolveModal = (detail) => {
   setResolveModalReferral(detail);
@@ -7656,7 +7674,7 @@ if (isParent && !isOperator) {
                   <button
                     onClick={() => setView('operator')}
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
-                      view === 'operator' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                      view === 'operator' || view === 'operator-schools' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     Operator
@@ -7708,7 +7726,15 @@ if (isParent && !isOperator) {
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
         {view === 'grade-rollup' && canRunRollup && <StudentGradeRollupView />}
-        {view === 'operator' && isOperator && <OperatorConsoleView />}
+        {view === 'operator' && isOperator && (
+          <OperatorConsoleView onSelectDistrict={openOperatorSchools} />
+        )}
+        {view === 'operator-schools' && isOperator && selectedOperatorDistrict && (
+          <OperatorSchoolsView
+            district={selectedOperatorDistrict}
+            onBack={backToOperatorConsole}
+          />
+        )}
         {view === 'discipline-queue' && canViewDisciplineReview && (
           <DisciplineReferralQueue
             user={user}

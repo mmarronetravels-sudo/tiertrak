@@ -6,13 +6,14 @@
 // platformAdminOnly. The FE isOperator flag (App.jsx) only controls
 // nav visibility + view mount; the env-allowlist gate on the server is
 // the trust boundary — this view has no authority to assert operator
-// status. Schools and first-admin onboarding arrive in later PRs.
+// status. Clicking a district row drills into its schools
+// (OperatorSchoolsView); first-admin onboarding arrives in a later PR.
 //
 // No student/staff PII is read or written here — districts hold only
 // org-level name + auth_mode.
 
 import { useEffect, useState } from 'react';
-import { Building2, Loader2, Plus } from 'lucide-react';
+import { Building2, Loader2, Plus, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { apiFetch } from '../utils/apiFetch';
 import { logError } from '../utils/logError';
@@ -22,7 +23,9 @@ import { logError } from '../utils/logError';
 // submit a value the server will 400.
 const AUTH_MODES = ['sso', 'password', 'disabled'];
 
-export default function OperatorConsoleView() {
+// onSelectDistrict({ id, name }) drills into a district's schools view
+// (App.jsx routing). Optional so the console still renders standalone.
+export default function OperatorConsoleView({ onSelectDistrict }) {
   const { API_URL } = useApp();
   // null = loading, [] = empty (legitimate state), [...] = data
   const [districts, setDistricts] = useState(null);
@@ -188,21 +191,32 @@ export default function OperatorConsoleView() {
                   <th className="text-left font-medium px-5 py-3">Name</th>
                   <th className="text-left font-medium px-5 py-3">Auth mode</th>
                   <th className="text-left font-medium px-5 py-3">Created</th>
+                  <th className="px-5 py-3" aria-hidden="true"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {districts.map((d) => (
-                  <tr key={d.id}>
-                    <td className="px-5 py-3 text-slate-800 font-medium flex items-center gap-2">
-                      <Building2 className="w-4 h-4 text-indigo-600" />
-                      {d.name}
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{d.auth_mode}</td>
-                    <td className="px-5 py-3 text-slate-600">
-                      {d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {districts.map((d) => {
+                  const clickable = typeof onSelectDistrict === 'function';
+                  return (
+                    <tr
+                      key={d.id}
+                      onClick={clickable ? () => onSelectDistrict({ id: d.id, name: d.name }) : undefined}
+                      className={clickable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : undefined}
+                    >
+                      <td className="px-5 py-3 text-slate-800 font-medium flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-indigo-600" />
+                        {d.name}
+                      </td>
+                      <td className="px-5 py-3 text-slate-600">{d.auth_mode}</td>
+                      <td className="px-5 py-3 text-slate-600">
+                        {d.created_at ? new Date(d.created_at).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-5 py-3 text-right text-slate-400">
+                        {clickable && <ChevronRight className="w-4 h-4 inline-block" />}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -210,7 +224,7 @@ export default function OperatorConsoleView() {
       </div>
 
       <p className="text-sm text-slate-500 italic text-center pt-2">
-        Schools and first-admin onboarding arrive in the next update.
+        Select a district to manage its schools. First-admin onboarding arrives in the next update.
       </p>
     </div>
   );
