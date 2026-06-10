@@ -140,7 +140,7 @@ router.post('/:districtId/schools', async (req, res) => {
     const result = await client.query(
       `INSERT INTO tenants (name, type, subdomain, district_id)
        VALUES ($1, 'school', $2, $3)
-       RETURNING *`,
+       RETURNING id, name, type, subdomain, district_id, created_at, updated_at`,
       [trimmedName, normalizedSubdomain, districtId]
     );
     const newTenant = result.rows[0];
