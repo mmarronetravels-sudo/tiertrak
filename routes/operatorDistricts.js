@@ -177,4 +177,60 @@ router.post('/:districtId/schools', async (req, res) => {
   }
 });
 
+// List all districts. Operator-only, cross-district by design (these
+// routes sit above the tenant model — see the router.use comment above),
+// so this list is intentionally unscoped, mirroring GET /api/tenants.
+//
+// Explicit projection excludes nothing sensitive (districts holds no
+// student/staff PII), but stays narrow to what the operator console needs.
+router.get('/', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, name, auth_mode, created_at FROM districts ORDER BY name'
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[operatorDistricts:list]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// List the schools for one district. district_id is taken EXCLUSIVELY
+// from the URL path (validated by parseDistrictId) and the query filters
+// strictly on `district_id = $1`, so this can never return another
+// district's schools.
+//
+// A district-exists pre-flight returns a clean 404 when the path points
+// at a non-existent district, distinguishing it from an existing district
+// that simply has zero schools (200 + []).
+//
+// Explicit projection excludes tenants.settings (opaque JSONB config the
+// console does not need) and tenants.type (always 'school' here).
+router.get('/:districtId/schools', async (req, res) => {
+  const districtId = parseDistrictId(req, res);
+  if (districtId === null) return;
+
+  try {
+    const district = await pool.query(
+      'SELECT 1 FROM districts WHERE id = $1 LIMIT 1',
+      [districtId]
+    );
+    if (district.rows.length === 0) {
+      return res.status(404).json({ error: 'District not found' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, name, subdomain, district_id, created_at
+       FROM tenants
+       WHERE district_id = $1
+       ORDER BY name`,
+      [districtId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[operatorDistricts:listSchools]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;
