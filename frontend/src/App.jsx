@@ -37,6 +37,7 @@ import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
 import DistrictDashboardView from './views/DistrictDashboardView';
 import StudentGradeRollupView from './views/StudentGradeRollupView';
+import OperatorConsoleView from './views/OperatorConsoleView';
 import Section504Tab from './components/Section504/Section504Tab';
 import TeacherAccommodationsView from './components/Section504/TeacherAccommodationsView';
 import { BAND_LABELS, getBandStyle } from './utils/tier1Bands';
@@ -685,6 +686,11 @@ const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.distri
 // BE gates at routes/studentGradeRollup.js are the trust boundary;
 // this derivation only controls FE nav visibility + view mount.
 const canRunRollup = !!(user && ['district_admin', 'school_admin'].includes(user.role));
+// isOperator mirrors the PLATFORM_ADMIN_USER_IDS env-allowlist surfaced
+// on GET /api/auth/me as user.is_operator. The BE platformAdminOnly gate
+// (middleware/platformAdminOnly.js) is the trust boundary; this
+// derivation only controls FE nav visibility + view mount.
+const isOperator = !!(user && user.is_operator);
 
 // Check if logged in on load
   useEffect(() => {
@@ -7637,6 +7643,16 @@ if (isParent) {
                     Grade Roll-up
                   </button>
                 )}
+                {isOperator && (
+                  <button
+                    onClick={() => setView('operator')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                      view === 'operator' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Operator
+                  </button>
+                )}
                 {isAdmin && (
                   <button
                     onClick={() => setView('admin')}
@@ -7683,6 +7699,7 @@ if (isParent) {
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
         {view === 'grade-rollup' && canRunRollup && <StudentGradeRollupView />}
+        {view === 'operator' && isOperator && <OperatorConsoleView />}
         {view === 'discipline-queue' && canViewDisciplineReview && (
           <DisciplineReferralQueue
             user={user}
