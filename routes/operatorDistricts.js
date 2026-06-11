@@ -424,6 +424,48 @@ router.get('/:districtId/admins/:userId/access', async (req, res) => {
   }
 });
 
+// GET /:districtId/admins — list the district_admin users of one district
+// so an operator can see who has been onboarded and pick one to grant a
+// school to. district_id is taken EXCLUSIVELY from the URL path (validated
+// by parseDistrictId) and the query filters strictly on `district_id = $1`,
+// so this can never return another district's users. Read-only, so it runs
+// against the pool (no txn), mirroring the GET schools/grants handlers.
+//
+// A district-exists pre-flight returns a clean 404 when the path points at
+// a non-existent district, distinguishing it from an existing district that
+// simply has zero admins (200 + []).
+//
+// §4B: this projection surfaces staff PII (email + full_name) into the
+// response body, which the operator console is authorized to display. The
+// PII is rendered to the DOM only — it is never logged (tag-only
+// console.error below) and never placed in an error body or URL.
+router.get('/:districtId/admins', async (req, res) => {
+  const districtId = parseDistrictId(req, res);
+  if (districtId === null) return;
+
+  try {
+    const district = await pool.query(
+      'SELECT 1 FROM districts WHERE id = $1 LIMIT 1',
+      [districtId]
+    );
+    if (district.rows.length === 0) {
+      return res.status(404).json({ error: 'District not found' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, email, full_name, created_at
+       FROM users
+       WHERE district_id = $1 AND role = 'district_admin'
+       ORDER BY full_name`,
+      [districtId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[operatorDistricts:listAdmins]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // List all districts. Operator-only, cross-district by design (these
 // routes sit above the tenant model — see the router.use comment above),
 // so this list is intentionally unscoped, mirroring GET /api/tenants.

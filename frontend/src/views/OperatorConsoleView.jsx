@@ -6,8 +6,8 @@
 // platformAdminOnly. The FE isOperator flag (App.jsx) only controls
 // nav visibility + view mount; the env-allowlist gate on the server is
 // the trust boundary — this view has no authority to assert operator
-// status. Clicking a district row drills into its schools
-// (OperatorSchoolsView); first-admin onboarding arrives in a later PR.
+// status. Clicking a district row drills into its schools and admins
+// (OperatorSchoolsView), where first-admin onboarding lives.
 //
 // No student/staff PII is read or written here — districts hold only
 // org-level name + auth_mode.
@@ -224,7 +224,7 @@ export default function OperatorConsoleView({ onSelectDistrict }) {
       </div>
 
       <p className="text-sm text-slate-500 italic text-center pt-2">
-        Select a district to manage its schools. First-admin onboarding arrives in the next update.
+        Select a district to manage its schools and admins.
       </p>
     </div>
   );
