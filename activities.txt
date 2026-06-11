@@ -28053,3 +28053,81 @@ NEXT SESSION SHOULD
   — that is the single biggest correctness hazard called out in the prior
   read-only audit.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-10T17:36:01-07:00
+BRANCH:  feat/operator-schools-ui
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/268
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built the operator-console "schools" drill-in (front-end only): click a
+  district row -> list + add schools, consuming the already-merged operator
+  endpoints (GET/POST .../districts/:id/schools). No backend, schema, or
+  new dependency. Shipped via PR #268 and deployed live to the prod FE.
+
+FILES TOUCHED
+  frontend/src/views/OperatorSchoolsView.jsx — new drill-in view (list + add-school form, tri-state list, distinct 404 vs empty)
+  frontend/src/App.jsx — selected-district state + open/back handlers, isOperator-gated mount, nav highlight
+  frontend/src/views/OperatorConsoleView.jsx — district rows clickable -> drill-in; corrected stale footer copy
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB changes (front-end only). Consumed endpoints scope strictly on
+  district_id from the URL path; FE introduces no cross-district pathway.
+  tenant-isolation-auditor: APPROVED (0 critical/warn) as pre-signal.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — org-level only (district/school name, subdomain).
+  Logging audit: logError receives caught network exceptions only; no PII.
+  Cross-tenant risk: none identified. privacy-reviewer APPROVED (pre-signal).
+
+VERIFICATION
+  vite build — passed (pre-merge)
+  eslint on changed views — clean (pre-merge; pre-existing App.jsx errors unrelated)
+  backend npm test — N/A: no backend test suite configured (Followup #73)
+  backend lint — N/A: no lint script configured (Followup #74)
+  local browser smoke (operator login, dev DB) — all 5 steps passed:
+    drill-in list renders; empty district -> empty-state (not 404);
+    add school -> 201 + list refresh; duplicate subdomain -> 409 verbatim
+  prod FE deploy verified read-only: live bundle contains all 7 unique
+    #268 string literals; deploy last-modified postdates the merge
+  merge-sha verification: PASS — PR #268 head OID == merge commit second
+    parent (true merge commit, 2 parents)
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #268 commit OIDs at merge time:
+  d9be63e6f89299300924e87f1e1d41d7ef673229
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - Login response omits is_operator -> operators hit the Parent Portal on a
+    FRESH login until a page reload; only /me carries the flag. Pre-existing,
+    NOT introduced by #268. Banked: project_followup_login_response_omits_is_operator.
+    Fix on its own §8 auth-flow branch (fetchUserInfo() after setUser, or add
+    is_operator to BOTH password + Google login payloads).
+  - §2A attribution: PR #268 approve + merge were both performed on the shared
+    scholapathsystems account, 5 seconds apart, with no attribution comment —
+    indistinguishable from a self-approve+self-merge on a tenant-touching PR
+    now live in prod. Confirm a distinct human drove it; standing fix = give
+    §2A reviewers distinct personal GitHub identities + separate approver from
+    merger. Banked: project_pr_236_external_human_review_attribution (S123 update).
+  - Local-dev smoke residue NOT torn down: 1 synthetic district + 1 synthetic
+    school created in the LOCAL dev DB during the browser smoke (with seeded
+    discipline-vocab rows). These are dev-only, never reached prod. Optional
+    cleanup next session.
+  - Local-dev seeding for operator login was applied LOCAL-ONLY, never
+    committed: 1 .env allowlist line + NODE_ENV, and 1 password reset on an
+    existing dev user row. Revert at will.
+  - Requested prod "add-school teardown" could not run: premise was
+    contradicted — no prod add-school smoke exists (the only prod smoke
+    creates a district, no school/seeds), and the schools-UI was not live in
+    prod at smoke time. Reported only; no prod rows created or deleted.
+  - Standing: scripts/ops/* still untracked (Followup #94 — .gitignore).
+
+NEXT SESSION SHOULD
+  Decide whether to spin the §8 login-bypass fix branch (is_operator on fresh
+  login) and confirm the #268 shared-account approve+merge attribution.
+================================================================================
