@@ -28233,3 +28233,106 @@ NEXT SESSION SHOULD
   user_school_access row per the agreed Option 2), and land the FE null-safety
   item alongside it.
 ================================================================================
+================================================================================
+SESSION: 2026-06-11T09:38:07-07:00
+BRANCH:  feat/operator-first-district-admin
+DISPOSITION: merged -- PR #273 (https://github.com/mmarronetravels-sudo/tiertrak/pull/273)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built N2, the operator first-district-admin endpoint, on the parked branch
+  whose two security blockers (#270 null-tenant auth, #271 null-tenant write
+  guard) had landed in prod. Rebased clean onto current main, implemented the
+  endpoint plus the parked FE null-safety, ran the full reviewer triad, closed
+  the one doc WARN in-branch, and shipped via PR #273 (now live in prod).
+
+FILES TOUCHED
+  routes/operatorDistricts.js -- new POST /:districtId/admins handler: mints one
+    district_admin users row (tenant_id NULL, school_wide_access FALSE,
+    password_hash NULL/SSO; role hard-coded server-side; district_id from path
+    only; Option 2 -- no user_school_access grant). +81 lines, 1 handler.
+  frontend/src/App.jsx -- 2 identity-label lines made null-safe for a
+    null-tenant principal (fall back to district name; drop dangling separator).
+  docs/ai-context/PRIVACY_REVIEW.md -- 1 new entry documenting the endpoint's
+    data-collection surface (closes the privacy-reviewer WARN).
+
+MIGRATIONS RUN
+  none (no schema change)
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor: APPROVED, 0 critical/high/medium. The tenant_id NULL
+    write is the one legitimate null-tenant shape (a district-level user owns no
+    school data); district_id is path-only; only {email, full_name} are
+    destructured from the body (role/tenant_id/district_id server-controlled).
+    Verified empty user_school_access -> accessible set [] -> deny/403 on BOTH
+    the list and per-record gates before any elevated-viewer short-circuit, so
+    the new principal reads zero student/staff rows until an explicit later grant.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: 2 staff fields (email, full_name) persisted by the new
+    endpoint -- feature-required minimum for a loginable SSO identity; nothing
+    else stored (data minimization).
+  Logging audit: verified tag-only error logging (no email/full_name in logs or
+    error bodies); the 201 echoes only the operator's own submitted scalars.
+  Cross-tenant risk: none identified (privacy-reviewer + tenant-isolation-auditor
+    converge). privacy-reviewer APPROVED; its lone WARN (undocumented
+    data-collection point) was closed in-branch by the PRIVACY_REVIEW.md commit.
+  This activities entry: counts-only; no real emails, names, district names, or
+    slugs. The Section 2A reviewer's name is deliberately omitted per Section 4B
+    (staff name) -- see OPEN ITEMS.
+
+VERIFICATION
+  Prod smoke (operator-authed, prod HTTPS + DB readback): 9/9 PASS across the
+    A-F matrix (no-auth 401/403; missing-field 400; ghost-district 404;
+    duplicate-email 409 + no-new-row; valid 201 + role flag; readback tenant_id
+    NULL + school_wide_access FALSE). Smoke printed statuses/PASS-FAIL only, no
+    PII; its synthetic row was torn down. Smoke script then removed (not
+    committed).
+  Reviewer triad: privacy / security / tenant-isolation all APPROVED, 0
+    critical/high/medium. Residual LOWs banked as follow-ups (below).
+  Section 2A: formal GitHub PR review APPROVED by a named individual human
+    reviewer (distinct from the shared review account flagged last session);
+    reviewer identity omitted here per Section 4B.
+  merge-sha verification: PASS -- PR #273 true merge commit
+    (f9656dbcd7d05bc6f746ff61bb9fe3e0a23eca0a); second parent ==
+    headRefOid (b3aafd402c6001900510348ccdf2e249b52f4bf7).
+  npm test (root): no backend test suite (Followup #73). npm run lint: none
+    configured (Followup #74). This log branch changes only activities.txt.
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #273 commit OIDs at merge time:
+  437616919f9d0e8064f6bfebafc3d5344c528814
+  79bd218c35687a11b3979b07e23a111e06d0d95b
+  b3aafd402c6001900510348ccdf2e249b52f4bf7
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - migration/users-null-tenant-email-unique: add a partial unique index on
+    users(email) WHERE tenant_id IS NULL so the existing 23505 catch turns the
+    null-tenant duplicate-email TOCTOU into a clean 409. Schema change -> own
+    migration branch, Section 8 ask-first. Surfaced by security +
+    tenant-isolation (both LOW). (saved to memory)
+  - Section 2A approval was by a named individual (good -- distinct from the
+    shared-account anti-pattern flagged last session). Reviewer first name not
+    recorded here per Section 4B; standing recommendation for per-person review
+    accounts still applies.
+  - Followup #94 (scripts/ops -> .gitignore) STANDS: this session added 1
+    untracked ops artifact (read-only presence-check SQL) and created then
+    removed the prod smoke script (removed so it cannot be committed; the
+    directory is still not gitignored).
+  - Still pending from last session: sec/tier1-assessments-null-tenant-guard
+    (10th straggler; fails closed 500, turn into a clean 400);
+    resolveAndBindTargetTenant consolidation (9 verbatim local copies).
+  - Closed this session: the parked FE null-safety item and the N2 endpoint both
+    shipped in PR #273.
+
+  FIXES:
+    privacy WARN (PR #273 review: undocumented data-collection point) -> PR #273 @ b3aafd402c6001900510348ccdf2e249b52f4bf7
+
+NEXT SESSION SHOULD
+  Consider the migration/users-null-tenant-email-unique hardening (own branch,
+  ask-first) and the parked tier1-assessments null-tenant guard. The operator
+  district-provisioning flow now has create-district, create-school, and
+  first-district-admin; the natural next unit is the user_school_access grant
+  flow that gives a freshly-minted district_admin its school scope.
+================================================================================
