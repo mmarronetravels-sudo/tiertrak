@@ -75,6 +75,18 @@ function parseDistrictId(req, res) {
   return id;
 }
 
+// Local positive-int32 validator for path/body integers other than the
+// district id (which parseDistrictId already covers). Kept local to this
+// file by design — districtAccess.js has its own copy; deduping the two is
+// explicitly out of scope for this PR.
+const INT4_MAX = 2147483647;
+
+function validateIntParam(value) {
+  const n = parseInt(value, 10);
+  if (!Number.isInteger(n) || n <= 0 || n > INT4_MAX) return null;
+  return n;
+}
+
 // Create a new school-tenant under an existing district.
 //
 // v1 scope: net-new schools only. The only write is the INSERT below —
@@ -254,6 +266,160 @@ router.post('/:districtId/admins', async (req, res) => {
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'A user with this email already exists' });
     console.error('[operatorDistricts:createAdmin]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /:districtId/admins/:userId/access — operator grants a single
+// school-tenant to a district user. The intended caller flow: an operator
+// has just minted a district's first district_admin via POST
+// /:districtId/admins (whose user_school_access set is empty at creation),
+// and now gives that admin its school scope so it goes from zero accessible
+// rows to its granted school(s). This is the operator analog of the
+// district_admin-driven POST /api/districts/:id/users/:userId/access in
+// routes/districtAccess.js.
+//
+// Why no resolveAccessibleTenantIds: operators hold ZERO user_school_access
+// rows (they sit above the tenant model — see the router.use comment), so
+// the membership helper would resolve to an empty set and 404 every grant.
+// Scope is instead enforced STRUCTURALLY by the two §5 pre-flights below
+// (target user in-district AND school tenant in-district); M028's composite
+// FKs are the schema-layer cross-district backstop (a mismatched triple
+// raises 23503, mapped to 404).
+//
+// Body: { school_tenant_id } — validateIntParam (positive, <= INT4_MAX).
+//
+// Writes mirror districtAccess.js POST exactly: one txn that sets the
+// app.actor_user_id GUC to the OPERATOR's own users.id, INSERTs the grant
+// row (created_by = operator), then app-writes the 'grant' audit row
+// (M031's trigger fires only on DELETE, so 'grant' is app-layer).
+//
+// Grant-only: school_wide_access and every other user column are untouched.
+// The 201 echoes only the operator-submitted integer scalars — never any
+// target-user PII (email / full_name) in the body, logs, or URL.
+router.post('/:districtId/admins/:userId/access', async (req, res) => {
+  const districtId = parseDistrictId(req, res);
+  if (districtId === null) return;
+
+  const userId = validateIntParam(req.params.userId);
+  if (userId === null) {
+    return res.status(400).json({ error: 'Invalid user id' });
+  }
+  const schoolTenantId = validateIntParam(req.body && req.body.school_tenant_id);
+  if (schoolTenantId === null) {
+    return res.status(400).json({ error: 'Invalid school_tenant_id' });
+  }
+
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    console.error('[operatorDistricts:grantAccess]', 'invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      "SELECT set_config('app.actor_user_id', $1, true)",
+      [String(actorId)]
+    );
+
+    // §5 pre-flight 1: target user exists AND belongs to this district.
+    const targetUser = await client.query(
+      'SELECT id, district_id FROM users WHERE id = $1',
+      [userId]
+    );
+    if (targetUser.rows.length === 0 || targetUser.rows[0].district_id !== districtId) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // §5 pre-flight 2: school tenant exists AND is a school AND belongs to
+    // this district. type = 'school' guards against granting a school-scope
+    // row against a type = 'district' tenant in the same district (matches
+    // the createSchool handler's hard-coded type = 'school' precedent).
+    const schoolTenant = await client.query(
+      "SELECT id, district_id FROM tenants WHERE id = $1 AND type = 'school'",
+      [schoolTenantId]
+    );
+    if (schoolTenant.rows.length === 0 || schoolTenant.rows[0].district_id !== districtId) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    await client.query(
+      `INSERT INTO user_school_access (user_id, district_id, school_tenant_id, created_by)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, districtId, schoolTenantId, actorId]
+    );
+
+    await client.query(
+      `INSERT INTO user_school_access_audit
+         (user_id, district_id, school_tenant_id, action, actor_user_id)
+       VALUES ($1, $2, $3, 'grant', $4)`,
+      [userId, districtId, schoolTenantId, actorId]
+    );
+
+    await client.query('COMMIT');
+    res.status(201).json({
+      message: 'Granted',
+      user_id: userId,
+      district_id: districtId,
+      school_tenant_id: schoolTenantId
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Already granted' });
+    }
+    if (err.code === '23503') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    console.error('[operatorDistricts:grantAccess]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// GET /:districtId/admins/:userId/access — list the user's
+// user_school_access grants within this district so an operator can verify
+// a grant landed. IDs only (school_tenant_id + created_at); no PII.
+// Read-only, so it runs against the pool (no txn). Same parseDistrictId +
+// int-validate + in-district pre-flight as the grant handler. Unlike
+// districtAccess.js GET there is NO resolveAccessibleTenantIds filter — the
+// operator sits above the tenant model and sees every grant in the
+// district, scoped strictly to the path district_id by the WHERE clause.
+router.get('/:districtId/admins/:userId/access', async (req, res) => {
+  const districtId = parseDistrictId(req, res);
+  if (districtId === null) return;
+
+  const userId = validateIntParam(req.params.userId);
+  if (userId === null) {
+    return res.status(400).json({ error: 'Invalid user id' });
+  }
+
+  try {
+    // §5 pre-flight: target user exists AND belongs to this district.
+    const targetUser = await pool.query(
+      'SELECT id, district_id FROM users WHERE id = $1',
+      [userId]
+    );
+    if (targetUser.rows.length === 0 || targetUser.rows[0].district_id !== districtId) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    const grants = await pool.query(
+      `SELECT school_tenant_id, created_at
+       FROM user_school_access
+       WHERE user_id = $1 AND district_id = $2
+       ORDER BY school_tenant_id`,
+      [userId, districtId]
+    );
+
+    res.json({ grants: grants.rows });
+  } catch (err) {
+    console.error('[operatorDistricts:listAccess]', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
