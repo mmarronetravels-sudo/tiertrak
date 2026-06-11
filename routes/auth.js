@@ -153,7 +153,8 @@ res.json({
     tenant_name: user.tenant_name,
     school_wide_access: user.school_wide_access,
     district_id: user.district_id,
-    district_name: user.district_name
+    district_name: user.district_name,
+    is_operator: isOperator(user.id)
   }
 });
 } catch (error) {
@@ -326,7 +327,8 @@ res.json({
     tenant_name: user.tenant_name,
     school_wide_access: user.school_wide_access,
     district_id: user.district_id,
-    district_name: user.district_name
+    district_name: user.district_name,
+    is_operator: isOperator(user.id)
   }
 });
 } catch (error) {
