@@ -177,6 +177,87 @@ router.post('/:districtId/schools', async (req, res) => {
   }
 });
 
+// Create the first (or an additional) district_admin user for an existing
+// district. This mints ONE users row and nothing else — no
+// user_school_access grant (Option 2). A district_admin's school scope is
+// the membership of user_school_access, which is intentionally empty at
+// creation; a separate later flow grants school access. The row is usable
+// at login immediately because #270 made /login, /me, /google LEFT JOIN
+// tenants, so a tenant_id = NULL user is no longer dropped by the join.
+//
+// district_id is taken EXCLUSIVELY from the URL path (never the body), and
+// role is hard-coded server-side to 'district_admin' — a body-supplied
+// role or district_id is structurally ignored (only { email, full_name }
+// are destructured).
+//
+// Column values, all server-controlled:
+//   - tenant_id        = NULL  (district-level user owns no school data;
+//                               the one legitimate null-tenant write)
+//   - school_wide_access = FALSE (Finding B: staffManagement defaults this
+//                               to ELEVATED_ROLES.includes(role) = TRUE for
+//                               district_admin, but district scope here is
+//                               user_school_access membership, NOT the
+//                               school-wide flag — so it is forced FALSE)
+//   - password_hash    omitted -> NULL (Google SSO only; nullable per M025)
+//
+// Body: { email, full_name }
+//   - both required, trimmed, non-empty. email is lowercased to match the
+//     login lookup (auth.js resolves users by LOWER-insensitive email = $1).
+//   - Duplicate-email pre-flight is GLOBAL, not tenant-scoped: login looks
+//     users up by email across all tenants and takes rows[0], so a colliding
+//     email would make login non-deterministic. UNIQUE(tenant_id, email)
+//     does NOT protect us here — NULL tenant_id is distinct under a UNIQUE
+//     constraint, so it permits duplicate null-tenant emails and never fires
+//     against a non-null-tenant row. This app-layer SELECT is therefore the
+//     only guard, and like the districts.name/subdomain 409s it is
+//     best-effort: a concurrent insert could race between the SELECT and the
+//     INSERT. No DB unique index backstops the null-tenant case, so the
+//     race window cannot be closed by a 23505 catch here.
+router.post('/:districtId/admins', async (req, res) => {
+  const districtId = parseDistrictId(req, res);
+  if (districtId === null) return;
+
+  const { email, full_name } = req.body || {};
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+  const trimmedFullName = typeof full_name === 'string' ? full_name.trim() : '';
+  if (!normalizedEmail || !trimmedFullName) {
+    return res.status(400).json({ error: 'email and full_name are required' });
+  }
+
+  try {
+    // District-exists pre-flight: clean 404 instead of a downstream FK
+    // (23503) error if the path points at a non-existent district.
+    const district = await pool.query(
+      'SELECT 1 FROM districts WHERE id = $1 LIMIT 1',
+      [districtId]
+    );
+    if (district.rows.length === 0) {
+      return res.status(404).json({ error: 'District not found' });
+    }
+
+    // GLOBAL duplicate-email pre-flight (see header comment). Best-effort.
+    const existing = await pool.query(
+      'SELECT 1 FROM users WHERE email = $1 LIMIT 1',
+      [normalizedEmail]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'A user with this email already exists' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO users (email, full_name, role, tenant_id, school_wide_access, district_id)
+       VALUES ($1, $2, 'district_admin', NULL, FALSE, $3)
+       RETURNING id, email, full_name, role, district_id, created_at`,
+      [normalizedEmail, trimmedFullName, districtId]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'A user with this email already exists' });
+    console.error('[operatorDistricts:createAdmin]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // List all districts. Operator-only, cross-district by design (these
 // routes sit above the tenant model — see the router.use comment above),
 // so this list is intentionally unscoped, mirroring GET /api/tenants.
