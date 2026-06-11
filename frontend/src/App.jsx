@@ -5247,7 +5247,7 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-semibold text-slate-800 tracking-tight">Admin Panel</h1>
-          <p className="text-slate-500 mt-1">Manage {user.tenant_name}</p>
+          <p className="text-slate-500 mt-1">Manage {user.tenant_name || user.district_name || 'your organization'}</p>
         </div>
       </div>
 
@@ -7696,7 +7696,7 @@ if (isParent && !isOperator) {
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-800">{user.full_name}</p>
-                <p className="text-xs text-slate-500">{user.role.replace(/_/g, ' ')} • {user.tenant_name}</p>
+                <p className="text-xs text-slate-500">{user.role.replace(/_/g, ' ')}{(user.tenant_name || user.district_name) ? ` • ${user.tenant_name || user.district_name}` : ''}</p>
               </div>
               <button
                 onClick={() => setShowChangePassword(true)}
