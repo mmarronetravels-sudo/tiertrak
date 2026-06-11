@@ -83,6 +83,9 @@ function isPositiveInt(n) {
 async function resolveAndBindTargetTenant(req) {
   const bodyTarget = req.body ? req.body.target_tenant_id : undefined;
   if (bodyTarget === undefined || bodyTarget === null) {
+    if (req.user.tenant_id == null) {
+      return { targetTenantId: null, error: { status: 400, body: { error: 'target_tenant_id is required' } } };
+    }
     return { targetTenantId: req.user.tenant_id, error: null };
   }
   if (!isPositiveInt(bodyTarget)) {
