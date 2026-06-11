@@ -28131,3 +28131,105 @@ NEXT SESSION SHOULD
   Decide whether to spin the §8 login-bypass fix branch (is_operator on fresh
   login) and confirm the #268 shared-account approve+merge attribution.
 ================================================================================
+================================================================================
+SESSION: 2026-06-11T07:37:34-07:00
+BRANCH:  sec/auth-left-join-tenants + sec/resolve-target-tenant-null-guard
+DISPOSITION: merged (PR #270 @ 953d59a20a72045626106b6c89c168de0d7305a5, PR #271 @ 036cc54539c09bbc1f022ab0a1869861c2719a1b); feat/operator-first-district-admin parked (kept, not discarded)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Prep for an operator-only "create a district's first district_admin" endpoint
+  (parked). Two prerequisite auth/tenant-isolation fixes were found, built,
+  reviewed by the full triad, merged, and deployed:
+    1. Auth identity queries: INNER JOIN -> LEFT JOIN so a principal with a null
+       home-tenant can authenticate instead of being dropped to a 401.
+    2. A null-tenant write guard across the route helpers that bind a write to
+       the caller's home-tenant, so a null-tenant principal that omits an
+       explicit target is rejected (400) instead of writing an unscoped row.
+
+FILES TOUCHED
+  routes/auth.js — PR #270: JOIN -> LEFT JOIN tenants in the login, session-
+    hydration, and Google-signin identity queries (3 handlers).
+  routes/{students,screener,staffManagement,mtssMeetings,users,prereferralForms,
+    disciplineReferrals,student504,csvImport}.js — PR #271: identical null-tenant
+    fallback guard added to each file's local target-tenant resolver (9 helpers).
+
+MIGRATIONS RUN
+  none (both PRs are application-layer only; no schema change)
+
+TENANT ISOLATION REVIEW
+  Both PRs are Section 5 changes; full triad (tenant-isolation primary +
+  security + privacy) run on each, all APPROVED.
+  PR #270: identity queries stay pinned to a single principal; the join change
+    only converts a no-match from 0 rows to 1 null-padded row, never widens a
+    set. Downstream scope still flows through the central accessible-tenant
+    resolver, which returns an empty set for a null-tenant principal (fails
+    closed). No cross-tenant read/write introduced.
+  PR #271: closes an unscoped-orphan-write path on 9 write surfaces. Guard fires
+    only when the caller has no home-tenant AND no explicit target; a tenant-
+    bound caller is byte-for-byte unchanged. Auditor confirmed via an exhaustive
+    repo-wide sweep that, apart from one named out-of-scope file, these 9 helpers
+    are the complete set of unguarded home-tenant write-binds.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. No new fields stored; no payload widened (one display
+    field can now resolve to null for the new principal class -- strictly less
+    data).
+  Logging audit: no logging added or modified in either PR; new error bodies are
+    static strings (no PII, no error.message, no stack).
+  Cross-tenant risk: none identified; PR #271 is privacy-positive (prevents
+    detaching records from their school). CSV-delete invariant preserved on the
+    new reject path.
+
+VERIFICATION
+  merge-sha verification: MATCH for PR #270 (head == merge^2) and PR #271
+    (head == merge^2); both true 2-parent merge commits.
+  misattribution check: PASS (1 FIXES line; cited SHA is a member of the cited
+    PR's commit list).
+  PR #270 pre-merge: role-sweep regression (every role returns 1 identity row,
+    LEFT == INNER, display field non-null) + null-tenant dev-seed HTTP smoke
+    (login + hydration return 200, no 401 lockout); both PASS, seed deleted.
+  PR #271 pre-merge: dev HTTP smoke via a write route, 3 cases -- null-tenant
+    no-target -> 400; null-tenant valid-target -> 201; tenant-bound no-target ->
+    201 in own tenant (no regression); all PASS, seeds deleted.
+  Post-deploy (both, prod): /health 200 healthy/db-connected. PR #271 deploy-
+    window health-stability poll: 15/15 samples HTTP 200 over ~4.7 min, no
+    error/outage.
+  Read-only prod schema checks (counts/flags only): the 2 target columns of the
+    out-of-scope follow-up file are NOT NULL in prod (fails closed).
+  npm test (root): no backend test suite exists (Followup #73) -- stub script,
+    not a regression; this session changed no code, only this log file.
+  npm run lint: no root/backend lint configured (Followup #74). Frontend lint
+    exists but is not relevant (no UI changes this session or in either PR).
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #270 commit OIDs at merge time:
+  393769c61e8066531d309cbee71a347d0ec4b66a
+
+PR #271 commit OIDs at merge time:
+  cec5cc05cfa22b3bdc83548a946a1507dfc42998
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - sec/tier1-assessments-null-tenant-guard: one route file binds writes to the
+    caller's home-tenant with no null guard (the "10th straggler"). NOT a gate --
+    its 2 target columns are NOT NULL in prod, so it fails closed (500). Turn the
+    500 into a clean 400 on its own branch. (saved to memory)
+  - FE null-safety for the 2 identity display fields that can now be null for a
+    null-tenant principal -- lands with the parked feat endpoint (cosmetic today;
+    no live trigger until that endpoint mints such a principal).
+  - resolveAndBindTargetTenant consolidation: 9 verbatim local copies remain; the
+    guard was applied to all 9 in lockstep. Consolidation is a separate chore.
+  - Attribution: both PRs approved under the shared review account with no
+    attribution comment; standing recommendation is per-person review accounts.
+
+  FIXES:
+    tenant-isolation WARN-1 (PR #270 review: null-tenant orphan-write) -> PR #271 @ cec5cc05cfa22b3bdc83548a946a1507dfc42998
+
+NEXT SESSION SHOULD
+  Pick up the parked feat/operator-first-district-admin branch -- both of its
+  blockers are now live in prod (null-tenant auth + the write guard). Build the
+  endpoint (role hard-coded server-side, district_id from the path, no
+  user_school_access row per the agreed Option 2), and land the FE null-safety
+  item alongside it.
+================================================================================
