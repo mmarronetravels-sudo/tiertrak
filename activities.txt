@@ -28589,3 +28589,61 @@ NEXT SESSION SHOULD
   chip renders the static operator label; if not yet run, surface it as the
   first open item.
 ================================================================================
+================================================================================
+SESSION: 2026-06-12T08:58:02-07:00
+BRANCH:  fix/operator-account-name
+DISPOSITION: merged (PR #281)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Operator-chip cleanup follow-on: the platform operator account still carried a
+  seed display name, so the header chip showed it above the static operator
+  label. Added one owner-run ops script to set full_name on that single operator
+  account row. Data-only correction; no code/FE change (the front end already
+  renders full_name unconditionally).
+
+FILES TOUCHED
+  scripts/ops/2026-06-12-operator-id26-name.sql — new owner-run ops script;
+    single-row UPDATE of full_name on the operator account, guarded on the row
+    key plus a runtime-supplied email var (email never hardcoded).
+
+MIGRATIONS RUN
+  none — not a migration; environment-specific one-row data correction.
+
+TENANT ISOLATION REVIEW
+  No query/migration/scoping changes. Single-row UPDATE keyed by a literal row
+  id plus runtime-supplied email; full_name is not a scoping column. No
+  cross-tenant read/write. Operator authority derives from an env allowlist, not
+  this row, so the rename has zero authz effect. (tenant-isolation-auditor
+  intentionally skipped per owner — weak fit for a name-only change.)
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: 1 staff/operator display-name field on 1 account row.
+  Logging audit: no application logging; script output is two pre/post verify
+    SELECTs to the runner's own psql session only. No PII in error bodies.
+  Cross-tenant risk: none identified.
+  privacy-reviewer: APPROVED (0 CRITICAL / 0 WARN).
+  security-reviewer: APPROVED (0 CRITICAL / 0 WARN).
+
+VERIFICATION
+  npm test — none (no backend test suite; followup #73).
+  npm run lint — n/a to this change (SQL-only file; backend lint not configured,
+    followup #74; frontend eslint config does not apply — no JS touched).
+  merge-sha verification: PASS — PR #281 merge commit second-parent matches the
+    feature tip SHA.
+  DB step: owner-run; already executed against prod this session (operator chip
+    now renders the corrected operator name).
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #281 commit OIDs at merge time:
+  d974a49e2d9b80c7d2d41f15f7ae329c76bcfc1e
+
+OPEN ITEMS / FOLLOW-UPS
+  - #94 (scripts/ops/ → .gitignore) still open; this script keeps the email out
+    of the file via a runtime psql var as the interim mitigation.
+
+NEXT SESSION SHOULD
+  Operator-chip cleanup is complete (null-tenant + name both shipped and run in
+  prod). No carry-over from this unit; start fresh.
+================================================================================
