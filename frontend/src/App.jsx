@@ -7696,7 +7696,7 @@ if (isParent && !isOperator) {
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-slate-800">{user.full_name}</p>
-                <p className="text-xs text-slate-500">{user.role.replace(/_/g, ' ')}{(user.tenant_name || user.district_name) ? ` • ${user.tenant_name || user.district_name}` : ''}</p>
+                <p className="text-xs text-slate-500">{isOperator ? 'Platform Operator' : `${user.role.replace(/_/g, ' ')}${(user.tenant_name || user.district_name) ? ` • ${user.tenant_name || user.district_name}` : ''}`}</p>
               </div>
               <button
                 onClick={() => setShowChangePassword(true)}
