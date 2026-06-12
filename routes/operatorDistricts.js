@@ -4,6 +4,8 @@ const { Pool } = require('pg');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seeds');
+const { csvImportLimiter } = require('../middleware/rateLimiters');
+const { upload: staffImportUpload, validateStaffImport } = require('./operatorStaffImport');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -521,5 +523,19 @@ router.get('/:districtId/schools', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Staff-import VALIDATE-ONLY (Slice 1). Registered here so the router-level
+// requireAuth + platformAdminOnly above run ONCE for this surface. The
+// handler + its multer config live in routes/operatorStaffImport.js.
+// csvImportLimiter is route-level (it necessarily runs after the
+// router.use auth chain; pre-auth IP limiting for the whole operator mount
+// is tracked separately as Followup #122). Path preserves the
+// /:districtId/schools/:schoolTenantId/... shape.
+router.post(
+  '/:districtId/schools/:schoolTenantId/staff-import/validate',
+  csvImportLimiter,
+  staffImportUpload.single('file'),
+  validateStaffImport
+);
 
 module.exports = router;
