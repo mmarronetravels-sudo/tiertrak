@@ -28647,3 +28647,56 @@ NEXT SESSION SHOULD
   Operator-chip cleanup is complete (null-tenant + name both shipped and run in
   prod). No carry-over from this unit; start fresh.
 ================================================================================
+================================================================================
+SESSION: 2026-06-12T19:59:14Z
+BRANCH:  chore/reviewer-subagent-readonly-grants
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/283
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Tightened tool grants on the 3 reviewer subagents so they cannot run
+  state-mutating shell/git in the shared working tree. Removed Bash; they are
+  now Read/Grep/Glob only. Motivated by a prior session where a reviewer ran a
+  working-tree-moving git command mid-edit.
+
+FILES TOUCHED
+  .claude/agents/privacy-reviewer.md         — drop Bash from tools:; read-only prose + Grep-tool reframe
+  .claude/agents/security-reviewer.md        — drop Bash from tools:; read-only prose + Grep-tool reframe
+  .claude/agents/tenant-isolation-auditor.md — drop Bash from tools:; remove explicit shell-git grant
+
+MIGRATIONS RUN
+  none — config/markdown only.
+
+TENANT ISOLATION REVIEW
+  No DB changes. No SQL, no migrations, no query or scoping changes.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none.
+  Logging audit: no application code touched; no log lines added or changed.
+  Cross-tenant risk: none identified. Change only REDUCES reviewer tooling.
+
+VERIFICATION
+  npm test — n/a (no backend test suite, followup #73; agent .md files not
+    covered by any JS suite).
+  npm run lint — n/a (no JS touched; backend lint not configured, followup #74).
+  diff review: 3 files, +12/-12; owner confirmed only Bash removal + read-only
+    prose rewrites before commit.
+  merge-sha verification: PASS — PR #283 merge commit second-parent matches the
+    feature tip SHA.
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #283 commit OIDs at merge time:
+  3816a2a9f28b4c02495a245f02bf15c868913051
+
+OPEN ITEMS / FOLLOW-UPS
+  - Workflow consequence: invokers must now hand the reviewer subagents the
+    diff / changed-file set, since they can no longer run git diff themselves.
+  - settings.json was intentionally left unchanged — its permissions are
+    project-wide and would over-constrain the main session; the per-agent
+    tools: line is the correct lever.
+
+NEXT SESSION SHOULD
+  Reviewer read-only tightening is complete and merged. No carry-over; start
+  fresh.
+================================================================================
