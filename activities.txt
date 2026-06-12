@@ -28507,3 +28507,85 @@ NEXT SESSION SHOULD
   that GET /:districtId/admins is serving, then close out any remaining
   operator-onboarding follow-ups.
 ================================================================================
+================================================================================
+SESSION: 2026-06-12T07:55:31-07:00
+BRANCH:  fix/operator-account-identity
+DISPOSITION: merged (PR #279)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Cleaned up the platform operator account's identity so its header chip stops
+  presenting as a school-scoped parent. The account's powers come from the
+  PLATFORM_ADMIN_USER_IDS env-allowlist, not its row, yet the row carried a
+  staff role and a tenant attachment that drove a misleading "<role> · <school>"
+  label. Two complementary changes: a 1-line FE relabel and an owner-run ops
+  script to null the row's tenant_id (DB step is owner-run, NOT part of merge).
+
+FILES TOUCHED
+  frontend/src/App.jsx — header identity label now branches on is_operator to
+    render a static operator label; non-operator branch byte-identical (1 line).
+  scripts/ops/2026-06-12-operator-id26-null-tenant.sql — owner-run ops script
+    to null tenant_id on 1 operator account row; double-guarded WHERE (row id +
+    runtime email psql var); email never hardcoded.
+
+MIGRATIONS RUN
+  none — the ops script is owner-run via Render psql + \i, deliberately NOT a
+  tracked migration (the target row id is environment-specific to prod). Not
+  executed as part of this session; pending owner run.
+
+TENANT ISOLATION REVIEW
+  1 UPDATE (ops script), double-guarded on row id + email var; mistype → 0 rows.
+  Nulling tenant_id (district_id already null) resolves the account to an EMPTY
+  accessible-tenant set (fail-closed) via resolveAccessibleTenantIds — tightens
+  isolation, does not widen it. Orphan-null-tenant INSERT hazards confirmed
+  unreachable (every write path role-gates the account out before tenant bind).
+  tenant-isolation-auditor: APPROVED (0 critical / 0 warn).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none persisted or logged. FE change REDUCES PII surface
+    (operator chip no longer renders a school/district name); is_operator is a
+    boolean, not a PII field. Ops file carries no literal email or name.
+  Logging audit: no console.* in the changed hunk; SQL \echo lines are static
+    strings; verify SELECTs print only to the owner's own psql session. No PII
+    in logs, error bodies, or URLs.
+  Cross-tenant risk: none identified. privacy-reviewer: APPROVED (0 critical /
+    0 warn). security-reviewer: APPROVED WITH NOTES (0 critical / warn).
+
+VERIFICATION
+  merge-sha verification: MATCH (PR #279, 2-parent merge)
+  frontend eslint on the changed hunk (App.jsx lines 7690–7710) — clean (0
+    findings on the changed line).
+  root npm test — placeholder only ("no test specified"); no suite exists (#73).
+  FE deploy reconciled directly against Vercel: merge commit 3999566 →
+    Production deployment 2026-06-12T14:48:42Z; Vercel commit status = success.
+  Full triad (privacy / security / tenant-isolation) run pre-merge — all
+    APPROVED; reports pasted into the PR body as pre-review signals.
+  DB step (null tenant_id) is owner-run and was NOT part of the merge — pending.
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+
+PR #279 commit OIDs at merge time:
+  4fc5d4daab727ffac8bde76357422e19e5d688ad
+
+OPEN ITEMS / FOLLOW-UPS
+  - DB step PENDING (owner): run scripts/ops/2026-06-12-operator-id26-null-tenant.sql
+    against prod (\set op_email first). Until then the FE relabel alone leaves
+    the row's staff role + tenant attachment in place — the chip is corrected
+    cosmetically but the row is not yet de-scoped.
+  - Operator self-smoke after the DB step: log in as the operator and confirm
+    the chip renders the static operator label with no role/school.
+  - Mid-session hazard observed: a read-only reviewer subagent with Bash access
+    ran a git checkout in the shared working dir and moved HEAD off the feature
+    branch; uncommitted edits were recovered via targeted stash. Consider
+    isolating reviewer subagents from the working tree (worktree) in future.
+  - §2A approver/author share the scholarpathsystems account per the S129 decision
+    (accepted tradeoff; see project_decision_kelsey_shared_account.md). Not an open item.
+  - scripts/ops/ still not gitignored (#94); the new ops file is now in-tree,
+    literal-PII-free by construction, but the gitignore gap stands.
+  - FE eslint debt: 73 errors / 19 warnings in pre-existing untouched files
+    (sibling of the no-backend-lint gap, #74); the changed line is clean.
+
+NEXT SESSION SHOULD
+  Confirm the owner ran the null-tenant ops script in prod and that the operator
+  chip renders the static operator label; if not yet run, surface it as the
+  first open item.
+================================================================================
