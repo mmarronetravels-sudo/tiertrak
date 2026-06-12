@@ -28336,3 +28336,174 @@ NEXT SESSION SHOULD
   first-district-admin; the natural next unit is the user_school_access grant
   flow that gives a freshly-minted district_admin its school scope.
 ================================================================================
+================================================================================
+SESSION: 2026-06-11T12:22:49-07:00
+BRANCH:  feat/operator-grant-district-admin-access
+DISPOSITION: merged -- PR #275 (https://github.com/mmarronetravels-sudo/tiertrak/pull/275) @ 1f749974662e5e1aefed8bdfc1bde53dbcab3860
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added operator-only district-admin school-access GRANT + LIST-grants
+  endpoints (POST + GET on /:districtId/admins/:userId/access) so an operator
+  can give a freshly-minted district admin its school scope and verify the
+  grant landed. Operator sits above the tenant model.
+
+FILES TOUCHED
+  routes/operatorDistricts.js — POST grant + GET list-grants handlers (+166)
+  docs/ai-context/PRIVACY_REVIEW.md — document the grant data surface (+6)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  All writes/reads district-scoped via path district_id + two in-district
+  pre-flights (target user in-district AND school-tenant in-district); M028
+  composite FKs as the schema backstop. No resolveAccessibleTenantIds
+  (operator holds zero user_school_access rows by design). Per grant call:
+  1 grant-row INSERT + 1 audit-row INSERT; the rest are SELECT pre-flights.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — grant/list payloads are integer IDs only
+    (user_id, district_id, school_tenant_id); no name/email/slug surfaced.
+  Logging audit: tag-only console.error; no row data logged.
+  Cross-tenant risk: none identified — strict path-district scoping.
+
+VERIFICATION
+  merge-sha verification: MATCH (PR #275, 2-parent merge)
+  Untracked prod grant/list smoke present (scripts/ops/, --yes gated): case
+    matrix grant 201 / list 200 / re-grant 409 / cross-district 404 / type-
+    guard / invalid-id 400; counts-only output, no PII printed.
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+
+PR #275 commit OIDs at merge time:
+  3219e34e7a0d425a5922f11812ccc64decd437fe
+  83610790bc48b31e3e37f98fc6f32c7bcf228682
+
+OPEN ITEMS / FOLLOW-UPS
+  none specific to this PR.
+
+NEXT SESSION SHOULD
+  (superseded — see the #277 entry below; onboarding UI built on top of this.)
+================================================================================
+SESSION: 2026-06-11T14:14:02-07:00
+BRANCH:  fix/login-response-is-operator
+DISPOSITION: merged -- PR #276 (https://github.com/mmarronetravels-sudo/tiertrak/pull/276) @ 1d9f4afe15713dfa6034fa2038d743fc721bf02a
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Bug fix: login responses omitted is_operator, so a fresh operator login
+  landed on the parent portal until a manual reload. Added is_operator to the
+  login response payload(s) so operators route to the operator console without
+  a reload.
+
+FILES TOUCHED
+  routes/auth.js — include is_operator in the login response (+4/-2)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — response-shape only. is_operator is derived from existing
+  env-allowlist membership, not a new column.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none new — is_operator is a boolean flag; no name/email
+    added. The login body's pre-existing identity fields are unchanged.
+  Logging audit: no new logging introduced.
+  Cross-tenant risk: none.
+
+VERIFICATION
+  merge-sha verification: MATCH (PR #276, 2-parent merge)
+  Deployed from main; operator routing observed working this session (backend
+    healthy; nav + view mount gated on is_operator).
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+
+PR #276 commit OIDs at merge time:
+  b257fd5977a85d267da67b97f207ae831d8f4ace
+
+OPEN ITEMS / FOLLOW-UPS
+  Closed the tracked login-response gap (operators no longer land on the
+  parent portal on fresh login).
+
+  FIXES:
+    login-response-omits-is_operator → PR #276 @ b257fd5977a85d267da67b97f207ae831d8f4ace
+
+NEXT SESSION SHOULD
+  (superseded — see the #277 entry below.)
+================================================================================
+SESSION: 2026-06-11T14:40:41-07:00
+BRANCH:  feat/operator-onboarding-ui
+DISPOSITION: merged -- PR #277 (https://github.com/mmarronetravels-sudo/tiertrak/pull/277) @ 5084bbfdf07c97c2855b8a4d06b0885724000b97
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Operator-console first-admin onboarding UI on the district detail view:
+  create-admin form (full-name + email fields), the district's admins list,
+  and a per-admin "grant a school" control showing existing grants. Added one
+  new backend endpoint, GET /:districtId/admins, so the admins list survives
+  reload (the create-admin 201 already returns the new id; grant POST/GET
+  shipped in #275-era work).
+
+FILES TOUCHED
+  routes/operatorDistricts.js — new GET /:districtId/admins, district-scoped list (+42)
+  frontend/src/views/OperatorSchoolsView.jsx — Admins section + AdminGrants child (+360/-12)
+  frontend/src/views/OperatorConsoleView.jsx — replace onboarding placeholder (+3/-3)
+  (untracked, NOT committed) scripts/ops/2026-06-11-pr-operator-list-admins-smoke.js — prod smoke, kept untracked per #94
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  New GET scoped strictly on WHERE district_id = $1 AND role = 'district_admin';
+  district_id taken from the validated URL path only (never the body); district-
+  exists 404 pre-flight. Reads existing users (district_id indexed, M028).
+  Operator above the tenant model — no resolveAccessibleTenantIds by design.
+  1 table SELECT (users). tenant-isolation-auditor: APPROVED, no cross-district
+  pathway. Per-admin grant control feeds school ids from the already district-
+  scoped schools list; backend re-validates in-district independently.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: district_admin email + full_name are returned by the new
+    GET (a NEW PII data surface; §8 sign-off granted before build). Rendered to
+    the DOM only — never logged (tag-only console.error), never in an error body
+    or URL. Projection excludes role/district_id/tenant_id/password_hash.
+  Logging audit: 4 FE logError calls pass tag + raw error only; the pre-existing
+    App.jsx full-user console.log confirmed out of scope (new admin data never
+    reaches that sink).
+  Cross-tenant risk: none identified. privacy-reviewer: APPROVED (0 critical /
+    0 warn). security-reviewer: APPROVED WITH NOTES (0 critical / high / medium).
+
+VERIFICATION
+  merge-sha verification: MATCH (PR #277, 2-parent merge)
+  frontend eslint on the 2 changed views — clean (0 problems).
+  frontend npm run build — success.
+  node --check on the new route + the smoke script — pass.
+  Full triad (privacy / security / tenant-isolation) run pre-merge — all
+    APPROVED; reports pasted into the PR body as pre-review signals.
+  Authenticated endpoint-level prod confirmation deferred to the --yes smoke.
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+
+PR #277 commit OIDs at merge time:
+  ba3eb7f189235a465c37b801c466da8c8e69e045
+  300639b06fdec4bb4ede96a1e8c400f50e66a8f0
+
+OPEN ITEMS / FOLLOW-UPS
+  - §2A process: PR #277 was approved AND merged on the SAME shared review
+    account ~6s apart (third occurrence of the pattern flagged after #268).
+    The author account did NOT self-merge; attribution + a correction comment
+    were posted on the PR for the audit trail. Standing fix STILL unimplemented:
+    give §2A reviewers distinct personal GitHub identities and separate the
+    approver account from the merger.
+  - RENDER_API_KEY in env returns Unauthorized (CLI + direct API) — backend
+    deploy status is not machine-checkable; rotate the key.
+  - Repo-wide frontend eslint debt: 73 errors / 19 warnings in pre-existing,
+    untouched files (e.g. a set-state-in-effect in one view). Sibling of the
+    no-backend-lint gap. The 2 files this session touched are clean.
+  - list-admins prod smoke ready to run with --yes (counts-only output) for
+    authenticated confirmation the new endpoint is live.
+
+NEXT SESSION SHOULD
+  Run the list-admins --yes smoke against prod to get authenticated confirmation
+  that GET /:districtId/admins is serving, then close out any remaining
+  operator-onboarding follow-ups.
+================================================================================
