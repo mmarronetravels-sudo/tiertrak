@@ -110,7 +110,65 @@ NEXT SESSION SHOULD
 ================================================================================
 ```
 
-**Before staging the activities.txt edit**, run all three gates in order: the **merge-SHA verification gate**, then the **misattribution check**, then the **§4B grep gate**. All must pass before the entry is staged.
+**Before staging the activities.txt edit**, run all four gates in order: the **orphaned-commit gate**, then the **merge-SHA verification gate**, then the **misattribution check**, then the **§4B grep gate**. All must pass before the entry is staged.
+
+#### Orphaned-commit gate
+
+Purpose: protect against a **stacked-PR mis-merge** — a feature PR whose base is another PR's branch (not `main`) that merges into that base AFTER the base PR has already merged to `main`, orphaning the feature commits from `main`. GitHub reports the feature PR as `MERGED`, yet its commits never reach `main`, so a deploy of `main` ships without them. This is the failure mode recorded in `feedback_stacked_pr_land_base_first.md` (the commit route 404'd in prod while the dry-run 200'd, because only the dry-run had reached `main`).
+
+This gate runs FIRST, before the merge-SHA verification gate. The merge-SHA gate compares a PR's recorded head against that same PR's merge-commit second-parent — those MATCH on a stacked mis-merge (the feature tip WAS cleanly merged, just into the wrong base), so the merge-SHA gate is silent on the orphan. "Did the commits reach `main`?" is the more fundamental question and must be answered first.
+
+**Scope — what this gate catches:**
+- A feature PR merged into a stacked base branch instead of `main`, leaving its commits unreachable from `main`.
+- Any logged-as-landed branch whose recorded head is not an ancestor of `origin/main`.
+
+**Scope — what this gate does NOT catch:**
+- A correctly stacked PR whose base was later merged to `main` carrying the stack (the commits DID reach `main`). The reachability test passes; the `baseRefName != main` signal is downgraded to an INFO note, not a HALT (see Step 2).
+- SHA drift on a branch that did reach `main` — that is the merge-SHA gate's job.
+
+The gate keys off the **DISPOSITION** field, reusing the merge-SHA gate's Step 0 classifier and the same `gh pr view` call (add `baseRefName` to the `--json` field list).
+
+**Step 0 — Applicability (same classifier as the merge-SHA gate).**
+- **`pr-opened:<pr-url>` with `state == MERGED`**, or **bare `merged` whose branch resolves to a merged PR** → run the gate.
+- **`pr-opened:<pr-url>` with `state == OPEN`** → SKIP; emit `orphaned-commit gate: SKIPPED — PR #<N> not merged yet` (commits are expected to NOT be on main yet).
+- **`merged` (bare) with no PR found** (legitimate local merge) → run Step 1 against the local branch tip; `baseRefName` is N/A.
+- **`kept` / `discarded` / `unlogged-by-request`** → SKIP; emit `orphaned-commit gate: SKIPPED — <disposition> (branch not landed by design)`. A non-empty `main..branch` is expected and is not an error.
+
+**Step 1 — Reachability (the hard gate).**
+- `git fetch origin main -q`
+- `HEAD_OID=$(gh pr view <PR> --json headRefOid -q .headRefOid)` — for a local merge with no PR, use the branch tip: `HEAD_OID=$(git rev-parse <branch>)`.
+- `git merge-base --is-ancestor "$HEAD_OID" origin/main`
+  - exit `0` → **landed (PASS)** — continue to Step 2.
+  - exit `1` → **ORPHANED (HALT)** — print the block below.
+- `merge-base --is-ancestor` is the canonical test — robust to a deleted branch ref and to post-merge commits on the branch. The human-readable equivalent for the failure block is `git log --oneline origin/main..origin/<headRefName>` (the count of commits not on `main`).
+
+**Step 2 — baseRefName (paired diagnostic / soft-signal).**
+- `BASE=$(gh pr view <PR> --json baseRefName -q .baseRefName)` — N/A for a local merge.
+- Reachability PASSED and `BASE == main` → silently continue to the merge-SHA verification gate.
+- Reachability PASSED but `BASE != main` (a MERGED PR) → emit an **INFO note, NOT a HALT**:
+  `orphaned-commit gate: INFO — PR #<N> merged via stacked base <BASE>; commits DID reach main (verify intended).`
+  This is the correct-stacked-flow case (the base was later merged to `main` carrying the stack). Record the INFO note in the entry's VERIFICATION section.
+
+**On HALT** — print exactly (SHA + kebab branch names only; §4B-safe, same output discipline as the other gates):
+
+```
+ORPHANED-COMMIT GATE — HALT
+  PR:            #<N>   state=MERGED   base=<baseRefName>
+  Branch:        <headRefName>
+  Head SHA:      <40-char HEAD_OID>
+  Reachability:  head is NOT an ancestor of origin/main
+  Not on main:   <count>  (git log --oneline origin/main..origin/<headRefName>)
+
+  These commits never reached main. A MERGED status with base=<baseRefName>
+  (not main) means the PR merged into its stacked base. The activities entry
+  was NOT written.
+
+  Fix: open a fresh <headRefName> -> main PR with the identical commits, land
+  it, then re-run the skill. See feedback_stacked_pr_land_base_first.md.
+```
+
+On a clean PASS, record in the entry's VERIFICATION section:
+`orphaned-commit gate: PASS — <headRefName> head is an ancestor of origin/main (base=<baseRefName>).`
 
 #### Merge-SHA verification gate
 
@@ -335,6 +393,7 @@ Then stop. Do not start the next task.
 ## Guardrails
 
 - Never write anything to `activities.txt` that would itself violate CLAUDE.md Section 4B. That means: **no student names, no student IDs, no staff names, no email addresses, no tenant-identifiable slugs.** Refer to records by table + row-count or by generic description ("updated 3 intervention-plan rows for 1 test tenant"), never by PII.
+- The **orphaned-commit gate** in Step 3 is non-optional and runs FIRST (before the merge-SHA gate). For any DISPOSITION logged as landed-on-main (`pr-opened` whose PR is `MERGED`, or bare `merged`), the PR's recorded head must be an ancestor of `origin/main` (`git merge-base --is-ancestor`) or the gate HALTs — the commits never reached `main` (the stacked-PR mis-merge from `feedback_stacked_pr_land_base_first.md`). `baseRefName != main` on a reachable PR is an INFO note, not a HALT. The merge-SHA gate cannot catch this: it MATCHES on a stacked mis-merge because the feature tip was cleanly merged into the wrong base.
 - The **merge-SHA verification gate** in Step 3 is non-optional. For any DISPOSITION that names a PR (or bare `merged` whose branch resolves to a merged PR via search), the gate must run and must pass or HALT. A LOUD-SKIP block on every session means the project's merge convention has drifted to squash/rebase and this protection has effectively turned off — re-evaluate the gate, do not normalize the skip.
 - The **misattribution check** in Step 3 is non-optional for any entry that includes a FIXES: block. The block uses the parseable `<finding-id> → PR #<N> @ <40-char SHA>` format; each line's SHA must be a member of the cited PR's commit list per `gh pr view <N> --json commits`. The check is SHA-only by design — commit headlines are visible interactively at SHA-pick time but are NEVER written into `activities.txt`. The check verifies CONTAINMENT, not CORRECTNESS — a wrong-but-present commit cited as the fix would still PASS; the auto-fill UX (presenting the cited PR's own commits) is the behavioral mitigation. The `WORK-PR COMMITS` section the skill auto-appends to every entry is SHA-only manifest evidence, never headlines or subjects.
 - Never commit `activities.txt` changes to a feature branch that will be squashed — it should ride on its own commit on the branch, or be merged separately to `main` via a trivial `chore/activities-log` PR. The project convention: **`activities.txt` is committed directly to `main` via a dedicated PR** so the log stays linear and doesn't get lost in squashes.
