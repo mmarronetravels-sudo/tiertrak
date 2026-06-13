@@ -2,6 +2,8 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
+const crypto = require('crypto');
+const { Resend } = require('resend');
 require('dotenv').config();
 const { isOperator } = require('../middleware/platformAdminOnly');
 const { STAFF_ROLES } = require('./staffManagement');
@@ -11,6 +13,14 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Roles whose scope is the district, not a single school. For these the
+// users.district_id column is populated from the PATH districtId (verified
+// by the pre-flight) — never from the CSV or the operator's own
+// users.district_id. Mirrors the list in routes/csvImport.js.
+const DISTRICT_SCOPED_ROLES = ['district_admin', 'district_tech_admin'];
 
 // ============================================================
 // Operator-console STAFF-IMPORT VALIDATE-ONLY (Slice 1)
@@ -348,9 +358,298 @@ async function validateStaffImport(req, res) {
   }
 }
 
+// Handler for POST /:districtId/schools/:schoolTenantId/staff-import/commit.
+// requireAuth + platformAdminOnly have already run on the parent router, so
+// req.user is populated and the caller is a verified operator.
+//
+// This is the WRITE counterpart of validateStaffImport. It reuses the same
+// pre-flights, the same shared row validator, and the same §4B no-echo
+// doctrine, then actually provisions accounts.
+//
+// ALL-OR-NOTHING (per Slice 2 spec):
+//   1. If the parsed CSV has ANY row error (validation or in-file duplicate)
+//      → 422, write nothing. Re-run the dry-run and fix every row first.
+//   2. If ANY email already exists at this school → 422, write nothing.
+//   3. Otherwise every row is inserted inside ONE transaction together with
+//      its staff_import_audit row. A failure on any row (e.g. a 23505 race
+//      with a concurrent create) rolls the WHOLE import back — 0 accounts
+//      created. There is no partial commit.
+//
+// Setup-credential flow mirrors routes/csvImport.js POST /staff/:tenantId
+// VERBATIM: crypto.randomBytes(32) token + 7-day expiry stored in
+// password_reset_token / password_reset_expires; password_hash omitted;
+// google_id explicit NULL; Resend setup email sent AFTER COMMIT (emails are
+// not transactional — never sent inside the txn, never rolled back).
+//
+// §5 tenant binding is STRUCTURAL and identical to the validate handler:
+// districtId + schoolTenantId come from the URL path; users.tenant_id is the
+// path schoolTenantId; district_id for district-scoped roles is the path
+// districtId (never CSV, never the operator's own district_id, so the
+// operator-null footgun does not arise).
+//
+// §4B: the setup token is a credential — never logged, never in the
+// response body, only in the email's setup link. Per-row errors and the
+// response carry row numbers + ids only; no email / full_name is echoed.
+// Server logs are counts/codes only. The uploaded CSV is deleted on EVERY
+// exit path.
+async function commitStaffImport(req, res) {
+  const cleanup = () => {
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, () => {});
+    }
+  };
+
+  const districtId = validateIntParam(req.params.districtId);
+  if (districtId === null) {
+    cleanup();
+    return res.status(400).json({ error: 'Invalid district id' });
+  }
+  const schoolTenantId = validateIntParam(req.params.schoolTenantId);
+  if (schoolTenantId === null) {
+    cleanup();
+    return res.status(400).json({ error: 'Invalid school_tenant_id' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  const actorId = Number(req.user.id);
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    cleanup();
+    console.error('[operator:staff-import-commit] invalid req.user.id from JWT');
+    return res.status(500).json({ error: 'Server error' });
+  }
+
+  try {
+    // §5 pre-flight 1: district exists. Identical to the validate handler.
+    const district = await pool.query('SELECT id FROM districts WHERE id = $1', [districtId]);
+    if (district.rows.length === 0) {
+      cleanup();
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // §5 pre-flight 2: school tenant exists AND is a school AND belongs to
+    // this district.
+    const schoolTenant = await pool.query(
+      "SELECT id, district_id FROM tenants WHERE id = $1 AND type = 'school'",
+      [schoolTenantId]
+    );
+    if (schoolTenant.rows.length === 0 || schoolTenant.rows[0].district_id !== districtId) {
+      cleanup();
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // Parse + per-row validation via the shared validator (same rules as the
+    // dry-run; §4B no-echo).
+    const { results, validationErrors, duplicateErrors, totalRows } =
+      await parseAndValidateStaffRows(req.file.path, req.user);
+
+    // 100-row cap. Shared constant + message with the validate handler.
+    if (totalRows > STAFF_IMPORT_ROW_CAP) {
+      cleanup();
+      return res.status(400).json({ error: STAFF_IMPORT_ROW_CAP_MESSAGE });
+    }
+
+    // ALL-OR-NOTHING gate 1: any row error → reject the whole import, write
+    // nothing. The dry-run is where these are meant to be discovered.
+    if (validationErrors.length > 0 || duplicateErrors.length > 0) {
+      cleanup();
+      console.log(
+        '[operator:staff-import-commit] rejected-row-errors district:', districtId,
+        'school:', schoolTenantId,
+        'totalRows:', totalRows,
+        'validationErrors:', validationErrors.length,
+        'duplicatesInFile:', duplicateErrors.length
+      );
+      return res.status(422).json({
+        error: 'Import rejected: the CSV has row-level errors. Re-run validate and fix every row before committing.',
+        errors: [...validationErrors, ...duplicateErrors]
+      });
+    }
+
+    if (results.length === 0) {
+      cleanup();
+      return res.status(422).json({ error: 'Import rejected: no valid rows to import.' });
+    }
+
+    // ALL-OR-NOTHING gate 2: per-tenant email-existence pre-check (read-only,
+    // scoped to the bound school). If ANY row collides, reject the whole
+    // import — no partial commit. Row numbers only (§4B).
+    const alreadyExistsErrors = [];
+    for (const staff of results) {
+      const existing = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND tenant_id = $2',
+        [staff.email, schoolTenantId]
+      );
+      if (existing.rows.length > 0) {
+        alreadyExistsErrors.push({
+          row: staff.row,
+          error: 'A user with this email already exists at this school.'
+        });
+      }
+    }
+    if (alreadyExistsErrors.length > 0) {
+      cleanup();
+      console.log(
+        '[operator:staff-import-commit] rejected-already-exists district:', districtId,
+        'school:', schoolTenantId,
+        'totalRows:', totalRows,
+        'alreadyExists:', alreadyExistsErrors.length
+      );
+      return res.status(422).json({
+        error: 'Import rejected: one or more emails already exist at this school. No accounts were created.',
+        errors: alreadyExistsErrors
+      });
+    }
+
+    // Single transaction for the whole import: all user INSERTs + their
+    // audit rows commit together or not at all. Setup tokens are generated
+    // per row; emails are deferred until AFTER COMMIT.
+    const importBatchId = crypto.randomUUID();
+    const provisioned = []; // { row, user, setupToken } — token kept in memory only for the email step
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Actor capture for any DB-layer audit/trigger plumbing, mirroring the
+      // grant flow at routes/operatorDistricts.js.
+      await client.query("SELECT set_config('app.actor_user_id', $1, true)", [String(actorId)]);
+
+      for (const staff of results) {
+        // district_id: PATH-derived for district-scoped roles, else NULL.
+        // Never from CSV, never from the operator's own users.district_id.
+        const rowDistrictId = DISTRICT_SCOPED_ROLES.includes(staff.role) ? districtId : null;
+
+        // Token + 7-day expiry mirror routes/auth.js:338-339 /
+        // routes/csvImport.js:697-698 verbatim.
+        const setupToken = crypto.randomBytes(32).toString('hex');
+        const setupTokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+        const inserted = await client.query(
+          `INSERT INTO users (tenant_id, email, full_name, role, school_wide_access, district_id, password_reset_token, password_reset_expires, google_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL)
+           RETURNING id, email, full_name, role, school_wide_access`,
+          [schoolTenantId, staff.email, staff.full_name, staff.role, staff.school_wide_access, rowDistrictId, setupToken, setupTokenExpires]
+        );
+        const user = inserted.rows[0];
+
+        // Audit row (M047). district_id is the PATH district the import
+        // targeted; school_tenant_id is the path school. No PII / no token.
+        await client.query(
+          `INSERT INTO staff_import_audit (import_batch_id, user_id, role, school_tenant_id, district_id, actor_user_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [importBatchId, user.id, user.role, schoolTenantId, districtId, actorId]
+        );
+
+        provisioned.push({ row: staff.row, user, setupToken });
+      }
+
+      await client.query('COMMIT');
+    } catch (dbError) {
+      try {
+        await client.query('ROLLBACK');
+      } catch (_rollbackErr) {
+        // ROLLBACK on a broken connection can throw; the import has already
+        // failed. Swallow the secondary error.
+      }
+      client.release();
+      cleanup();
+      // 23505 on users_tenant_id_email_key means a concurrent create won the
+      // race between the pre-check and the INSERT. All-or-nothing: the whole
+      // transaction rolled back, 0 accounts created. pg messages can echo
+      // column values, so code/constraint are logged server-side only.
+      if (dbError.code === '23505' && dbError.constraint === 'users_tenant_id_email_key') {
+        return res.status(409).json({ error: 'Import aborted: an email collided with a concurrent change. No accounts were created. Re-run validate and retry.' });
+      }
+      console.error('[operator:staff-import-commit] insert error code:', dbError.code, 'constraint:', dbError.constraint);
+      return res.status(500).json({ error: 'Server error' });
+    }
+    client.release();
+
+    // CSV deleted immediately after the DB work, before the email step.
+    cleanup();
+
+    // Setup-link email per provisioned account. Sent AFTER COMMIT: a send
+    // failure is non-fatal (the account exists with a valid 7-day token) and
+    // is reported as emailErrors, mirroring routes/csvImport.js. The token is
+    // NEVER logged; only statusCode/name is logged on failure.
+    const emailErrors = [];
+    for (const p of provisioned) {
+      const setupUrl = `${process.env.FRONTEND_URL}/set-password?token=${p.setupToken}`;
+      try {
+        const { error: sendError } = await resend.emails.send({
+          from: 'ScholarPath Intervention Management <noreply@scholarpathsystems.org>',
+          to: p.user.email,
+          subject: 'Set up your ScholarPath account',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Welcome to ScholarPath</h1>
+              </div>
+              <div style="padding: 30px; background: #f9fafb;">
+                <p>Hello ${p.user.full_name},</p>
+                <p>An account has been created for you in ScholarPath Intervention Management. To get started, set up your password using the link below.</p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${setupUrl}" style="background: #6366f1; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">Set Up My Password</a>
+                </div>
+                <p style="color: #6b7280; font-size: 14px;">This link will expire in 7 days.</p>
+                <p style="color: #6b7280; font-size: 14px;">If you didn't expect this email, please ignore it.</p>
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+                <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+                  ScholarPath Intervention Management by ScholarPath Systems<br>
+                  FERPA Compliant • Student Data Protected
+                </p>
+              </div>
+            </div>
+          `
+        });
+        if (sendError) {
+          // §4B (privacy LOW-1): do NOT surface the raw Resend error in the
+          // response body — its message can embed the recipient address.
+          // Fixed string only; statusCode/name logged server-side for
+          // diagnosis. Stricter than the csvImport.js precedent.
+          emailErrors.push({ row: p.row, error: 'Email delivery failed' });
+          console.error('[operator:staff-import-commit] resend error:', sendError.statusCode || sendError.name || 'unknown');
+        }
+      } catch (err) {
+        emailErrors.push({ row: p.row, error: 'Email delivery failed' });
+        console.error('[operator:staff-import-commit] resend exception:', err.statusCode || err.name || 'unknown');
+      }
+    }
+
+    // Counts-only logging — no PII, no token, no row data.
+    console.log(
+      '[operator:staff-import-commit] committed district:', districtId,
+      'school:', schoolTenantId,
+      'batch:', importBatchId,
+      'totalRows:', totalRows,
+      'imported:', provisioned.length,
+      'emailErrors:', emailErrors.length
+    );
+
+    res.status(201).json({
+      committed: true,
+      summary: {
+        totalRows: totalRows,
+        imported: provisioned.length,
+        emailErrors: emailErrors.length
+      },
+      // ids + row numbers only — no email / full_name / token in the body.
+      imported: provisioned.map(p => ({ row: p.row, id: p.user.id })),
+      emailErrors
+    });
+
+  } catch (error) {
+    cleanup();
+    console.error('[operator:staff-import-commit] error code:', error.code);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
+
 module.exports = {
   upload,
   validateStaffImport,
+  commitStaffImport,
   parseAndValidateStaffRows,
   STAFF_IMPORT_ROW_CAP,
   STAFF_IMPORT_ROW_CAP_MESSAGE,

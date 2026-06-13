@@ -5,7 +5,7 @@ const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seeds');
 const { csvImportLimiter } = require('../middleware/rateLimiters');
-const { upload: staffImportUpload, validateStaffImport } = require('./operatorStaffImport');
+const { upload: staffImportUpload, validateStaffImport, commitStaffImport } = require('./operatorStaffImport');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -536,6 +536,19 @@ router.post(
   csvImportLimiter,
   staffImportUpload.single('file'),
   validateStaffImport
+);
+
+// Staff-import COMMIT (Slice 2). Same router (auth runs once), same
+// csvImportLimiter + multer chain, same /:districtId/schools/:schoolTenantId
+// path shape as the validate route above. Dry-run (validate) stays the
+// default surface; this is the explicit write counterpart. Single
+// transaction per import; all-or-nothing. See routes/operatorStaffImport.js
+// commitStaffImport for the §4B/§5 contract.
+router.post(
+  '/:districtId/schools/:schoolTenantId/staff-import/commit',
+  csvImportLimiter,
+  staffImportUpload.single('file'),
+  commitStaffImport
 );
 
 module.exports = router;
