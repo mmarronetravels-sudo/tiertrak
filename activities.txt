@@ -28872,3 +28872,82 @@ NEXT SESSION SHOULD
   sec/staff-import-fullname-html-escape (the WARN-1 lockstep escape) next, or
   the next import slice, on a fresh branch.
 ================================================================================
+================================================================================
+SESSION: 2026-06-13T12:20:11-0700
+BRANCH:  n/a — operator/prod onboarding actions; no code branch this session
+DISPOSITION: n/a — no tracked code changes; this log entry lands via
+             chore/activities-log-2026-06-13-staff-onboarding (own PR)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Onboarded one real customer (all-SSO) end-to-end in production via the operator
+  console and the Slice 2 bulk staff-import. No application code changed; the work
+  was operator/prod actions plus untracked owner-run ops scripts. This entry is
+  the only landed artifact.
+
+FILES TOUCHED
+  activities.txt — this session log entry (append-only)
+
+  (untracked, DO-NOT-COMMIT per followup #94 — NOT part of this PR:)
+  scripts/ops/2026-06-13-staff-import-validate-realfile.sh — owner-run real-file
+    validate (dry-run, zero-write); CSV path via CSV_FILE env; counts +
+    {row,error} only; reuses login + CSRF double-submit.
+  scripts/ops/2026-06-13-staff-import-commit-realfile.sh — owner-run real-file
+    commit (writes); typed-YES gate before the write; counts + email {row,error}
+    only; raw body never dumped.
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB schema changes. Onboarding writes were scoped by the operator endpoints'
+  structural path binding (the district + school identifiers come from the URL)
+  plus the import pre-flights (type='school' AND in-district). All staff rows
+  bound to the single new school tenant; no cross-tenant or cross-district path
+  was exercised.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: real staff identity values were uploaded to the commit
+    endpoint during onboarding; none persisted by any repo change and none
+    recorded in this entry (counts-only).
+  Logging audit: ops-script output is counts + {row,error} only; operator
+    password read hidden, never stored or printed; raw response body never dumped.
+  Cross-tenant risk: none identified.
+  §4B grep (narrow + wide) on this entry diff vs origin/main: 0 matches; the
+    bare word "district" is the generic tenant-layer term with no identifying
+    name adjacent. See docs/ai-context/4B_GREP_PATTERNS.md for the catalog.
+
+VERIFICATION
+  npm test — n/a (root script is a placeholder; no backend test suite, followup #73).
+  npm run lint — n/a this session (no tracked code changed; frontend eslint is
+    available but no frontend files were touched).
+  Google SSO end-to-end — PROVEN in prod: first-login google_id bind on a
+    pre-created user row (NULL password_hash) succeeded; operator/admin/staff
+    roles routed to the staff dashboard, not the parent portal.
+  Slice 2 bulk staff-import — validate-then-commit against the new school with
+    the real CSV: validate clean (zero errors); commit succeeded (HTTP 201,
+    committed=true).
+  orphaned-commit gate: SKIPPED — no landed-on-main work PR this session.
+  merge-sha verification: SKIPPED — no work PR this session (operator/prod actions).
+
+OPEN ITEMS / FOLLOW-UPS
+  - Onboarding totals (counts-only): 1 district / 1 school / 1 district admin /
+    36 staff created via the Slice 2 commit (all-SSO).
+  - Email-send throttle/retry (NEW follow-up): 7 of 36 staff setup emails failed
+    at send with a Resend rate-limit signature. The accounts were still created
+    (email send is post-commit and non-fatal); because the customer is all-SSO,
+    the 7 affected staff can still sign in via Google, so this is not a login
+    blocker. Bank a follow-up to throttle/retry the per-row email loop in the
+    import (paced sends + retry-on-429) so large imports do not shed setup emails.
+  - Reconcile a 1-row delta: the real-file validate earlier this session reported
+    37 clean rows; the commit recorded 36 staff imported. The district admin was
+    created separately in the operator console — confirm that fully accounts for
+    the delta (no dropped final row).
+  - The owner-run real-file validate/commit ops scripts remain untracked under
+    scripts/ops/ (DO-NOT-COMMIT), consistent with followup #94.
+
+NEXT SESSION SHOULD
+  Customer is live (all-SSO). For additional schools, reuse the operator console
+  plus the real-file validate->commit scripts (validate clean before every
+  commit; commit is all-or-nothing). Prioritize the email throttle/retry
+  follow-up before any import larger than ~30 rows to avoid Resend 429 shedding.
+================================================================================
