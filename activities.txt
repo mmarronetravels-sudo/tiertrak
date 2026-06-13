@@ -28700,3 +28700,76 @@ NEXT SESSION SHOULD
   Reviewer read-only tightening is complete and merged. No carry-over; start
   fresh.
 ================================================================================
+================================================================================
+SESSION: 2026-06-13T07:18:10-0700
+BRANCH:  feat/staff-import-validate-only
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/285
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Shipped Slice 1 of the bulk staff/student import: a new operator-console
+  staff-import VALIDATE-ONLY (dry-run) endpoint. It parses a staff CSV for one
+  school tenant and returns counts + per-row {row,error}; it writes nothing.
+  Also seeded the synthetic multi-school Sandbox District section-5 fixture in
+  prod for smoke targeting; a prior PR (#283) hardened the 3 reviewer subagents
+  to read-only.
+
+FILES TOUCHED
+  routes/operatorStaffImport.js — new handler module (multer + validateStaffImport); dry-run, no writes
+  routes/operatorDistricts.js   — register route on the operator router (auth runs once) + csvImportLimiter
+
+MIGRATIONS RUN
+  none — no schema change.
+
+TENANT ISOLATION REVIEW
+  Section 5 structural binding: districtId + schoolTenantId from the URL path;
+  two pre-flights (district exists; school exists AND type=school AND
+  in-district) run before parse. Operators are not routed through
+  resolveAccessibleTenantIds (zero user_school_access rows) — the pre-flights
+  are the scope enforcement. Reviewed by tenant-isolation-auditor as part of the
+  section-2A triad on PR #285.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: staff identity values flow through the validator but are
+    never persisted (dry-run) and never echoed.
+  Logging audit: per-row errors are {row,error} only; no identity values in
+    errors, response body, or logs; server logs are counts-only; uploaded CSV
+    deleted on every exit path. Stricter no-echo than the commit importer.
+  Cross-tenant risk: none identified; structural path binding + in-district
+    pre-flights.
+  §4B grep (narrow + wide) on this entry diff vs origin/main: 0 matches after
+    remediation. See docs/ai-context/4B_GREP_PATTERNS.md for the catalog.
+
+VERIFICATION
+  npm test — n/a (no backend test suite, followup #73).
+  npm run lint — n/a (backend lint not configured, followup #74).
+  synthetic-fixture behavioral smokes — 15/15 passed (local dev DB, counts-only):
+    valid CSV zero-write confirmed via users count unchanged; mixed-error CSV
+    per-row {row,error} correct; wrong-district school -> 404.
+  prod smoke — passed against the synthetic Sandbox District fixture: 3-row
+    synthetic CSV (2 valid, 1 row error), HTTP 200, zero writes confirmed. The
+    smoke required CSRF double-submit (X-CSRF-Token = the token segment of the
+    csrf_token cookie, not the whole token|hash value).
+  merge-sha verification: PASS — PR #285 merge commit second-parent matches the
+    feature tip SHA.
+
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #285 commit OIDs at merge time:
+  d7391a213e17e9a9aa0c81d253cce44cc20c28e2
+
+OPEN ITEMS / FOLLOW-UPS
+  - chore/extract-staff-import-row-validator — per-row staff rules are now
+    duplicated between this endpoint and the commit importer; extract a shared
+    pure validator in its own PR (do not refactor the live write-path here).
+  - Prod prereq for the validate smoke: the synthetic Sandbox District fixture
+    (1 district, 3 schools, synthetic staff/students) is now seeded in prod; the
+    smoke targets it by district-name lookup, not hardcoded IDs.
+  - Smoke harness + seed SQL live untracked under scripts/ops/ (not committed),
+    consistent with the ops-artifact convention (followup #94).
+
+NEXT SESSION SHOULD
+  Slice 1 is merged and prod-smoked. Pick up the next slice (staff-import COMMIT
+  path, or student-import validate-only) on a fresh branch; reuse the structural
+  operator binding + the section-4B no-echo doctrine established here.
+================================================================================
