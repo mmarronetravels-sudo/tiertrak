@@ -28773,3 +28773,102 @@ NEXT SESSION SHOULD
   path, or student-import validate-only) on a fresh branch; reuse the structural
   operator binding + the section-4B no-echo doctrine established here.
 ================================================================================
+================================================================================
+SESSION: 2026-06-13T10:22:09-0700
+BRANCH:  feat/staff-import-commit
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/290
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built and shipped Slice 2 of the bulk staff import: the operator-console
+  staff-import COMMIT endpoint. Unlike the Slice 1 dry-run, it provisions staff
+  accounts from one CSV per tenant in a single all-or-nothing transaction,
+  generates a 7-day password-setup token per row, sends a setup email per
+  account, and writes one append-only audit row per account.
+
+FILES TOUCHED
+  migration-047-staff-import-audit.sql  — new append-only audit table (one row per provisioned account)
+  routes/operatorStaffImport.js         — shared row validator + commit handler (token / email / audit)
+  routes/operatorDistricts.js           — register the commit route on the operator router
+
+MIGRATIONS RUN
+  migration-047-staff-import-audit.sql — audit table; applied to prod by the
+    operator in their own terminal; idempotent (CREATE ... IF NOT EXISTS inside
+    one BEGIN/COMMIT).
+
+TENANT ISOLATION REVIEW
+  Path-bound tenant scope (parent ids from the URL path, never the CSV); two §5
+  pre-flights before any write; tenant_id is the path school tenant; the
+  parent-scope id column is path-derived only. The tenant-isolation reviewer
+  reviewed the same commits on the predecessor PR and returned APPROVED; no
+  cross-tenant path introduced.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: the email, display-name, and role fields are written to
+    the users table (the feature's purpose); a setup-credential token is
+    generated per account.
+  Logging audit: counts/codes only; the token is never logged and never in any
+    response body (only inside the setup-link email); the uploaded CSV is
+    deleted on every exit path; the audit table stores ids + role only (no
+    email, no name, no token).
+  Cross-tenant risk: none identified; structural path binding.
+  §4B grep (narrow + wide) on this entry's diff vs origin/main: narrow 0; wide 0
+    PII (the lone wide hit is a tracked source filename — a dispositioned false
+    positive). No real test email, operator address, reviewer name, tenant id,
+    or school name in the entry.
+
+VERIFICATION
+  npm test — n/a (no backend test suite; followup #73).
+  npm run lint — n/a (backend lint not configured; followup #74).
+  local commit smoke — 30/30 passed (synthetic, local dev DB, email sender
+    disabled): happy-path provisioning + audit rows + token fields, both
+    all-or-nothing gates (zero writes), wrong-parent 404, row cap, §4B-narrow
+    bodies/errors.
+  prod commit smoke — PASS: imported=2; 2 audit rows confirmed via counts-only
+    SQL.
+  prod deliverability — PASS: 1 synthetic row to a real monitored mailbox,
+    delivery confirmed (inbox receipt + provider dashboard "delivered"); the
+    setup link works.
+  merge-sha verification: PASS — PR #290 merge commit second-parent matches the
+    feature tip SHA.
+
+  STACKED-PR MIS-MERGE + RECOVERY
+    The feature PR was first opened stacked on the validator-chore branch. The
+    chore PR merged to main BEFORE the feature PR merged into its stacked base,
+    which orphaned the feature commits from main: the deploy carried the dry-run
+    but not the commit route, so prod returned 404 on commit while validate
+    returned 200. Diagnosed as a landing gap, not a deploy/service mismatch.
+    Recovered by opening a fresh PR (#290) of the identical, already-reviewed
+    commit-route commits with base main — merge-tree clean, zero drift, so the
+    reviewer triad was NOT re-run. A fresh non-author §2A approval was obtained
+    before merge; no self-merge, no admin-override. The re-deploy then carried
+    the route; the prod smokes above confirm it live.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #290 commit OIDs at merge time:
+  adde21cd04198f0311849984f259566cee7cf54d
+  7dc6fffa490161a951a4f87f7aac1b6cf26351e9
+
+OPEN ITEMS / FOLLOW-UPS
+  - sec/staff-import-fullname-html-escape (security WARN-1 on the predecessor
+    PR): HTML-escape the display-name field before email interpolation in BOTH
+    the commit handler and the older CSV importer, in lockstep.
+  - INFO: the parent-scoped-role literal is a 3-writer drift hazard (folds into
+    the FE/BE role-list drift-guard cluster); the per-row email pre-check is
+    N round-trips (perf, batchable under the row cap).
+  - Guardrail banked: stacked PRs must land base-first and be re-verified
+    against main (git log main..branch must be empty); a PR can show MERGED yet
+    never reach main when its base is the stacked branch.
+  - Ops smoke artifacts (validate, commit, deliverability) remain untracked
+    under scripts/ops/ per the ops-artifact convention (followup #94).
+
+  FIXES:
+    privacy-LOW-1-resend-error-in-body → PR #290 @ 7dc6fffa490161a951a4f87f7aac1b6cf26351e9
+
+NEXT SESSION SHOULD
+  Slice 2 is fully validated in prod. Pick up
+  sec/staff-import-fullname-html-escape (the WARN-1 lockstep escape) next, or
+  the next import slice, on a fresh branch.
+================================================================================
