@@ -200,6 +200,15 @@ Session 54) and must not recur:
   approval.
 - **Reviewer subagent reports treated as substitutes for human
   review.** They are pre-review signals, not the review itself.
+- **Stacked-PR mis-merge: a feature PR merged into its stacked
+  base branch (not `main`) after that base already merged to
+  `main`, orphaning the feature commits from `main`.** GitHub
+  marks the PR `MERGED` but its code never reaches `main`/the
+  deploy. Land stacked PRs base-first and re-target the stacked PR
+  to `main` before merging it; the `/landing-the-plane`
+  orphaned-commit gate (`git merge-base --is-ancestor <head>
+  origin/main`) catches it at session close. See
+  `feedback_stacked_pr_land_base_first.md`.
 
 ### What Claude Code must do at the start of every coding task
 
