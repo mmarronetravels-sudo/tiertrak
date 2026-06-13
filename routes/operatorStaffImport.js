@@ -604,13 +604,15 @@ async function commitStaffImport(req, res) {
           `
         });
         if (sendError) {
-          const sanitized = (sendError.message || 'Unknown error').split('\n')[0].slice(0, 200);
-          emailErrors.push({ row: p.row, error: sanitized });
+          // §4B (privacy LOW-1): do NOT surface the raw Resend error in the
+          // response body — its message can embed the recipient address.
+          // Fixed string only; statusCode/name logged server-side for
+          // diagnosis. Stricter than the csvImport.js precedent.
+          emailErrors.push({ row: p.row, error: 'Email delivery failed' });
           console.error('[operator:staff-import-commit] resend error:', sendError.statusCode || sendError.name || 'unknown');
         }
       } catch (err) {
-        const sanitized = (err.message || 'Unknown error').split('\n')[0].slice(0, 200);
-        emailErrors.push({ row: p.row, error: sanitized });
+        emailErrors.push({ row: p.row, error: 'Email delivery failed' });
         console.error('[operator:staff-import-commit] resend exception:', err.statusCode || err.name || 'unknown');
       }
     }
