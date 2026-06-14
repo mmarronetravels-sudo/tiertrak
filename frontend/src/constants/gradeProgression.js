@@ -13,11 +13,13 @@
 // one, change both. A CI drift-check follow-up is banked alongside
 // this PR (sibling of the PR-D ESM↔CJS drift follow-up).
 //
-// Sequence order is K-12 conventional progression. The FE may render
+// Sequence order is conventional progression from the earliest
+// early-childhood grade (N = Nursery, then Pre-K) through K-12. The FE may render
 // the grade dropdown in this order; the roll-up preview UI reads
 // transition_counts keyed by from-grade and renders them in this order.
 
 export const GRADE_SEQUENCE = [
+  'N',
   'Pre-K',
   'K',
   '1st',
