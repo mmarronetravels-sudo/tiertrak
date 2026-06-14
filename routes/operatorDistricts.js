@@ -6,7 +6,7 @@ const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seeds');
 const { csvImportLimiter } = require('../middleware/rateLimiters');
 const { upload: staffImportUpload, validateStaffImport, commitStaffImport } = require('./operatorStaffImport');
-const { upload: studentImportUpload, validateStudentImport } = require('./operatorStudentImport');
+const { upload: studentImportUpload, validateStudentImport, commitStudentImport } = require('./operatorStudentImport');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -565,6 +565,20 @@ router.post(
   csvImportLimiter,
   studentImportUpload.single('file'),
   validateStudentImport
+);
+
+// Student-import COMMIT (Slice 4). Same router (auth runs once), same
+// csvImportLimiter + multer chain and same /:districtId/schools/:schoolTenantId
+// path shape as the validate route above. The WRITE counterpart: creates
+// student education records for ONE school tenant. Single transaction per
+// import; all-or-nothing (any row error / in-file dup / already-exists → 422,
+// zero writes). Students are records, not accounts — NO token, NO email. See
+// routes/operatorStudentImport.js commitStudentImport for the §4B/§5 contract.
+router.post(
+  '/:districtId/schools/:schoolTenantId/student-import/commit',
+  csvImportLimiter,
+  studentImportUpload.single('file'),
+  commitStudentImport
 );
 
 module.exports = router;
