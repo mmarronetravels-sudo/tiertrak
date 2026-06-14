@@ -29055,3 +29055,86 @@ NEXT SESSION SHOULD
   (students are not user accounts). Resolve the four banked follow-ups when
   convenient; the data-echo redaction + validator extraction pair naturally.
 ================================================================================
+SESSION: 2026-06-14T18:05:00-07:00
+BRANCH:  feat/student-import-commit
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/297
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built Slice 4 — the operator-console student-import COMMIT path, the
+  record-creating sibling of the Slice 3 validate-only dry-run. Single
+  per-import transaction wrapping every students INSERT + its race/ethnicity
+  child rows + its audit row; all-or-nothing; students are records (no token,
+  no email). Plan was approved before implementation; full triad reviewed.
+
+FILES TOUCHED
+  routes/operatorStudentImport.js — new commitStudentImport handler (+ crypto require)
+  routes/operatorDistricts.js     — register POST .../student-import/commit on the existing operator router
+  scripts/ops/2026-06-14-student-import-commit-local-smoke.js — local behavioral smoke (untracked, owner-throwaway per Followup #94; NOT in PR)
+
+MIGRATIONS RUN
+  migration-048-student-import-audit.sql (M048) — applied to the LOCAL dev DB
+    only, to run the behavioral smoke (it was prod-only before). No prod
+    migration run this session. Schema already merged via PR #296.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor: APPROVED, no defects. 8 queries audited. students
+  + child + audit all bound to the path schoolTenantId/districtId (never a CSV
+  column, never read back from the parent). Explicit child-INSERT check
+  (operator-requested) PASS on both sub-checks: child tenant_id binds to the
+  path school (M021 composite FK) and runs inside the single transaction. Two
+  §5 pre-flights gate every write; external_id existence pre-check tenant-scoped.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: student first_name, last_name, grade, external_id (SIS),
+    iep_flag, sec_504_flag, ell_flag, gender, race/ethnicity category (writes).
+  Logging audit: privacy-reviewer APPROVED (0 CRITICAL/0 WARN). All console.*
+    are counts/codes only; DB-error path logs code/constraint, never message.
+    Response bodies carry ids + row numbers + counts only. Audit student_id is
+    internal students.id from RETURNING id, never external_id. CSV deleted on
+    every exit path. No token, no email.
+  Cross-tenant risk: none identified.
+
+VERIFICATION
+  orphaned-commit gate: SKIPPED — PR #297 not merged yet (state OPEN).
+  merge-sha verification: SKIPPED — PR #297 not merged yet (state OPEN).
+  misattribution check: N/A — no FIXES: block this session (feature, not fixes).
+  node -e require() both route modules — load OK
+  local behavioral smoke (seed throwaway district/school -> commit 2 students
+    -> assert students=2, race/ethnicity=2, audit=2, audit.student_id == students.id
+    set-equality, all path-bound, CSV deleted -> forced mid-loop failure rolls
+    back to 0 -> teardown) — 21/21 assertions passed
+  npm test — N/A (no backend suite; Followup #73)
+  npm run lint — N/A (not configured; Followup #74)
+  security-reviewer: APPROVED WITH NOTES (0 CRITICAL, 2 WARN inherited/banked)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #297 commit OIDs at open time:
+  623e04844c89aa8972d57512603656c66c60b362
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #297 is OPEN, awaiting Kelsey's §2A formal review. This is a §4B + §5
+    PR: gh pr view 297 --json reviewDecision must read APPROVED before merge.
+    Author will not self-merge, apply, or deploy-gate.
+  - Inherited security WARN-1 (not introduced here): no MulterError handler on
+    the import routes; oversized/wrong-MIME upload -> generic 500 + possible
+    lingering temp file. Banked: multer-error-normalizer across all import
+    surfaces in lockstep.
+  - Inherited security WARN-2 (not introduced here): no pre-auth IP limiter on
+    the /api/operator mount; LOW exposure (platformAdminOnly fails closed).
+    Banked: operator-mount IP rate limiter (Followup #122).
+  - INFO: the 409 fast-path keys on constraint name idx_students_tenant_external_id;
+    confirmed against schema.sql/M035 locally. If it ever drifts in prod the
+    collision still rolls back all-or-nothing and falls to a clean 500, no PII.
+
+NEXT SESSION SHOULD
+  Hold for Kelsey's approval on PR #297, then merge (no self-merge). After
+  merge, the natural follow-ons are the banked input-hygiene chores
+  (multer-error-normalizer, student-import-existence-batch) and the shared
+  validator extraction (chore/extract-student-import-row-validator) which the
+  csvImport.js data-echo redaction folds into. M048 still needs to be applied
+  to PROD before the commit route can write (it is currently local-dev only
+  for the smoke).
+================================================================================
