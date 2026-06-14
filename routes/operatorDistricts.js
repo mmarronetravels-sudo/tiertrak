@@ -6,6 +6,7 @@ const { platformAdminOnly } = require('../middleware/platformAdminOnly');
 const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seeds');
 const { csvImportLimiter } = require('../middleware/rateLimiters');
 const { upload: staffImportUpload, validateStaffImport, commitStaffImport } = require('./operatorStaffImport');
+const { upload: studentImportUpload, validateStudentImport } = require('./operatorStudentImport');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -549,6 +550,21 @@ router.post(
   csvImportLimiter,
   staffImportUpload.single('file'),
   commitStaffImport
+);
+
+// Student-import VALIDATE-ONLY (Slice 3). Same router (auth runs once via
+// the router.use(requireAuth, platformAdminOnly) above), same csvImportLimiter
+// + multer chain and same /:districtId/schools/:schoolTenantId path shape as
+// the staff-import routes. A DRY-RUN: parses an uploaded student CSV
+// (demographics + IEP/504/ELL) for ONE school tenant and returns counts +
+// per-row errors. WRITES NOTHING — no INSERT, no audit row. See
+// routes/operatorStudentImport.js for the §4B no-echo + §5 path-bound
+// contract.
+router.post(
+  '/:districtId/schools/:schoolTenantId/student-import/validate',
+  csvImportLimiter,
+  studentImportUpload.single('file'),
+  validateStudentImport
 );
 
 module.exports = router;
