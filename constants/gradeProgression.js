@@ -31,6 +31,7 @@
 // /preview and at /commit-time re-classification.
 
 const GRADE_SEQUENCE = [
+  'N',
   'Pre-K',
   'K',
   '1st',
