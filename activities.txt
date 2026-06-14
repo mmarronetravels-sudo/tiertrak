@@ -28951,3 +28951,107 @@ NEXT SESSION SHOULD
   commit; commit is all-or-nothing). Prioritize the email throttle/retry
   follow-up before any import larger than ~30 rows to avoid Resend 429 shedding.
 ================================================================================
+================================================================================
+SESSION: 2026-06-14T07:38:27-0700
+BRANCH:  feat/student-import-validate
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/294
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built Slice 3: operator-console student-import VALIDATE-ONLY. A dry-run
+  endpoint that parses + validates an uploaded student CSV (demographics +
+  IEP/504/ELL) for one school tenant and returns counts + per-row errors with
+  ZERO writes. Mirrors the proven staff-import validate pattern (path-bound
+  tenant, §4B no-echo). PR #294 was human-approved (not by the author) and
+  merged to main.
+
+FILES TOUCHED
+  routes/operatorStudentImport.js — new: pure parseAndValidateStudentRows +
+    validateStudentImport handler (validate-only, path-bound §5, §4B no-echo)
+  routes/operatorDistricts.js — register POST /:districtId/schools/
+    :schoolTenantId/student-import/validate on the existing operator router
+    (auth runs once via router.use); csvImportLimiter -> multer -> handler
+  scripts/ops/2026-06-14-student-import-validate-smoke.js — new: synthetic
+    local behavioral smoke (not deployed)
+
+MIGRATIONS RUN
+  none — validate-only writes nothing; no schema change. A student_import_audit
+  table is a future migration-first concern for a later commit slice, not this PR.
+
+TENANT ISOLATION REVIEW
+  §5 path-bound binding: districtId + schoolTenantId from the URL (int32
+  validated); two read-only pre-flights (district exists; school exists AND
+  type='school' AND district_id===path districtId). The only PII-bearing read
+  is the per-row existence check, scoped WHERE external_id=$1 AND tenant_id=$2
+  to the bound school tenant. resolveAccessibleTenantIds deliberately not used
+  (operators hold zero user_school_access rows). tenant-isolation-auditor:
+  APPROVED, 0 CRITICAL / 0 WARN.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: student first_name, last_name, grade, external_id (SIS
+    ID), and special-category M042 demographics (iep_flag, sec_504_flag,
+    ell_flag, gender, race_ethnicity) — read from the CSV at parse time only.
+  Logging audit: verified no PII in logs — counts/codes only (error.code,
+    never error.message). No INSERT/UPDATE anywhere; nothing persisted.
+  Cross-tenant risk: none identified. Per-row errors carry { row, error } only;
+    name / SIS ID / grade / demographic values never echoed (stricter than the
+    csvImport.js commit importer). CSV deleted on every exit path. CSV smoke
+    used synthetic data only. privacy-reviewer: APPROVED, 0 CRITICAL / 0 WARN.
+
+VERIFICATION
+  npm test — n/a (root script is a placeholder; no backend test suite, followup #73).
+  npm run lint — n/a this session (no lint script configured, followup #74; only
+    backend files + an ops script changed, no frontend files touched).
+  node --check on all 3 changed files — syntax OK; both route modules require()
+    cleanly under NODE_ENV=development.
+  Behavioral smoke — NODE_ENV=development node
+    scripts/ops/2026-06-14-student-import-validate-smoke.js — 17/17 PASS
+    (all-valid summary; mixed-error rows row+reason only; §4B no-echo of SIS ID
+    + student names asserted; wrong-district school -> 404; writes-nothing
+    proof: students count unchanged; CSV deleted every path).
+  Reviewer triad: privacy APPROVED, tenant-isolation APPROVED, security
+    APPROVED WITH NOTES (0 CRITICAL / 0 HIGH; 2 MEDIUM pre-existing cross-surface).
+  §2A human review: gh pr view 294 --json reviewDecision -> APPROVED by a human
+    other than the author; merged to main.
+  orphaned-commit gate: PASS — feat/student-import-validate head
+    2f42d953dcd1fc5f06c208527860b287d555ecb5 is an ancestor of origin/main
+    (base=main). Symbol validateStudentImport confirmed present on origin/main.
+  merge-sha verification: MATCH — merge commit
+    8af443b9073597e601bf0ff62f3e6f6945e491d1 second-parent equals the feature
+    tip 2f42d953dcd1fc5f06c208527860b287d555ecb5.
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #294 commit OIDs at merge time:
+  b741d1e1bd87e2f7ad70c08a90f5a4603ac8862f
+  2f42d953dcd1fc5f06c208527860b287d555ecb5
+
+OPEN ITEMS / FOLLOW-UPS
+  - chore/multer-error-normalizer (security MEDIUM-1, pre-existing cross-surface):
+    no MulterError handler anywhere in the repo; oversized/non-CSV uploads bypass
+    the handler's fixed-string 500 hygiene. Add a shared MulterError -> 4xx
+    normalizer across all three import surfaces in lockstep.
+  - perf/student-import-existence-batch (security MEDIUM-2, pre-existing shape):
+    the per-row existence check is up to 1000 sequential SELECTs. Batch into one
+    WHERE tenant_id=$1 AND external_id = ANY($2) and diff the set; pair with the
+    staff-import equivalent. Sibling of the studentGradeRollup UNNEST item.
+  - chore/extract-student-import-row-validator (privacy INFO-2, planned): per-row
+    student rules are duplicated with csvImport.js. Extract a shared pure
+    validator (mirrors staff PR #288), preserving the operator surface's stricter
+    §4B no-echo.
+  - sec/csvImport-students-data-echo-redaction (NEW, retro-tighten): the
+    school-admin commit importer routes/csvImport.js echoes data:normalizedRow
+    (names + demographics) and external_id in its required-field / tier / area /
+    risk / in-file-dup errors. Tighten to row+reason only to match the operator
+    surface's §4B no-echo. Natural to fold into the validator-extraction chore
+    above, or land standalone.
+
+NEXT SESSION SHOULD
+  Slice 4 is the student-import COMMIT counterpart. It is migration-first: land
+  a student_import_audit table on its own migration/ branch BEFORE the commit
+  feature (mirror the staff M047 -> commit sequence). Reuse the validate
+  pre-flights + the pure validator; all-or-nothing single transaction; CSV
+  deleted on every path; setup of student records carries no credential email
+  (students are not user accounts). Resolve the four banked follow-ups when
+  convenient; the data-echo redaction + validator extraction pair naturally.
+================================================================================
