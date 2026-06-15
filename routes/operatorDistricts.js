@@ -498,6 +498,19 @@ router.get('/', async (req, res) => {
 //
 // Explicit projection excludes tenants.settings (opaque JSONB config the
 // console does not need) and tenants.type (always 'school' here).
+//
+// student_count / staff_count are per-school aggregates, each scoped
+// STRICTLY to the outer school's tenant id via a correlated subquery
+// (s.tenant_id = t.id / u.tenant_id = t.id). They surface only COUNT(*)
+// integers — never row-level student/staff PII (§4B). Because they are
+// correlated on the school id (not the district), a school in this
+// district can never count another district's rows (§5). Counts are
+// expressed as LEFT-style scalar subqueries, so a school with zero
+// students or staff still returns its tenant row with a 0 — it is never
+// dropped from the list. student_count is active-only (matches the
+// dashboard convention in routes/students.js: archived = FALSE/NULL);
+// staff_count is all users in the tenant (district_admins carry
+// tenant_id = NULL and are correctly excluded).
 router.get('/:districtId/schools', async (req, res) => {
   const districtId = parseDistrictId(req, res);
   if (districtId === null) return;
@@ -512,10 +525,20 @@ router.get('/:districtId/schools', async (req, res) => {
     }
 
     const result = await pool.query(
-      `SELECT id, name, subdomain, district_id, created_at
-       FROM tenants
-       WHERE district_id = $1
-       ORDER BY name`,
+      `SELECT
+         t.id,
+         t.name,
+         t.subdomain,
+         t.district_id,
+         t.created_at,
+         (SELECT COUNT(*) FROM students s
+            WHERE s.tenant_id = t.id
+              AND (s.archived = FALSE OR s.archived IS NULL)) AS student_count,
+         (SELECT COUNT(*) FROM users u
+            WHERE u.tenant_id = t.id) AS staff_count
+       FROM tenants t
+       WHERE t.district_id = $1
+       ORDER BY t.name`,
       [districtId]
     );
     res.json(result.rows);

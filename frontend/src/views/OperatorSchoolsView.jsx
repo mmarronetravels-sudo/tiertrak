@@ -297,6 +297,8 @@ export default function OperatorSchoolsView({ district, onBack }) {
                   <th className="text-left font-medium px-5 py-3">Subdomain</th>
                   <th className="text-left font-medium px-5 py-3">District ID</th>
                   <th className="text-left font-medium px-5 py-3">School tenant ID</th>
+                  <th className="text-left font-medium px-5 py-3">Students</th>
+                  <th className="text-left font-medium px-5 py-3">Staff</th>
                   <th className="text-left font-medium px-5 py-3">Created</th>
                 </tr>
               </thead>
@@ -310,6 +312,8 @@ export default function OperatorSchoolsView({ district, onBack }) {
                     <td className="px-5 py-3 text-slate-600">{s.subdomain}</td>
                     <td className="px-5 py-3 text-slate-600 font-mono">{s.district_id}</td>
                     <td className="px-5 py-3 text-slate-600 font-mono">{s.id}</td>
+                    <td className="px-5 py-3 text-slate-600 font-mono">{s.student_count ?? 0}</td>
+                    <td className="px-5 py-3 text-slate-600 font-mono">{s.staff_count ?? 0}</td>
                     <td className="px-5 py-3 text-slate-600">
                       {s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}
                     </td>
