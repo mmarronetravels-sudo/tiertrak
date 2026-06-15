@@ -29138,3 +29138,72 @@ NEXT SESSION SHOULD
   to PROD before the commit route can write (it is currently local-dev only
   for the smoke).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-15T08:09:41-0700
+BRANCH:  feat/operator-console-show-ids
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/300
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Operator console: display each school's district ID and school tenant ID in
+  the schools table (OperatorSchoolsView), where they were fetched but not
+  shown. Read-only audit first confirmed both IDs already arrive in the
+  GET /api/operator/districts/:districtId/schools payload, so the change was
+  frontend-only — no API, query, or schema work.
+
+FILES TOUCHED
+  frontend/src/views/OperatorSchoolsView.jsx — add "District ID" + "School
+    tenant ID" header cells and two font-mono body cells (s.district_id, s.id)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB changes. Display reuses values already returned by the existing
+  district-scoped schools query (routes/operatorDistricts.js GET schools,
+  WHERE district_id = $1). No new query, no widening of scope. View is gated
+  by requireAuth + platformAdminOnly (server env-allowlist is the trust
+  boundary).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — district_id and school tenant id are org-level
+    integers, not §4B PII.
+  Logging audit: no logging added or changed; no PII rendered.
+  Cross-tenant risk: none identified — IDs shown only to an authenticated
+    platform operator within the already-authorized districts/schools view.
+
+VERIFICATION
+  eslint src/views/OperatorSchoolsView.jsx — clean (exit 0)
+  npm run lint (frontend, repo-wide) — 92 pre-existing problems, NONE in the
+    touched file, none introduced here (Followup #74 debt)
+  npm test — N/A (no suite; Followup #73 / PR-D FE-test-scaffold gap)
+  orphaned-commit gate: PASS (squash analog) — head SHA not an ancestor of
+    origin/main (squash rewrote it), but mergeCommit
+    6331efb51081d6a52050d2846d27f8d17f985bb6 IS on origin/main; base=main;
+    content grep on origin/main confirms columns landed.
+  merge-sha verification: SKIPPED — squash merge for PR #300 (parentCount=1;
+    feature tip not preserved on main by design)
+  Prod live-verify (in lieu of local smoke): deployed operator console renders
+    both the District ID and School tenant ID columns correctly, confirmed
+    against 1 real district / 1 real school this session.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #300 commit OIDs at merge time:
+  6fa90894d512a891a95bf31299b511b802f62cc9
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup #74 (frontend lint debt): eslint . carries 92 pre-existing
+    problems across App.jsx and modals; this change is clean but the repo gate
+    is effectively off until that debt is cleared.
+  - Followup #73 / PR-D FE-test-scaffold: no automated FE test could cover this
+    presentational change; relied on lint + prod live-verify only.
+
+NEXT SESSION SHOULD
+  Feature is verified live in prod; no follow-up needed on it. Pick up the
+  banked input-hygiene chores (multer-error-normalizer,
+  student-import-existence-batch) or the FE lint/test debt cluster (#73/#74)
+  if prioritized.
+================================================================================
