@@ -29207,3 +29207,98 @@ NEXT SESSION SHOULD
   student-import-existence-batch) or the FE lint/test debt cluster (#73/#74)
   if prioritized.
 ================================================================================
+SESSION: 2026-06-15T09:00:09-0700
+BRANCH:  feat/operator-console-school-counts
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/302
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Operator console: add per-school student and staff counts to the schools
+  table (OperatorSchoolsView), next to the District ID / School tenant ID
+  columns. Read-only audit first; chose to extend the existing district-scoped
+  GET /api/operator/districts/:districtId/schools query with two
+  tenant-correlated COUNT aggregates rather than add a new endpoint.
+
+FILES TOUCHED
+  routes/operatorDistricts.js — extend GET /:districtId/schools SELECT with
+    student_count (active-only: archived = FALSE OR archived IS NULL) and
+    staff_count (all users in the school tenant), each a correlated subquery
+    scoped on tenant_id = t.id; + scoping comment
+  frontend/src/views/OperatorSchoolsView.jsx — add "Students" and "Staff"
+    header cells and two font-mono body cells (s.student_count ?? 0,
+    s.staff_count ?? 0)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  One modified query. Outer query scoped WHERE t.district_id = $1 (path-derived,
+  parseDistrictId-validated). Both new aggregates are correlated scalar
+  subqueries bound on the outer school's id (s.tenant_id = t.id /
+  u.tenant_id = t.id), so a school can only count its own rows — no cross-school
+  or cross-district pathway. No new tables/columns; no new index needed
+  (students covered by idx_students_tenant_archived; users by the leading
+  column of UNIQUE(tenant_id, email)). tenant-isolation-auditor: APPROVED
+  (0 CRITICAL, 0 WARN).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — the two new fields are COUNT(*) integers only
+    (no names, IDs, grades, emails); aggregate counts are non-PII per the
+    project privacy doc.
+  Logging audit: catch block unchanged (tag + err.message); no PII, no counts
+    in any log line or error body (static literals only).
+  Cross-tenant risk: none identified — counts correlated strictly on the school
+    tenant id; operator-only surface (requireAuth + platformAdminOnly).
+  privacy-reviewer: APPROVED WITH NOTES (0 CRITICAL). One doc-only WARN —
+    record the two new count fields in docs/ai-context/PRIVACY_REVIEW.md —
+    DEFERRED to banked Followup #120 (PRIVACY_REVIEW doc bundle); not done in
+    PR #302's scope.
+  security-reviewer: APPROVED (0 CRITICAL, 0 WARN) — SQL stays parameterized,
+    no new untrusted input, operator auth gate intact.
+
+VERIFICATION
+  eslint src/views/OperatorSchoolsView.jsx — clean (exit 0)
+  npm run lint (frontend, repo-wide) — 92 pre-existing problems, NONE in the
+    touched file, none introduced here (Followup #74 debt)
+  npm test — N/A (no backend suite, Followup #73; no FE suite, PR-D scaffold gap)
+  Local smoke (read-only, local dev DB): zero-count school still appears showing
+    0 — confirmed a school with zero students returned 0, and two schools with
+    zero students AND zero staff still returned rows showing 0 / 0 (counts are
+    scalar subqueries in SELECT, not JOINs).
+  Prod live-verify: per-school counts render correctly in the deployed operator
+    console, confirmed against 1 tenant this session (no school name, no count
+    values recorded here per §4B).
+  orphaned-commit gate: PASS — feat/operator-console-school-counts head
+    87b3a0c5f52489c770d629b9c899431d963a8602 is an ancestor of origin/main
+    (base=main).
+  merge-sha verification: MATCH — PR #302 true merge commit
+    b86040b4d80f2b598915f977d19431fde68a15fc second-parent equals feature tip
+    87b3a0c5f52489c770d629b9c899431d963a8602.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #302 commit OIDs at merge time:
+  87b3a0c5f52489c770d629b9c899431d963a8602
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup #120 (PRIVACY_REVIEW doc bundle): record GET /:districtId/schools
+    per-school student_count (active-only) + staff_count (tenant users) as
+    COUNT(*) aggregates — no row-level PII. Privacy WARN from PR #302, deferred
+    here by design.
+  - §2A attribution (factual note): PR #302 was authored by mmarronetravels-sudo
+    and reviewed + merged by Kelsey (ScholarPath Systems) via the shared org
+    account (scholapathsystems). Kelsey is the designated non-author reviewer
+    and the shared org account is used by design — §2A is satisfied in
+    substance. No action item.
+  - Convergent reviewer INFO (3 reviewers): staff_count counts all users in the
+    tenant (district_admins excluded only via tenant_id = NULL). Documented
+    intent; revisit if "staff" later needs a role/active filter.
+  - Followup #74 (frontend lint debt) / Followup #73 (no test suites) — unchanged.
+
+NEXT SESSION SHOULD
+  Feature merged to main (PR #302). No follow-up needed on the counts
+  themselves. Pick up the banked input-hygiene chores
+  (multer-error-normalizer, student-import-existence-batch) or fold the
+  PRIVACY_REVIEW.md count-fields note into the #120 doc bundle if prioritized.
+================================================================================
