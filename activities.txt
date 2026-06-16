@@ -29302,3 +29302,87 @@ NEXT SESSION SHOULD
   (multer-error-normalizer, student-import-existence-batch) or fold the
   PRIVACY_REVIEW.md count-fields note into the #120 doc bundle if prioritized.
 ================================================================================
+================================================================================
+SESSION: 2026-06-16T07:16:50-0700
+BRANCH:  chore/activities-log-2026-06-16-tenant-account-remediation
+DISPOSITION: planning-only; no tracked-code change; untracked ops scripts authored
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Read-only diagnosis + remediation planning for a duplicate-tenant / duplicate-
+  account mix-up at one real school. Two tenants exist for the same school: a
+  legacy standalone tenant (id 10, district_id NULL, 270 synthetic sandbox
+  students) and the real tenant (id 19, district_id 10, 330 real students). One
+  staff user holds two accounts under one email — user 54 (district_admin, home
+  tenant 10) and user 103 (counselor, home tenant 19). Login resolves by email
+  only, so the user landed on 54 and saw the synthetic roster. Scope: fix only
+  this one user; do not touch tenant 10's students or any other account.
+
+FILES TOUCHED (all untracked, scripts/ops/, no git add)
+  2026-06-16-duplicate-tenant-diagnosis.sql — read-only tenant/student/account-
+    scope diagnosis (the initial duplicate-tenant audit)
+  2026-06-16-dup-account-audit.sql — read-only: state of users 54/103,
+    user_school_access rows, dynamic FK-reference scan for user 54
+  2026-06-16-dup-account-remediation.sql — txn (manual COMMIT): email-rename
+    neutralize on 54 + role->school_admin on 103; tight id+email+tenant_id
+    guards; PRE/POST verification; login email is a runtime \set fill-in
+  2026-06-16-dup-account-dryrun-dev.sql — dev-only fixture dry-run, single
+    BEGIN; ... ROLLBACK; (ran against localhost dev DB; PASSED)
+  2026-06-16-dup-account-runbook.md — owner-run prod run-book (review gate →
+    conninfo proof → audit → remediation → COMMIT/ROLLBACK checklist →
+    live-verify → rollback-after-commit)
+  No tracked file changed this session.
+
+MIGRATIONS RUN
+  none
+
+DEV DRY-RUN RESULT
+  Ran 2026-06-16-dup-account-dryrun-dev.sql against localhost:5432/tiertrak
+  (conninfo confirmed localhost, not Render) inside BEGIN; ... ROLLBACK;.
+  Fixture mirrored the real shape (scratch district + 2 tenants + 2 users
+  sharing one email). Both guarded UPDATEs printed UPDATE 1; post-rename the
+  fixture email resolved to exactly one row (the school_admin); wrong-tenant
+  guard printed UPDATE 0; post-rollback the fixture email matched 0 rows.
+  Dev left unmutated. One schema delta surfaced: dev districts requires
+  auth_mode NOT NULL (M034) — added to the fixture only; remediation script
+  inserts no district, so unaffected.
+
+TENANT ISOLATION REVIEW (Section 5)
+  No code path changed. Remediation is two single-row UPDATEs on users, each
+  guarded by id AND email AND tenant_id, confirmed single-row in dev. User 103
+  is legacy tenant-scoped (district_id IS NULL) so a role change alone is
+  sufficient — no user_school_access write. No cross-tenant/cross-district read
+  or write introduced.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched in artifacts: the affected user's login email is the
+  rename target, supplied only as a runtime \set fill-in — never written to
+  disk in any committed surface. Diagnosis reports counts and internal IDs only
+  (no student/staff names, no emails in this log or the branch name). The
+  neutralized sentinel email is non-routable and carries no real PII. No PII
+  logged.
+
+OPEN ITEMS / FOLLOW-UPS
+  - PROD REMEDIATION NOT YET RUN. Sequence is gated in the run-book:
+    Section 2A review of the remediation script by the designated non-author
+    reviewer → connect to prod + prove conninfo is the Render host → run audit →
+    confirm (iii) shows non-zero FK refs to user 54 (DELETE unsafe, rename
+    correct) and (ii) shows user 103 has no user_school_access rows → fill in
+    the login email → run remediation → COMMIT only if both UPDATE 1 + email
+    resolves to exactly one row (id 103).
+  - Google-login rebind unproven in prod: if user 54 carries google_id, the
+    post-fix Google path rebinds to 103 by email match — flagged as the
+    live-verify focus (run-book step 3 has_google note + step 6).
+  - Standing auth-logic follow-up: login resolves by email with no
+    ORDER BY/LIMIT and no active-account filter — latent non-deterministic-login
+    risk for any future duplicate-email pair. Hardening routes/auth.js is a
+    tracked-code change needing its own sec/ branch + review (Section 8). NOT
+    done here.
+  - Followup #94 (scripts/ops/ -> .gitignore): 5 more untracked ops files added
+    this session; the gitignore decision still stands open (left as a standing
+    follow-up to keep this session tracked-change-free).
+
+NEXT SESSION SHOULD
+  Either drive the prod remediation through the run-book gates (after the
+  Section 2A review), or, if deferred, leave the five ops scripts in place
+  untouched. No tracked code is pending from this session.
+================================================================================
