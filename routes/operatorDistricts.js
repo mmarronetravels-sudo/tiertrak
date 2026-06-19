@@ -7,6 +7,7 @@ const { seedDisciplineVocabsForTenant } = require('../data/discipline-vocab-seed
 const { csvImportLimiter } = require('../middleware/rateLimiters');
 const { upload: staffImportUpload, validateStaffImport, commitStaffImport } = require('./operatorStaffImport');
 const { upload: studentImportUpload, validateStudentImport, commitStudentImport } = require('./operatorStudentImport');
+const { upload: screenerImportUpload, validateScreenerImport, commitScreenerImport } = require('./operatorScreenerImport');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -602,6 +603,33 @@ router.post(
   csvImportLimiter,
   studentImportUpload.single('file'),
   commitStudentImport
+);
+
+// Screener-import VALIDATE-ONLY (H-11 Slice C). Same router (auth runs once via
+// the router.use(requireAuth, platformAdminOnly) above), same csvImportLimiter
+// + multer chain and same /:districtId/schools/:schoolTenantId path shape as
+// the student-import routes. A DRY-RUN: parses an uploaded STAR screener CSV
+// for ONE school tenant and returns counts + per-row issues by row number.
+// WRITES NOTHING. Tenant is bound STRUCTURALLY from the path (§5). See
+// routes/operatorScreenerImport.js for the §4B/§5 contract.
+router.post(
+  '/:districtId/schools/:schoolTenantId/screener-import/validate',
+  csvImportLimiter,
+  screenerImportUpload.single('file'),
+  validateScreenerImport
+);
+
+// Screener-import COMMIT (H-11 Slice C). Same router (auth runs once), same
+// csvImportLimiter + multer chain and same path shape. The WRITE counterpart:
+// upserts screener_results for ONE school tenant. Single transaction;
+// all-or-nothing on row errors; MATCHED-ONLY persistence (never a
+// student_id = NULL row). Provenance is uploaded_by/uploaded_at only — no audit
+// table, no actor GUC. See routes/operatorScreenerImport.js commitScreenerImport.
+router.post(
+  '/:districtId/schools/:schoolTenantId/screener-import/commit',
+  csvImportLimiter,
+  screenerImportUpload.single('file'),
+  commitScreenerImport
 );
 
 module.exports = router;
