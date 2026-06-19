@@ -28,9 +28,11 @@ Add a bulk upload for screener/assessment results that mirrors the operator stud
 **Student matching (Q2) — hard rule.** Match precedence:
 1. If the row carries an `external_id`, match on `external_id` within the caller's tenant.
 2. If no `external_id`, fall back to name match within the tenant.
-3. **Any ambiguous match (more than one student hit) lands `student_id = NULL`** and is reported as a *count* in the dry-run summary. Never guess. Never surface student names in the summary, logs, error bodies, or URLs (§4B).
+3. **Any ambiguous match (more than one student hit) lands `student_id = NULL`** and is reported **by row number, never by name** in the dry-run summary. Never guess. Never surface student names in the summary, logs, error bodies, or URLs (§4B).
 
 This directly closes the silent mis-attribution hole created by name-only matching plus null `external_id`s. There is no existing student-dedup tooling to lean on — this logic is new.
+
+**Legacy endpoint inherits this matching.** Because both paths share one helper, the existing JSON `POST /api/screener-results/upload` will switch from name-only to external_id-first + ambiguous=NULL matching too. Its **sole caller is the frontend `ScreenerUploadModal`** (verified repo-wide — no backend scripts or external integrations post to it). The behavior change is flagged in **line 1 of the build PR's diff summary** and in the PR's Privacy-impact section so the §2A reviewer sees it explicitly.
 
 **Surface (Q4).** **Both** — school-admin self-serve **and** the operator console. Both paths share the row-processing helper. The school-admin path needs especially careful tenant scoping (school staff must not be able to aim a file at another tenant); both paths reuse `resolveAndBindTargetTenant` → `resolveAccessibleTenantIds` and derive `tenant_id` server-side.
 
@@ -38,10 +40,20 @@ This directly closes the silent mis-attribution hole created by name-only matchi
 
 ## 4. Validate → commit lifecycle (mirror the operator importer)
 
-- **`/validate`** — parse the file, no DB writes. Return counts only: total rows, valid, validation errors (with row numbers + error reason, **no PII**), matched / unmatched / ambiguous student counts, rows that already exist (upsert-conflict preview), and the single `assessment_type` detected. Read-only existence checks only.
-- **`/commit`** — re-parse; **all-or-nothing**: any row error → 422 reject before writing. Single transaction; set the audit actor (`app.actor_user_id`); upsert each row; write an audit record per row; ROLLBACK on any DB error; 409 on a 23505 race.
+- **`/validate`** — parse the file, no DB writes. Return counts only: total rows, valid, validation errors (with row numbers + error reason, **no PII**), matched / unmatched / ambiguous student counts (ambiguous and unmatched listed **by row number, never by name**), rows that already exist (upsert-conflict preview), and the single `assessment_type` detected. Read-only existence checks only.
+- **`/commit`** — re-parse; **all-or-nothing**: any row error → 422 reject before writing. Single transaction; upsert each row with provenance via `uploaded_by` / `uploaded_at` (set server-side from the JWT caller, refreshed on conflict); ROLLBACK on any DB error; 409 on a 23505 race. **No separate audit table in Phase 1** (see §4A).
 - **File cleanup (§4B):** `cleanup()` called on **every** exit path via `finally` — validation error, not-found, row-cap, success, and catch. Mirror the operator importer, **not** the looser `csvImport.js`.
-- **Limits:** reuse the 5/min/user rate limiter and a row cap (start at 1000, confirm at build).
+- **Limits:** reuse the 5/min/user rate limiter and a **1000-row cap on both `/validate` and `/commit`, rejected before any parsing or DB work** (mirrors the operator importer's pre-parse cap; final number confirmable at build).
+
+## 4A. Audit & provenance (Phase 1 decision)
+
+Unlike the student importer (which writes a `student_import_audit` row per record under an `import_batch_id` and sets the `app.actor_user_id` GUC), **screener import does not create a `screener_import_audit` table in Phase 1.** `screener_results` already carries `uploaded_by` (FK → `users`, set from the JWT caller) and `uploaded_at` (refreshed on `ON CONFLICT DO UPDATE`), which is sufficient provenance for who-last-touched-each-row. This keeps **migration 049 optional / route-layer-only** rather than mandatory. The `app.actor_user_id` GUC plumbing is **not** carried over — it exists in the student importer only to feed that audit table's trigger, and there is no screener equivalent.
+
+**Limitations (banked as a near-term follow-up):**
+- No `import_batch_id` — individual upserts cannot be grouped back to the upload event that produced them.
+- Upserts **overwrite** `uploaded_by` / `uploaded_at`; there is **no history** of prior uploads for a row.
+
+If batch-level traceability or overwrite history is later required, that is a deliberate `screener_import_audit` table → **migration 049 becomes non-optional and is a §8 ask-first item.** Not in Phase 1.
 
 ## 5. Rule obligations (carry into the build PR)
 
@@ -54,8 +66,8 @@ This directly closes the silent mis-attribution hole created by name-only matchi
 ## 6. Open items to confirm at build time
 
 - Exact `expected_columns` contract per screener type (STAR is seeded; others as needed).
-- Whether a migration (049) is needed (e.g. an FK from `assessment_type` → `screener_types.name`, or indexes for the match lookups) vs. route-layer validation only.
-- Final row cap and file-size limit.
+- Migration 049 is **optional** (route-layer validation is the default per §4A — no audit table). Only candidates if needed: a supporting index for the name-fallback lookup, or an FK `assessment_type` → `screener_types.name`. Confirm at build; if added, lands on its own `migration/` branch.
+- Final row cap (default **1000**) and file-size limit (default **5 MB**, mirroring the operator importer).
 - Whether the operator and school-admin paths share one route module with a guard, or two thin routes over the shared helper.
 
 ## 7. First build-session prompt (when ready — NOT yet)
