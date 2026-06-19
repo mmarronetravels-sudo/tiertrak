@@ -7,13 +7,67 @@ const {
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { upsertScreenerRow } = require('./screenerImportCore');
+const { csvImportLimiter } = require('../middleware/rateLimiters');
+const multer = require('multer');
+const fs = require('fs');
+const {
+  upsertScreenerRow,
+  resolveStudentMatch,
+  parseAndValidateScreenerFile,
+  SCREENER_TYPE_CONTRACTS,
+  SCREENER_IMPORT_ROW_CAP_MESSAGE
+} = require('./screenerImportCore');
 require('dotenv').config();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
+
+// multer config for the file validate/commit routes — type + size validated
+// before the handler runs. Mirrors routes/operatorStudentImport.js (5MB,
+// CSV-only, disk dest). (MulterError normalization is the shared banked
+// follow-up #multer-error-normalizer; same gap as the operator importers.)
+const screenerUpload = multer({
+  dest: 'uploads/',
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only CSV files are allowed'), false);
+    }
+  },
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+
+// Normalize the multipart target_tenant_id: multer delivers form fields as
+// strings, but resolveAndBindTargetTenant expects a number or absent. Empty →
+// absent (falls back to req.user.tenant_id); numeric string → number; anything
+// else is left as-is so isPositiveInt() rejects it with a 400.
+function normalizeTargetTenantId(req) {
+  if (!req.body) return;
+  const v = req.body.target_tenant_id;
+  if (v == null || String(v).trim() === '') { delete req.body.target_tenant_id; return; }
+  const n = Number(v);
+  req.body.target_tenant_id = Number.isInteger(n) ? n : v;
+}
+
+// Validate the form-field metadata shared by the validate + commit routes.
+// assessment_type must be a known per-type contract; subject/period/year are
+// required non-empty. Static strings only (§4B). Returns { meta } or { error }.
+function validateScreenerImportMeta(req) {
+  const assessmentType = (req.body.assessmentType || '').trim();
+  const subject = (req.body.subject || '').trim();
+  const screeningPeriod = (req.body.screeningPeriod || '').trim();
+  const schoolYear = (req.body.schoolYear || '').trim();
+  if (!SCREENER_TYPE_CONTRACTS[assessmentType]) {
+    return { error: { status: 400, body: { error: 'Unknown or missing assessment type.' } } };
+  }
+  if (!subject || !screeningPeriod || !schoolYear) {
+    return { error: { status: 400, body: { error: 'Missing required fields: subject, screeningPeriod, schoolYear.' } } };
+  }
+  return { meta: { assessmentType, subject, screeningPeriod, schoolYear } };
+}
 
 // ============================================================
 // Tenant-binding doctrine (POST handlers in this file)
@@ -157,29 +211,26 @@ router.post('/upload', requireAuth, async (req, res) => {
     const savedIds = [];
 
     for (const row of rows) {
-      // Tenant-bound student resolution: NEVER cross-tenant. A first/last
-      // name collision against another tenant's student returns no match
-      // here, so the row lands as unmatched (student_id = NULL) rather
-      // than mis-attributed.
-      const studentResult = await pool.query(
-        `SELECT id FROM students
-         WHERE tenant_id = $1
-           AND LOWER(first_name) = LOWER($2)
-           AND LOWER(last_name) = LOWER($3)`,
-        [tenantId, row.firstName, row.lastName]
-      );
-      const studentId = studentResult.rows.length > 0 ? studentResult.rows[0].id : null;
-      if (studentId) { matched++; }
-      else { unmatched.push(row.firstName + ' ' + row.lastName); }
-
+      // Tenant-bound matching via the shared helper (Slice B). BEHAVIOR
+      // CHANGE: matching is now external_id-first then name-fallback; an
+      // ambiguous name (>1 hit) no longer silently takes the first match. And
+      // ONLY matched rows are persisted — unmatched/ambiguous rows are not
+      // written, so no student_id = NULL row is created and the NULLS NOT
+      // DISTINCT collapse cannot occur (symmetry with the file /commit, §3A).
+      // This JSON path's sole caller is the FE modal (no external_id sent →
+      // name-only); unmatched names are still returned for that UI.
+      const { studentId, matchStatus } = await resolveStudentMatch(pool, tenantId, row);
+      if (matchStatus !== 'matched') {
+        unmatched.push(row.firstName + ' ' + row.lastName);
+        continue;
+      }
       // Field normalization + upsert live in the shared core (Slice A, H-11)
-      // so the upcoming file validate/commit paths reuse identical logic.
-      // Matching stays name-only here; Slice B introduces external_id-first
-      // matching in the shared helper.
+      // so the file validate/commit paths reuse identical logic.
       const savedId = await upsertScreenerRow(pool, {
         row, tenantId, studentId, screeningPeriod, schoolYear, uploadedBy
       });
       savedIds.push(savedId);
+      matched++;
     }
 
     res.json({
@@ -192,6 +243,195 @@ router.post('/upload', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[screener POST /upload]', err.message);
     res.status(500).json({ error: 'Failed to upload screener results' });
+  }
+});
+
+// POST /api/screener-results/upload/validate — file dry-run (Slice B, H-11).
+// Parses an uploaded per-type screener CSV and returns a COUNTS-ONLY summary.
+// WRITES NOTHING (read-only matching + upsert-conflict preview only). Mirrors
+// the operator student-importer's validate surface.
+//
+// §4B: per-row errors carry { row, error } with ROW NUMBERS ONLY — never a
+// student name or other PII. The uploaded file is deleted on EVERY exit path
+// (cleanup() in finally). §5: tenant_id is server-derived via
+// resolveAndBindTargetTenant → resolveAccessibleTenantIds (403 before any
+// work); the student match is tenant-bound. Metadata (assessment_type,
+// subject, period, year) comes from multipart form fields.
+router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.single('file'), async (req, res) => {
+  const cleanup = () => { if (req.file && req.file.path) fs.unlink(req.file.path, () => {}); };
+  try {
+    if (req.user.role === 'parent') return res.status(403).json({ error: 'Not authorized' });
+
+    normalizeTargetTenantId(req);
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
+
+    const { meta, error: metaError } = validateScreenerImportMeta(req);
+    if (metaError) return res.status(metaError.error.status).json(metaError.error.body);
+
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    const { totalRows, rows, validationErrors, capExceeded, headerError } =
+      await parseAndValidateScreenerFile(req.file.path, { assessmentType: meta.assessmentType });
+    if (capExceeded) return res.status(400).json({ error: SCREENER_IMPORT_ROW_CAP_MESSAGE });
+    if (headerError) return res.status(400).json({ error: headerError });
+
+    // Read-only matching. Only MATCHED rows will be persisted on commit;
+    // unmatched/ambiguous rows are reported by row number (§3A unlinked-rows
+    // policy) and skipped from the upsert-conflict preview.
+    let matched = 0, alreadyExists = 0;
+    const unmatchedRows = [];
+    const ambiguousRows = [];
+    for (const row of rows) {
+      const { studentId, matchStatus } = await resolveStudentMatch(pool, tenantId, row);
+      if (matchStatus !== 'matched') {
+        if (matchStatus === 'ambiguous') ambiguousRows.push(row.rowNumber);
+        else unmatchedRows.push(row.rowNumber);
+        continue;
+      }
+      matched++;
+      // upsert-conflict preview (matched rows only — the only ones written).
+      const existing = await pool.query(
+        `SELECT 1 FROM screener_results
+         WHERE tenant_id = $1 AND student_id = $2
+           AND assessment_type = $3 AND subject = $4
+           AND screening_period = $5 AND school_year = $6
+         LIMIT 1`,
+        [tenantId, studentId, meta.assessmentType, meta.subject, meta.screeningPeriod, meta.schoolYear]
+      );
+      if (existing.rows.length > 0) alreadyExists++;
+    }
+
+    // Counts-only logging — no PII, no row data.
+    console.log('[screener:import-validate] tenant:', tenantId, 'type:', meta.assessmentType,
+      'totalRows:', totalRows, 'valid:', rows.length, 'matched:', matched,
+      'unmatched:', unmatchedRows.length, 'ambiguous:', ambiguousRows.length,
+      'validationErrors:', validationErrors.length, 'alreadyExists:', alreadyExists);
+
+    res.json({
+      validateOnly: true,
+      assessmentType: meta.assessmentType,
+      summary: {
+        totalRows,
+        valid: rows.length,
+        validationErrors: validationErrors.length,
+        matched,
+        unmatched: unmatchedRows.length,
+        ambiguous: ambiguousRows.length,
+        alreadyExists
+      },
+      errors: validationErrors, // [{ row, error }] — row numbers only (§4B)
+      unmatchedRows,            // row numbers only — will NOT be persisted (§4B)
+      ambiguousRows             // row numbers only — will NOT be persisted (§4B)
+    });
+  } catch (err) {
+    console.error('[screener:import-validate] error code:', err.code);
+    res.status(500).json({ error: 'Failed to validate screener upload' });
+  } finally {
+    cleanup();
+  }
+});
+
+// POST /api/screener-results/upload/commit — file write (Slice B, H-11).
+// Re-parses the CSV; ALL-OR-NOTHING: any row error → 422 before writing.
+// Single transaction (BEGIN/COMMIT, ROLLBACK on error); 409 on a 23505 race.
+// Provenance is uploaded_by/uploaded_at only — NO audit table, NO actor GUC
+// (§4A). §4B cleanup() in finally; §5 server-derived tenant + tenant-bound
+// match passed the pooled client so matching runs inside the transaction.
+router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.single('file'), async (req, res) => {
+  const cleanup = () => { if (req.file && req.file.path) fs.unlink(req.file.path, () => {}); };
+  try {
+    if (req.user.role === 'parent') return res.status(403).json({ error: 'Not authorized' });
+
+    normalizeTargetTenantId(req);
+    const { targetTenantId: tenantId, error: bindError } = await resolveAndBindTargetTenant(req);
+    if (bindError) return res.status(bindError.status).json(bindError.body);
+
+    const { meta, error: metaError } = validateScreenerImportMeta(req);
+    if (metaError) return res.status(metaError.error.status).json(metaError.error.body);
+
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const uploadedBy = req.user.id;
+
+    const { totalRows, rows, validationErrors, capExceeded, headerError } =
+      await parseAndValidateScreenerFile(req.file.path, { assessmentType: meta.assessmentType });
+    if (capExceeded) return res.status(400).json({ error: SCREENER_IMPORT_ROW_CAP_MESSAGE });
+    if (headerError) return res.status(400).json({ error: headerError });
+
+    // ALL-OR-NOTHING: any row error → reject before writing (no partial commit).
+    if (validationErrors.length > 0) {
+      return res.status(422).json({
+        error: 'Import rejected: the CSV has row-level errors. Re-run validate and fix every row before committing.',
+        errors: validationErrors
+      });
+    }
+    if (rows.length === 0) return res.status(422).json({ error: 'Import rejected: no valid rows to import.' });
+
+    // Persist ONLY matched rows. Rows with no student link (unmatched or
+    // ambiguous) are NOT written — this avoids any student_id = NULL row and
+    // therefore the NULLS NOT DISTINCT collapse entirely (§3A). The skipped
+    // rows are returned by row number so the uploader can add the student /
+    // SIS id and re-upload.
+    let matched = 0, saved = 0;
+    const unmatchedRows = [];
+    const ambiguousRows = [];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const row of rows) {
+        const { studentId, matchStatus } = await resolveStudentMatch(client, tenantId, row);
+        if (matchStatus !== 'matched') {
+          if (matchStatus === 'ambiguous') ambiguousRows.push(row.rowNumber);
+          else unmatchedRows.push(row.rowNumber);
+          continue;
+        }
+        // Attach form-field metadata; mapped per-row values are pre-normalized
+        // (upsertScreenerRow re-normalizes idempotently).
+        const upsertRow = {
+          ...row,
+          assessmentType: meta.assessmentType,
+          subject: meta.subject,
+          screenerName: meta.assessmentType + ' ' + meta.subject
+        };
+        await upsertScreenerRow(client, {
+          row: upsertRow, tenantId, studentId,
+          screeningPeriod: meta.screeningPeriod, schoolYear: meta.schoolYear, uploadedBy
+        });
+        matched++;
+        saved++;
+      }
+      await client.query('COMMIT');
+    } catch (dbError) {
+      try { await client.query('ROLLBACK'); } catch (_rollbackErr) { /* connection may be broken */ }
+      client.release();
+      if (dbError.code === '23505') {
+        return res.status(409).json({ error: 'Import aborted: a concurrent change collided. No records were saved. Re-run validate and retry.' });
+      }
+      console.error('[screener:import-commit] insert error code:', dbError.code);
+      return res.status(500).json({ error: 'Failed to commit screener upload' });
+    }
+    client.release();
+
+    console.log('[screener:import-commit] committed tenant:', tenantId, 'type:', meta.assessmentType,
+      'totalRows:', totalRows, 'saved:', saved, 'matched:', matched,
+      'unmatched:', unmatchedRows.length, 'ambiguous:', ambiguousRows.length);
+
+    res.status(201).json({
+      committed: true,
+      assessmentType: meta.assessmentType,
+      summary: {
+        totalRows, saved, matched,
+        unmatched: unmatchedRows.length,
+        ambiguous: ambiguousRows.length
+      },
+      unmatchedRows, // row numbers only — NOT persisted (§4B)
+      ambiguousRows  // row numbers only — NOT persisted (§4B)
+    });
+  } catch (err) {
+    console.error('[screener:import-commit] error code:', err.code);
+    res.status(500).json({ error: 'Failed to commit screener upload' });
+  } finally {
+    cleanup();
   }
 });
 
