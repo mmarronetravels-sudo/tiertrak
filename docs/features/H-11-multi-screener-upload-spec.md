@@ -36,7 +36,35 @@ This directly closes the silent mis-attribution hole created by name-only matchi
 
 **Surface (Q4).** **Both** — school-admin self-serve **and** the operator console. Both paths share the row-processing helper. The school-admin path needs especially careful tenant scoping (school staff must not be able to aim a file at another tenant); both paths reuse `resolveAndBindTargetTenant` → `resolveAccessibleTenantIds` and derive `tenant_id` server-side.
 
-**File format / screener type (Q3).** The file carries an **`assessment_type` column** on every row. Phase 1 validation requires a **single distinct value** across the file; the later multi-type phase relaxes this to allow several values — no file-format change. Validate the column set for the type against `screener_types.expected_columns`.
+**File format / screener type (Q3) — resolved in §3A.** `assessment_type` (plus `subject`, `screening_period`, `school_year`) is a **form field**, not a file column. Each screener type is a per-type TierTrak template with its own column contract. See §3A.
+
+## 3A. Per-type column contracts (Phase 1: STAR only) — resolved at build
+
+**Type is chosen via a form field, with per-type column contracts.** Each screener vendor (STAR, MAP, DIBELS, …) has its own column layout, so an upload is **one screener type per file**: the uploader selects `assessment_type` (a multipart form field) and the backend parses the file against that type's contract. `subject`, `screening_period`, `school_year` are also form fields. This **supersedes the earlier draft's "every row carries an `assessment_type` column" rationale** — vendor exports don't carry it, and a per-type contract selected by form field matches how the exports actually look.
+
+**Phase 1 ships STAR only; MAP (and other vendors) are deferred to their own slice.** The contract structure (`SCREENER_TYPE_CONTRACTS` in `screenerImportCore.js`) is per-type and ready for more, but only **STAR** is populated now. MAP was built and then cut from this slice so it can be done against a **real MAP export with cut scores confirmed by the school** (MAP has no benchmark column — its percentile bands need product/school sign-off). The full MAP work (contract, percentile ordinal parsing, percentile→benchmark derivation) is **preserved on branch `feat/multi-screener-map`** and is the starting point for the MAP slice.
+
+**Where the contract lives (no migration, no DB seed).** The authoritative Phase-1 contract lives in **code**; `assessment_type` is validated route-layer against `SCREENER_TYPE_CONTRACTS` (400 on an unknown/unsupported type — so `MAP` is rejected until its slice ships). No `screener_types` DB change. A DB-driven types list is a banked data follow-up.
+
+**STAR contract** (locked from the existing FE export mapping):
+
+| file column | required | → field | notes |
+|---|---|---|---|
+| `Student` | yes | first/last | "Last, First" split on comma |
+| `Benchmark Category Level` | yes | benchmark_category | normalized (Intervention→Below Benchmark, On Watch→Near Benchmark) |
+| `Student ID` | no | external_student_id | optional SIS id; enables external_id-first match |
+| `Grade` | no | grade | |
+| `Test Date` | no | test_date | |
+| `SS (Star Unified)` | no | scaled_score | |
+| `PR` | no | percentile_rank | |
+
+All types map into the shared `screener_results` columns; `screener_name` is derived (`<assessment_type> <subject>`). Header matching is tolerant (trim + lowercase, alias lists).
+
+**Matching (`resolveStudentMatch`).** external_id-first when the row carries a non-empty `external_student_id` (matched within tenant on `students.external_id`; partial unique index ⇒ ≤1 hit → matched, else **unmatched** — no name fallback, a present SIS id is authoritative). No external_id → name fallback (`LOWER(first/last)` within tenant); 1 → matched, **>1 → ambiguous (`student_id` would be NULL)**, 0 → unmatched.
+
+**Unlinked rows are NOT persisted — resolves the NULL-collapse, no migration.** `/commit` writes **only matched rows**. Unmatched and ambiguous rows are never written, so no `student_id = NULL` row is ever created and the `UNIQUE NULLS NOT DISTINCT` collapse cannot occur. Both `/validate` and `/commit` return the skipped rows **by row number** (`unmatchedRows` / `ambiguousRows`, never names) so the uploader adds the student / SIS id (or disambiguates the name) and re-uploads. This replaces the earlier "persist null-student rows" behavior and eliminates the data loss the collapse caused.
+
+**Status / non-scored rows.** A row missing a required field (e.g. benchmark for STAR) is a **validation error reported by row number** — under all-or-nothing it blocks commit (fix the file, re-run validate).
 
 ## 4. Validate → commit lifecycle (mirror the operator importer)
 
