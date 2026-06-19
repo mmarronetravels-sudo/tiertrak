@@ -7,6 +7,7 @@ const {
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { upsertScreenerRow } = require('./screenerImportCore');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -44,13 +45,6 @@ const pool = new Pool({
 // Helper is duplicated module-local per Followup #132 (consolidation
 // deferred to a chore PR post-PR-S3-D-4).
 // ============================================================
-
-// PR1 backward-compat default: any upload row missing assessment_type is
-// treated as STAR (the only vendor any prior UI ever produced). Migration
-// 024's catch-all backfill uses the same default for unlisted tenants.
-// PR2 adds a UI-driven dropdown of assessment types and the body field
-// becomes required at that point — remove this default then.
-const DEFAULT_ASSESSMENT_TYPE = 'STAR';
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -162,35 +156,7 @@ router.post('/upload', requireAuth, async (req, res) => {
     const unmatched = [];
     const savedIds = [];
 
-    function normalizeDate(dateStr) {
-      if (!dateStr) return null;
-      const s = String(dateStr).trim();
-      if (s === '-' || s === '') return null;
-      const parts = s.split('-');
-      if (parts.length === 3 && parts[0].length === 2) {
-        return '20' + parts[0] + '-' + parts[1] + '-' + parts[2];
-      }
-      return s;
-    }
-    function normalizeBenchmark(val) {
-      if (!val) return val;
-      const v = String(val).trim();
-      if (v === 'Intervention') return 'Below Benchmark';
-      if (v === 'On Watch') return 'Near Benchmark';
-      return v;
-    }
-
     for (const row of rows) {
-      const benchmarkCategory = normalizeBenchmark(row.benchmarkCategory);
-      const cleanDate = normalizeDate(row.testDate);
-      const cleanScore = (row.scaledScore && String(row.scaledScore).trim() !== '-' && String(row.scaledScore).trim() !== '')
-        ? parseInt(row.scaledScore, 10)
-        : null;
-      const cleanPct = (row.percentileRank && String(row.percentileRank).trim() !== '-' && String(row.percentileRank).trim() !== '')
-        ? parseInt(row.percentileRank, 10)
-        : null;
-      const assessmentType = row.assessmentType || DEFAULT_ASSESSMENT_TYPE;
-
       // Tenant-bound student resolution: NEVER cross-tenant. A first/last
       // name collision against another tenant's student returns no match
       // here, so the row lands as unmatched (student_id = NULL) rather
@@ -206,30 +172,14 @@ router.post('/upload', requireAuth, async (req, res) => {
       if (studentId) { matched++; }
       else { unmatched.push(row.firstName + ' ' + row.lastName); }
 
-      const insertResult = await pool.query(`
-        INSERT INTO screener_results
-          (tenant_id, student_id, student_first_name, student_last_name,
-           external_student_id, grade, screener_name, assessment_type, subject,
-           screening_period, school_year, test_date, scaled_score,
-           percentile_rank, benchmark_category, uploaded_by)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        ON CONFLICT (tenant_id, student_id, assessment_type, subject, screening_period, school_year)
-        DO UPDATE SET
-          scaled_score = EXCLUDED.scaled_score,
-          percentile_rank = EXCLUDED.percentile_rank,
-          benchmark_category = EXCLUDED.benchmark_category,
-          test_date = EXCLUDED.test_date,
-          uploaded_by = EXCLUDED.uploaded_by,
-          uploaded_at = NOW()
-        RETURNING id
-      `, [
-        tenantId, studentId, row.firstName, row.lastName,
-        row.externalStudentId || null, row.grade || null, row.screenerName || null,
-        assessmentType, row.subject,
-        screeningPeriod, schoolYear, cleanDate,
-        cleanScore, cleanPct, benchmarkCategory, uploadedBy
-      ]);
-      savedIds.push(insertResult.rows[0].id);
+      // Field normalization + upsert live in the shared core (Slice A, H-11)
+      // so the upcoming file validate/commit paths reuse identical logic.
+      // Matching stays name-only here; Slice B introduces external_id-first
+      // matching in the shared helper.
+      const savedId = await upsertScreenerRow(pool, {
+        row, tenantId, studentId, screeningPeriod, schoolYear, uploadedBy
+      });
+      savedIds.push(savedId);
     }
 
     res.json({
