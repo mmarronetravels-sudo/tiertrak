@@ -1,285 +1,310 @@
 import { useState, useRef } from 'react';
-import Papa from 'papaparse';
 import { apiFetch } from '../../utils/apiFetch';
 
-const BENCHMARK_COLORS = {
-  'At/Above Benchmark':  { bg: '#DCFCE7', text: '#166534', border: '#86EFAC' },
-  'Near Benchmark':      { bg: '#FEF9C3', text: '#854D0E', border: '#FDE047' },
-  'Below Benchmark':     { bg: '#FFEDD5', text: '#9A3412', border: '#FED7AA' },
-  'Urgent Intervention': { bg: '#FEE2E2', text: '#991B1B', border: '#FECACA' },
-};
+// Slice D (H-11): file-based two-step screener upload.
+//   configure  → pick a CSV + set assessment_type/subject/period/year
+//   review     → POST /upload/validate (dry-run): counts + ROW-NUMBER lists
+//                (no student names, §4B), Confirm gated on validationErrors
+//   done       → POST /upload/commit: matched-only persistence summary
+// Auth + CSRF + multipart are owned by apiFetch (credentials:'include',
+// X-CSRF-Token from the csrf_token cookie, Content-Type stripped for FormData).
 
-function parseDateToISO(dateStr) {
-  if (!dateStr) return null;
-  
-  // Handle MM/DD/YYYY format
-  var slashParts = dateStr.split('/');
-  if (slashParts.length === 3) {
-    return slashParts[2] + '-' + slashParts[0].padStart(2,'0') + '-' + slashParts[1].padStart(2,'0');
-  }
-  
-  // Handle YY-MM-DD format (e.g. "26-01-22" → "2026-01-22")
-  var dashParts = dateStr.split('-');
-  if (dashParts.length === 3 && dashParts[0].length === 2) {
-    return '20' + dashParts[0] + '-' + dashParts[1].padStart(2,'0') + '-' + dashParts[2].padStart(2,'0');
-  }
-  
-  // Already in YYYY-MM-DD or unknown format, return as-is
-  return dateStr;
+const SCHOOL_YEARS = ['2025-2026', '2026-2027', '2024-2025'];
+const PERIODS = ['Fall', 'Winter', 'Spring'];
+const SUBJECTS = ['Reading', 'Math', 'Early Literacy'];
+
+const TEAL = '#0D4F4F';
+
+function Stat({ label, value, tone }) {
+  const tones = {
+    good: { bg: '#DCFCE7', text: '#166534', border: '#86EFAC' },
+    warn: { bg: '#FEF9C3', text: '#854D0E', border: '#FDE047' },
+    bad: { bg: '#FEE2E2', text: '#991B1B', border: '#FECACA' },
+    info: { bg: '#E8F4F4', text: TEAL, border: '#AADDDD' },
+  };
+  const c = tones[tone] || tones.info;
+  return (
+    <div className="rounded p-3 flex flex-col" style={{ background: c.bg, border: '1px solid ' + c.border }}>
+      <span className="text-2xl font-bold" style={{ color: c.text }}>{value}</span>
+      <span className="text-xs font-medium" style={{ color: c.text }}>{label}</span>
+    </div>
+  );
 }
 
-export default function ScreenerUploadModal({ onClose, user, API_URL, tenantId, onUploadComplete }) {
-
-  const [step, setStep] = useState('configure');
-  const [screeningPeriod, setScreeningPeriod] = useState('Fall');
+// App.jsx still passes user / tenantId props (call site unchanged); they are
+// not needed here — the backend derives tenant from the auth cookie — so they
+// are intentionally not destructured.
+export default function ScreenerUploadModal({ onClose, API_URL, onUploadComplete }) {
+  const [step, setStep] = useState('configure'); // configure | review | done
+  const [busy, setBusy] = useState(false);
+  const [assessmentType, setAssessmentType] = useState('STAR');
   const [schoolYear, setSchoolYear] = useState('2025-2026');
+  const [screeningPeriod, setScreeningPeriod] = useState('Fall');
   const [subject, setSubject] = useState('Reading');
-  const [parsedRows, setParsedRows] = useState([]);
-  const [uploadResult, setUploadResult] = useState(null);
+  const [file, setFile] = useState(null);
+  const [validateResult, setValidateResult] = useState(null);
+  const [commitResult, setCommitResult] = useState(null);
   const [error, setError] = useState('');
   const fileRef = useRef(null);
 
-  function handleFileSelect(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    setError('');
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: function(results) {
-        if (!results.data || results.data.length === 0) {
-          setError('No data found in CSV file.');
-          return;
-        }
-        var firstRow = results.data[0];
-        var required = ['Student', 'Benchmark Category Level'];
-        var missing = required.filter(function(c) { return !(c in firstRow); });
-        if (missing.length > 0) {
-          setError('Missing columns: ' + missing.join(', ') + '. Is this a STAR export?');
-          return;
-        }
-        var rows = results.data.map(function(row) {
-  var studentRaw = row['Student'] || '';
-  var parts = studentRaw.split(',');
-  var lastName  = parts[0] ? parts[0].trim() : '';
-  var firstName = parts[1] ? parts[1].trim() : '';
-  return {
-    firstName:         firstName,
-    lastName:          lastName,
-    grade:             row['Grade']                    || '',
-    screenerName:      'STAR ' + subject,
-    subject:           subject,
-    testDate:          parseDateToISO(row['Test Date']),
-    scaledScore:       row['SS (Star Unified)']        || null,
-    percentileRank:    row['PR']                       || null,
-    benchmarkCategory: row['Benchmark Category Level'] || '',
+  const buildFormData = () => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('assessmentType', assessmentType);
+    fd.append('subject', subject);
+    fd.append('screeningPeriod', screeningPeriod);
+    fd.append('schoolYear', schoolYear);
+    return fd;
   };
-});
-        rows = rows.filter(function(r) { return r.benchmarkCategory && r.lastName; });
-        setParsedRows(rows);
-        setStep('preview');
-      },
-      error: function(err) {
-        setError('Failed to parse CSV: ' + err.message);
-      }
-    });
+
+  async function postStep(path) {
+    const res = await apiFetch(API_URL + path, { method: 'POST', body: buildFormData() });
+    let data = {};
+    try { data = await res.json(); } catch { /* non-JSON error body */ }
+    return { res, data };
   }
 
-  async function handleConfirm() {
-    setStep('uploading');
+  async function handleValidate() {
+    if (!file) { setError('Choose a CSV file first.'); return; }
+    setBusy(true); setError('');
     try {
-      var res = await apiFetch(API_URL + '/screener-results/upload', {
-  method: 'POST',
-  headers: {
-  'Content-Type': 'application/json',
-},
-credentials: 'include',
-        body: JSON.stringify({
-          tenantId: tenantId,
-          assessmentType: 'STAR',
-          screeningPeriod: screeningPeriod,
-          schoolYear: schoolYear,
-          rows: parsedRows
-        })
-      });
-      var data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      setUploadResult(data);
-      setStep('done');
-     if (onUploadComplete) onUploadComplete(screeningPeriod, schoolYear, subject);
-    } catch (err) {
-      setError(err.message);
-      setStep('preview');
+      const { res, data } = await postStep('/screener-results/upload/validate');
+      // Static backend strings: 413 too big, 415 non-CSV, 400 header/cap,
+      // 401/403 auth. None carry PII.
+      if (!res.ok) { setError(data.error || 'Validation failed. Please try again.'); return; }
+      setValidateResult(data);
+      setStep('review');
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setBusy(false);
     }
   }
 
-  function getBenchmarkCounts(rows) {
-    var counts = {};
-    rows.forEach(function(r) {
-      counts[r.benchmarkCategory] = (counts[r.benchmarkCategory] || 0) + 1;
-    });
-    return counts;
+  async function handleCommit() {
+    setBusy(true); setError('');
+    try {
+      const { res, data } = await postStep('/screener-results/upload/commit');
+      if (!res.ok) {
+        if (res.status === 422 && Array.isArray(data.errors)) {
+          // Row-level errors — surface them back on review and block Confirm.
+          setValidateResult((prev) => ({
+            ...(prev || {}),
+            errors: data.errors,
+            summary: { ...((prev && prev.summary) || {}), validationErrors: data.errors.length },
+          }));
+          setError(data.error || 'Import rejected — fix the flagged rows and re-validate.');
+          setStep('review');
+        } else {
+          setError(data.error || 'Import failed. Please try again.');
+        }
+        return;
+      }
+      setCommitResult(data);
+      setStep('done');
+      if (onUploadComplete) onUploadComplete(screeningPeriod, schoolYear, subject);
+    } catch {
+      setError('Network error. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   }
+
+  function resetToConfigure() {
+    setStep('configure');
+    setValidateResult(null);
+    setError('');
+  }
+
+  const summary = (validateResult && validateResult.summary) || {};
+  const validationErrors = summary.validationErrors || 0;
+  const rowErrors = (validateResult && validateResult.errors) || [];
+  const unmatchedRows = (validateResult && validateResult.unmatchedRows) || [];
+  const ambiguousRows = (validateResult && validateResult.ambiguousRows) || [];
+  const confirmBlocked = busy || validationErrors > 0;
+
+  const cSummary = (commitResult && commitResult.summary) || {};
+  const cUnmatched = (commitResult && commitResult.unmatchedRows) || [];
+  const cAmbiguous = (commitResult && commitResult.ambiguousRows) || [];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-screen overflow-y-auto">
 
-        <div className="flex justify-between items-center p-6 border-b" style={{background:'#0D4F4F'}}>
+        <div className="flex justify-between items-center p-6 border-b" style={{ background: TEAL }}>
           <div>
             <h2 className="text-xl font-bold text-white">Upload Screener Data</h2>
-            <p className="text-sm mt-1" style={{color:'#AADDDD'}}>STAR Assessment CSV Import</p>
+            <p className="text-sm mt-1" style={{ color: '#AADDDD' }}>STAR Assessment CSV Import</p>
           </div>
           <button onClick={onClose} className="text-white hover:text-gray-200 text-2xl">&times;</button>
         </div>
 
         <div className="p-6">
 
+          {/* STEP 1 — configure */}
           {step === 'configure' && (
             <div>
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-4 gap-3 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Screener</label>
+                  <select value={assessmentType} onChange={e => setAssessmentType(e.target.value)}
+                    className="w-full border rounded px-3 py-2 text-sm">
+                    {/* STAR only for now — MAP deferred to its own slice */}
+                    <option value="STAR">STAR</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">School Year</label>
                   <select value={schoolYear} onChange={e => setSchoolYear(e.target.value)}
                     className="w-full border rounded px-3 py-2 text-sm">
-                    <option>2025-2026</option>
-                    <option>2026-2027</option>
-                    <option>2024-2025</option>
+                    {SCHOOL_YEARS.map(y => <option key={y}>{y}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Screening Period</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Period</label>
                   <select value={screeningPeriod} onChange={e => setScreeningPeriod(e.target.value)}
                     className="w-full border rounded px-3 py-2 text-sm">
-                    <option>Fall</option>
-                    <option>Winter</option>
-                    <option>Spring</option>
+                    {PERIODS.map(p => <option key={p}>{p}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
                   <select value={subject} onChange={e => setSubject(e.target.value)}
                     className="w-full border rounded px-3 py-2 text-sm">
-                    <option>Reading</option>
-                    <option>Math</option>
-                    <option>Early Literacy</option>
+                    {SUBJECTS.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
               </div>
+
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
                 <p className="text-gray-500 mb-2">Export from Renaissance STAR, then upload here</p>
-                <p className="text-xs text-gray-400 mb-4">Accepts standard STAR CSV export format</p>
-                <input ref={fileRef} type="file" accept=".csv" onChange={handleFileSelect} className="hidden" />
+                <p className="text-xs text-gray-400 mb-4">Accepts standard STAR CSV export format (max 5 MB)</p>
+                <input ref={fileRef} type="file" accept=".csv"
+                  onChange={e => { setFile(e.target.files[0] || null); setError(''); }}
+                  className="hidden" />
                 <button onClick={() => fileRef.current.click()}
-                  className="px-4 py-2 rounded text-white text-sm font-medium"
-                  style={{background:'#0E7C7B'}}>
+                  className="px-4 py-2 rounded text-white text-sm font-medium" style={{ background: '#0E7C7B' }}>
                   Choose CSV File
                 </button>
+                {file && <p className="mt-3 text-sm text-gray-700">Selected: {file.name}</p>}
               </div>
+
               {error && <p className="mt-3 text-red-600 text-sm">{error}</p>}
-            </div>
-          )}
 
-          {step === 'preview' && (
-            <div>
-              <div className="rounded p-4 mb-4" style={{background:'#E8F4F4'}}>
-                <p className="font-semibold text-sm" style={{color:'#0D4F4F'}}>
-                  {parsedRows.length} students parsed — {screeningPeriod} {schoolYear} {subject}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-4">
-                {Object.entries(getBenchmarkCounts(parsedRows)).map(function([cat, count]) {
-                  var colors = BENCHMARK_COLORS[cat] || {bg:'#F3F4F6',text:'#374151',border:'#D1D5DB'};
-                  return (
-                    <div key={cat} className="rounded p-3 flex justify-between items-center"
-                      style={{background:colors.bg, border:'1px solid ' + colors.border}}>
-                      <span className="text-xs font-medium" style={{color:colors.text}}>{cat}</span>
-                      <span className="text-lg font-bold" style={{color:colors.text}}>{count}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-gray-500 mb-2">Preview (first 5 rows):</p>
-              <div className="overflow-x-auto mb-4">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr style={{background:'#0D4F4F'}}>
-                      {['Name','Grade','Score','Percentile','Benchmark'].map(function(h) {
-                        return <th key={h} className="px-2 py-1 text-left text-white font-medium">{h}</th>;
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsedRows.slice(0,5).map(function(row, i) {
-                      var colors = BENCHMARK_COLORS[row.benchmarkCategory] || {};
-                      return (
-                        <tr key={i} className={i%2===0?'bg-white':'bg-gray-50'}>
-                          <td className="px-2 py-1">{row.firstName} {row.lastName}</td>
-                          <td className="px-2 py-1">{row.grade}</td>
-                          <td className="px-2 py-1">{row.scaledScore}</td>
-                          <td className="px-2 py-1">{row.percentileRank}</td>
-                          <td className="px-2 py-1">
-                            <span className="rounded px-1 py-0.5 text-xs"
-                              style={{background:colors.bg||'#F3F4F6', color:colors.text||'#374151'}}>
-                              {row.benchmarkCategory}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {error && <p className="mb-3 text-red-600 text-sm">{error}</p>}
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setStep('configure')}
-                  className="px-4 py-2 border rounded text-sm text-gray-600 hover:bg-gray-50">
-                  Back
-                </button>
-                <button onClick={handleConfirm}
-                  className="px-4 py-2 rounded text-white text-sm font-medium"
-                  style={{background:'#0D4F4F'}}>
-                  Confirm Import ({parsedRows.length} students)
+              <div className="flex justify-end mt-4">
+                <button onClick={handleValidate} disabled={!file || busy}
+                  className="px-4 py-2 rounded text-white text-sm font-medium disabled:opacity-50"
+                  style={{ background: TEAL }}>
+                  {busy ? 'Validating…' : 'Validate'}
                 </button>
               </div>
             </div>
           )}
 
-          {step === 'uploading' && (
-            <div className="text-center py-8">
-              <p className="text-gray-600">Saving screener data...</p>
-            </div>
-          )}
-
-          {step === 'done' && uploadResult && (
+          {/* STEP 2 — review (dry-run summary: counts + row numbers, NO names) */}
+          {step === 'review' && (
             <div>
-              <div className="rounded p-4 mb-4" style={{background:'#DCFCE7', border:'1px solid #86EFAC'}}>
-                <p className="font-semibold" style={{color:'#166534'}}>
-                  ✓ Import complete — {uploadResult.savedCount} records saved
+              <div className="rounded p-4 mb-4" style={{ background: '#E8F4F4' }}>
+                <p className="font-semibold text-sm" style={{ color: TEAL }}>
+                  Dry run — review before importing. {assessmentType} · {subject} · {screeningPeriod} {schoolYear}
                 </p>
-                <p className="text-sm mt-1" style={{color:'#166534'}}>
-                  {uploadResult.matched} students matched to ScholarPath profiles
-                </p>
+                <p className="text-xs text-gray-600 mt-1">Nothing has been saved yet.</p>
               </div>
-              {uploadResult.unmatched && uploadResult.unmatched.length > 0 && (
-                <div className="rounded p-4 mb-4" style={{background:'#FEF9C3', border:'1px solid #FDE047'}}>
-                  <p className="font-semibold text-sm text-yellow-800">
-                    {uploadResult.unmatched.length} students not matched to ScholarPath profiles:
+
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <Stat label="Total rows" value={summary.totalRows ?? 0} tone="info" />
+                <Stat label="Will be saved (matched)" value={summary.matched ?? 0} tone="good" />
+                <Stat label="Already on file (will update)" value={summary.alreadyExists ?? 0} tone="info" />
+                <Stat label="Unmatched" value={summary.unmatched ?? 0} tone="warn" />
+                <Stat label="Ambiguous name" value={summary.ambiguous ?? 0} tone="warn" />
+                <Stat label="Validation errors" value={validationErrors} tone={validationErrors ? 'bad' : 'good'} />
+              </div>
+
+              {validationErrors > 0 && (
+                <div className="rounded p-4 mb-3" style={{ background: '#FEE2E2', border: '1px solid #FECACA' }}>
+                  <p className="font-semibold text-sm text-red-800 mb-1">
+                    Fix these rows in your file, then re-validate:
                   </p>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    {uploadResult.unmatched.slice(0,10).join(', ')}
-                    {uploadResult.unmatched.length > 10 ? ' ...' : ''}
-                  </p>
-                  <p className="text-xs text-yellow-600 mt-1">
-                    Data was saved. Add these students to ScholarPath Intervention Management to link their screener records.
+                  <ul className="text-sm text-red-700 list-disc ml-5">
+                    {rowErrors.slice(0, 20).map((e, i) => (
+                      <li key={i}>Row {e.row}: {e.error}</li>
+                    ))}
+                    {rowErrors.length > 20 && <li>…and {rowErrors.length - 20} more</li>}
+                  </ul>
+                </div>
+              )}
+
+              {unmatchedRows.length > 0 && (
+                <div className="rounded p-3 mb-3" style={{ background: '#FEF9C3', border: '1px solid #FDE047' }}>
+                  <p className="text-sm text-yellow-800">
+                    <span className="font-semibold">{unmatchedRows.length} row(s) won’t be saved</span> — no matching
+                    student. Rows: {unmatchedRows.join(', ')}. Add the student (or a SIS ID) and re-upload.
                   </p>
                 </div>
               )}
+
+              {ambiguousRows.length > 0 && (
+                <div className="rounded p-3 mb-3" style={{ background: '#FEF9C3', border: '1px solid #FDE047' }}>
+                  <p className="text-sm text-yellow-800">
+                    <span className="font-semibold">{ambiguousRows.length} row(s) won’t be saved</span> — the name
+                    matches more than one student. Rows: {ambiguousRows.join(', ')}. Add a SIS ID to disambiguate and re-upload.
+                  </p>
+                </div>
+              )}
+
+              {error && <p className="mb-3 text-red-600 text-sm">{error}</p>}
+
+              <div className="flex justify-end gap-3">
+                <button onClick={resetToConfigure}
+                  className="px-4 py-2 border rounded text-sm text-gray-600 hover:bg-gray-50">
+                  Back
+                </button>
+                <button onClick={handleCommit} disabled={confirmBlocked}
+                  className="px-4 py-2 rounded text-white text-sm font-medium disabled:opacity-50"
+                  style={{ background: TEAL }}>
+                  {busy ? 'Importing…' : `Confirm Import (${summary.matched ?? 0})`}
+                </button>
+              </div>
+              {validationErrors > 0 && (
+                <p className="text-xs text-gray-500 mt-2 text-right">
+                  Confirm is disabled until every row error is fixed.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* STEP 3 — done (commit summary) */}
+          {step === 'done' && commitResult && (
+            <div>
+              <div className="rounded p-4 mb-4" style={{ background: '#DCFCE7', border: '1px solid #86EFAC' }}>
+                <p className="font-semibold" style={{ color: '#166534' }}>
+                  ✓ Import complete — {cSummary.saved ?? 0} records saved
+                </p>
+                <p className="text-sm mt-1" style={{ color: '#166534' }}>
+                  {cSummary.matched ?? 0} students matched and linked.
+                </p>
+              </div>
+
+              {(cUnmatched.length > 0 || cAmbiguous.length > 0) && (
+                <div className="rounded p-4 mb-4" style={{ background: '#FEF9C3', border: '1px solid #FDE047' }}>
+                  <p className="font-semibold text-sm text-yellow-800">
+                    {cUnmatched.length + cAmbiguous.length} row(s) were not linked and were not saved:
+                  </p>
+                  {cUnmatched.length > 0 && (
+                    <p className="text-sm text-yellow-700 mt-1">Unmatched rows: {cUnmatched.join(', ')}</p>
+                  )}
+                  {cAmbiguous.length > 0 && (
+                    <p className="text-sm text-yellow-700 mt-1">Ambiguous-name rows: {cAmbiguous.join(', ')}</p>
+                  )}
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Add these students (or a SIS ID) in ScholarPath, then re-upload to link their screener records.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end">
                 <button onClick={onClose}
-                  className="px-4 py-2 rounded text-white text-sm"
-                  style={{background:'#0D4F4F'}}>
+                  className="px-4 py-2 rounded text-white text-sm" style={{ background: TEAL }}>
                   Done
                 </button>
               </div>
