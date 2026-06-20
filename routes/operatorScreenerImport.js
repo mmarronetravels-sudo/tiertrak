@@ -69,13 +69,15 @@ const pool = new Pool({
 // operatorDistricts.js can wire `upload.single('file')` into the route chain.
 // (MulterError normalization is the shared banked follow-up
 // #multer-error-normalizer; same gap as the other importers.)
+const { InvalidFileTypeError } = require('../middleware/multerErrorHandler');
+
 const upload = multer({
   dest: 'uploads/',
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
     } else {
-      cb(new Error('Only CSV files are allowed'), false);
+      cb(new InvalidFileTypeError(), false);
     }
   },
   limits: {

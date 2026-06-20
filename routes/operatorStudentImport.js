@@ -72,13 +72,15 @@ const pool = new Pool({
 // Mirrors routes/csvImport.js and routes/operatorStaffImport.js. Exported so
 // operatorDistricts.js can wire `upload.single('file')` into the route's
 // middleware chain.
+const { InvalidFileTypeError } = require('../middleware/multerErrorHandler');
+
 const upload = multer({
   dest: 'uploads/',
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
     } else {
-      cb(new Error('Only CSV files are allowed'), false);
+      cb(new InvalidFileTypeError(), false);
     }
   },
   limits: {

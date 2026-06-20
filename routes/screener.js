@@ -28,13 +28,15 @@ const pool = new Pool({
 // before the handler runs. Mirrors routes/operatorStudentImport.js (5MB,
 // CSV-only, disk dest). (MulterError normalization is the shared banked
 // follow-up #multer-error-normalizer; same gap as the operator importers.)
+const { handleCsvUploadError, InvalidFileTypeError } = require('../middleware/multerErrorHandler');
+
 const screenerUpload = multer({
   dest: 'uploads/',
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
     } else {
-      cb(new Error('Only CSV files are allowed'), false);
+      cb(new InvalidFileTypeError(), false);
     }
   },
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB
@@ -330,7 +332,7 @@ router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.si
   } finally {
     cleanup();
   }
-});
+}, handleCsvUploadError);
 
 // POST /api/screener-results/upload/commit — file write (Slice B, H-11).
 // Re-parses the CSV; ALL-OR-NOTHING: any row error → 422 before writing.
@@ -433,7 +435,7 @@ router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.sing
   } finally {
     cleanup();
   }
-});
+}, handleCsvUploadError);
 
 // GET /api/screener-results/:tenantId — dashboard list, scoped to the
 // caller's tenant. requireTenantStaffAccess (PR-S3-A swept) refuses parent
