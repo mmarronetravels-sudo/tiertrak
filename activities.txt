@@ -29386,3 +29386,127 @@ NEXT SESSION SHOULD
   Section 2A review), or, if deferred, leave the five ops scripts in place
   untouched. No tracked code is pending from this session.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-19T18:05:00-07:00
+BRANCH:  chore/activities-log-h11-phase1
+DISPOSITION: pr-opened:chore/activities-log-h11-phase1->main
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  H-11 multi-screener bulk upload — Phase 1 (STAR only) completed and shipped
+  across four feature slices plus a shared upload-error normalizer. All work is
+  merged to main and confirmed live (deploy /health green after each merge).
+  This entry records the phase completion; the code landed via PRs #305-#309.
+
+H-11 SLICES (all merged to main)
+  Slice A     — PR #305 — refactor: extract shared screener row-processing core
+                from the legacy JSON upload handler.
+  Slice B     — PR #306 — feat: school-admin file validate/commit endpoints
+                (POST /api/screener-results/upload/{validate,commit}); per-row
+                external_id-first then name-fallback matching, ambiguous->NULL;
+                matched-only persistence (no NULLS-NOT-DISTINCT collapse).
+  Slice C     — PR #307 — feat: operator-console screener-import validate/commit;
+                tenant bound structurally from the URL path; 404 on
+                school-not-in-district (probe-resistance).
+  Normalizer  — PR #308 — sec: shared multer error handler; 413 too-big / 415
+                wrong-type / 400 other, across all five CSV import surfaces;
+                500->4xx behavior change on the existing importers.
+  Slice D     — PR #309 — feat: file-based two-step upload modal; retired the FE
+                student-name-in-response surface (row numbers only); dropped
+                client-side CSV parsing.
+
+FILES TOUCHED  (across the phase; all merged)
+  routes/screenerImportCore.js          — shared core: normalizers, upsert,
+                                          resolveStudentMatch, file parser,
+                                          per-type STAR contract.
+  routes/screener.js                    — legacy /upload routed through shared
+                                          matching (matched-only); new file
+                                          validate/commit routes; fileFilter tag.
+  routes/operatorScreenerImport.js      — operator validate/commit handlers.
+  routes/operatorDistricts.js           — mount operator screener-import routes;
+                                          wire multer error handler (6 routes).
+  routes/operatorStaffImport.js,
+  routes/operatorStudentImport.js,
+  routes/csvImport.js                   — fileFilter tagged; error handler wired.
+  middleware/multerErrorHandler.js      — shared 4xx upload-error normalizer.
+  frontend/.../ScreenerUploadModal.jsx  — file-based two-step modal; counts +
+                                          row numbers only.
+  docs/features/H-11-multi-screener-upload-spec.md — spec + Phase-1 decisions.
+
+MIGRATIONS RUN
+  none — Phase 1 reused the existing screener_results table; the per-type
+  contract is route-layer/code only. No schema change.
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor APPROVED on the DB-touching slices (PR #306, #307).
+  Every match/upsert scoped to the resolved school tenant; the operator path
+  binds tenant from the URL pre-flights (district exists; school is a school AND
+  belongs to the district), never from the file or body. No cross-tenant or
+  cross-district path. PR #308 (middleware) and #309 (frontend) changed no
+  queries or scoping.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: student match identity (names / external_id) is handled
+    server-side only; never returned to clients, never written to logs.
+  Logging audit: counts/codes only across all new handlers; privacy-reviewer
+    APPROVED on PR #306, #307, #308, #309 (verified no PII in logs).
+  Cross-tenant risk: none identified.
+  Section 4B win: Slice D retired the FE name-in-response surface — dry-run and
+    commit responses, and the modal, show row numbers only (no student names);
+    client-side CSV parsing removed, so no parsed student PII is held in browser
+    state. Section 4B grep (narrow + wide) against this entry's diff vs
+    origin/main: 0 matches; pattern catalog in docs/ai-context/4B_GREP_PATTERNS.md.
+
+VERIFICATION
+  H-11 commits confirmed ancestors of origin/main (git merge-base --is-ancestor),
+  main tip 654fad4:
+    Slice A a49c1df / Slice B 72a0684 / Slice C b8e3827 /
+    normalizer f6213a7 / Slice D 8bbe7b6. No open H-11 PRs.
+  Post-deploy /health green 10/10 after each of PR #306, #307, #308, #309.
+  Per-slice evidence: unit harnesses + live dev-DB validate/commit e2e
+    (matched/unmatched/ambiguous); normalizer live 8/8 (413/415, 0 leftover temp
+    files); Slice D network capture (auth cookie + X-CSRF-Token present, 200/201)
+    + vite build + eslint clean on the changed file.
+  backend npm test — no suite (Followups #73/#74).
+  frontend eslint on the Slice D file — clean (exit 0); vite build — ok.
+    (whole-tree FE eslint carries pre-existing debt unrelated to this work.)
+  orphaned-commit gate / merge-sha gate: SKIPPED — activities-log session; its
+    chore PR is OPEN (not merged). The five work PRs were verified merged +
+    ancestor in their own close-out checks (above).
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+  PR #305 commit OIDs:
+    2578e83f97c681e20adb4b69fab20ae469f72482
+    26e2d8d019b9ef6de837f7fc9b184847a4837423
+    a49c1dfc2b6d919c9dbabca52ba5638efb496d00
+  PR #306 commit OIDs:
+    b98ef0f8272a1b3b5a9d173041774267b3d4face
+    72a06842f3c8b024b2d4753388fb863f79238771
+  PR #307 commit OIDs:
+    b8e3827a76caa7f2921db0da55aa288c9490aad9
+  PR #308 commit OIDs:
+    f6213a76f51f968b400a148bff5ee382c1f77366
+  PR #309 commit OIDs:
+    8bbe7b6fb7fa80fa5bd4cf5e6ef812d26cfd0d8c
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - Retire the legacy JSON POST /api/screener-results/upload — no caller remains
+    after Slice D; also drops the last server-side name-in-response surface in
+    routes/screener.js. Backend fast-follow PR.
+  - Remove the now-unused papaparse dependency (frontend; the modal was its only
+    importer). package.json not yet touched.
+  - MAP slice (Phase 2) — build off branch feat/multi-screener-map against a real
+    MAP export with school-confirmed cut scores.
+  - docs/ai-context/PRIVACY_REVIEW.md — one-line note that the screener modal
+    holds no parsed student PII in client state post-Slice D (privacy-reviewer
+    suggestion).
+  - Pre-existing, surfaced during the phase: csvImport.js /students 500 catch
+    returns error.message (sec-redaction cluster, #114-adjacent). Banked, not
+    touched by H-11.
+
+NEXT SESSION SHOULD
+  Pick up a banked fast-follow — start by retiring the legacy JSON /upload
+  endpoint (no caller remains), then drop the papaparse dep. MAP is Phase 2 off
+  feat/multi-screener-map.
+================================================================================
