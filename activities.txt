@@ -29510,3 +29510,120 @@ NEXT SESSION SHOULD
   endpoint (no caller remains), then drop the papaparse dep. MAP is Phase 2 off
   feat/multi-screener-map.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-20T16:20:00-07:00
+BRANCH:  chore/activities-log-screener-reset
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/313
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Built a scoped screener-data reset so an admin can hard-delete one screener
+  batch (school_year/period/subject [+ optional assessment_type]) for their
+  school and re-upload cleanly. Shipped as two PRs: the audit table first
+  (#311, M049), then the preview+delete handlers + FE control (#312). After
+  deploy the live reset 500'd; diagnosed and resolved a prod migration gap.
+
+FILES TOUCHED  (work landed in #311 + #312; this PR appends this log only)
+  migration-049-screener-reset-audit.sql — append-only screener_reset_audit
+    table (metadata-only, no-FK outlive-referent doctrine)            [#311]
+  routes/screenerResetCore.js — pure validateResetScope + buildScopeWhere
+    (single shared WHERE, tenant_id lead)                             [#312]
+  routes/screener.js — POST /reset/preview + POST /reset + resolveResetTenant
+    (txn: DELETE + audit INSERT)                                      [#312]
+  test/screenerResetCore.test.js — 13 node:test units                 [#312]
+  package.json — test script -> node --test test/*.test.js            [#312]
+  frontend/src/components/Modals/ScreenerResetModal.jsx — reset UI     [#312]
+  frontend/src/App.jsx — modal wiring + canResetScreener admin gate    [#312]
+  activities.txt — this entry                                    [this PR]
+
+MIGRATIONS RUN
+  migration-049-screener-reset-audit.sql — applied to PROD manually by the
+    operator (Render External PSQL + \i) this session. It had never been
+    applied; that absence was the incident root cause. Idempotent/additive,
+    pre-reviewed in #311. Local dev DB: applied + re-applied (idempotent)
+    during #311.
+
+TENANT ISOLATION REVIEW
+  Reset target tenant resolved ONLY via resolveAccessibleTenantIds (centralized
+  §5 helper, not inlined). A request school_tenant_id is a membership-checked
+  selector (403 if not in the accessible set); multi-school accounts must select
+  (400, never a guessed delete). All 3 statements (COUNT, DELETE, audit INSERT)
+  bind tenant_id from the resolved value via the shared buildScopeWhere
+  (tenant_id = $1 lead). screener_reset_audit has school_tenant_id NOT NULL +
+  index and district_id + index. tenant-isolation-auditor: APPROVED, 0
+  critical/0 warn (on both #311 and #312).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in this log PR. The feature hard-deletes student
+  screener rows (PII) but the reset path surfaces none: preview returns a count
+  only; delete returns deletedCount only; audit row stores scope strings +
+  counts + actor id + timestamp (no names/ids/scores). assessment_type stored
+  NULL (not "") when un-narrowed.
+  Logging audit: reset handler logs emit only tenant id, counts, actor id, a
+  boolean, and pg error codes — verified no PII. Error bodies are fixed strings
+  (no error.message leak).
+  Cross-tenant risk: none identified. privacy-reviewer: APPROVED, 0 critical/0
+  warn. §4B grep (narrow + wide) against this entry's diff vs origin/main: 0
+  matches. See docs/ai-context/4B_GREP_PATTERNS.md.
+
+VERIFICATION
+  npm test — 13 passed, 0 failed (node --test test/*.test.js)
+  Core unit behavior + reset round-trip proven pre-merge:
+    local behavioral smoke (real router, minted JWT) — 19/19 assertions
+    (preview==deletedCount, re-preview 0, narrowed/broad subset, audit row,
+    400 missing-filter, 403 non-admin). Smoke is owner-run/throwaway (#94).
+  frontend: ScreenerResetModal.jsx lint clean; npm run build (Vite) succeeded.
+    (Backend lint not configured — Followup #74; node --check used on changed
+    backend files.)
+  PROD verification (operator, this session): applied M049; confirmed the
+    table now exists; ran two live resets (108 rows and 25 rows) — both
+    succeeded with deletedCount matching preview and correct audit rows written.
+  orphaned-commit gate: PASS — #312 head (37c01d3...) and #311 head (e1c2f30...)
+    are ancestors of origin/main (base=main both).
+  merge-sha verification: PASS — #312 and #311 head == merge^2 (2-parent merges).
+  security-reviewer: APPROVED, 0 critical, 1 WARN (pre-existing JWT algorithm
+    pinning in shared requireAuth — NOT introduced here; tracked).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #312 commit OIDs at merge time:
+  6658a05d6f5b521952a232f082be36e562c96ce8
+  37c01d33e9ade04605ad6e3323634a1b89493a68
+
+PR #311 commit OIDs at merge time:
+  e1c2f3085818247a408701f612383373f6e1102e
+
+OPEN ITEMS / FOLLOW-UPS
+  INCIDENT (resolved this session):
+    POST /api/screener-results/reset returned 500 in prod while
+    /reset/preview succeeded (returned count 108). Root cause: M049
+    (screener_reset_audit) had never been applied to the prod DB, so the
+    in-transaction audit INSERT threw pg 42P01 (undefined_table); the
+    transaction rolled back correctly (zero rows deleted, no orphaned delete).
+    Resolution: operator applied M049 to prod by hand; live reset verified.
+    No handler change made or needed — the rollback behaved as designed; the
+    fix was operational, not code.
+
+  Systemic cause: TierTrak prod migrations are NOT auto-applied (server.js
+  bootstraps only a curated CREATE TABLE IF NOT EXISTS set; no migrate-runner,
+  no render.yaml/preDeploy hook). A merged migration can lag its consuming
+  code. This is the 2nd occurrence (M035 -> 42703 at S108; now M049 -> 42P01).
+
+  FAST-FOLLOW ORDER (recorded; none started this session, each off fresh main):
+    1. migration-apply gate/checklist (TOP PRIORITY — 2nd occurrence)
+    2. sec/ dedicated tighter rate limiter on /reset (rollupOperationLimiter-
+       style; /reset only, not /reset/preview)
+    3. fix/ screener.js commit-route error-shape bug (metaError.error.status
+       masks a 400 as 500; re-grep metaError.error — line shifted post-merge)
+    4. sec/jwt-algorithm-pin (pin algorithms:['HS256'] in shared requireAuth)
+
+NEXT SESSION SHOULD
+  Start the migration-apply gate as follow-up #1 (branch off fresh main). Weigh:
+  (a) an idempotent ordered migrate-runner in deploy, (b) an applied-migrations
+  table + fail-fast startup assertion that required migrations are present, or
+  (c) at minimum a per-PR "apply migration before/with code deploy" checklist
+  wired into landing-the-plane. Then the /reset rate limiter, the screener.js
+  error-shape fix, and the JWT algorithm pin, in that order.
+================================================================================
