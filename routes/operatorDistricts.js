@@ -8,6 +8,7 @@ const { csvImportLimiter } = require('../middleware/rateLimiters');
 const { upload: staffImportUpload, validateStaffImport, commitStaffImport } = require('./operatorStaffImport');
 const { upload: studentImportUpload, validateStudentImport, commitStudentImport } = require('./operatorStudentImport');
 const { upload: screenerImportUpload, validateScreenerImport, commitScreenerImport } = require('./operatorScreenerImport');
+const { handleCsvUploadError } = require('../middleware/multerErrorHandler');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -560,7 +561,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/staff-import/validate',
   csvImportLimiter,
   staffImportUpload.single('file'),
-  validateStaffImport
+  validateStaffImport,
+  handleCsvUploadError
 );
 
 // Staff-import COMMIT (Slice 2). Same router (auth runs once), same
@@ -573,7 +575,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/staff-import/commit',
   csvImportLimiter,
   staffImportUpload.single('file'),
-  commitStaffImport
+  commitStaffImport,
+  handleCsvUploadError
 );
 
 // Student-import VALIDATE-ONLY (Slice 3). Same router (auth runs once via
@@ -588,7 +591,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/student-import/validate',
   csvImportLimiter,
   studentImportUpload.single('file'),
-  validateStudentImport
+  validateStudentImport,
+  handleCsvUploadError
 );
 
 // Student-import COMMIT (Slice 4). Same router (auth runs once), same
@@ -602,7 +606,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/student-import/commit',
   csvImportLimiter,
   studentImportUpload.single('file'),
-  commitStudentImport
+  commitStudentImport,
+  handleCsvUploadError
 );
 
 // Screener-import VALIDATE-ONLY (H-11 Slice C). Same router (auth runs once via
@@ -616,7 +621,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/screener-import/validate',
   csvImportLimiter,
   screenerImportUpload.single('file'),
-  validateScreenerImport
+  validateScreenerImport,
+  handleCsvUploadError
 );
 
 // Screener-import COMMIT (H-11 Slice C). Same router (auth runs once), same
@@ -629,7 +635,8 @@ router.post(
   '/:districtId/schools/:schoolTenantId/screener-import/commit',
   csvImportLimiter,
   screenerImportUpload.single('file'),
-  commitScreenerImport
+  commitScreenerImport,
+  handleCsvUploadError
 );
 
 module.exports = router;

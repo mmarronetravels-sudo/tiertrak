@@ -33,13 +33,15 @@ const pool = new Pool({
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Configure multer for file uploads
-const upload = multer({ 
+const { handleCsvUploadError, InvalidFileTypeError } = require('../middleware/multerErrorHandler');
+
+const upload = multer({
   dest: 'uploads/',
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
       cb(null, true);
     } else {
-      cb(new Error('Only CSV files are allowed'), false);
+      cb(new InvalidFileTypeError(), false);
     }
   },
   limits: {
@@ -520,7 +522,7 @@ router.post('/students/:tenantId', requireAuth, blockParentRole, upload.single('
     }
     res.status(500).json({ error: error.message });
   }
-});
+}, handleCsvUploadError);
 
 // POST /staff/:tenantId — bulk import staff from CSV.
 // Gate stack mirrors single-create POST at staffManagement.js: caller-role
@@ -807,6 +809,6 @@ router.post('/staff/:tenantId', requireAuth, blockNonStaffCreator, upload.single
     console.error('[csv:staff-import] error code:', error.code);
     res.status(500).json({ error: 'Server error' });
   }
-});
+}, handleCsvUploadError);
 
 module.exports = router;
