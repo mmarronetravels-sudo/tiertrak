@@ -7,7 +7,8 @@ const {
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { csvImportLimiter } = require('../middleware/rateLimiters');
+const { csvImportLimiter, mutationUserLimiter } = require('../middleware/rateLimiters');
+const { validateResetScope, buildScopeWhere } = require('./screenerResetCore');
 const multer = require('multer');
 const fs = require('fs');
 const {
@@ -436,6 +437,154 @@ router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.sing
     cleanup();
   }
 }, handleCsvUploadError);
+
+// ============================================================
+// Scoped screener-data RESET (feat/screener-data-reset)
+//
+// Two-step, mirroring validate→commit: POST /reset/preview returns a COUNT
+// only; POST /reset hard-deletes the matching screener_results rows and records
+// the action in screener_reset_audit (M049) in the SAME transaction.
+//
+// Authz (stricter than the upload routes' "any non-parent"): RESET_ADMIN_ROLES
+// only. A destructive PII delete is admin-grade.
+//
+// §5: the target tenant is resolved from resolveAccessibleTenantIds — the
+// request may only SELECT among the caller's accessible schools (membership is
+// mandatory, 403 otherwise); it can never name a tenant outside that set. For a
+// destructive op we refuse to guess across multiple schools (400 when the
+// account can reach >1 school and none is selected).
+// ============================================================
+
+const RESET_ADMIN_ROLES = ['school_admin', 'district_admin'];
+
+// Resolve the school-tenant a reset will target. Authority is
+// resolveAccessibleTenantIds(req.user); req.body.school_tenant_id is only a
+// selector that MUST be a member of that set. Returns { tenantId } or
+// { error: { status, body } }. Never trusts a request-supplied tenant as
+// authoritative.
+async function resolveResetTenant(req) {
+  const accessible = await resolveAccessibleTenantIds(req.user);
+  if (accessible.length === 0) {
+    return { error: { status: 403, body: { error: 'No accessible schools for this account.' } } };
+  }
+
+  const raw = req.body ? req.body.school_tenant_id : undefined;
+  if (raw == null || String(raw).trim() === '') {
+    if (accessible.length === 1) return { tenantId: accessible[0] };
+    return {
+      error: {
+        status: 400,
+        body: { error: 'school_tenant_id is required when the account can access more than one school.' }
+      }
+    };
+  }
+
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    return { error: { status: 400, body: { error: 'Invalid school_tenant_id.' } } };
+  }
+  if (!accessible.includes(n)) {
+    // Cross-tenant probe collapses to 403 before any DB scope work (§5).
+    return { error: { status: 403, body: { error: 'Not authorized for the requested school.' } } };
+  }
+  return { tenantId: n };
+}
+
+// POST /api/screener-results/reset/preview — READ-ONLY count of the rows a
+// reset with this scope would delete. Returns { count } only — never names,
+// ids, or scores (§4B). Same auth, tenant resolution, and scope helpers as the
+// delete, so the previewed count matches what /reset removes.
+router.post('/reset/preview', requireAuth, mutationUserLimiter, async (req, res) => {
+  try {
+    if (!RESET_ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const { tenantId, error: tenantError } = await resolveResetTenant(req);
+    if (tenantError) return res.status(tenantError.status).json(tenantError.body);
+
+    const { scope, error: scopeError } = validateResetScope(req.body);
+    if (scopeError) return res.status(scopeError.status).json(scopeError.body);
+
+    const { whereSql, params } = buildScopeWhere(tenantId, scope);
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM screener_results WHERE ${whereSql}`,
+      params
+    );
+    return res.json({ count: rows[0].count });
+  } catch (err) {
+    console.error('[screener:reset-preview] error code:', err.code);
+    return res.status(500).json({ error: 'Failed to preview screener reset' });
+  }
+});
+
+// POST /api/screener-results/reset — hard-delete the screener_results rows
+// matching the scope for the resolved tenant, and record the action in
+// screener_reset_audit. The DELETE and the audit INSERT run in ONE transaction:
+// no delete without a matching audit row, and vice versa. deleted_count is the
+// DELETE rowCount captured inside that transaction. Returns { deletedCount }.
+router.post('/reset', requireAuth, mutationUserLimiter, async (req, res) => {
+  try {
+    if (!RESET_ADMIN_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+    const { tenantId, error: tenantError } = await resolveResetTenant(req);
+    if (tenantError) return res.status(tenantError.status).json(tenantError.body);
+
+    const { scope, error: scopeError } = validateResetScope(req.body);
+    if (scopeError) return res.status(scopeError.status).json(scopeError.body);
+
+    const { whereSql, params } = buildScopeWhere(tenantId, scope);
+
+    const client = await pool.connect();
+    let deletedCount;
+    try {
+      await client.query('BEGIN');
+      // Capture the rowCount of the DELETE inside the transaction — this exact
+      // number is what the audit row records.
+      const del = await client.query(
+        `DELETE FROM screener_results WHERE ${whereSql}`,
+        params
+      );
+      deletedCount = del.rowCount;
+
+      // Audit row: scope + actor + (default) occurred_at. district_id comes from
+      // the resolved user, NULL for legacy single-tenant users. assessment_type
+      // is NULL (not "") when the reset was not narrowed — validateResetScope
+      // guarantees the null/empty distinction. No names/ids/scores (§4B).
+      await client.query(
+        `INSERT INTO screener_reset_audit
+           (school_tenant_id, district_id, school_year, screening_period,
+            subject, assessment_type, deleted_count, actor_user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          tenantId,
+          req.user.district_id == null ? null : req.user.district_id,
+          scope.schoolYear,
+          scope.screeningPeriod,
+          scope.subject,
+          scope.assessmentType, // null when un-narrowed
+          deletedCount,
+          req.user.id
+        ]
+      );
+      await client.query('COMMIT');
+    } catch (dbError) {
+      try { await client.query('ROLLBACK'); } catch (_rollbackErr) { /* connection may be broken */ }
+      client.release();
+      console.error('[screener:reset] db error code:', dbError.code);
+      return res.status(500).json({ error: 'Failed to reset screener data' });
+    }
+    client.release();
+
+    console.log('[screener:reset] tenant:', tenantId, 'deleted:', deletedCount,
+      'actor:', req.user.id, 'narrowed:', scope.assessmentType !== null);
+
+    return res.json({ deletedCount });
+  } catch (err) {
+    console.error('[screener:reset] error code:', err.code);
+    return res.status(500).json({ error: 'Failed to reset screener data' });
+  }
+});
 
 // GET /api/screener-results/:tenantId — dashboard list, scoped to the
 // caller's tenant. requireTenantStaffAccess (PR-S3-A swept) refuses parent

@@ -10,6 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import MTSSMeetingFormModal from './components/Modals/MTSSMeetingFormModal';
 import ReportModal from './components/Modals/ReportModal';
 import ScreenerUploadModal from './components/Modals/ScreenerUploadModal';
+import ScreenerResetModal from './components/Modals/ScreenerResetModal';
 import PreReferralFormModal from './components/Modals/PreReferralFormModal';
 import DisciplineReferralModal from './components/Modals/DisciplineReferralModal';
 import DisciplineReferralQueue from './components/DisciplineReferralQueue';
@@ -364,6 +365,7 @@ export default function App() {
   const [screenerResults, setScreenerResults] = useState([]);
 const [screenerFilters, setScreenerFilters] = useState({ schoolYear: '2025-2026', period: 'Fall', subject: 'Reading' });
 const [showScreenerUpload, setShowScreenerUpload] = useState(false);
+const [showScreenerReset, setShowScreenerReset] = useState(false);
 const [screenerLoading, setScreenerLoading] = useState(false);
   const loadStaffList = async (tenantId) => {
     const tid = tenantId || user?.tenant_id;
@@ -693,6 +695,10 @@ const isDistrictAdmin = !!(user && user.role === 'district_admin' && user.distri
 // BE gates at routes/studentGradeRollup.js are the trust boundary;
 // this derivation only controls FE nav visibility + view mount.
 const canRunRollup = !!(user && ['district_admin', 'school_admin'].includes(user.role));
+// Screener reset is destructive (hard-delete of screener_results). Admin-only,
+// matching the backend RESET_ADMIN_ROLES gate in routes/screener.js. FE
+// visibility only; the backend role gate is the trust boundary.
+const canResetScreener = !!(user && ['district_admin', 'school_admin'].includes(user.role));
 // isOperator mirrors the PLATFORM_ADMIN_USER_IDS env-allowlist surfaced
 // on GET /api/auth/me as user.is_operator. The BE platformAdminOnly gate
 // (middleware/platformAdminOnly.js) is the trust boundary; this
@@ -6363,6 +6369,13 @@ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg
               style={{background:'#0D4F4F'}}>
               + Upload Screener Data
             </button>
+            {canResetScreener && (
+              <button onClick={() => setShowScreenerReset(true)}
+                className="px-4 py-2 rounded-lg text-sm font-medium border"
+                style={{color:'#991B1B', borderColor:'#FECACA', background:'#FEF2F2'}}>
+                Reset Screener Data
+              </button>
+            )}
           </div>
 
           {screenerLoading && <p className="text-gray-500 text-sm">Loading...</p>}
@@ -8004,6 +8017,19 @@ if (isParent && !isOperator) {
   setScreenerFilters(newFilters);
   fetchScreenerResults(newFilters);
 }}
+  />
+)}
+
+  {showScreenerReset && (
+  <ScreenerResetModal
+    onClose={() => setShowScreenerReset(false)}
+    API_URL={API_URL}
+    initialScope={{ schoolYear: screenerFilters.schoolYear, period: screenerFilters.period, subject: screenerFilters.subject }}
+    onResetComplete={({ schoolYear, period, subject }) => {
+      var newFilters = { ...screenerFilters, schoolYear: schoolYear, period: period, subject: subject };
+      setScreenerFilters(newFilters);
+      fetchScreenerResults(newFilters);
+    }}
   />
 )}
 
