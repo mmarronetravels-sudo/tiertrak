@@ -8,6 +8,7 @@ const { initializeRateLimitStore, getLogIpPepper, getLogUserPepper, authIpLimite
 const { csrfProtection, getCsrfSecret } = require('./middleware/csrfProtection');
 const { ELEVATED_ROLES } = require('./constants/roles');
 const { requireAuth } = require('./middleware/authorizeInterventionAccess');
+const { assertExpectedSchema, isSchemaDegraded, buildHealthBody } = require('./middleware/schemaGate');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Boot-time eager validation. Each call exits(1) on missing prod config
@@ -721,7 +722,16 @@ const createTables = async () => {
   }
 };
 
-createTables();
+// Boot sequence: best-effort table creation, then the read-only assertion.
+// createTables() is fail-open (its own try/catch swallows errors and resolves),
+// so awaiting it cannot turn a bootstrap hiccup into a fatal boot error; only
+// assertExpectedSchema() may flip /health. The outer .catch is defensive belt:
+// neither call throws today, and if a future edit makes one throw, boot still
+// must not die here.
+(async () => {
+  await createTables();
+  await assertExpectedSchema(pool);
+})().catch((error) => console.error('Boot schema sequence error:', error.message));
 
 // Use routes
 app.use('/api/tenants', tenantsRoutes);
@@ -764,11 +774,10 @@ app.get('/', (req, res) => {
 app.get('/health', async (req, res) => {
   try {
     const result = await pool.query('SELECT NOW()');
-    res.json({ 
-      status: 'healthy',
-      database: 'connected',
-      time: result.rows[0].now
-    });
+    // buildHealthBody takes only (degraded, time) — it cannot enumerate the
+    // missing relations (that detail is in the server logs only). HTTP stays
+    // 200 so Render's health probe does not pull/restart-loop the instance.
+    res.json(buildHealthBody(isSchemaDegraded(), result.rows[0].now));
   } catch (error) {
     res.status(500).json({ 
       status: 'error',
