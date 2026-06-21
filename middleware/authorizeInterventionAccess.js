@@ -1,5 +1,5 @@
-const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
+const { verifyAuthToken } = require('./verifyAuthToken');
 const { mutationUserLimiter } = require('./rateLimiters');
 const { resolveAccessibleTenantIds } = require('./resolveAccessibleTenantIds');
 const { applyStudentAccessGate } = require('./canAccessStudent');
@@ -26,7 +26,7 @@ const requireAuth = async (req, res, next) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = verifyAuthToken(token, process.env.JWT_SECRET);
     } catch (_) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
