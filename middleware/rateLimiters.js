@@ -373,6 +373,23 @@ const rollupOperationLimiter = rateLimit({
   handler: makeRateLimitHandler('rollup-op')
 });
 
+// screenerResetLimiter — POST /api/screener-results/reset per-req.user.id,
+// 5 / 15min. mutationUserLimiter (300/min) is far too generous for a hard
+// DELETE of screener_results PII. A scoped reset is a rare, admin-grade
+// destructive op (RESET_ADMIN_ROLES); a runaway script must not be able to
+// wipe school after school in seconds. Tighter than rollup (10/15min)
+// because reset is destructive with no /undo. Mounted on /reset ONLY —
+// NOT on /reset/preview, which is cheap and read-only.
+const screenerResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  store: initializeRateLimitStore('rl:screener-reset:'),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.user?.id ?? req.ip),
+  handler: makeRateLimitHandler('screener-reset')
+});
+
 module.exports = {
   initializeRateLimitStore,
   getLogIpPepper,
@@ -386,5 +403,6 @@ module.exports = {
   contactLimiter,
   mutationUserLimiter,
   csvImportLimiter,
-  rollupOperationLimiter
+  rollupOperationLimiter,
+  screenerResetLimiter
 };
