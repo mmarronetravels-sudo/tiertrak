@@ -29691,3 +29691,73 @@ NEXT SESSION SHOULD
   migrations, then decide whether to escalate from Option A (loud-log) to a
   proper migration runner (Option C).
 ================================================================================
+================================================================================
+SESSION: 2026-06-21T09:55:47-07:00
+BRANCH:  sec/screener-reset-rate-limiter
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/316 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  The destructive POST /api/screener-results/reset (hard-deletes screener_results
+  rows + writes an audit row) reused mutationUserLimiter (300/min) — far too
+  generous for a no-undo delete. Added a dedicated tighter limiter and swapped
+  the consumer on /reset only; /reset/preview (read-only COUNT) left unchanged.
+
+FILES TOUCHED
+  middleware/rateLimiters.js — new screenerResetLimiter (5/15min, per-user key,
+    unique store prefix rl:screener-reset:) modeled on rollupOperationLimiter; export
+  routes/screener.js — import the new limiter; swap /reset from mutationUserLimiter
+    to screenerResetLimiter (preview route untouched)
+
+MIGRATIONS RUN
+  none (no schema change)
+
+TENANT ISOLATION REVIEW
+  No data queries added or modified. The /reset tenant scoping
+  (resolveAccessibleTenantIds selector + buildScopeWhere leading tenant_id = $1,
+  DELETE + audit INSERT in one transaction) is unchanged. Limiter key is per-user
+  id (fallback req.ip), not tenant-derived; no cross-tenant pathway introduced.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: new limiter reuses the shared makeRateLimitHandler — emits limiter
+    name, method, redacted path, hashed (peppered SHA-256) IP + user id only;
+    constant 429 body. No names, ids, or scores. §4B grep (narrow + wide) against
+    the entry diff vs origin/main: 0 matches.
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  npm test (node --test test/*.test.js) — 18 passed, 0 failed
+  node --check middleware/rateLimiters.js — clean; node --check routes/screener.js — clean
+  module load (NODE_ENV=development) — screenerResetLimiter resolves as express
+    middleware function; prod boot guard (RATE_LIMIT_REDIS_URL fail-fast) intact
+  store-prefix collision check — rl:screener-reset: unique vs the six existing
+    prefixes (auth-ip, auth-login, contact, mutation-user, csv-import, rollup-op)
+  npm run lint — N/A, no lint script in repo (pre-existing, Followup #74)
+  security-reviewer (branch vs main) — APPROVED, 0 CRITICAL / 0 WARN / 3 INFO
+    (INFO: double-limiter stacking on /reset is intended defense-in-depth; dead
+    req.ip fallback arm; /reset/preview correctly left on mutationUserLimiter)
+  orphaned-commit gate: PASS — head is an ancestor of origin/main (base=main)
+  merge-sha verification: PASS — merge second-parent matches feature tip (PR #316)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #316 commit OIDs at merge time:
+  d791e9c86c8a49fb2528139b71be053808d161ab
+
+OPEN ITEMS / FOLLOW-UPS
+  - INFO from security-reviewer: POST /reset is now governed by TWO limiters in
+    series (mutationUserLimiter via requireAuth on non-GET, then
+    screenerResetLimiter). Intended defense-in-depth, matches rollupOperationLimiter
+    precedent; a reset also burns 1 token from the shared per-user mutation budget.
+    No action required; recorded so the double-count is on file.
+  - Reviewer approval came from the scholapathsystems shared collaborator account
+    (on PR HEAD d791e9c, not stale, distinct from author). Standing fix remains:
+    per-reviewer personal GitHub accounts so §2A attribution is unambiguous
+    (see PR #236/#268 history).
+
+NEXT SESSION SHOULD
+  Pick up the remaining items from the PR #314 close: the screener.js error-shape
+  fix and the JWT algorithm pin, in that order.
+================================================================================
