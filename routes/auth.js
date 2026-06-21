@@ -10,6 +10,7 @@ require('dotenv').config();
 const { setCsrfCookie, clearCsrfCookie } = require('../middleware/csrfProtection');
 const { authLoginCompoundLimiter } = require('../middleware/rateLimiters');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
+const { verifyAuthToken } = require('../middleware/verifyAuthToken');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { isOperator } = require('../middleware/platformAdminOnly');
 
@@ -172,7 +173,7 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'No token provided' });
     }
     
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyAuthToken(token, JWT_SECRET);
     
     const result = await pool.query(
       `SELECT u.id, u.email, u.full_name, u.role, u.tenant_id, t.name as tenant_name,
@@ -349,7 +350,7 @@ router.post('/create-parent', async (req, res) => {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyAuthToken(token, JWT_SECRET);
     
     // Check if user has permission to create parent accounts.
     // tenant_id is sourced from the DB row, not the JWT payload — JWT
@@ -686,7 +687,7 @@ router.post('/change-password', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = verifyAuthToken(token, JWT_SECRET);
 
     const { currentPassword, newPassword } = req.body;
 
