@@ -7,7 +7,7 @@ const {
   requireTenantStaffAccess
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
-const { csvImportLimiter, mutationUserLimiter } = require('../middleware/rateLimiters');
+const { csvImportLimiter, mutationUserLimiter, screenerResetLimiter } = require('../middleware/rateLimiters');
 const { validateResetScope, buildScopeWhere } = require('./screenerResetCore');
 const multer = require('multer');
 const fs = require('fs');
@@ -522,7 +522,7 @@ router.post('/reset/preview', requireAuth, mutationUserLimiter, async (req, res)
 // screener_reset_audit. The DELETE and the audit INSERT run in ONE transaction:
 // no delete without a matching audit row, and vice versa. deleted_count is the
 // DELETE rowCount captured inside that transaction. Returns { deletedCount }.
-router.post('/reset', requireAuth, mutationUserLimiter, async (req, res) => {
+router.post('/reset', requireAuth, screenerResetLimiter, async (req, res) => {
   try {
     if (!RESET_ADMIN_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'Not authorized' });
