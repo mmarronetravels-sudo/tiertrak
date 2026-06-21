@@ -29856,3 +29856,69 @@ NEXT SESSION SHOULD
   The screener.js error-shape fix from the PR #314 close is now done. The
   remaining banked item from that close is the JWT algorithm pin.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-21T11:43:17-07:00
+BRANCH:  sec/jwt-algorithm-pin
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/320 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Close a JWT algorithm-confusion gap: jwt.verify was called with no
+  algorithms option at all five auth_token verification sites, so a token
+  whose header declared alg:none or RS256 could be accepted against the
+  symmetric JWT_SECRET. Pinned verification to HS256 via a new pure helper
+  and routed every verify site through it. (This was the banked item from
+  the PR #314 close.)
+
+FILES TOUCHED
+  middleware/verifyAuthToken.js              — new pure helper: jwt.verify(token, secret, { algorithms: ['HS256'] })
+  middleware/authorizeInterventionAccess.js  — requireAuth verify routed through helper; dropped now-unused jwt import
+  middleware/authorizeDocumentAccess.js      — requireAuth verify routed through helper; dropped now-unused jwt import
+  routes/auth.js                             — 3 verify sites (/me, /create-parent, /change-password) routed through helper; jwt import retained for jwt.sign
+  test/verifyAuthToken.test.js               — new node --test unit tests (HS256 ok, alg:none rejected, RS256-confusion rejected)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — auth-layer signature verification only. No SQL added or
+  modified. The decoded id continues to feed the existing parameterized
+  user lookup that re-reads role/tenant from the DB row.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — operates on the JWT envelope ({ id } + iat/exp) only
+  Logging audit: verified no PII added to logs; error bodies unchanged (generic 401s)
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  npm test — 25 passed, 0 failed (22 pre-existing + 3 new)
+  node --check — clean on all 5 touched files
+  npm run lint — N/A (backend lint not configured; Followup #74)
+  orphaned-commit gate: PASS — sec/jwt-algorithm-pin head 8c21cc7 is an ancestor of origin/main (base=main)
+  merge-sha verification: PASS — head 8c21cc7 == PR #320 merge commit 31399ba second parent (2-parent merge)
+  security-reviewer subagent: APPROVED (0 CRITICAL / 0 WARN / 3 INFO) — pre-review signal only
+  §2A review: APPROVED by Kelsey (ScholarPath Systems employee, designated reviewer) via shared scholapathsystems account; attribution comment posted on PR #320; merged by author (mmarronetravels-sudo)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #320 commit OIDs at merge time:
+  8c21cc7a21453eacc297cfcda090766ebc9b9c3c
+
+OPEN ITEMS / FOLLOW-UPS
+  - Followup #108 (duplicate requireAuth in authorizeInterventionAccess.js +
+    authorizeDocumentAccess.js) still open. Both now route through the shared
+    verifyAuthToken helper so they no longer carry divergent-algorithm-policy
+    risk, but the dedupe chore remains.
+  - §2A per-person-reviewer-accounts fix remains ON THE BOOKS as still-open
+    (banked in project_pr_236_external_human_review_attribution). A
+    scholapathsystems APPROVED review is acceptable in substance with a
+    required attribution comment each time; keep confirming per-merge it is
+    genuinely Kelsey and prefer approver != merger.
+
+NEXT SESSION SHOULD
+  Pick a fresh task — the JWT algorithm-pin banked item is now done. If
+  continuing auth hardening, candidates: #108 requireAuth dedupe, #114 auth
+  error-body redaction.
+================================================================================
