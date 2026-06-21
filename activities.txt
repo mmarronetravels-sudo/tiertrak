@@ -29627,3 +29627,67 @@ NEXT SESSION SHOULD
   wired into landing-the-plane. Then the /reset rate limiter, the screener.js
   error-shape fix, and the JWT algorithm pin, in that order.
 ================================================================================
+================================================================================
+SESSION: 2026-06-21T08:50:55-07:00
+BRANCH:  chore/migration-apply-gate
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/314 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added a boot-time migration-apply gate so a merged migration can't silently
+  lag the code that consumes it. Motivated by an M049-class prod 500 (consuming
+  code shipped; the audit table was never applied), same class as the earlier
+  M035 column skip. Audit -> read-only presence-check script -> Option A gate.
+
+FILES TOUCHED
+  middleware/schemaGate.js — new: read-only boot-time schema-presence check
+    (EXPECTED_SCHEMA manifest, assertExpectedSchema, isSchemaDegraded, buildHealthBody)
+  server.js — require gate; await createTables(); await assertExpectedSchema(pool);
+    /health returns buildHealthBody(isSchemaDegraded(), now)
+  test/schemaGate.test.js — new: 5 unit tests with fake pool/logger
+
+MIGRATIONS RUN
+  none (gate is read-only; queries only the Postgres catalog)
+
+TENANT ISOLATION REVIEW
+  No data queries added/modified. Gate reads only to_regclass /
+  information_schema.columns — never a row from any tenant-scoped table.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: MIGRATION GAP banner emits schema identifiers only
+    (M<nnn>:<table>.<column>), never row data; /health body never enumerates
+    schema names (info-leak lock test asserts this)
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  node --test test/*.test.js — 18 passed, 0 failed (5 new + 13 pre-existing)
+  node --check server.js — clean; node --check middleware/schemaGate.js — clean
+  npm run lint — N/A, no lint script in repo (pre-existing, Followup #74)
+  security-reviewer (branch vs main) — APPROVED, 0 CRITICAL/HIGH/MEDIUM, 1 LOW
+    (pre-existing /health catch error.message leak, not introduced here)
+  orphaned-commit gate: PASS — head is an ancestor of origin/main (base=main)
+  merge-sha verification: PASS — merge second-parent matches feature tip (PR #314)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #314 commit OIDs at merge time:
+  2810a7bc4b9b2cb8b3e02bab6db373a56f799874
+
+OPEN ITEMS / FOLLOW-UPS
+  - sec/health-error-redaction: pre-existing /health catch returns error.message
+    to an unauthenticated caller (security-reviewer LOW on PR #314). Not in this
+    PR; folds into the error-redaction cluster (Followup #114).
+  - Option B (deploy checklist) and Option C (idempotent migration runner +
+    ledger) from the audit remain unbuilt; Option C is §8 ask-first (new table +
+    deploy-step change, needs baselining of non-idempotent historical migrations).
+  - scripts/ops/2026-06-20-migration-presence-check.sql is an owner-run prod
+    presence-check (untracked per §3); run against the External DB URL to find
+    any straggler migration absent in prod right now besides M049.
+
+NEXT SESSION SHOULD
+  Run the presence-check against prod to enumerate any currently-missing
+  migrations, then decide whether to escalate from Option A (loud-log) to a
+  proper migration runner (Option C).
+================================================================================
