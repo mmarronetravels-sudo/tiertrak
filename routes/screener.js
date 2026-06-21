@@ -260,7 +260,7 @@ router.post('/upload', requireAuth, async (req, res) => {
 // resolveAndBindTargetTenant → resolveAccessibleTenantIds (403 before any
 // work); the student match is tenant-bound. Metadata (assessment_type,
 // subject, period, year) comes from multipart form fields.
-router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.single('file'), async (req, res) => {
+async function validateScreenerUpload(req, res) {
   const cleanup = () => { if (req.file && req.file.path) fs.unlink(req.file.path, () => {}); };
   try {
     if (req.user.role === 'parent') return res.status(403).json({ error: 'Not authorized' });
@@ -270,7 +270,7 @@ router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.si
     if (bindError) return res.status(bindError.status).json(bindError.body);
 
     const { meta, error: metaError } = validateScreenerImportMeta(req);
-    if (metaError) return res.status(metaError.error.status).json(metaError.error.body);
+    if (metaError) return res.status(metaError.status).json(metaError.body);
 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
@@ -333,7 +333,8 @@ router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.si
   } finally {
     cleanup();
   }
-}, handleCsvUploadError);
+}
+router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.single('file'), validateScreenerUpload, handleCsvUploadError);
 
 // POST /api/screener-results/upload/commit — file write (Slice B, H-11).
 // Re-parses the CSV; ALL-OR-NOTHING: any row error → 422 before writing.
@@ -341,7 +342,7 @@ router.post('/upload/validate', requireAuth, csvImportLimiter, screenerUpload.si
 // Provenance is uploaded_by/uploaded_at only — NO audit table, NO actor GUC
 // (§4A). §4B cleanup() in finally; §5 server-derived tenant + tenant-bound
 // match passed the pooled client so matching runs inside the transaction.
-router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.single('file'), async (req, res) => {
+async function commitScreenerUpload(req, res) {
   const cleanup = () => { if (req.file && req.file.path) fs.unlink(req.file.path, () => {}); };
   try {
     if (req.user.role === 'parent') return res.status(403).json({ error: 'Not authorized' });
@@ -351,7 +352,7 @@ router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.sing
     if (bindError) return res.status(bindError.status).json(bindError.body);
 
     const { meta, error: metaError } = validateScreenerImportMeta(req);
-    if (metaError) return res.status(metaError.error.status).json(metaError.error.body);
+    if (metaError) return res.status(metaError.status).json(metaError.body);
 
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const uploadedBy = req.user.id;
@@ -436,7 +437,8 @@ router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.sing
   } finally {
     cleanup();
   }
-}, handleCsvUploadError);
+}
+router.post('/upload/commit', requireAuth, csvImportLimiter, screenerUpload.single('file'), commitScreenerUpload, handleCsvUploadError);
 
 // ============================================================
 // Scoped screener-data RESET (feat/screener-data-reset)
@@ -640,3 +642,9 @@ router.get('/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res)
 });
 
 module.exports = router;
+// Test seams: the upload handlers are exported so the dependency-free
+// req/res-recorder tests (test/screenerUploadHandlers.test.js) can drive
+// the unknown-assessment-type path directly — it returns 400 before any
+// DB/file work, so no live DB or HTTP harness is required.
+module.exports.validateScreenerUpload = validateScreenerUpload;
+module.exports.commitScreenerUpload = commitScreenerUpload;
