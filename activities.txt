@@ -29761,3 +29761,98 @@ NEXT SESSION SHOULD
   Pick up the remaining items from the PR #314 close: the screener.js error-shape
   fix and the JWT algorithm pin, in that order.
 ================================================================================
+================================================================================
+SESSION: 2026-06-21T10:37:29-07:00
+BRANCH:  fix/screener-unknown-assessment-type-status
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/318 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Pre-existing bug on the two screener CSV-import routes (POST /upload/validate
+  and /upload/commit): an unknown or missing assessmentType returned HTTP 500
+  instead of the intended 400. validateScreenerImportMeta returns
+  { error: { status, body } }, so the destructured metaError IS { status, body };
+  both handlers read metaError.error.status / .body (one extra .error level),
+  which threw a TypeError that each handler's own catch converted to a 500,
+  masking the 400. Dropped the extra .error at both sites (matching the
+  bindError convention two lines above each). To make the handler layer testable
+  without a new dependency, extracted the two inline handlers into named exported
+  functions and added a dependency-free req/res-recorder regression test.
+
+FILES TOUCHED
+  routes/screener.js (+14/-6) — drop extra .error at the two response sites
+    (lines 273, 355); extract /upload/validate + /upload/commit handlers into
+    named functions validateScreenerUpload / commitScreenerUpload, re-registered
+    with the identical middleware chain and order; export both as test seams
+  test/screenerUploadHandlers.test.js (+76, new) — req/res-recorder regression
+    test, 4 cases (assessmentType unset + garbage x both routes) asserting 400
+    plus the static unknown-type body; no new dependency (node:test/node:assert)
+
+MIGRATIONS RUN
+  none (no schema change)
+
+TENANT ISOLATION REVIEW
+  No data queries added or modified. The corrected 400 path fires AFTER
+  resolveAndBindTargetTenant (server-derived tenant binding via
+  resolveAccessibleTenantIds; 403 before any DB work) — scoping unchanged.
+  Handler extraction is behavior-preserving: middleware chain
+  (requireAuth, csvImportLimiter, multer, handleCsvUploadError) identical and in
+  the same order on both routes. No SQL touched, so tenant-isolation-auditor not
+  run separately; privacy + security reviewer passes both confirmed scoping and
+  the parent-role 403 gate preserved.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Error-body audit: corrected path returns the static body
+    { error: 'Unknown or missing assessment type.' } at 400; the prior 500 path
+    returned a static generic string. Neither old nor new body carries PII. catch
+    blocks log err.code only; no names, ids, or scores in any response or log.
+  Section 4B grep (narrow + wide) against this entry's diff vs origin/main:
+    0 matches.
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  npm test (node --test test/*.test.js) — 22 passed, 0 failed (18 pre-existing
+    + 4 new); re-run on main post-merge, still 22/22
+  node --check routes/screener.js — clean; node --check
+    test/screenerUploadHandlers.test.js — clean
+  build — backend has no compile step; change is backend-only (frontend/ not
+    touched, not rebuilt)
+  npm run lint — N/A, no lint script in repo (pre-existing, Followup #74)
+  privacy-reviewer (branch vs main) — APPROVED, 0 CRITICAL / 0 WARN / 2 INFO
+  security-reviewer (branch vs main) — APPROVED, 0 CRITICAL/HIGH/MEDIUM/LOW;
+    re-run pinned to committed diff (319f5f9) — verdict unchanged APPROVED
+  reviewDecision (gh pr view 318) — APPROVED (formal GitHub review by the
+    scholapathsystems account, distinct from the author)
+  orphaned-commit gate: PASS — 319f5f9 is an ancestor of origin/main (base=main;
+    git log main..319f5f9 empty)
+  merge: PR #318 MERGED, merge commit a7d7eb0; fix verified present on main at
+    routes/screener.js:273 and :355
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #318 commit OIDs at merge time:
+  319f5f9e120cc82a65ce0781b7b7f9bb3425a873
+
+OPEN ITEMS / FOLLOW-UPS
+  - Handler extraction added module.exports test seams
+    (validateScreenerUpload / commitScreenerUpload). Both reviewers confirmed
+    this creates no new HTTP surface or auth bypass — Express invokes only the
+    router stack, not arbitrary export properties, and the functions remain
+    fronted by requireAuth + csvImportLimiter + multer over HTTP. Recorded for
+    transparency.
+  - Reviewer approval came from the scholapathsystems shared collaborator
+    account (distinct from author mmarronetravels-sudo, who performed the merge,
+    so approver != merger). Standing fix remains: per-reviewer personal GitHub
+    accounts for unambiguous Section 2A attribution (see PR #236/#268 history).
+  - security-reviewer subagent has no git access, so it could not run a
+    byte-level main-vs-branch before/after middleware comparison. Closed
+    out-of-band: working tree proven equal to committed 319f5f9 (git status
+    porcelain empty on both files). A git-capable reviewer would remove this
+    residual.
+
+NEXT SESSION SHOULD
+  The screener.js error-shape fix from the PR #314 close is now done. The
+  remaining banked item from that close is the JWT algorithm pin.
+================================================================================
