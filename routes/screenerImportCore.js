@@ -51,6 +51,29 @@ function parseScoreValue(val) {
   return null;
 }
 
+// Achievement Percentile parsing for vendors whose value may carry an ordinal
+// suffix (MAP's on-screen "8th"/"95th"), a range marker ("<1", ">99"), or a
+// decimal. Takes the first integer run, clamps to 1..99, null on blank/invalid.
+// MAP-only — STAR keeps using parseScoreValue, so STAR behavior is unchanged.
+function parsePercentile(val) {
+  if (val == null) return null;
+  const m = String(val).trim().match(/\d+/); // first integer run: "50.5"→50, "<1"→1
+  if (!m) return null;
+  const n = parseInt(m[0], 10);
+  if (Number.isNaN(n)) return null;
+  return n < 1 ? 1 : n > 99 ? 99 : n;
+}
+
+// MAP ships no benchmark column; derive a 3-tier benchmark from the percentile.
+// Strings match the FE's BENCHMARK_ORDER / colors exactly so MAP rows render in
+// the existing dashboard without display changes. MAP-only.
+function deriveBenchmarkFromPercentile(pct) {
+  if (pct == null || Number.isNaN(pct)) return null;
+  if (pct < 21) return 'Below Benchmark';
+  if (pct <= 40) return 'Near Benchmark';
+  return 'At/Above Benchmark';
+}
+
 // Parameterized upsert. tenant_id is the leading conflict key (§5). The caller
 // supplies the resolved tenantId, the (possibly null) studentId, and the
 // uploadedBy actor id — none are read from untrusted body fields here.
@@ -207,11 +230,59 @@ const SCREENER_TYPE_CONTRACTS = {
       if (!r.benchmarkCategory) errs.push('Missing benchmark category.');
       return errs;
     }
+  },
+  MAP: {
+    displayName: 'MAP (NWEA)',
+    // PROVISIONAL (H-11 MAP slice): header aliases + field mapping are inferred
+    // from the MAP Growth Class Profile / Class Report layouts, NOT yet validated
+    // against a real NWEA data export. Confirm literal headers against an actual
+    // Class Profile → Download .CSV before treating this contract as final.
+    requiredHeaders: [
+      { label: 'Student', aliases: ['student name', 'student', 'name', 'name (student id)'] },
+      { label: 'RIT Score', aliases: ['rit score', 'rit', 'rit score (+/- std err)', 'test rit score'] }
+    ],
+    map(normRow) {
+      const { firstName, lastName } = splitLastCommaFirst(
+        pick(normRow, ['student name', 'student', 'name', 'name (student id)']));
+      const percentileRank = parsePercentile(
+        pick(normRow, ['achievement percentile', 'percentile', 'percentile (+/- std err)']));
+      return {
+        firstName,
+        lastName,
+        externalStudentId: pick(normRow, ['student id', 'sis id', 'student_id', 'studentid']),
+        grade: pick(normRow, ['grade']),
+        testDate: normalizeDate(pick(normRow, ['test date', 'test start date', 'teststartdate'])),
+        scaledScore: parseScoreValue(pick(normRow, ['rit score', 'rit', 'test rit score'])),
+        percentileRank,
+        // MAP ships no benchmark column — derive the tier from the percentile.
+        benchmarkCategory: deriveBenchmarkFromPercentile(percentileRank)
+      };
+    },
+    rowErrors(r) {
+      const errs = [];
+      if (!r.lastName) errs.push('Missing student name.');
+      if (r.scaledScore == null) errs.push('Missing or invalid RIT score.');
+      return errs;
+    }
   }
-  // MAP (and other vendors) deferred to their own slice — the structure above
-  // is per-type so a future entry adds its contract here. Preserved full MAP
-  // work on branch feat/multi-screener-map.
+  // Other vendors deferred to their own slice — the structure above is per-type
+  // so a future entry adds its contract here.
 };
+
+// Some vendor exports (notably MAP Growth report CSVs) prepend a metadata
+// preamble block above the real header row. Return the index of the first line
+// whose columns satisfy the contract's required headers, so the caller can skip
+// the preamble. Returns 0 when line 1 is already the header (STAR's case →
+// behavior unchanged). Scans only the top of the file; preambles are small.
+function findHeaderRowIndex(filePath, contract, maxScan = 50) {
+  const lines = fs.readFileSync(filePath, 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/);
+  const limit = Math.min(lines.length, maxScan);
+  for (let i = 0; i < limit; i++) {
+    const tokens = new Set(lines[i].split(',').map(normalizeHeaderKey));
+    if (contract.requiredHeaders.every((g) => g.aliases.some((a) => tokens.has(a)))) return i;
+  }
+  return 0;
+}
 
 /**
  * Parse + per-type validate a screener CSV. PURE: no DB, no writes, no file
@@ -234,11 +305,14 @@ function parseAndValidateScreenerFile(filePath, { assessmentType, rowCap = SCREE
     let headerError = null;
     let totalRows = 0;
     let capExceeded = false;
-    let rowNumber = 1; // header is row 1
+    // Skip a leading metadata/preamble block if present; STAR's line-1 header
+    // resolves to 0, so its row numbering and parsing are unchanged.
+    const headerRowIndex = findHeaderRowIndex(filePath, contract);
+    let rowNumber = headerRowIndex + 1; // header line is row headerRowIndex+1 (1-based)
     let settled = false;
     const settle = (v) => { if (!settled) { settled = true; resolve(v); } };
 
-    const stream = fs.createReadStream(filePath).pipe(csv());
+    const stream = fs.createReadStream(filePath).pipe(csv({ skipLines: headerRowIndex }));
     stream.on('headers', (headers) => {
       const headerSet = new Set(headers.map(normalizeHeaderKey));
       const missing = [];
@@ -273,10 +347,13 @@ module.exports = {
   normalizeDate,
   normalizeBenchmark,
   parseScoreValue,
+  parsePercentile,
+  deriveBenchmarkFromPercentile,
   SCREENER_UPSERT_SQL,
   upsertScreenerRow,
   resolveStudentMatch,
   SCREENER_TYPE_CONTRACTS,
+  findHeaderRowIndex,
   parseAndValidateScreenerFile,
   SCREENER_IMPORT_ROW_CAP,
   SCREENER_IMPORT_ROW_CAP_MESSAGE

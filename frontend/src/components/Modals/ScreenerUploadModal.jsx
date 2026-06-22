@@ -134,7 +134,9 @@ export default function ScreenerUploadModal({ onClose, API_URL, onUploadComplete
         <div className="flex justify-between items-center p-6 border-b" style={{ background: TEAL }}>
           <div>
             <h2 className="text-xl font-bold text-white">Upload Screener Data</h2>
-            <p className="text-sm mt-1" style={{ color: '#AADDDD' }}>STAR Assessment CSV Import</p>
+            <p className="text-sm mt-1" style={{ color: '#AADDDD' }}>
+              {assessmentType === 'MAP' ? 'MAP (NWEA) CSV Import' : 'STAR Assessment CSV Import'}
+            </p>
           </div>
           <button onClick={onClose} className="text-white hover:text-gray-200 text-2xl">&times;</button>
         </div>
@@ -149,8 +151,8 @@ export default function ScreenerUploadModal({ onClose, API_URL, onUploadComplete
                   <label className="block text-sm font-medium text-gray-700 mb-1">Screener</label>
                   <select value={assessmentType} onChange={e => setAssessmentType(e.target.value)}
                     className="w-full border rounded px-3 py-2 text-sm">
-                    {/* STAR only for now — MAP deferred to its own slice */}
                     <option value="STAR">STAR</option>
+                    <option value="MAP">MAP (NWEA)</option>
                   </select>
                 </div>
                 <div>
@@ -177,8 +179,16 @@ export default function ScreenerUploadModal({ onClose, API_URL, onUploadComplete
               </div>
 
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                <p className="text-gray-500 mb-2">Export from Renaissance STAR, then upload here</p>
-                <p className="text-xs text-gray-400 mb-4">Accepts standard STAR CSV export format (max 5 MB)</p>
+                <p className="text-gray-500 mb-2">
+                  {assessmentType === 'MAP'
+                    ? 'Export from MAP Growth (Class Profile → Download .CSV), then upload here'
+                    : 'Export from Renaissance STAR, then upload here'}
+                </p>
+                <p className="text-xs text-gray-400 mb-4">
+                  {assessmentType === 'MAP'
+                    ? 'Accepts the MAP Growth Class Profile CSV export (max 5 MB)'
+                    : 'Accepts standard STAR CSV export format (max 5 MB)'}
+                </p>
                 <input ref={fileRef} type="file" accept=".csv"
                   onChange={e => { setFile(e.target.files[0] || null); setError(''); }}
                   className="hidden" />
