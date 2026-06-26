@@ -6,6 +6,17 @@ const {
   requireTenantStaffAccess,
 } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+const { Resend } = require('resend');
+
+// Reuse the existing inline Resend pattern (server.js, routes/auth.js,
+// routes/csvImport.js, …) — no shared mailer helper exists yet and this
+// feature does not introduce one. Same RESEND_API_KEY env var already in
+// production; no new dependency, no new config.
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// From-address literal mirrors routes/auth.js:472 verbatim so all
+// outbound mail presents a single consistent sender.
+const NOTIFY_FROM = 'ScholarPath Intervention Management <noreply@scholarpathsystems.org>';
 
 let pool;
 
@@ -207,6 +218,92 @@ async function loadReferralAndAssertTenant(referralId, user) {
     return { ok: false, status: 403, body: FORBIDDEN_BODY };
   }
   return { ok: true, row: result.rows[0], accessible };
+}
+
+// ============================================================
+// notifySchoolAdminsOfReferral(tenantId) — fire-and-forget email nudge
+// to a school's admin(s) that a new referral landed in their queue, so
+// submissions don't sit unseen.
+//
+// Invoked AFTER the create transaction COMMITs and AFTER the 201 is sent
+// (see POST /). It must never throw, never block the response, and never
+// affect the referral write — a mail failure is a soft failure.
+//
+// §4B PII discipline (deliberately PII-free):
+//   - The email body carries NO student name, behavior, notes, grade, or
+//     referral id — only "a referral was submitted, log in to review."
+//     Any deep link points at FRONTEND_URL root, never a referral-
+//     specific URL (no referral id in an email body or link).
+//   - Recipient resolution is tenant-scoped: school_admin users whose
+//     users.tenant_id = the referral's tenant (the already-validated
+//     targetTenantId from resolveAndBindTargetTenant). Recipients are
+//     NEVER read from request input. district_admin is intentionally not
+//     notified in this version.
+//   - Recipients are mailed individually so no admin's address is
+//     disclosed to another (staff email is §4B staff PII); each send is
+//     independently guarded so one failure doesn't drop the rest.
+//   - On failure we log a redacted marker only: tenant_id (integer) +
+//     err.name. Never recipient addresses, never row data.
+//   - No school_admin recipients for the tenant → return silently.
+// ============================================================
+async function notifySchoolAdminsOfReferral(tenantId) {
+  try {
+    const adminRes = await pool.query(
+      `SELECT email FROM users WHERE tenant_id = $1 AND role = 'school_admin'`,
+      [tenantId]
+    );
+    const recipients = adminRes.rows
+      .map((r) => r.email)
+      .filter((e) => typeof e === 'string' && e.length > 0);
+    if (recipients.length === 0) return;
+
+    const reviewUrl = process.env.FRONTEND_URL || '';
+    const reviewButton = reviewUrl
+      ? `<div style="text-align: center; margin: 30px 0;">
+              <a href="${reviewUrl}" style="background: #6366f1; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">Log In to Review</a>
+            </div>`
+      : '';
+
+    const html = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px; text-align: center;">
+              <h1 style="color: white; margin: 0;">New Discipline Referral</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+              <p>A new discipline referral was submitted at your school.</p>
+              <p>Log in to review the queue.</p>
+              ${reviewButton}
+              <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+              <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+                ScholarPath Intervention Management by ScholarPath Systems<br>
+                FERPA Compliant • Student Data Protected
+              </p>
+            </div>
+          </div>
+        `;
+
+    // Individual sends — one recipient per message (no shared To/Cc), so
+    // no admin's address is disclosed to another. Each guarded so a
+    // single failure doesn't abort the remaining recipients.
+    await Promise.all(
+      recipients.map(async (to) => {
+        try {
+          await resend.emails.send({
+            from: NOTIFY_FROM,
+            to,
+            subject: 'New discipline referral submitted',
+            html,
+          });
+        } catch (error) {
+          console.error('[disciplineReferrals:notify]', 'tenant_id=', tenantId, 'err_name=', error && error.name);
+        }
+      })
+    );
+  } catch (error) {
+    // Redacted: tenant_id (integer) + err.name only. Never recipient
+    // addresses, never student/referral data.
+    console.error('[disciplineReferrals:notify]', 'tenant_id=', tenantId, 'err_name=', error && error.name);
+  }
 }
 
 // ============================================================
@@ -668,6 +765,14 @@ router.post('/', requireAuth, async (req, res) => {
       created_at: referral.created_at,
       managed_by: behavior.managed_by,
     });
+
+    // Post-commit, fire-and-forget admin notification. Not awaited into
+    // the response path; the helper swallows all errors so a mail
+    // failure can never affect the 201 already sent or the committed
+    // row. tenant scope = the validated targetTenantId. .catch() is
+    // belt-and-suspenders — the helper does not reject — to guarantee no
+    // unhandled rejection.
+    notifySchoolAdminsOfReferral(targetTenantId).catch(() => {});
   } catch (error) {
     try { await client.query('ROLLBACK'); } catch (_) { /* swallow per S87 5a3cfd1 */ }
     console.error('[disciplineReferrals:create]', 'tenant_id=', targetTenantId, 'user_id=', req.user && req.user.id, 'err=', error.message);
