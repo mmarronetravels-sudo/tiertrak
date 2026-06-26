@@ -29998,3 +29998,93 @@ NEXT SESSION SHOULD
   MAP header aliases + field mapping, fold in the two findHeaderRowIndex LOW
   fixes, then consider the dashboard per-type filter/label UI.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-25T17:16:08-0700
+BRANCH:  feat/screener-history-profile
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/324 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Wired the existing GET /api/screener-results/student/:studentId endpoint into
+  the Student Profile page: a new read-only "Screener History" section lists each
+  result (screener/subject, benchmark category, score, percentile, test date)
+  with an empty state. Frontend-only — no backend, SQL, endpoint, or auth change.
+  Staff-only for this cut: the fetch is skipped for the parent role and the render
+  block carries the same role guard (mirrors the discipline-referral-history
+  pattern). The backend endpoint itself still permits a linked parent, so the UI
+  gate is NOT an access control (see OPEN ITEMS). Added a local-only synthetic
+  seed script (double-guarded: --local-only flag + localhost/5432/db parse,
+  abort-before-write; idempotent via ON CONFLICT) and seeded 13 synthetic screener
+  rows across 5 fictional students for 1 local test tenant to smoke-test.
+
+FILES TOUCHED
+  frontend/src/App.jsx                 — screenerHistory state; staff-gated fetch; trigger in fetchStudentDetails; state resets on profile-exit + logout; read-only Screener History render section
+  scripts/seed-screener-local-test.js  — new local-only synthetic seed; two prod-safety guards; references existing fictional dev-seed students; idempotent ON CONFLICT
+
+  CHANGE STAT (git diff --stat main...feat/screener-history-profile)
+    files changed: 2 | insertions: +280 | deletions: -1
+
+MIGRATIONS RUN
+  none — no schema change; consumes an existing endpoint and existing table
+
+TENANT ISOLATION REVIEW
+  No backend SQL added or modified. Consumed query is tenant-bound (JOIN students
+  ON s.id = sr.student_id AND s.tenant_id = $2, bound to req.student.tenant_id from
+  middleware, never request input). FE sends no tenant identifier; a non-linked
+  parent request returns 403 (verified). Seed SELECT + INSERT both scoped to a
+  single local test tenant. tenant-isolation-auditor: APPROVED (0 CRIT / 0 WARN /
+  2 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: FERPA screening records (scaled_score, percentile_rank,
+    benchmark_category, screener/subject/period/year, test_date) rendered to staff.
+    Consumed endpoint already drops denormalized student-name columns (explicit
+    projection) — no name PII sent or rendered; data minimization preserved.
+  Logging audit: failure path logs a generic string only; no row data, no PII.
+  No PII in URLs (path carries the student DB id, a system FK identifier).
+  privacy-reviewer: APPROVED WITH NOTES (0 CRIT / 1 WARN / 2 INFO) — WARN is the
+    client-only parent gate (banked, see OPEN ITEMS).
+
+VERIFICATION
+  npm test (on current state) — 38 passed, 0 failed
+  npm run lint — App.jsx problem count identical branch vs main (48/48); zero new
+    (backend lint N/A; Followup #74)
+  npm run build (frontend) — clean
+  HTTP smoke (real /api/auth/login cookies): staff -> 200 + rows (section populates);
+    linked parent -> endpoint 200 + rows but UI skips fetch + render (gate verified
+    in source); parent -> non-linked student -> 403. (No browser-automation tool
+    available; UI show/hide verified at HTTP + source-gate level.)
+  orphaned-commit gate: PASS — feat commit 0a87cc5 + head cf97a2e are ancestors of
+    origin/main (base=main)
+  merge-sha verification: PASS — cf97a2e == PR #324 merge commit 45d6796 second
+    parent (2-parent merge)
+  reviewer subagents (pre-review signals, pinned to main...feat/screener-history-profile):
+    privacy-reviewer            APPROVED WITH NOTES (0 CRIT / 1 WARN / 2 INFO)
+    tenant-isolation-auditor    APPROVED  (0 CRIT / 0 WARN / 2 INFO)
+    security-reviewer           APPROVED WITH NOTES (0 CRIT / 0 WARN / 3 INFO)
+  §2A review: APPROVED via shared scholapathsystems account; merged by author
+    account mmarronetravels-sudo — approver != merger; shared-account attribution
+    ambiguity noted (per-person-reviewer-account fix still on the books).
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #324 commit OIDs at merge time:
+  0a87cc53e4bd2246c081f08f0ddbc3c8336d9fe9
+  cf97a2e314f16f7e8c999727153be1e83768ece5
+
+OPEN ITEMS / FOLLOW-UPS
+  - Server-side parent-visibility decision for screener data: the endpoint permits
+    a linked parent and would return the full screening payload if called directly.
+    Staff-only is enforced only in the UI. Decide + enforce server-side before any
+    parent-facing screener render path is built. (privacy-reviewer WARN; sibling of
+    the risk_level/tier parent-visibility follow-up.)
+  - Seed-script INFO notes (security-reviewer): host allowlist is exact-match and
+    fails closed; ON CONFLICT DO UPDATE is a destructive refresh if the local DB
+    ever holds non-seed data. Both acceptable for a local-only seed.
+
+NEXT SESSION SHOULD
+  Make the server-side parent-visibility decision for screener results and enforce
+  it at the route layer before exposing any parent-facing screener view.
+================================================================================
