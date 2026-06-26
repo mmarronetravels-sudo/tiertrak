@@ -30235,3 +30235,55 @@ NEXT SESSION SHOULD
   widen the audience, implement n<5 suppression at the endpoint first (see OPEN
   ITEMS), then build the lower-trust view.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-26T10:01:52-0700
+BRANCH:  feat/parent-portal-redesign
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/330
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Restyle the parent-facing portal to match the demo's friendly layout, using
+  only data the app already fetches. Pure frontend restyle: plain-language
+  intervention summary, weekly 1-5 rating trend chart, privacy footer. No new
+  fields, no new endpoints, no widened return; assessment-score and goal-target
+  surfaces excluded by design.
+
+FILES TOUCHED
+  frontend/src/App.jsx — 3 insertions into the parent portal view (summary,
+    chart, footer)
+
+  Diff stat vs origin/main: 1 file changed, 53 insertions(+), 1 deletion(-)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No DB changes. 0 SQL queries / 0 route handlers added or modified. Re-render
+  of data already in component state only. Tenant isolation auditor verdict:
+  APPROVED (0 CRITICAL, 0 WARN, 3 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none new (re-renders the child given-name and 1-5 rating
+    already shown on the same view). No assessment-score surface added.
+  Logging audit: 0 console.* added; no PII in logs, error bodies, URLs, or query
+    strings.
+  Cross-tenant risk: none identified. Privacy reviewer verdict: APPROVED
+    (0 CRITICAL, 0 WARN, 1 INFO on pre-existing out-of-scope code).
+
+VERIFICATION
+  npm test — 38 passed, 0 failed
+  npm run lint (frontend App.jsx) — 47 problems baseline (origin/main) == 47 on
+    branch; 0 new problems introduced
+  Dependencies added: 0 (charting lib + lock icon already imported)
+  orphaned-commit gate: SKIPPED — PR #330 not merged yet
+  merge-sha verification: SKIPPED — PR #330 not merged yet
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #330 is OPEN and BLOCKED (reviewDecision REVIEW_REQUIRED). Awaiting the
+    designated non-author reviewer's approval per §2A (PII + multi-tenant
+    surface). Do NOT self-merge.
+
+NEXT SESSION SHOULD
+  After the §2A reviewer approves and PR #330 merges, verify the merge SHA
+  reached main, then log a follow-up updating the disposition to merged.
+================================================================================
