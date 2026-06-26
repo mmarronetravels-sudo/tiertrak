@@ -37,6 +37,7 @@ import Tier1AssessmentModal from './components/Modals/Tier1AssessmentModal';
 import Tier1ResultsModal from './components/Modals/Tier1ResultsModal';
 import ResourcesView from './views/ResourcesView';
 import DistrictDashboardView from './views/DistrictDashboardView';
+import DistrictReportView from './views/DistrictReportView';
 import StudentGradeRollupView from './views/StudentGradeRollupView';
 import OperatorConsoleView from './views/OperatorConsoleView';
 import OperatorSchoolsView from './views/OperatorSchoolsView';
@@ -7770,6 +7771,16 @@ if (isParent && !isOperator) {
                     My District
                   </button>
                 )}
+                {isDistrictAdmin && (
+                  <button
+                    onClick={() => setView('district-report')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+                      view === 'district-report' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    District Report
+                  </button>
+                )}
                 {canRunRollup && (
                   <button
                     onClick={() => setView('grade-rollup')}
@@ -7835,6 +7846,7 @@ if (isParent && !isOperator) {
         {view === 'admin' && <AdminView />}
         {view === 'resources' && <ResourcesView />}
         {view === 'district' && <DistrictDashboardView />}
+        {view === 'district-report' && isDistrictAdmin && <DistrictReportView />}
         {view === 'grade-rollup' && canRunRollup && <StudentGradeRollupView />}
         {view === 'operator' && isOperator && (
           <OperatorConsoleView onSelectDistrict={openOperatorSchools} />
