@@ -30088,3 +30088,78 @@ NEXT SESSION SHOULD
   Make the server-side parent-visibility decision for screener results and enforce
   it at the route layer before exposing any parent-facing screener view.
 ================================================================================
+================================================================================
+SESSION: 2026-06-25T18:00:46-0700
+BRANCH:  feat/district-report
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/326 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added the District Report: a new read-only, district_admin-only endpoint
+  GET /api/districts/:id/screener-report that aggregates screener_results across
+  the schools a district admin can access. Aggregate-only — returns per-school
+  counts (total_results, distinct students_assessed, and a benchmark_category ->
+  count map); no student-level rows cross the district boundary (data
+  minimization, §4). benchmark_category is folded in JS (GROUP BY + map), not
+  hardcoded buckets, so an unexpected/new value surfaces under its own key and
+  NULL -> "Uncategorized". Authz + scoping mirror the districtDashboard
+  precedent: requireAuth, then role==='district_admin' AND district_id===pathId,
+  then resolveAccessibleTenantIds for query-layer scope. Backend only; the
+  district_admin frontend view is deferred to the next PR. Added a local-only
+  synthetic seed script (double-guarded: --local-only flag + localhost/5432/db
+  parse, abort-before-write; idempotent) to prove cross-school aggregation and
+  cross-district isolation; seed was torn down after review.
+
+FILES TOUCHED
+  routes/districtReport.js                     — new router; one handler GET /:id/screener-report; two scoped aggregate queries + JS benchmark fold
+  server.js                                    — require + mount app.use('/api/districts', districtReportRoutes)
+  scripts/seed-district-report-local-test.js   — new local-only synthetic seed; two prod-safety guards; derives targets (no hardcoded school ids); idempotent ON CONFLICT
+
+  CHANGE STAT (git diff --stat main...feat/district-report)
+    files changed: 3 | insertions: +386 | deletions: -0
+
+MIGRATIONS RUN
+  none — no schema change; relies on existing idx_screener_results_dashboard_filters
+
+TENANT ISOLATION REVIEW
+  Both aggregate queries bind tenant_id = ANY($accessible) (from
+  resolveAccessibleTenantIds) AND join tenants on t.district_id = $id. The
+  dual-path branch is not inlined (helper is called per §5). Empty accessible
+  set returns { schools: [] }, never universal. Proven on local synthetic data:
+  the admin saw only their 2 accessible schools with correct nonzero counts; a
+  seeded school in a different district never appeared. tenant-isolation-auditor:
+  APPROVED (0 CRIT / 0 WARN / 3 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII source: screener_results (FERPA screening records). Endpoint emits
+  AGGREGATES ONLY — no student names, no student_id values (used only inside
+  COUNT(DISTINCT ...)), no per-student scores cross the boundary. No PII in logs
+  (catch logs err.message only), no PII in error bodies (static strings), no PII
+  in URLs. DELIBERATE DECISION: no small-cell (n<5) suppression in v1 — audience
+  is district_admin, already authorized to view its own district's student-level
+  rows; rationale is audience-bound and must be revisited before any lower-trust
+  or export consumer. privacy-reviewer: APPROVED WITH NOTES (0 CRIT / 1 LOW /
+  2 INFO).
+
+VERIFICATION
+  npm test — 38/38 pass
+  lint — N/A, no ESLint configured (Followup #74); node --check clean on all
+    three files
+  read-only authz smoke (real JWTs through real requireAuth, against local
+    synthetic seed): district_admin in-district -> 200 (2 schools, nonzero
+    benchmark spread); other-district school -> never appears; wrong district_id
+    -> 403; non-district_admin -> 403; empty accessible set -> 200 {schools:[]};
+    no cookie -> 401; missing schoolYear -> 400.
+  security-reviewer: APPROVED WITH NOTES (0 CRIT / 1 LOW / 2 INFO)
+  §2A review: APPROVED by Kelsey; merged after approval; author did not self-merge.
+
+OPEN ITEMS / FOLLOW-UPS
+  - district_admin FRONTEND view for the District Report — next PR (deferred this
+    session by request).
+  - Rate-limiting absent on the /api/districts mount (shared by districtAccess /
+    districtDashboard / districtReport) — PRE-EXISTING, not introduced here;
+    tracked as a sibling of Followup #80. Consider authIpLimiter on the mount.
+
+NEXT SESSION SHOULD
+  Build the district_admin frontend view that consumes
+  GET /api/districts/:id/screener-report (full triad + §2A; no backend change).
+================================================================================
