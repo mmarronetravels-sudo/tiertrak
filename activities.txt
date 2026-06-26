@@ -30163,3 +30163,75 @@ NEXT SESSION SHOULD
   Build the district_admin frontend view that consumes
   GET /api/districts/:id/screener-report (full triad + §2A; no backend change).
 ================================================================================
+================================================================================
+SESSION: 2026-06-26T08:56:16-0700
+BRANCH:  feat/district-screener-rollup
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/328 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added the district_admin frontend view for the District Report, consuming the
+  existing GET /api/districts/:id/screener-report endpoint (shipped PR #326). Pure
+  frontend wire-up: 1 new view + nav tab + route, all gated behind isDistrictAdmin.
+  Renders per-school aggregates only (students_assessed, total_results, and the
+  by_benchmark category -> count breakdown) with school-year / period / subject
+  filter controls. No backend, SQL, schema, or auth change. Calls with the
+  caller's own user.district_id; tenant scope is enforced server-side. Proceeded
+  with raw counts (no n<5 small-cell suppression) for this v1 district_admin
+  audience, by explicit decision.
+
+FILES TOUCHED
+  frontend/src/views/DistrictReportView.jsx — new read-only view; apiFetch + logError pattern; aggregate-only render; no PII logged
+  frontend/src/App.jsx                       — import + nav button + route, all gated by isDistrictAdmin (12 lines)
+
+  CHANGE STAT (git diff --stat origin/main...feat/district-screener-rollup)
+    files changed: 2 | insertions: +224 | deletions: -0
+
+MIGRATIONS RUN
+  none — no schema change; consumes the existing endpoint unchanged
+
+TENANT ISOLATION REVIEW
+  Frontend-only; 0 SQL added/modified. View requests only the caller's own
+  user.district_id (sourced from /auth/me, JWT-derived — never client-typed); the
+  :id path param is a server-side equality guard only. FE isDistrictAdmin gate on
+  nav + route is defense-in-depth, subordinate to the server's role/district
+  check + resolveAccessibleTenantIds scope. tenant-isolation-auditor: APPROVED
+  (0 CRIT / 0 WARN / 3 INFO).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — view renders aggregate counts only; no student
+  names/ids/scores cross the district boundary. Logging audit: failure path logs
+  a network/parse Error via logError, never a response body; no console.* added
+  in App.jsx. Cross-tenant risk: none identified (scope server-enforced; no IDOR
+  surface). No PII in URLs/query strings (district_id + fixed-enum filters only).
+  DELIBERATE DECISION carried forward: no small-cell (n<5) suppression in v1 —
+  audience-bound to district_admin; must be revisited before any lower-trust or
+  export consumer. privacy-reviewer: APPROVED WITH NOTES (0 CRIT / 0 WARN /
+  2 INFO).
+
+VERIFICATION
+  npm test — 38/38 pass (on main, post-merge)
+  frontend lint — new view clean (eslint exit 0); App.jsx 47->47 problems vs
+    origin/main (zero new errors; remainder is pre-existing baseline)
+  orphaned-commit gate: PASS — feat/district-screener-rollup head is an ancestor
+    of origin/main (base=main).
+  merge-sha verification: PASS — PR #328 head == merge commit second-parent
+    (932d6846d4b50e14f9cb3aa0ea76c6d3cd9700df).
+  §2A review: APPROVED by Kelsey (scholapathsystems); merged after approval.
+    Author did not self-merge without review record. (Note: merge ran late —
+    PR was approved-but-OPEN when "land the plane" was first requested; verified
+    OPEN, surfaced the discrepancy, merged only after operator confirmation.)
+
+OPEN ITEMS / FOLLOW-UPS
+  - Small-cell (n<5) suppression for screener aggregates: ON THE RECORD as a
+    required pre-condition before this endpoint/view is ever exposed to a
+    lower-trust audience (parent-facing, public, or cross-school role). Both
+    reviewers flagged; out of scope today purely because the surface is
+    district_admin-gated on FE and server.
+  - Rate-limiting still absent on the /api/districts mount (PRE-EXISTING, sibling
+    of Followup #80) — unchanged this session.
+
+NEXT SESSION SHOULD
+  No follow-up required for the District Report feature itself. If Product asks to
+  widen the audience, implement n<5 suppression at the endpoint first (see OPEN
+  ITEMS), then build the lower-trust view.
+================================================================================
