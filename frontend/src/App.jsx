@@ -420,6 +420,7 @@ const [screenerLoading, setScreenerLoading] = useState(false);
   const [interventionLogs, setInterventionLogs] = useState([]);
   const [referralHistory, setReferralHistory] = useState([]);
   const [referralHistoryScope, setReferralHistoryScope] = useState('current');
+  const [screenerHistory, setScreenerHistory] = useState([]);
   // Discipline admin-review surface state. selectedReferralId drives the
   // detail view; selectedQueueTenantId is the school-tenant the operator
   // clicked into from (carried for forward use — future "back to this
@@ -1273,8 +1274,11 @@ const openMTSSMeetingForm = (meeting = null) => {
           fetchMTSSMeetings(studentId);
        }
         // Discipline-referral history — parents are 403'd server-side; skip the call.
+        // Screener history is staff-only for this cut (endpoint permits parents,
+        // but UI gates it behind the same non-parent check).
         if (user?.role !== 'parent') {
           fetchStudentReferralHistory(studentId, referralHistoryScope);
+          fetchStudentScreenerHistory(studentId);
         }
       }
     } catch (error) {
@@ -1408,6 +1412,26 @@ const fetchStudentDocuments = async (studentId) => {
     } catch (error) {
       console.error('Error fetching referral history:', error);
       setReferralHistory([]);
+    }
+  };
+
+  // Per-student screener history. Backend GET /screener-results/student/:id is
+  // gated by requireAuth + requireStudentReadAccess and returns rows already
+  // scoped to the student's tenant (defense-in-depth JOIN). Staff-only in the
+  // UI for this cut — caller skips the fetch for parents (mirrors referral
+  // history). No PII is logged on failure; only the generic error string.
+  const fetchStudentScreenerHistory = async (studentId) => {
+    try {
+      const res = await apiFetch(`${API_URL}/screener-results/student/${studentId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setScreenerHistory(Array.isArray(data) ? data : []);
+      } else {
+        setScreenerHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching screener history:', error);
+      setScreenerHistory([]);
     }
   };
  // Open the plan modal for an intervention
@@ -1621,6 +1645,7 @@ setStudents([]);
 setSelectedStudent(null);
 setInterventionLogs([]);
 setReferralHistory([]);
+setScreenerHistory([]);
 // Discipline admin-review state must clear on logout so a subsequent
 // sign-in (different user) never inherits stale ids or open modals.
 setSelectedReferralId(null);
@@ -3310,7 +3335,7 @@ if (!user) {
     return (
       <div className="space-y-6">
         <button
-          onClick={() => { setView('students'); setSelectedStudent(null); setInterventionLogs([]); setReferralHistory([]); }}
+          onClick={() => { setView('students'); setSelectedStudent(null); setInterventionLogs([]); setReferralHistory([]); setScreenerHistory([]); }}
           className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors"
         >
           <ArrowLeft size={20} />
@@ -4152,6 +4177,78 @@ if (!user) {
                           {r.admin_notes}
                         </p>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Screener History — read-only. Staff-only: the fetch is skipped for
+            parents in fetchStudentDetails, so screenerHistory is empty for them
+            and this block renders nothing meaningful. Backend scopes rows to the
+            student's tenant; the client renders whatever the API returns. */}
+        {user?.role !== 'parent' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-6">
+              <TrendingUp size={20} className="text-slate-400" />
+              <h2 className="text-lg font-semibold text-slate-800">Screener History</h2>
+              <span className="text-sm text-slate-500">({screenerHistory.length})</span>
+            </div>
+
+            {screenerHistory.length === 0 ? (
+              <p className="text-sm text-gray-400 italic text-center py-4">
+                No screener results on record for this student.
+              </p>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {screenerHistory.map((s) => {
+                  // Order matters: the canonical categories ('At/Above
+                  // Benchmark', 'Near Benchmark', 'Below Benchmark') all contain
+                  // the word "benchmark", so test the risk/near cases before the
+                  // at/above case.
+                  const bench = (s.benchmark_category || '').toLowerCase();
+                  const benchColor =
+                    bench.includes('below') || bench.includes('risk') || bench.includes('intervention') ? 'bg-red-100 text-red-700' :
+                    bench.includes('near') || bench.includes('watch') || bench.includes('approaching') ? 'bg-amber-100 text-amber-700' :
+                    bench.includes('above') || bench.includes('on track') ? 'bg-emerald-100 text-emerald-700' :
+                    'bg-slate-100 text-slate-600';
+                  return (
+                    <div key={s.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-slate-800">
+                            {s.screener_name || s.assessment_type || 'Screener'}
+                          </span>
+                          {s.subject && (
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-white border border-slate-200 text-slate-600">
+                              {s.subject}
+                            </span>
+                          )}
+                          {s.benchmark_category && (
+                            <span className={`px-2 py-0.5 text-xs rounded-full ${benchColor}`}>
+                              {s.benchmark_category}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-500 shrink-0 ml-2">
+                          {s.test_date ? new Date(s.test_date).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-600 flex-wrap">
+                        {(s.school_year || s.screening_period) && (
+                          <span>
+                            {[s.school_year, s.screening_period].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                        {s.scaled_score != null && (
+                          <span>Score: <span className="font-medium text-slate-800">{s.scaled_score}</span></span>
+                        )}
+                        {s.percentile_rank != null && (
+                          <span>Percentile: <span className="font-medium text-slate-800">{s.percentile_rank}</span></span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
