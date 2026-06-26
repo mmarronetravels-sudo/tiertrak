@@ -46,6 +46,87 @@ function getWeekStart(date) {
   return `${resultYear}-${resultMonth}-${resultDay}`;
 }
 
+// Compute the active interventions that are missing this week's progress log
+// for a given staff user within a single tenant. Mirrors the §5 dual-path
+// doctrine: elevated viewers (ELEVATED_ROLES or school_wide_access, plus an
+// mtss_coordinators row under strict mode) see all active interventions in the
+// tenant; non-elevated staff see only interventions they are personally
+// assigned to monitor via intervention_assignments (assignment_type='staff').
+//
+// `user` MUST be a server-resolved identity (req.user for the route; a DB-loaded
+// row for the scheduled digest) — never request input. `tenantId` MUST already
+// be confirmed to be in the caller's accessible-tenant set by the caller; this
+// function does not re-check access. The students JOIN binds s.tenant_id as
+// defense-in-depth so no cross-tenant row can surface even if data drifts.
+async function getMissingLogsForStaff(user, tenantId) {
+  const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
+  const pathTenantId = Number(tenantId);
+  const userRole = user.role;
+  const schoolWideAccess = user.school_wide_access === true;
+
+  const legacyElevated = ELEVATED_ROLES.includes(userRole) || schoolWideAccess;
+  const { elevated } = await applyElevatedViewerGate(user, pathTenantId, { legacyElevated });
+
+  let query;
+  let params;
+  if (elevated) {
+    query = `
+      SELECT
+        si.id,
+        si.intervention_name,
+        si.student_id,
+        si.log_frequency,
+        s.first_name,
+        s.last_name,
+        s.tier
+      FROM student_interventions si
+      JOIN students s ON si.student_id = s.id
+      WHERE s.tenant_id = $1
+        AND si.status = 'active'
+        AND s.archived = false
+        AND si.no_progress_monitoring_required IS NOT TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM weekly_progress wp
+          WHERE wp.student_intervention_id = si.id
+          AND wp.week_of = $2
+        )
+      ORDER BY s.last_name, s.first_name
+    `;
+    params = [pathTenantId, currentWeek];
+  } else {
+    query = `
+      SELECT
+        si.id,
+        si.intervention_name,
+        si.student_id,
+        si.log_frequency,
+        s.first_name,
+        s.last_name,
+        s.tier
+      FROM student_interventions si
+      JOIN students s ON si.student_id = s.id
+      INNER JOIN intervention_assignments ia
+        ON ia.student_intervention_id = si.id
+       AND ia.user_id = $3
+       AND ia.assignment_type = 'staff'
+      WHERE s.tenant_id = $1
+        AND si.status = 'active'
+        AND s.archived = false
+        AND si.no_progress_monitoring_required IS NOT TRUE
+        AND NOT EXISTS (
+          SELECT 1 FROM weekly_progress wp
+          WHERE wp.student_intervention_id = si.id
+          AND wp.week_of = $2
+        )
+      ORDER BY s.last_name, s.first_name
+    `;
+    params = [pathTenantId, currentWeek, user.id];
+  }
+
+  const result = await pool.query(query, params);
+  return result.rows;
+}
+
 // Get dropdown options
 router.get('/options', (req, res) => {
   res.json({
@@ -147,92 +228,21 @@ router.get('/intervention/:interventionId', requireAuth, requireInterventionRead
 // resolveAccessibleTenantIds per §5 dual-path doctrine. Path-tenant scoped:
 // SQL filter uses Number(req.params.tenantId); middleware-membership-check
 // validated access.
+// Elevated-read predicate, flag-gated. Legacy elevation = ELEVATED_ROLES OR
+// school_wide_access. Strict mode also accepts an mtss_coordinators row for
+// this tenant. Dark mode emits [access-flip:would-widen] telemetry for
+// teachers whose access the strict path would have widened. Non-elevated staff
+// see only interventions they are personally assigned to monitor via
+// intervention_assignments (assignment_type='staff'); mirrors the per-teacher
+// branch at routes/students.js:162-178. Parent role is rejected upstream by
+// requireTenantStaffAccess (middleware/authorizeInterventionAccess.js:223), so
+// the query branch never receives parents — that omission is a documented
+// decision. The shared predicate lives in getMissingLogsForStaff so the
+// scheduled overdue-logs digest reuses it verbatim.
 router.get('/missing/:tenantId', requireAuth, requireTenantStaffAccess, async (req, res) => {
   try {
-    const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
-    const pathTenantId = Number(req.params.tenantId);
-    const userRole = req.user.role;
-    const schoolWideAccess = req.user.school_wide_access === true;
-
-    let query;
-    let params;
-
-    // Elevated-read predicate, flag-gated. Legacy elevation =
-    // ELEVATED_ROLES OR school_wide_access. Strict mode also accepts an
-    // mtss_coordinators row for this tenant. Dark mode emits
-    // [access-flip:would-widen] telemetry for teachers whose access the
-    // strict path would have widened.
-    const legacyElevated = ELEVATED_ROLES.includes(userRole) || schoolWideAccess;
-    const { elevated } = await applyElevatedViewerGate(req.user, pathTenantId, { legacyElevated });
-    if (elevated) {
-      query = `
-        SELECT
-          si.id,
-          si.intervention_name,
-          si.student_id,
-          si.log_frequency,
-          s.first_name,
-          s.last_name,
-          s.tier
-        FROM student_interventions si
-        JOIN students s ON si.student_id = s.id
-        WHERE s.tenant_id = $1
-          AND si.status = 'active'
-          AND s.archived = false
-          AND si.no_progress_monitoring_required IS NOT TRUE
-          AND NOT EXISTS (
-            SELECT 1 FROM weekly_progress wp
-            WHERE wp.student_intervention_id = si.id
-            AND wp.week_of = $2
-          )
-        ORDER BY s.last_name, s.first_name
-      `;
-      params = [pathTenantId, currentWeek];
-    }
-    // Non-elevated staff (school_wide_access !== true) see only interventions
-    // they are personally assigned to monitor via intervention_assignments
-    // (assignment_type='staff'). Mirrors the per-teacher branch at
-    // routes/students.js:162-178. In practice the role landing here is
-    // teacher, plus any district_admin / district_tech_admin / counselor /
-    // interventionist row whose school_wide_access flag was not set by the
-    // bootstrap (server.js:262-265) or staff-management paths
-    // (routes/staffManagement.js:140, :178) — banked as the
-    // school_wide_access role-drift cleanup followup. Parent role is
-    // rejected upstream by requireTenantStaffAccess
-    // (middleware/authorizeInterventionAccess.js:223), so this branch never
-    // receives parents — that omission is a documented decision.
-    else {
-      query = `
-        SELECT
-          si.id,
-          si.intervention_name,
-          si.student_id,
-          si.log_frequency,
-          s.first_name,
-          s.last_name,
-          s.tier
-        FROM student_interventions si
-        JOIN students s ON si.student_id = s.id
-        INNER JOIN intervention_assignments ia
-          ON ia.student_intervention_id = si.id
-         AND ia.user_id = $3
-         AND ia.assignment_type = 'staff'
-        WHERE s.tenant_id = $1
-          AND si.status = 'active'
-          AND s.archived = false
-          AND si.no_progress_monitoring_required IS NOT TRUE
-          AND NOT EXISTS (
-            SELECT 1 FROM weekly_progress wp
-            WHERE wp.student_intervention_id = si.id
-            AND wp.week_of = $2
-          )
-        ORDER BY s.last_name, s.first_name
-      `;
-      params = [pathTenantId, currentWeek, req.user.id];
-    }
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
+    const rows = await getMissingLogsForStaff(req.user, req.params.tenantId);
+    res.json(rows);
   } catch (err) {
     console.error('Error fetching missing logs:', err.message);
     res.status(500).json({ error: 'Failed to fetch missing logs' });
@@ -381,3 +391,8 @@ router.delete('/:id', requireAuth, requireWriteAccessByLogId, async (req, res) =
 });
 
 module.exports = router;
+// Exported for reuse by the scheduled overdue-logs digest (services/overdueLogsDigest.js).
+// getWeekStart is also exported so the digest aligns its dedup-ledger week_of to
+// the same Monday boundary this route uses.
+module.exports.getMissingLogsForStaff = getMissingLogsForStaff;
+module.exports.getWeekStart = getWeekStart;
