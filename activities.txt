@@ -29922,3 +29922,79 @@ NEXT SESSION SHOULD
   continuing auth hardening, candidates: #108 requireAuth dedupe, #114 auth
   error-body redaction.
 ================================================================================
+
+SESSION: 2026-06-22T08:40:00-07:00
+BRANCH:  feat/add-map-screener
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/322 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Add MAP (NWEA) as a second universal-screener type alongside STAR. Validation
+  stays route-layer against the in-code SCREENER_TYPE_CONTRACTS (authoritative;
+  the screener_types DB row is informational, no FK) — so no migration and no DB
+  seed. The MAP contract is PROVISIONAL: header aliases + field mapping are
+  inferred from MAP Growth Class Profile / Class Report layouts, NOT validated
+  against a real NWEA data export. Also added preamble-skip so MAP report CSVs
+  (metadata block above the header row) parse; STAR's line-1 header is unchanged.
+
+FILES TOUCHED
+  routes/screenerImportCore.js                        — MAP contract (provisional); parsePercentile + deriveBenchmarkFromPercentile (pure, MAP-only); findHeaderRowIndex preamble-skip + wiring; 3 exports
+  frontend/src/components/Modals/ScreenerUploadModal.jsx — MAP dropdown option + conditional subtitle/export instructions
+  test/screenerMapContract.test.js                    — new node --test units: percentile parse, benchmark derivation, MAP map/rowErrors, preamble skip
+
+  CHANGE STAT (git diff --stat main...feat/add-map-screener)
+    files changed: 3 | insertions: +229 | deletions: -9
+
+MIGRATIONS RUN
+  none — in-code contract is authoritative; no screener_types seed required
+
+TENANT ISOLATION REVIEW
+  No SQL added or modified by the diff (tenant-isolation-auditor: 0 CRITICAL /
+  0 WARN). MAP rows flow through the existing tenant-bound resolveStudentMatch
+  (WHERE tenant_id = $1, both branches) and SCREENER_UPSERT_SQL (tenant_id
+  leading INSERT col + leading ON CONFLICT key). New helpers are tenant-agnostic
+  pure transforms; FE sends no tenant identifier.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: student identity (name, SIS id, grade) MAPPED only — same
+    as the existing STAR contract; no new persisted field (benchmark derived
+    from percentile, not stored anew). privacy-reviewer: APPROVED, 0 CRIT/HIGH/MED.
+  Logging audit: row-errors carry row numbers only; no PII in logs or error bodies
+  Cross-tenant risk: none identified
+
+VERIFICATION
+  npm test (on main, post-merge) — 38 passed, 0 failed (25 pre-existing + 13 new)
+  npm run lint — N/A (backend lint not configured; Followup #74)
+  orphaned-commit gate: PASS — feat commit ae6af7e is an ancestor of origin/main (base=main)
+  merge-sha verification: PASS — ae6af7e == PR #322 merge commit e89fe9e second parent (2-parent merge)
+  reviewer subagents (pre-review signals, pinned to main...feat/add-map-screener):
+    privacy-reviewer            APPROVED  (0 CRIT / 0 HIGH / 0 MED / 1 LOW / 2 INFO)
+    tenant-isolation-auditor    APPROVED  (0 CRIT / 0 WARN / 2 INFO)
+    security-reviewer           APPROVED WITH NOTES (0 CRIT / 0 HIGH / 0 MED / 2 LOW)
+  §2A review: APPROVED via shared scholapathsystems account (2026-06-22T15:27Z);
+    merged by author account mmarronetravels-sudo — approver != merger; attribution
+    recorded in merge-commit body. (Per-person-reviewer-account fix still on the books.)
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #322 commit OIDs at merge time:
+  ae6af7e589e11b1e9c3ba2b32281556ed2f9132e
+
+OPEN ITEMS / FOLLOW-UPS
+  - MAP contract is PROVISIONAL — confirm literal headers against a real NWEA
+    Class Profile -> Download .CSV export before treating as final; handle the
+    combined "Last, First (S####)" name cell if the export uses it.
+  - Followup (sec LOW-1): bound findHeaderRowIndex's read to the first ~N KB
+    instead of readFileSync of the whole upload (event-loop hygiene).
+  - Followup (sec LOW-2): make findHeaderRowIndex header detection quote-aware
+    (reuse the CSV tokenizer, not split(',')). Fails safe to 400 today.
+    Both LOW items fold into the real-NWEA-export validation pass.
+  - UI: ScreenerResetModal still lists ['STAR']; dashboard has no per-assessment-
+    type filter/label — MAP currently renders commingled with STAR.
+
+NEXT SESSION SHOULD
+  Obtain a real NWEA MAP export and run the validation pass: confirm/adjust the
+  MAP header aliases + field mapping, fold in the two findHeaderRowIndex LOW
+  fixes, then consider the dashboard per-type filter/label UI.
+================================================================================
