@@ -28,6 +28,7 @@
     "ioredis": "^5.0.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "node-cron": "^4.5.0",
     "pg": "^8.17.1",
     "rate-limit-redis": "^4.0.0",
     "resend": "^6.9.1"

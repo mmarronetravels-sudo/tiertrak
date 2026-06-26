@@ -9,6 +9,8 @@ const { csrfProtection, getCsrfSecret } = require('./middleware/csrfProtection')
 const { ELEVATED_ROLES } = require('./constants/roles');
 const { requireAuth } = require('./middleware/authorizeInterventionAccess');
 const { assertExpectedSchema, isSchemaDegraded, buildHealthBody } = require('./middleware/schemaGate');
+const cron = require('node-cron');
+const { runOverdueLogsDigest } = require('./services/overdueLogsDigest');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Boot-time eager validation. Each call exits(1) on missing prod config
@@ -835,3 +837,38 @@ app.post('/api/contact', contactLimiter, async (req, res) => {
 app.listen(PORT, () => {
   console.log(`ScholarPath Intervention Management server running at http://localhost:${PORT}`);
 });
+
+// Scheduled weekly overdue-progress-logs staff email (feat/overdue-logs-staff-email).
+// OFF by default: only registers when OVERDUE_LOGS_REMINDERS_ENABLED === 'true'.
+// A deliberate per-tenant opt-out follow-up must land before this is enabled in
+// production. Cadence is a weekly cron (default Mondays 07:00) overridable via
+// OVERDUE_LOGS_CRON; OVERDUE_LOGS_TZ optionally pins the timezone (defaults to
+// the server's local time, which is also what getWeekStart uses for the Monday
+// boundary). Invalid config fails safe -- it logs and skips scheduling rather
+// than crashing boot.
+function registerOverdueLogsDigest() {
+  if (process.env.OVERDUE_LOGS_REMINDERS_ENABLED !== 'true') {
+    console.log('[overdue-logs-digest] disabled (set OVERDUE_LOGS_REMINDERS_ENABLED=true to enable)');
+    return;
+  }
+
+  const expression = process.env.OVERDUE_LOGS_CRON || '0 7 * * 1';
+  if (!cron.validate(expression)) {
+    console.error('[overdue-logs-digest] invalid OVERDUE_LOGS_CRON; not scheduling. expression=', expression);
+    return;
+  }
+
+  const options = process.env.OVERDUE_LOGS_TZ ? { timezone: process.env.OVERDUE_LOGS_TZ } : undefined;
+  cron.schedule(expression, async () => {
+    try {
+      await runOverdueLogsDigest();
+    } catch (err) {
+      // Never let a digest failure surface PII or take down the process.
+      console.error('[overdue-logs-digest] run failed err=', err.message);
+    }
+  }, options);
+
+  console.log('[overdue-logs-digest] scheduled cron=', expression, 'tz=', process.env.OVERDUE_LOGS_TZ || '(server local)');
+}
+
+registerOverdueLogsDigest();
