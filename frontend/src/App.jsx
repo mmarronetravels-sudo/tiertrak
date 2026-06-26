@@ -7291,6 +7291,15 @@ const handleChildDocumentDelete = async (docId) => {
               </div>
             </div>
 
+            {/* Friendly summary — plain-language overview, no new data */}
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+              <p className="text-sm text-emerald-800">
+                {selectedChild.interventions?.length
+                  ? `${selectedChild.first_name} is currently receiving ${selectedChild.interventions.length} active ${selectedChild.interventions.length === 1 ? 'intervention' : 'interventions'}. Tap any card below to see how things are going.`
+                  : `${selectedChild.first_name} has no active interventions right now. Your school will reach out if that changes.`}
+              </p>
+            </div>
+
             {/* Interventions */}
             <div className="space-y-3">
               <h3 className="font-semibold text-slate-700">Active Interventions</h3>
@@ -7383,6 +7392,39 @@ const handleChildDocumentDelete = async (docId) => {
                           Read-only
                         </div>
                       )}
+
+                      {/* Weekly rating trend — charts the existing 1–5 ratings
+                          already fetched into childProgressLogs. No goal line,
+                          no screener data. Renders only with 2+ rated weeks. */}
+                      {(() => {
+                        const trend = childProgressLogs
+                          .filter(log => log.student_intervention_id === intervention.id && log.rating)
+                          .slice()
+                          .sort((a, b) => new Date(a.week_of) - new Date(b.week_of))
+                          .map(log => ({
+                            week: log.week_of
+                              ? new Date(log.week_of).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                              : '',
+                            rating: Number(log.rating),
+                          }));
+                        if (trend.length < 2) return null;
+                        return (
+                          <div className="mt-4 pt-4 border-t">
+                            <h5 className="text-sm font-medium text-slate-700 mb-2">Weekly Progress Trend</h5>
+                            <div className="w-full h-40" aria-label="Weekly progress rating trend chart">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={trend} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="week" tick={{ fontSize: 11, fill: '#64748b' }} />
+                                  <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11, fill: '#64748b' }} />
+                                  <Tooltip formatter={(value) => [`${value}/5`, 'Rating']} />
+                                  <Line type="monotone" dataKey="rating" stroke="#059669" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Progress History */}
                       {childProgressLogs.filter(log => log.student_intervention_id === intervention.id).length > 0 && (
@@ -7549,7 +7591,17 @@ const handleChildDocumentDelete = async (docId) => {
         )}
       </div>
 
-     
+      {/* Privacy footer — static copy, no data */}
+      <div className="max-w-lg mx-auto px-4 pb-8 pt-2">
+        <div className="flex items-start gap-2 text-xs text-slate-400 border-t pt-4">
+          <Lock className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            This portal shows only your own child's intervention information and is private to your family.
+            Student data is protected under FERPA and applicable privacy laws.
+          </p>
+        </div>
+      </div>
+
       {/* Progress Logging Modal */}
       {showParentProgressForm && selectedInterventionForParentProgress && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
