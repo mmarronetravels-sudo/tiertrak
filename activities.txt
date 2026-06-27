@@ -30287,3 +30287,169 @@ NEXT SESSION SHOULD
   After the §2A reviewer approves and PR #330 merges, verify the merge SHA
   reached main, then log a follow-up updating the disposition to merged.
 ================================================================================
+================================================================================
+SESSION: 2026-06-26T16:25:04-0700
+BRANCH:  feat/overdue-logs-staff-email
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/333 @ e8e0c4a
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Add a scheduled weekly email notifying staff of overdue/unentered weekly
+  progress logs -- the same data the in-app "Weekly Reminder: Log Progress"
+  dashboard list shows. Reuse the existing in-app predicate rather than
+  re-deriving "overdue". In-process node-cron (Option A), single global weekly
+  cadence, gated OFF by default behind an env flag. Built in 5 reviewable
+  commits.
+
+FILES TOUCHED
+  routes/weeklyProgress.js          -- extract getMissingLogsForStaff(user,tenantId) (pure refactor) + export
+  migration-050-overdue-log-reminder-sends.sql -- new send-dedup ledger table
+  services/overdueLogsDigest.js     -- new per-staff digest service (scope + dedup + send)
+  server.js                         -- node-cron registration behind OFF-by-default flag
+  package.json / package-lock.json  -- add node-cron ^4.5.0
+  docs/ai-context/PRIVACY_REVIEW.md -- new staff-PII email egress entry
+
+MIGRATIONS RUN
+  migration-050-overdue-log-reminder-sends.sql -- send-dedup ledger
+    (user_id, school_tenant_id NOT NULL, district_id, week_of, sent_at);
+    UNIQUE(user_id, school_tenant_id, week_of) + school/district indexes.
+    Dry-run applied to local dev DB + idempotent re-run verified. Dormant in
+    prod until the enable flag is turned on.
+
+TENANT ISOLATION REVIEW
+  Scheduled job runs OUTSIDE any HTTP request (no req.user). Per-staff scope
+  reconstructed server-side from each user's own DB row via the canonical §5
+  helper resolveAccessibleTenantIds (consumed, not inlined); never request
+  input. getMissingLogsForStaff binds s.tenant_id in both elevated and
+  caseload branches; one email per (staffer, school) so no cross-school
+  commingling. Ledger INSERT binds school_tenant_id/district_id from the
+  resolved scope only. tenant-isolation-auditor verdict: APPROVED (0 findings).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: email body carries student PII (the recipient's own
+    caseload rows -- same content as the in-app reminder; field list in
+    PRIVACY_REVIEW.md), delivered only to the one staffer already authorized to
+    see exactly that data in-app via the same predicate (no new disclosure
+    scope). Egress is the existing Resend sub-processor; no new vendor.
+  Logging audit: verified no PII in logs -- all log lines carry integer ids +
+    counts only; recipient address never logged or persisted. Email subject
+    and link are static/PII-free; interpolated names HTML-escaped.
+  Cross-tenant risk: none identified. privacy-reviewer verdict: APPROVED WITH
+    NOTES (0 CRITICAL; 1 WARN, pre-prod-enable). security-reviewer verdict:
+    APPROVED WITH NOTES (0 CRITICAL/HIGH; 1 MEDIUM, pre-prod-enable).
+
+VERIFICATION
+  npm test — 38 passed, 0 failed (green across all 5 commits)
+  npm run lint — N/A: no backend lint script configured (tracked: Followup #74)
+  migration-050 dry-run on local dev DB — success; idempotent re-run clean
+  server boot smoke (flag unset) — prints "[overdue-logs-digest] disabled"
+    and serves normally; feature does not register
+  HTML-escape smoke — script/markup in a synthetic name is escaped in body
+  orphaned-commit gate: PASSED — all 5 work-PR OIDs contained in merge e8e0c4a
+    on origin/main (git merge-base --is-ancestor, 5/5)
+  merge-sha verification: e8e0c4a78488baa0c0fedeef26eb8ba6e2c2687a verified on
+    origin/main
+  misattribution check: N/A — no FIXES: block this session
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #333 commit OIDs:
+  46c6cfa3af0d61878f2fea0dbde1b9c0443b26e4
+  85ff8b868d6e53a4d6568b409ee63c2066b4115d
+  810bfaaf438f333127db0a2f88b75c177ded8427
+  664e2acca816c864ee41550ed74215d0947b3a82
+  d7d4f83e83e4423cb51406e920e9edd7345d4e09
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #333 MERGED at e8e0c4a78488baa0c0fedeef26eb8ba6e2c2687a on origin/main
+    via §2A formal approval + merge by the designated non-author reviewer (PII +
+    multi-tenant surface); no self-merge.
+  - PRE-PROD-ENABLE GATE (recorded to memory): the enable flag must stay OFF in
+    prod until all three land -- (a) per-tenant opt-out, (b) recipient-
+    eligibility predicate excluding deactivated/departed/operator-admin
+    accounts, (c) send throttle/LIMIT + batching. This is the convergent
+    security-MEDIUM + privacy-WARN finding from the reviewer pass.
+  - Pre-existing untracked scripts/ops/* files remain (Followup #94, gitignore);
+    not produced by this session, left untouched.
+
+NEXT SESSION SHOULD
+  Do NOT flip the enable flag in prod until the three pre-prod-enable gates land.
+================================================================================
+================================================================================
+SESSION: 2026-06-26T16:59:23-0700
+BRANCH:  feat/referral-submit-admin-email
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/332 @ 0434ec7
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Backfill: PR #332 merged without its own activities.txt entry; this entry was
+  reconstructed from git in the PR #334 session. Feature: email a school's
+  admin(s) when a discipline referral is submitted, fired post-commit from the
+  existing referral-create handler. Reuses the existing inline Resend client (no
+  new dependency), no schema change, and no new endpoint. Recipient lookup is
+  tenant-scoped on the already-validated targetTenantId; the email body is
+  PII-free (static subject, no student name/behavior/notes/grade, no referral id
+  in body or link).
+
+FILES TOUCHED
+  routes/disciplineReferrals.js     -- post-commit admin-notify on referral submit
+  docs/ai-context/PRIVACY_REVIEW.md -- record referral-create Resend admin egress
+
+  Diff stat vs merge first-parent (0434ec7^1..0434ec7):
+    2 files changed, 106 insertions(+), 1 deletion(-)
+
+MIGRATIONS RUN
+  none -- no schema change
+
+TENANT ISOLATION REVIEW
+  Recipient resolution is tenant-scoped: SELECT email FROM users WHERE
+  tenant_id = $1 AND role = 'school_admin', where $1 is the already-validated
+  targetTenantId from resolveAndBindTargetTenant (never request input). Admins
+  of one school are never notified about another school's referral; no cross-
+  school or cross-district read/write introduced. Recipients are mailed
+  individually so no admin's address is disclosed to another.
+  tenant-isolation-auditor verdict: APPROVED.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in the email body -- static subject ("New discipline
+    referral submitted") and a generic body; no student name, behavior, notes,
+    grade, or referral id in the body or link. Recipients are authorized
+    school_admin users for the referral's own tenant. Resend is the existing
+    sub-processor (no new vendor, no new egress surface).
+  Logging audit: failure path logs a redacted marker only -- tenant_id (integer)
+    + err.name; never recipient addresses, never referral/student row data. No
+    PII in logs, error bodies, URLs, or query strings.
+  Cross-tenant risk: none identified. privacy-reviewer verdict: APPROVED.
+    security-reviewer verdict: APPROVED.
+
+VERIFICATION
+  Reconstructed from git post-merge (SHA manifest below); not re-run this session.
+  Dependencies added: 0 (existing inline Resend client reused)
+  orphaned-commit gate: PASSED — both work-PR OIDs contained in merge 0434ec7
+    on origin/main (git merge-base --is-ancestor, 2/2)
+  merge-sha verification: 0434ec7b2618eb63cccc4b4b2f5852b62f0e5f31 verified on
+    origin/main
+  misattribution check: N/A — backfilled entry, no FIXES: block
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #332 commit OIDs:
+  b0a4b17d75add28e1105154d7d33ee6123f63578
+  df876d113ff890e363ce617562fe678c636ad536
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #332 MERGED at 0434ec7b2618eb63cccc4b4b2f5852b62f0e5f31 on origin/main
+    via §2A approval + merge by the designated non-author reviewer (PII +
+    multi-tenant surface); no self-merge.
+  - district_admin recipients are intentionally NOT notified in v1 (keys on
+    users.tenant_id = school only) -- a documented narrowing.
+  - Entry backfilled in the PR #334 session; #332 originally merged without an
+    activities.txt entry.
+
+NEXT SESSION SHOULD
+  Nothing outstanding for #332 itself — feature merged and the notify path is
+  live. Revisit district_admin notification scope if district-level recipients
+  are needed.
+================================================================================
