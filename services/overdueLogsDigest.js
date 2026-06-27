@@ -52,6 +52,11 @@ const {
   getWeekStart,
 } = require('../routes/weeklyProgress');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
+// Consumed READ-ONLY as a recipient-eligibility predicate (item b). isOperator
+// reads the frozen PLATFORM_ADMIN_USER_IDS allowlist; this file neither
+// modifies that allowlist nor any authz logic -- it only asks "is this user an
+// operator?" to exclude cross-tenant platform admins from the mailing.
+const { isOperator } = require('../middleware/platformAdminOnly');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -59,6 +64,21 @@ const pool = new Pool({
 });
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Minimal async delay used to pace outbound Resend calls (item c). No external
+// dependency -- mirrors the repo's preference for a small local helper over a
+// new package.
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Parse a non-negative integer env var, falling back to `fallback` on any
+// malformed value. `min` is the smallest accepted value (0 lets an operator
+// disable the throttle; 1 keeps the per-run cap strictly positive).
+function parseIntEnv(raw, fallback, min) {
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= min ? n : fallback;
+}
 
 // Minimal HTML escaper for any DB-sourced string interpolated into the email
 // body (student names, intervention names). Prevents a stored value like a
@@ -146,6 +166,21 @@ async function sendOverdueLogsEmail(toEmail, rows) {
 async function runOverdueLogsDigest({ dryRun = false } = {}) {
   const weekOf = getWeekStart(new Date().toISOString().split('T')[0]);
 
+  // Send-burst controls (item c). Both env-tunable with conservative defaults
+  // and fail safe to the default on malformed input.
+  //   OVERDUE_LOGS_SEND_INTERVAL_MS — minimum pause between outbound Resend
+  //     calls. Default 600ms paces ~1.67/s, conservatively under Resend's
+  //     documented 2 req/s send limit. Set to 0 to disable the throttle.
+  //   OVERDUE_LOGS_MAX_SENDS_PER_RUN — per-invocation backstop on real sends.
+  //     Default 5000 is far above any realistic single-week staff-with-overdue
+  //     count, so it never fires in normal operation; it only bounds a runaway.
+  //     Capped recipients are NOT dropped: their (user, school, week_of) ledger
+  //     slot is left unclaimed, so a later run within the same week_of re-sends
+  //     them (the dedup INSERT wins the open slot). The cap is logged, never
+  //     silent.
+  const sendIntervalMs = parseIntEnv(process.env.OVERDUE_LOGS_SEND_INTERVAL_MS, 600, 0);
+  const maxSendsPerRun = parseIntEnv(process.env.OVERDUE_LOGS_MAX_SENDS_PER_RUN, 5000, 1);
+
   // Recipient set: every staff user (role <> 'parent'). This mirrors the
   // requireTenantStaffAccess gate on the in-app route exactly -- parents are
   // the only role it rejects -- so the email reaches the same audience that
@@ -157,9 +192,21 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
       WHERE role <> 'parent'`
   );
 
-  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, errors: 0 };
+  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, skippedIneligible: 0, errors: 0, capReached: false };
 
   for (const user of staff) {
+    // Recipient eligibility (item b), applied read-only before any work:
+    //   - Operators (PLATFORM_ADMIN_USER_IDS) are cross-tenant platform admins,
+    //     not a customer audience; never mail them a tenant's overdue list.
+    //   - A user with no usable email cannot be a recipient.
+    // Departed staff are hard-deleted upstream, so they never appear in this
+    // set. Per-user deactivation has no schema representation today and is a
+    // deliberate flagged follow-up -- intentionally NOT handled here.
+    if (isOperator(user.id) || !user.email || String(user.email).trim() === '') {
+      summary.skippedIneligible += 1; // counts only -- never log the email/name
+      continue;
+    }
+
     let tenantIds;
     try {
       // Server-side §5 scope resolution from the user's own DB row.
@@ -171,6 +218,14 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
     }
 
     for (const tenantId of tenantIds) {
+      // Per-run send backstop (item c). Real sends only; dry runs are unbounded
+      // because they never call Resend. When hit, stop and let the next tick
+      // pick up the unclaimed recipients (see header on resume semantics).
+      if (!dryRun && summary.sent >= maxSendsPerRun) {
+        summary.capReached = true;
+        break;
+      }
+
       let overdue;
       try {
         // Same predicate as the in-app dashboard reminder.
@@ -230,6 +285,19 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
           console.error('[overdue-logs-digest] claim-rollback failed send_id=', claim.rows[0].id, 'err=', delErr.message);
         }
       }
+
+      // Pace outbound calls regardless of send outcome -- both the success and
+      // failure paths above issued a Resend request -- so a large district
+      // cannot burst past the rate limit (item c).
+      if (sendIntervalMs > 0) {
+        await sleep(sendIntervalMs);
+      }
+    }
+
+    if (summary.capReached) {
+      // Logged once, counts only -- no emails/names. Not silent truncation.
+      console.log('[overdue-logs-digest] per-run send cap reached cap=', maxSendsPerRun, 'sent=', summary.sent, '-- remaining recipients resume on the next tick within this week_of');
+      break;
     }
   }
 
