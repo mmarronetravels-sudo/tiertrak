@@ -29,6 +29,7 @@ import { ChangePasswordModal } from './components/Modals/ChangePasswordModal';
 import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
+import OverdueLogReminderToggle from './components/OverdueLogReminderToggle';
 import EACaseloadManager from './components/EACaseloadManager';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
@@ -5354,6 +5355,10 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
           <p className="text-slate-500 mt-1">Manage {user.tenant_name || user.district_name || 'your organization'}</p>
         </div>
       </div>
+
+      {/* School-level reminder settings. Self-hides until the backend reports
+          feature_enabled, so it stays invisible until the email feature is live. */}
+      {user?.role === 'school_admin' && <OverdueLogReminderToggle API_URL={API_URL} />}
 
       {/* Admin Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
