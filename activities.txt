@@ -30559,3 +30559,102 @@ NEXT SESSION SHOULD
   OFF. The prod-enable gate remains the per-tenant opt-out (item a); land that
   before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
 ================================================================================
+================================================================================
+SESSION: 2026-06-27T07:58:21-0700
+BRANCH:  feat/overdue-logs-tenant-optout
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/337 (merged)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Per-tenant opt-out for the scheduled weekly overdue-progress-logs staff email
+  -- prod-enable gate item (a), the schema-bearing Branch 2. A school-tenant or
+  a district can now decline the email before OVERDUE_LOGS_REMINDERS_ENABLED is
+  turned on in production. Default-on / opt-out semantics: no row = eligible;
+  reminders_enabled = FALSE suppresses (reversible via UPSERT).
+
+FILES TOUCHED
+  migration-051-overdue-log-reminder-optouts.sql — new opt-out config table
+  services/overdueLogsDigest.js — recipient-query enforcement: per-user district
+    skip (before scope resolution) + per-tenant school skip; skippedOptedOut
+    counter; fail-closed if the opt-out load throws
+  routes/districtAccess.js — PUT /:id/overdue-log-reminders (district_admin
+    self-service for own district / a school within it)
+  routes/operatorOverdueLogOptouts.js — new operator-only file: PUT
+    /schools/:tenantId + PUT /districts/:districtId (reaches standalone/legacy
+    NULL-district tenants the district-path routes cannot)
+  server.js — mount /api/operator/overdue-log-reminders
+  docs/ai-context/PRIVACY_REVIEW.md — M051 note; v1 opt-out exclusion satisfied
+
+MIGRATIONS RUN
+  migration-051-overdue-log-reminder-optouts.sql — new config table. Dry-run on
+    LOCAL dev DB only this session (idempotent re-apply; exactly-one-scope CHECK
+    rejects two-scope and zero-scope; partial UNIQUE rejects dup per scope; 5
+    indexes present). Prod apply + schema-assertion verification handled
+    out-of-session by the operator (secrets rule).
+
+TENANT ISOLATION REVIEW
+  New table carries school_tenant_id + district_id, each indexed; exactly-one-
+  scope CHECK. Writes keyed strictly by validated positive-int32 path id; the
+  district_admin school branch binds tenants.district_id = :id AND type='school'
+  (cross-district write structurally impossible). Operator routes are cross-
+  tenant by design, gated requireAuth + platformAdminOnly (fail-closed env
+  allowlist). Per-user district skip verified sound: resolveAccessibleTenantIds
+  filters district_id = $2 at the query layer AND M028 composite FK
+  (school_tenant_id, district_id) REFERENCES tenants(id, district_id) enforces
+  it structurally. tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Table stores integer refs + a boolean + timestamps
+    only (school_tenant_id, district_id, reminders_enabled, created_by,
+    updated_by, created_at, updated_at).
+  Logging audit: verified no PII in logs; skippedOptedOut is count-only; the
+    skip branches log nothing; error handlers are tag + err.message only.
+  Cross-tenant risk: none identified. Privacy-positive change (lets a tenant
+    decline a PII-bearing email); the digest fails closed (aborts the run) if
+    the opt-out read throws rather than emailing a tenant that may have
+    declined. privacy-reviewer: APPROVED, 0 CRITICAL / 0 WARN.
+
+VERIFICATION
+  npm test — 38 passed, 0 failed (run before each of the 3 commits and again on
+    main after merge)
+  npm run lint — N/A, no lint script configured (Followup #74)
+  migration dry-run on local dev DB — success (idempotent; CHECK + partial
+    UNIQUE enforced; 5 indexes present)
+  digest dry-run smoke — a school opt-out on a populated tenant flipped its 7
+    resolving staff from sent to skippedOptedOut (sent 5 -> 0)
+  UPSERT SQL smoke — re-enable flips state on the same row (count stays 1,
+    idempotent); district UPSERT works
+  orphaned-commit gate: PASS — feat/overdue-logs-tenant-optout head is an
+    ancestor of origin/main (base=main)
+  merge-sha verification: PASS — PR #337 merge second-parent equals PR head
+  security-reviewer: APPROVED, 0 CRITICAL / 0 WARN
+  Disposition: §2A human review + merge by a non-author (PII + tenant + auth PR;
+    author did not self-merge)
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #337 commit OIDs at merge time:
+  da44933645939d18247de2246d69eead2de662bd
+  876eefa7d3a31022536024dbcdfd1ccff92c1552
+  0984315b833978f25cb8d8704f9ebdb6bd5a1eef
+
+PR #337 merge commit OID:
+  5b184c36bae522965348dd3d424b507b78ee9e81
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - Prod M051 migration-apply + post-deploy schema-assertion verification are
+    handled out-of-session in the operator's own terminal (secrets rule).
+  - OVERDUE_LOGS_REMINDERS_ENABLED stays OFF until prod M051 is applied and
+    verified; gate item (a) is now built.
+  - Per-STAFF (per-user) opt-out still not built — separate follow-up.
+  - No GET/read surface for opt-out state (operator console / district-admin
+    UI) yet — follow-up.
+  - mutationUserLimiter is applied both on-route and inside requireAuth for
+    non-GET (harmless redundancy, stricter not weaker; security-reviewer INFO).
+  - scripts/ops/ remains untracked (Followup #94).
+
+NEXT SESSION SHOULD
+  Confirm prod M051 applied + schema-assertion verification green, then work the
+  remaining prod-enable gate items before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
+  Land this chore/activities-log-pr337 PR to main first.
+================================================================================
