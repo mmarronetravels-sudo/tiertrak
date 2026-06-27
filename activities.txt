@@ -30290,7 +30290,7 @@ NEXT SESSION SHOULD
 ================================================================================
 SESSION: 2026-06-26T16:25:04-0700
 BRANCH:  feat/overdue-logs-staff-email
-DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/333
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/333 @ e8e0c4a
 --------------------------------------------------------------------------------
 TASK SUMMARY
   Add a scheduled weekly email notifying staff of overdue/unentered weekly
@@ -30344,8 +30344,10 @@ VERIFICATION
   server boot smoke (flag unset) — prints "[overdue-logs-digest] disabled"
     and serves normally; feature does not register
   HTML-escape smoke — script/markup in a synthetic name is escaped in body
-  orphaned-commit gate: SKIPPED — PR #333 not merged yet
-  merge-sha verification: SKIPPED — PR #333 not merged yet
+  orphaned-commit gate: PASSED — all 5 work-PR OIDs contained in merge e8e0c4a
+    on origin/main (git merge-base --is-ancestor, 5/5)
+  merge-sha verification: e8e0c4a78488baa0c0fedeef26eb8ba6e2c2687a verified on
+    origin/main
   misattribution check: N/A — no FIXES: block this session
 
 ------------------------------------------------------------------------
@@ -30360,9 +30362,9 @@ PR #333 commit OIDs:
   d7d4f83e83e4423cb51406e920e9edd7345d4e09
 
 OPEN ITEMS / FOLLOW-UPS
-  - PR #333 is OPEN and must NOT be self-merged (author == session operator);
-    §2A formal approval + merge belongs to the designated non-author reviewer
-    (PII + multi-tenant surface).
+  - PR #333 MERGED at e8e0c4a78488baa0c0fedeef26eb8ba6e2c2687a on origin/main
+    via §2A formal approval + merge by the designated non-author reviewer (PII +
+    multi-tenant surface); no self-merge.
   - PRE-PROD-ENABLE GATE (recorded to memory): the enable flag must stay OFF in
     prod until all three land -- (a) per-tenant opt-out, (b) recipient-
     eligibility predicate excluding deactivated/departed/operator-admin
@@ -30372,7 +30374,82 @@ OPEN ITEMS / FOLLOW-UPS
     not produced by this session, left untouched.
 
 NEXT SESSION SHOULD
-  After the §2A reviewer approves and PR #333 merges, verify the merge SHA
-  reached main, then log a follow-up updating the disposition to merged. Do NOT
-  flip the enable flag in prod until the three pre-prod-enable gates land.
+  Do NOT flip the enable flag in prod until the three pre-prod-enable gates land.
+================================================================================
+================================================================================
+SESSION: 2026-06-26T16:59:23-0700
+BRANCH:  feat/referral-submit-admin-email
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/332 @ 0434ec7
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Backfill: PR #332 merged without its own activities.txt entry; this entry was
+  reconstructed from git in the PR #334 session. Feature: email a school's
+  admin(s) when a discipline referral is submitted, fired post-commit from the
+  existing referral-create handler. Reuses the existing inline Resend client (no
+  new dependency), no schema change, and no new endpoint. Recipient lookup is
+  tenant-scoped on the already-validated targetTenantId; the email body is
+  PII-free (static subject, no student name/behavior/notes/grade, no referral id
+  in body or link).
+
+FILES TOUCHED
+  routes/disciplineReferrals.js     -- post-commit admin-notify on referral submit
+  docs/ai-context/PRIVACY_REVIEW.md -- record referral-create Resend admin egress
+
+  Diff stat vs merge first-parent (0434ec7^1..0434ec7):
+    2 files changed, 106 insertions(+), 1 deletion(-)
+
+MIGRATIONS RUN
+  none -- no schema change
+
+TENANT ISOLATION REVIEW
+  Recipient resolution is tenant-scoped: SELECT email FROM users WHERE
+  tenant_id = $1 AND role = 'school_admin', where $1 is the already-validated
+  targetTenantId from resolveAndBindTargetTenant (never request input). Admins
+  of one school are never notified about another school's referral; no cross-
+  school or cross-district read/write introduced. Recipients are mailed
+  individually so no admin's address is disclosed to another.
+  tenant-isolation-auditor verdict: APPROVED.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none in the email body -- static subject ("New discipline
+    referral submitted") and a generic body; no student name, behavior, notes,
+    grade, or referral id in the body or link. Recipients are authorized
+    school_admin users for the referral's own tenant. Resend is the existing
+    sub-processor (no new vendor, no new egress surface).
+  Logging audit: failure path logs a redacted marker only -- tenant_id (integer)
+    + err.name; never recipient addresses, never referral/student row data. No
+    PII in logs, error bodies, URLs, or query strings.
+  Cross-tenant risk: none identified. privacy-reviewer verdict: APPROVED.
+    security-reviewer verdict: APPROVED.
+
+VERIFICATION
+  Reconstructed from git post-merge (SHA manifest below); not re-run this session.
+  Dependencies added: 0 (existing inline Resend client reused)
+  orphaned-commit gate: PASSED — both work-PR OIDs contained in merge 0434ec7
+    on origin/main (git merge-base --is-ancestor, 2/2)
+  merge-sha verification: 0434ec7b2618eb63cccc4b4b2f5852b62f0e5f31 verified on
+    origin/main
+  misattribution check: N/A — backfilled entry, no FIXES: block
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #332 commit OIDs:
+  b0a4b17d75add28e1105154d7d33ee6123f63578
+  df876d113ff890e363ce617562fe678c636ad536
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #332 MERGED at 0434ec7b2618eb63cccc4b4b2f5852b62f0e5f31 on origin/main
+    via §2A approval + merge by the designated non-author reviewer (PII +
+    multi-tenant surface); no self-merge.
+  - district_admin recipients are intentionally NOT notified in v1 (keys on
+    users.tenant_id = school only) -- a documented narrowing.
+  - Entry backfilled in the PR #334 session; #332 originally merged without an
+    activities.txt entry.
+
+NEXT SESSION SHOULD
+  Nothing outstanding for #332 itself — feature merged and the notify path is
+  live. Revisit district_admin notification scope if district-level recipients
+  are needed.
 ================================================================================
