@@ -42,8 +42,17 @@
 //
 // The OVERDUE_LOGS_REMINDERS_ENABLED flag is enforced at the scheduler
 // (server.js), NOT here, so this function stays a pure unit that an ops smoke
-// can invoke on dev. Per-tenant opt-out is a deliberate follow-up that must
-// land before this is enabled in production.
+// can invoke on dev.
+//
+// Per-tenant opt-out (gate item (a), migration-051): a school or district can
+// decline these emails. The declined scopes are loaded once per run from
+// overdue_log_reminder_optouts (integer-only, no PII). A district-scoped
+// opt-out is applied as a per-USER skip (suppresses every school under that
+// district); a school-scoped opt-out is applied as a per-TENANT skip
+// (suppresses only that one school). Absence of a row means eligible
+// (default-on / opt-out semantics) -- we read only reminders_enabled = FALSE
+// rows. If that load fails the run aborts (fail-closed: better to send nothing
+// than to email a tenant that may have opted out).
 
 const { Pool } = require('pg');
 const { Resend } = require('resend');
@@ -192,7 +201,26 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
       WHERE role <> 'parent'`
   );
 
-  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, skippedIneligible: 0, errors: 0, capReached: false };
+  // Per-tenant opt-out scopes (gate item (a), migration-051). Loaded once per
+  // run as integer-only sets -- no PII. We read ONLY reminders_enabled = FALSE
+  // rows: absence of a row, or a re-enabled (TRUE) row, both mean "eligible".
+  // A throw here aborts the whole run (fail-closed) rather than silently
+  // sending to a tenant that may have declined.
+  const optedOutSchools = new Set();
+  const optedOutDistricts = new Set();
+  {
+    const { rows: optouts } = await pool.query(
+      `SELECT school_tenant_id, district_id
+         FROM overdue_log_reminder_optouts
+        WHERE reminders_enabled = FALSE`
+    );
+    for (const o of optouts) {
+      if (o.school_tenant_id != null) optedOutSchools.add(o.school_tenant_id);
+      if (o.district_id != null) optedOutDistricts.add(o.district_id);
+    }
+  }
+
+  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, skippedIneligible: 0, skippedOptedOut: 0, errors: 0, capReached: false };
 
   for (const user of staff) {
     // Recipient eligibility (item b), applied read-only before any work:
@@ -207,6 +235,16 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
       continue;
     }
 
+    // District-wide opt-out (gate item (a)): a district-scoped opt-out suppresses
+    // EVERY school under that district. user.district_id is constant for this
+    // user and, by the §5 resolveAccessibleTenantIds contract, every school in
+    // their resolved set lies within it -- so we skip the whole user here,
+    // before scope resolution, rather than re-deriving it per school below.
+    if (user.district_id != null && optedOutDistricts.has(user.district_id)) {
+      summary.skippedOptedOut += 1; // counts only -- no id/name logged
+      continue;
+    }
+
     let tenantIds;
     try {
       // Server-side §5 scope resolution from the user's own DB row.
@@ -218,6 +256,13 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
     }
 
     for (const tenantId of tenantIds) {
+      // Single-school opt-out (gate item (a)): a school-scoped opt-out suppresses
+      // only this school; the user's other (non-opted-out) schools still send.
+      if (optedOutSchools.has(tenantId)) {
+        summary.skippedOptedOut += 1; // counts only -- no id/name logged
+        continue;
+      }
+
       // Per-run send backstop (item c). Real sends only; dry runs are unbounded
       // because they never call Resend. When hit, stop and let the next tick
       // pick up the unclaimed recipients (see header on resume semantics).
