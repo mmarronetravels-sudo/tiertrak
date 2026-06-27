@@ -30453,3 +30453,109 @@ NEXT SESSION SHOULD
   live. Revisit district_admin notification scope if district-level recipients
   are needed.
 ================================================================================
+================================================================================
+SESSION: 2026-06-26T18:51:39-0700
+BRANCH:  sec/overdue-logs-recipient-guard
+DISPOSITION: merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/335 @ 219687c
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Hardened the scheduled weekly overdue-progress-logs staff email send path
+  (services/overdueLogsDigest.js) ahead of any production enable. Two items
+  landed:
+    (b) recipient-eligibility guard — skip operator accounts (consumed
+        read-only via isOperator against the PLATFORM_ADMIN_USER_IDS allowlist)
+        and recipients with no usable email, before scope resolution. Departed
+        staff are hard-deleted upstream (never in the recipient set); per-user
+        deactivation has no schema column today and is left as a flagged
+        follow-up (no schema change here).
+    (c) send-burst controls — per-send throttle OVERDUE_LOGS_SEND_INTERVAL_MS
+        (default 600ms, under the assumed 2 req/s provider limit) and per-run
+        backstop OVERDUE_LOGS_MAX_SENDS_PER_RUN (default 5000); a capped run
+        leaves unsent recipients' (user, school, week_of) ledger slots
+        unclaimed so a later tick within the same week_of re-sends them. Cap is
+        logged counts-only, never silent.
+  No new dependency, no schema change, no authz change. The feature flag
+  OVERDUE_LOGS_REMINDERS_ENABLED remains OFF (unchanged); enable is still gated
+  on the per-tenant opt-out follow-up (item a), deliberately kept out of this
+  branch.
+
+FILES TOUCHED
+  services/overdueLogsDigest.js     -- eligibility guard + throttle/cap; local
+                                       sleep/parseIntEnv helpers; count-only
+                                       summary fields (skippedIneligible,
+                                       capReached)
+  docs/ai-context/PRIVACY_REVIEW.md -- egress-section note: eligibility guard +
+                                       throttle/cap; counters count/boolean only
+
+  Diff stat vs merge first-parent (219687c^1..219687c):
+    2 files changed, 71 insertions(+), 1 deletion(-)
+
+MIGRATIONS RUN
+  none -- no schema change
+
+TENANT ISOLATION REVIEW
+  Per-user §5 scope is unchanged: the global recipient SELECT (role <> 'parent',
+  no request input) feeds per-user resolveAccessibleTenantIds(user), then
+  getMissingLogsForStaff(user, tenantId) binds s.tenant_id. The new eligibility
+  guard only continues past a user; the cap/throttle only break/pace the loop —
+  neither alters, bypasses, or widens scope. Dedup ledger key
+  (user_id, school_tenant_id, week_of) unchanged. No cross-school or
+  cross-district read/write introduced. tenant-isolation-auditor verdict:
+  APPROVED (0 CRITICAL / 0 WARN).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none newly exposed. Eligibility-skip branch logs nothing;
+    cap-reached log emits integer cap + sent count only; all other log lines
+    carry integer ids + counts only. New summary fields (skippedIneligible,
+    capReached) are count/boolean only and never carry a skipped user's id,
+    email, or name. Excluding operators is privacy-positive (a cross-tenant
+    platform admin is never mailed a tenant's overdue list).
+  Cross-tenant risk: none identified. privacy-reviewer verdict: APPROVED
+    (initial APPROVED WITH NOTES — one doc-completeness WARN, resolved by the
+    PRIVACY_REVIEW.md note; re-review APPROVED). security-reviewer verdict:
+    APPROVED (0 CRITICAL / 0 WARN).
+
+VERIFICATION
+  npm test: 38/38 passing. node --check services/overdueLogsDigest.js: OK.
+  Dependencies added: 0 (isOperator is an existing internal module; sleep /
+    parseIntEnv are local helpers).
+  merge-sha verification: 219687c705a62af685ecbef9dbed5f93b6f89bbc verified on
+    origin/main.
+  orphaned-commit gate: PASSED — both work-PR OIDs contained in merge 219687c
+    on origin/main (git merge-base --is-ancestor, 2/2).
+  local main fast-forwarded 3d8c89e -> 219687c (ff-only, clean).
+  §2A: merged via a formal non-author-reviewer APPROVAL on the current head
+    (3c2000e). The first approval (on 99475c3) was auto-dismissed when the docs
+    commit (3c2000e) was pushed — branch protection dismisses stale approvals on
+    new commits — and a fresh approval was obtained on 3c2000e before merge.
+    Author did not self-merge.
+  Deploy / boot log: OPERATOR-CONFIRMED from the Render dashboard (Render API
+    auth was unavailable to the session). Deploy Live on commit 219687c. Boot
+    log verbatim: "[overdue-logs-digest] disabled (set
+    OVERDUE_LOGS_REMINDERS_ENABLED=true to enable)", followed by "Schema
+    assertion: all expected migration relations present" and "Your service is
+    live." => scheduler dormant (flag OFF) and schema assertion passing in prod.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #335 commit OIDs:
+  99475c3152e48c7deb365edc5441a03712897110
+  3c2000ec3888c978ea28f331ccfb085c1b8e25c3
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #335 MERGED at 219687c705a62af685ecbef9dbed5f93b6f89bbc on origin/main;
+    deploy Live on 219687c, scheduler dormant (operator-confirmed). No
+    self-merge.
+  - OVERDUE_LOGS_REMINDERS_ENABLED stays OFF until the per-tenant opt-out
+    follow-up (item a) lands; that gate is unchanged by this PR.
+  - Per-user deactivation has no schema column today; the recipient-eligibility
+    guard covers operator + empty-email only. Deactivation filtering deferred as
+    a flagged follow-up (no schema change taken here).
+
+NEXT SESSION SHOULD
+  Nothing outstanding for #335 itself — hardening merged and live, flag still
+  OFF. The prod-enable gate remains the per-tenant opt-out (item a); land that
+  before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
+================================================================================
