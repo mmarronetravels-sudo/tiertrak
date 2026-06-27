@@ -53,6 +53,7 @@ const pool = new Pool({
 // Import routes
 const tenantsRoutes = require('./routes/tenants');
 const operatorDistrictsRoutes = require('./routes/operatorDistricts');
+const operatorOverdueLogOptoutsRoutes = require('./routes/operatorOverdueLogOptouts');
 const studentsRoutes = require('./routes/students');
 const interventionsRoutes = require('./routes/interventions');
 const progressNotesRoutes = require('./routes/progressNotes');
@@ -763,6 +764,7 @@ app.use('/api/districts', districtAccessRoutes);
 app.use('/api/districts', districtDashboardRoutes);
 app.use('/api/districts', districtReportRoutes);
 app.use('/api/operator/districts', operatorDistrictsRoutes);
+app.use('/api/operator/overdue-log-reminders', operatorOverdueLogOptoutsRoutes);
 app.use('/api/discipline-referrals', disciplineReferralsRoutes);
 app.use('/api/discipline-reports', disciplineReportsRoutes);
 app.use('/api/mtss-coordinators', mtssCoordinatorsRoutes);
