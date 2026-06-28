@@ -30658,6 +30658,91 @@ NEXT SESSION SHOULD
   remaining prod-enable gate items before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
   Land this chore/activities-log-pr337 PR to main first.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-28T09:10:09-0700
+BRANCH:  feat/overdue-logs-school-self-service-optout
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/339
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added school-level self-service for the weekly overdue-logs reminder email: a
+  school_admin can turn their OWN school's reminder on/off from an Admin Panel
+  toggle, without an operator. Builds on PR #337 (M051 opt-out table + digest
+  enforcement). Reuses the M051 table with NO schema change.
+
+FILES TOUCHED
+  routes/schoolOverdueLogOptouts.js — NEW; school_admin GET/PUT, scope via resolveAccessibleTenantIds
+  routes/schoolOverdueLogOptoutsCore.js — NEW; pure DB-free role-gate + scope helper (resolveOwnSchoolId)
+  test/schoolOverdueLogOptoutsCore.test.js — NEW; 13 unit tests
+  server.js — mount router at /api/school/overdue-log-reminders
+  frontend/src/components/OverdueLogReminderToggle.jsx — NEW; toggle card, self-hides until feature_enabled
+  frontend/src/App.jsx — render toggle in AdminView (school_admin only)
+  docs/ai-context/PRIVACY_REVIEW.md — record the new self-service surface
+
+MIGRATIONS RUN
+  none (reuses Migration 051 overdue_log_reminder_optouts; no schema change)
+
+TENANT ISOLATION REVIEW
+  Target school resolved strictly from resolveAccessibleTenantIds(req.user) via
+  the pure resolveOwnSchoolId helper (never from request input); type-safe
+  membership check (both sides coerced to Number). Cross-school PUT -> 403, no
+  row written. UPSERT scoped to one school_tenant_id (ON CONFLICT, district_id
+  NULL). school_admin-ONLY (district_tech_admin + district_admin excluded).
+  tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Surface carries integers + a boolean only.
+  Logging audit: console.error sites carry static tag + err.message only; error
+    bodies are static strings; FE logError carries static tag + error object. No PII.
+  Cross-tenant risk: none identified. privacy-reviewer: APPROVED, 0 CRITICAL / 0 WARN.
+
+VERIFICATION
+  npm test — 51 passed, 0 failed (38 existing + 13 new)
+  frontend npm run build — success; new component eslint — clean; App.jsx lint-error count unchanged (37->37)
+  local HTTP smoke (real middleware chain, local dev DB) — 20/20 assertions pass
+    in BOTH flag states: flag off -> feature_enabled:false (toggle hidden) + write
+    still works; flag on -> feature_enabled:true. Opt-out writes school-scoped row
+    (reminders_enabled=false, created_by/updated_by=actor); digest WHERE
+    reminders_enabled=FALSE skips it; cross-school PUT -> 403; bad input -> 400;
+    re-enable reversible; DB left at 0 rows.
+  security-reviewer: APPROVED, 0 CRITICAL / 0 WARN
+  orphaned-commit gate: PASS — feat/overdue-logs-school-self-service-optout head
+    is an ancestor of origin/main (base=main)
+  merge-sha verification: PASS — PR #339 merge second-parent equals PR head
+  Disposition: §2A human review + merge by a non-author (auth + tenant PR;
+    author did not self-merge); reviewDecision=APPROVED
+--------------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+--------------------------------------------------------------------------------
+
+PR #339 commit OIDs at merge time:
+  6c0c4b3a523d01f10d233a6f8ab79f09ff221c0d
+  c9336990759425b3dd5e7b219070d7b914f488ce
+  afed6be699a1be52ec5634991dfbb92bfa2f4435
+
+PR #339 merge commit OID:
+  8740419de24cfe9f5c3a3fbf3f8a978778a0ce82
+--------------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - OVERDUE_LOGS_REMINDERS_ENABLED stays OFF in prod until M051 is applied +
+    verified; this PR adds the school-admin opt-out path but does not flip it.
+  - Multi-building school_admin: backend handles it (explicit school_tenant_id ∈
+    accessible set), but no FE building-picker shipped — single-building assumed
+    in the toggle (every prod tenant today). Follow-up if a multi-school
+    school_admin ever onboards.
+  - Per-STAFF (per-user) opt-out still not built — separate follow-up (carried).
+  - validateIntParam now duplicated in schoolOverdueLogOptoutsCore.js too;
+    existing dedupe chore (districtAccess/operatorDistricts/operator) grows by one.
+  - GET /api/school/overdue-log-reminders is unthrottled (read; per repo
+    convention) — optional hardening, not required.
+  - scripts/ops/ remains untracked (Followup #94).
+
+NEXT SESSION SHOULD
+  Land this chore/activities-log-pr339 PR to main. The school_admin opt-out path
+  is now built; remaining prod-enable gate items are tracked under the #337/#333
+  follow-ups before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
+================================================================================
+
 ================================================================================
 SESSION: 2026-06-28T12:58:44-0700
 BRANCH:  feat/resources-complete-user-guide
