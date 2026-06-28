@@ -31,16 +31,14 @@ After signing in, staff see a navigation bar across the top. The buttons you see
 
 ### The eight roles at a glance
 
-| Role | In plain terms |
-|---|---|
-| District admin | District-wide access to everything, including roll-up, admin, and discipline. |
-| District tech admin | District-wide configuration and integrations; elevated read access. |
-| School admin | Full access within their building, including roll-up and discipline. |
-| Counselor | Sees all students in the school, manages interventions, reviews discipline. |
-| Interventionist | Sees all students, manages interventions, uploads documents. |
-| Teacher | Sees assigned students plus all Tier 1 students; manages interventions and logs progress. |
-| Education assistant | Logs progress for assigned students; files discipline referrals; view-only otherwise. |
-| Parent / guardian | A separate portal showing only their own linked child or children. |
+- **District admin** — District-wide access to everything, including roll-up, admin, and discipline.
+- **District tech admin** — District-wide configuration and integrations; elevated read access.
+- **School admin** — Full access within their building, including roll-up and discipline.
+- **Counselor** — Sees all students in the school, manages interventions, reviews discipline.
+- **Interventionist** — Sees all students, manages interventions, uploads documents.
+- **Teacher** — Sees assigned students plus all Tier 1 students; manages interventions and logs progress.
+- **Education assistant** — Logs progress for assigned students; files discipline referrals; view-only otherwise.
+- **Parent / guardian** — A separate portal showing only their own linked child or children.
 
 A ninth role, **operator**, is the platform support team.
 
@@ -191,27 +189,13 @@ ScholarPath is built so people only see the students they're entitled to see.
 
 ## 18. Appendix: role-permission matrix
 
-"View" means see-only; "Manage" means create, edit, or act. Parents are omitted from most rows because they only access their own child's portal.
+"View" means see-only; "Manage" means create, edit, or act. The capabilities below are summarized per role. Parents are omitted because they only access their own child's portal.
 
-| Capability | Dist. admin | School admin | Counselor | Interventionist | Teacher | Ed. assistant |
-|---|---|---|---|---|---|---|
-| See all students in school | Yes | Yes | Yes | Yes | Assigned + Tier 1 | Caseload only |
-| Add / edit students | Yes | Yes | Yes | Yes | No | No |
-| Delete a student | Yes | No | No | No | No | No |
-| Manage interventions / plans | Yes | Yes | Yes | Yes | Yes | No |
-| Log weekly progress | Yes | Yes | Yes | Yes | Yes | Yes (caseload) |
-| Edit / delete a progress log | Yes | Yes | Yes | Yes | Yes | No |
-| Upload screeners | Yes | Yes | Yes | Yes | Yes | No |
-| Reset a screener batch | Yes | Yes | No | No | No | No |
-| File a discipline referral | Yes | Yes | Yes | Yes | Yes | Yes |
-| Review / resolve referrals | Yes | Yes | View | View | Own only | No |
-| By-staff discipline report | Yes | Yes | No | No | No | No |
-| Create / edit MTSS meetings | Yes | Yes | Yes | Yes | No | No |
-| Review pre-referral forms | Yes | Yes | Yes | No | No | No |
-| Manage 504 cycles / forms | Yes | Yes | Yes | Yes | View accom. | No |
-| Run Grade Roll-up | Yes | Yes | No | No | No | No |
-| Toggle overdue reminders | District/school | Own school | No | No | No | No |
-| Add / manage staff | Yes | Yes | Yes | Yes | No | No |
-| Link parents to students | Yes | Yes | No | No | No | No |
+- **District admin** — Can do everything: see and add/edit students across the district, delete students, manage interventions and plans, log and edit progress, upload and reset screener batches, file/review/resolve discipline referrals, run by-staff discipline reports, create MTSS meetings, review pre-referral forms, manage 504 cycles, run Grade Roll-up, toggle overdue reminders (district or school), manage staff, and link parents.
+- **School admin** — Same broad management as a district admin within their own building, including roll-up, by-staff reports, 504 cycles, staff management, and parent linking — but cannot delete a student or toggle reminders outside their own school.
+- **Counselor** — Sees all students in the school; manages interventions/plans, progress logs, screener uploads, MTSS meetings, pre-referral reviews, 504 cycles, and staff. Can view (but not resolve) discipline referrals. Cannot delete students, reset screener batches, run by-staff reports or roll-up, toggle reminders, or link parents.
+- **Interventionist** — Same as a counselor for students, interventions, progress, screener uploads, MTSS meetings, and 504 cycles, and can add/manage staff. Can view discipline referrals but not resolve them, and cannot review pre-referral forms, run roll-up, or link parents.
+- **Teacher** — Sees assigned students plus all Tier 1 students. Manages interventions/plans, logs and edits progress, and uploads screeners. Can file discipline referrals and act only on their own; views active 504 accommodations. Cannot add/edit/delete students, reset screeners, review pre-referrals, create MTSS meetings, run roll-up, toggle reminders, manage staff, or link parents.
+- **Education assistant** — Sees only their assigned caseload. Logs progress for those students and can file discipline referrals. View-only for everything else — cannot add/edit students, edit/delete logs, manage interventions, upload screeners, review discipline, or access 504.
 
 District tech admins have district-wide read access and manage configuration and integrations, but are view-only for the day-to-day actions above. The platform operator (support) role can act across schools and districts to handle setup and requests.
