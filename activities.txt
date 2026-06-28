@@ -30949,3 +30949,112 @@ NEXT SESSION SHOULD
   ENABLED flag remains OFF in prod until the digest opt-out/eligibility/throttle
   work lands (separate gate, conv. SEC-MED/PRIV-WARN).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-28T16:10:32-0700
+BRANCH:  feat/school-calendar-digest
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/348
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR 3/4 of the school_academic_calendar feature: made the scheduled weekly
+  overdue-progress-logs digest calendar- and cadence-aware (M052 table +
+  endpoints already on main via #345/#346). Calendar awareness skips a
+  (staffer, school) for a week when the school is out of session; frequency
+  awareness honors log_frequency in the shared predicate so the in-app
+  dashboard card and the email agree. No frontend changes (that is PR 4).
+  Three reviewers run (all APPROVED); privacy WARN (a doc gap) addressed on
+  branch before merge. PR #348 merged to main this session after human review.
+
+FILES TOUCHED
+  services/schoolCalendar.js (new, +127) — pure DB-free isWeekInSession +
+    default-break window; label is never an input (gate 5 by construction)
+  routes/weeklyProgressCore.js (new, +64) — pure getWeekStart/getPriorWeekStart/
+    satisfyingWeeks, extracted so the cadence rule unit-tests without the
+    router's middleware chain
+  routes/weeklyProgress.js — getMissingLogsForStaff now frequency-aware (SQL
+    CASE on log_frequency; params gain priorWeek as $3, caseload ia.user_id -> $4)
+  services/overdueLogsDigest.js — lazy per-school scoped calendar load
+    (WHERE school_tenant_id = $1, label NOT selected) + in-session gate +
+    skippedOutOfSession counter
+  test/schoolCalendar.test.js (new, +150) — 13 unit tests
+  test/weeklyProgressPredicate.test.js (new, +47) — 4 unit tests
+  docs/ai-context/PRIVACY_REVIEW.md — M052 calendar paragraph (privacy WARN fix)
+
+MIGRATIONS RUN
+  none — M052 table shipped in PR #345; this PR is digest wiring only
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN. Re-audited against the
+  five §6.1 gates — this slice runs gate 3 on the live send path. Calendar SELECT
+  is scoped WHERE school_tenant_id = $1 (no blanket SELECT); the school id comes
+  only from resolveAccessibleTenantIds(user) reconstructed server-side from each
+  user's own DB row (digest has no req/JWT/path param), so a school no recipient
+  can access is never read. Reads key on school_tenant_id, not district_id (gate
+  4). Frequency predicate change preserved s.tenant_id binding + elevated/caseload
+  scoping in both branches.
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none new. Email body PII shape unchanged (authorized
+    staffer's own caseload rows, HTML-escaped); no new column added to the SELECT.
+  Logging audit: gate 5 confirmed on the real email path — calendar label is
+    never selected, never read by services/schoolCalendar.js, never in the email
+    body/subject, never in any console.* line. New skippedOutOfSession counter is
+    count-only (no user id/email/name). Calendar-load failure logs integers +
+    err.message only.
+  Cross-tenant risk: none — calendar scope is server-resolved, cache keyed per
+    school_tenant_id; no request input reaches any query.
+  privacy-reviewer: APPROVED WITH NOTES (0 CRITICAL); the single WARN was a
+    doc-only gap in PRIVACY_REVIEW.md, fixed this session (see FIXES).
+  security-reviewer: APPROVED, 0 CRITICAL / 0 WARN.
+  All three reports posted verbatim as a PR #348 comment (paths + line numbers +
+  integer counts only).
+
+VERIFICATION
+  npm test (root) — 83 passed, 0 failed (13 new schoolCalendar + 4 new predicate)
+  npm run lint — N/A (no backend lint script, Followup #74); substituted
+    node --check on all 6 touched files (clean)
+  Layer-B local digest smoke (untracked scripts/ops/2026-06-28-pr-school-calendar
+    -digest-smoke.js, local server + dev DB) — 5 passed, 0 failed: calendar
+    break-week skips a school (skippedOutOfSession +1, no send); default-break
+    fallback via OVERDUE_LOGS_DEFAULT_BREAK env (sends when window excludes today,
+    skips when it includes today); out-of-scope school's calendar row never read
+    (with/without row -> identical summary, gate 3); frequency agreement
+    (biweekly prior-week-only log NOT overdue, weekly IS) via BOTH
+    GET /missing/:tenantId and the digest dry-run. Teardown clean (0 leftover rows).
+  orphaned-commit gate: PASS — feat/school-calendar-digest head
+    2e4a43db158c43f8cb1b51e7e01658775078be11 is an ancestor of origin/main (base=main).
+  merge-sha verification: PASS (MATCH) — PR #348 head == merge 9ca1fed5 second-parent
+    (2e4a43db158c43f8cb1b51e7e01658775078be11).
+  misattribution check: PASS — FIXES SHA is a member of PR #348 commit list.
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #348 commit OIDs at merge time:
+  17262efb4bcf50a45f127cd65c2aeb787a9e991b
+  c3a1349976fe055cbe6dcd72f388f3b082067647
+  22b0afcf3246712da39755133c96db0a268c790e
+  2e4a43db158c43f8cb1b51e7e01658775078be11
+  merge commit: 9ca1fed547df0747c3fe846fc983794c4b3c4e5d
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR 4/4 (frontend): school_admin calendar-management UI in frontend/src/App.jsx.
+  - OVERDUE_LOGS_REMINDERS_ENABLED stays OFF in prod until the opt-out/eligibility/
+    throttle enablement gate clears (unchanged by this PR).
+  - Reviewer INFO carry-forwards (non-blocking): digest owns its pg Pool
+    (pool-consolidation backlog); schoolCalendar.js toYmd string path is a
+    robustness boundary (inputs are DATE-typed, CHECK-constrained).
+  - PR #347 (activities log for #346) also merged to main this session.
+  - The in-app dashboard card is now biweekly-aware via the shared predicate
+    (intended, user-visible) — note for PR 4 / product.
+
+  FIXES:
+    privacy-WARN-PRIVACY_REVIEW-m052 → PR #348 @ 2e4a43db158c43f8cb1b51e7e01658775078be11
+
+NEXT SESSION SHOULD
+  After this chore/activities-log-pr348 PR merges, start PR 4/4 (frontend
+  calendar-management UI) on its own feat/ branch cut off updated main. Carry the
+  OVERDUE_LOGS_REMINDERS_ENABLED prod-enable gate forward as the condition before
+  the send path goes live.
+================================================================================
