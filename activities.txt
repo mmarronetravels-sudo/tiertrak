@@ -30658,3 +30658,59 @@ NEXT SESSION SHOULD
   remaining prod-enable gate items before flipping OVERDUE_LOGS_REMINDERS_ENABLED.
   Land this chore/activities-log-pr337 PR to main first.
 ================================================================================
+================================================================================
+SESSION: 2026-06-28T12:58:44-0700
+BRANCH:  feat/resources-complete-user-guide
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/341
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Added Complete User Guide to Resources — 2 static assets, 1 catalog entry,
+  1 view conditional; 4 files. New downloadable guide (.docx) plus in-app
+  markdown preview wired into the static Resources manifest; the card's "Item"
+  label was made conditional so the guide entry shows title + description only.
+
+FILES TOUCHED
+  frontend/public/resources/complete-user-guide.docx — downloadable Word asset (static, blank template)
+  frontend/src/resources/markdown/complete-user-guide.md — in-app preview source (Vite ?raw bundle)
+  frontend/src/resources/index.js — ?raw import + new RESOURCES entry (id user-guide-complete, no itemRef)
+  frontend/src/views/ResourcesView.jsx — render Item label only when itemRef is present
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — RESOURCES is a global static manifest; no SQL, routes, or tenant-scoped data
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: no logging paths changed; no PII introduced
+  Cross-tenant risk: none identified — static asset + manifest entry, global to all tenants, blank template
+
+VERIFICATION
+  npm test (root) — 51 passed, 0 failed
+  npm run build (frontend) — exit 0; ?raw import resolved and bundled
+  npm run lint (frontend) — pre-existing baseline (91 problems, identical on main); 0 new from this change (index.js clean; ResourcesView only pre-existing line-57)
+  preview render check — ReactMarkdown SSR of the guide markdown: 25.8KB HTML, h1 root, no throw -> MarkdownBoundary will not fall back to raw text
+  vite dev smoke — app root 200; new docx 200 (27936 bytes); ?raw md module 200
+  orphaned-commit gate: SKIPPED — PR #341 not merged yet (OPEN)
+  merge-sha verification: SKIPPED — PR #341 not merged yet (OPEN)
+  misattribution check: N/A — no FIXES block this session
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #341 commit OIDs:
+  43d626a99b8fddc34a4b514ba42919da19cb39a0
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #341 open against main; leave for review (do not self-merge).
+  - This activities entry lands on main via its own chore/activities-log-pr341 PR.
+  - Known gaps unchanged: frontend lint baseline (91 pre-existing problems) and
+    no frontend test runner (followups #73 / #74).
+
+NEXT SESSION SHOULD
+  After PR #341 is reviewed/merged, land this chore/activities-log-pr341 PR to
+  main. If you want the guide entry's "Item" label behavior changed, it lives at
+  frontend/src/views/ResourcesView.jsx (conditional on resource.itemRef).
+================================================================================
