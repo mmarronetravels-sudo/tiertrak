@@ -74,3 +74,19 @@ school_academic_calendar
 - Tenant-isolation-auditor review of the no-FK route-layer school binding (decision #2) when PR 2/PR 3 land.
 - District-level calendar inheritance (deferred, decision #8).
 - Whether to add a `log_frequency` CHECK constraint later (out of scope per decision #6).
+
+### 6.1 Carry-forward gates from the PR-1 tenant-isolation audit (verbatim)
+
+The PR-1 audit (verdict: APPROVED WITH NOTES, 0 CRITICAL / 0 WARN) accepted the no-composite-FK / route-layer-binding decision for this single-table config shape, on the condition that PRs 2–4 satisfy the following gates. These are reproduced verbatim from the auditor report; the CRITICAL conditions are exact and must be re-audited when those PRs land.
+
+> What PRs 2–4 MUST get right for this decision to hold (carry-forward gates for the auditor when endpoints/digest land):
+>
+> 1. Write path, school_admin (PR 2): every INSERT/UPDATE/DELETE must resolve the target `school_tenant_id` from `resolveOwnSchoolId(role, resolveAccessibleTenantIds(req.user), requested)` — verified to exist at `routes/schoolOverdueLogOptoutsCore.js:54` — and must reject a supplied id that is not a member of the accessible set (403). The `school_tenant_id` written must be the resolved value, never `req.body`/`req.params` taken raw. CRITICAL if the body value reaches the column unvalidated.
+>
+> 2. Write path, operator (PR 2): must run `requireAuth, platformAdminOnly` at the router level (precedent `routes/operatorOverdueLogOptouts.js:51`) and gate the target by a `tenants` existence + `type='school'` pre-flight before writing. CRITICAL if `platformAdminOnly` is absent or the route is merely "authenticated."
+>
+> 3. Read path / digest (PR 3): every SELECT against `school_academic_calendar` must filter `WHERE school_tenant_id = ANY(<resolved accessible ids>)` (or the per-tenant equivalent the digest already uses via `resolveAccessibleTenantIds`). Because there is no FK and no DB-level RLS, an unscoped `SELECT * FROM school_academic_calendar` would be a full cross-tenant read — this is the single highest-risk failure mode the deferred enforcement creates. CRITICAL on any unscoped read.
+>
+> 4. Reads must scope on `school_tenant_id`, not `district_id` (PR 3): given `district_id` is nullable and denormalized, a read keyed on `district_id` alone would both miss NULL-district prod tenants and risk cross-school reads within a district. Scope on the school column; treat `district_id` as metadata only until district inheritance is deliberately designed.
+>
+> 5. `label` non-leak (PR 2/3): the spec commits that `label` (VARCHAR(60)) is never logged and never emailed. It is not PII by construction, but confirm the digest and any error paths honor that when the code lands.
