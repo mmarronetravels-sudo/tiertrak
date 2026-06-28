@@ -17,6 +17,7 @@ import annualCalendarMd from './markdown/1.4-annual-mtss-calendar.md?raw';
 import highLeverageMd from './markdown/2.3-high-leverage-tier1-practices.md?raw';
 import disciplineFlowMd from './markdown/3.4-sample-discipline-flowchart.md?raw';
 import parentResultsMd from './markdown/7.3-parent-assessment-results-summary.md?raw';
+import completeUserGuideMd from './markdown/complete-user-guide.md?raw';
 
 export const RESOURCES = [
   {
@@ -90,5 +91,16 @@ export const RESOURCES = [
       docx: '/resources/7.3-parent-assessment-results-summary.docx',
     },
     markdownContent: parentResultsMd,
+  },
+  {
+    id: 'user-guide-complete',
+    title: 'Complete User Guide',
+    description:
+      'Step-by-step guide to every ScholarPath feature, for all roles.',
+    roles: ['admin', 'staff'],
+    files: {
+      docx: '/resources/complete-user-guide.docx',
+    },
+    markdownContent: completeUserGuideMd,
   },
 ];

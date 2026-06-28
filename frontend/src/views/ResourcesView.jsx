@@ -90,9 +90,11 @@ const ResourcesView = ({ selectedResourceId = null }) => {
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-                      Item {resource.itemRef}
-                    </span>
+                    {resource.itemRef && (
+                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                        Item {resource.itemRef}
+                      </span>
+                    )}
                     <h2 className="text-lg font-semibold text-slate-800 mt-1">
                       {resource.title}
                     </h2>
