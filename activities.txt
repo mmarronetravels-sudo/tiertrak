@@ -30855,3 +30855,97 @@ NEXT SESSION SHOULD
   main. Guide content now lives in frontend/src/resources/markdown/complete-user-guide.md
   (preview) + frontend/public/resources/complete-user-guide.docx (download).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-28T15:21:32-0700
+BRANCH:  feat/school-calendar-endpoints
+DISPOSITION: pr-merged:https://github.com/mmarronetravels-sudo/tiertrak/pull/346
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  PR 2/4 of the school_academic_calendar feature: school_admin own-building CRUD
+  and operator any-school CRUD endpoints over the M052 table (M052 shipped in
+  PR #345, PR 1/4). No digest or frontend changes (those are PRs 3 and 4).
+  Mirrors the #339 overdue-log-optouts scoping pattern: the school_admin path
+  resolves the target school via the imported resolveOwnSchoolId (caller's
+  accessible set); the operator path runs requireAuth + platformAdminOnly +
+  a tenants/type='school' existence pre-flight. Re-audited explicitly against
+  the five §6.1 carry-forward gates from the PR-1 tenant-isolation audit.
+
+FILES TOUCHED
+  routes/schoolAcademicCalendarCore.js (+125) — pure DB-free validators
+    (validatePeriodType, strict component-based validateDate, validateCalendarBody
+    with end>=start + length-capped optional label) + re-export of the #339
+    resolveOwnSchoolId/validateIntParam (one source of truth for the §5 gate-1 contract)
+  routes/schoolAcademicCalendar.js (+217) — school_admin CRUD, /api/school/academic-calendar
+  routes/operatorAcademicCalendar.js (+202) — operator CRUD (school-only, no /districts),
+    /api/operator/academic-calendar
+  server.js (+4) — two route mounts
+  test/schoolAcademicCalendarCore.test.js (+176) — 15 unit tests for the core
+  Total: 5 files, +724 (git diff --stat vs the #345 merge base e3f0186)
+
+MIGRATIONS RUN
+  none — M052 table shipped in PR #345; this PR is endpoints only
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor: APPROVED, 0 CRITICAL / 0 WARN. All five §6.1 gates PASS
+  (gate 1 resolved-id-never-raw write; gate 2 platformAdminOnly + type='school'
+  pre-flight; gate 3 every SELECT WHERE school_tenant_id; gate 4 scope on school
+  not district; gate 5 label non-leak). No-composite-FK / route-layer-binding
+  decision (spec #2) ACCEPTED — PUT/DELETE WHERE clauses scope on school_tenant_id
+  alongside id, so a foreign row id yields 404, never a cross-school mutation.
+  security-reviewer: APPROVED, 0 CRITICAL / 0 WARN.
+  privacy-reviewer: APPROVED, 0 CRITICAL / 0 WARN (gate 5 label-non-leak CONFIRMED).
+  All three reports posted verbatim as a PR #346 comment (paths + line numbers only).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none — surface stores integers, dates, period_type enum,
+    and an optional non-PII VARCHAR(60) label (e.g. term/break names)
+  Logging audit: every catch logs a static tag + err.message only; zero console.*
+    lines reference label; no email/Resend code in this PR
+  Cross-tenant risk: none — all reads/writes scoped on school_tenant_id; operator
+    surface fails closed (empty PLATFORM_ADMIN_USER_IDS => 403)
+
+VERIFICATION
+  npm test (root) — 66 passed, 0 failed (15 new calendar-core unit tests)
+  npm run lint — N/A (no backend lint script, Followup #74); substituted
+    node --check on all touched files (clean)
+  Layer-B local smoke (untracked scripts/ops/2026-06-28-pr-school-calendar-smoke.js,
+    local server + dev DB) — 8 passed, 0 failed: cross-school write -> 403 with
+    before/after COUNT unchanged; read scoped on school_tenant_id (foreign row
+    absent); operator gate non-operator -> 403, missing tenant -> 404, non-school
+    tenant -> 404; label non-leak static grep -> 0 matches. Teardown clean.
+  orphaned-commit gate: PASS — git merge-base --is-ancestor 0e00cbb origin/main
+    (PR #346 MERGED to main, merge commit 65e7cfe)
+  merge-sha verification: PR #346 mergedAt 2026-06-28T22:19:19Z, reviewDecision APPROVED
+  misattribution check: N/A — no FIXES block this session
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #346 commit OIDs:
+  e832121841779b91abf41bd5fd7dcc6680df7d15
+  95687baf54c501031887c915423dc8df853b3350
+  6cd02345909b8d91cd7ab36ca87c75d828ae3a31
+  0e00cbbff2aefcec1f8d360d383e23b38bec18bc
+  merge commit: 65e7cfee1ad36ce57b4448fce47d71904b6371e7
+
+OPEN ITEMS / FOLLOW-UPS
+  - This activities entry lands on main via its own chore/activities-log-pr346 PR.
+  - PR 3/4 (feat/school-calendar-digest): frequency-aware shared predicate in
+    routes/weeklyProgress.js; per-school in-session gate + default-break fallback
+    in services/overdueLogsDigest.js; pure services/schoolCalendar.js helper.
+    Gate-3 reminder: the digest SELECT against school_academic_calendar must be
+    scoped (WHERE school_tenant_id = ANY(<resolved ids>)) — no blanket SELECT.
+  - PR 4/4 (frontend): school_admin calendar-management UI.
+  - Reviewer INFO notes (non-blocking): double mutationUserLimiter (inherited +
+    explicit, matches precedent); school_admin POST does a separate tenants lookup
+    for district_id vs operator folding it into one pre-flight (consolidation
+    candidate); err.message in 500 logs (pre-existing repo-wide redaction followup).
+
+NEXT SESSION SHOULD
+  After this chore/activities-log-pr346 PR merges, continue with PR 3/4 on
+  feat/school-calendar-digest (cut off updated main). The OVERDUE_LOGS_REMINDERS_
+  ENABLED flag remains OFF in prod until the digest opt-out/eligibility/throttle
+  work lands (separate gate, conv. SEC-MED/PRIV-WARN).
+================================================================================
