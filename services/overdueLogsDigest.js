@@ -44,6 +44,15 @@
 // (server.js), NOT here, so this function stays a pure unit that an ops smoke
 // can invoke on dev.
 //
+// Calendar awareness (migration-052): for each (user, school) the digest loads
+// that school's academic-calendar rows once per run (lazily, cached, scoped by
+// WHERE school_tenant_id = $1 — never a blanket SELECT, and label is never
+// selected) and skips the (user, school) for this week if the school is out of
+// session (outside every term, inside a break, or — for a school with no
+// calendar — inside the env-driven default break window). A calendar-load
+// failure is treated like the other per-(user,school) query failures: count an
+// error and skip this tick; a later tick retries.
+//
 // Per-tenant opt-out (gate item (a), migration-051): a school or district can
 // decline these emails. The declined scopes are loaded once per run from
 // overdue_log_reminder_optouts (integer-only, no PII). A district-scoped
@@ -66,6 +75,11 @@ const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleT
 // modifies that allowlist nor any authz logic -- it only asks "is this user an
 // operator?" to exclude cross-tenant platform admins from the mailing.
 const { isOperator } = require('../middleware/platformAdminOnly');
+// Pure, DB-free in-session predicate. The digest loads each processed school's
+// calendar rows (scoped by school_tenant_id, label NOT selected) and asks this
+// helper whether the week is in session, so a break/summer week is skipped
+// instead of flagged overdue forever.
+const { isWeekInSession } = require('./schoolCalendar');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -220,7 +234,27 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
     }
   }
 
-  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, skippedIneligible: 0, skippedOptedOut: 0, errors: 0, capReached: false };
+  // Per-run academic-calendar cache (migration-052). Lazily loaded per school,
+  // scoped by school_tenant_id; label is deliberately NOT selected (gate 5 —
+  // the digest never reads, logs, or emails the calendar label). Cached so a
+  // school shared by many staff is queried once. An empty array is cached too,
+  // so a calendar-less school is not re-queried.
+  const calendarBySchool = new Map();
+  async function getSchoolCalendar(schoolTenantId) {
+    if (calendarBySchool.has(schoolTenantId)) {
+      return calendarBySchool.get(schoolTenantId);
+    }
+    const { rows } = await pool.query(
+      `SELECT period_type, start_date, end_date
+         FROM school_academic_calendar
+        WHERE school_tenant_id = $1`,
+      [schoolTenantId]
+    );
+    calendarBySchool.set(schoolTenantId, rows);
+    return rows;
+  }
+
+  const summary = { weekOf, staffConsidered: staff.length, sent: 0, alreadySent: 0, skippedEmpty: 0, skippedIneligible: 0, skippedOptedOut: 0, skippedOutOfSession: 0, errors: 0, capReached: false };
 
   for (const user of staff) {
     // Recipient eligibility (item b), applied read-only before any work:
@@ -260,6 +294,24 @@ async function runOverdueLogsDigest({ dryRun = false } = {}) {
       // only this school; the user's other (non-opted-out) schools still send.
       if (optedOutSchools.has(tenantId)) {
         summary.skippedOptedOut += 1; // counts only -- no id/name logged
+        continue;
+      }
+
+      // Calendar in-session gate (migration-052). Skip this (user, school) for
+      // the week if the school is out of session (outside every term, inside a
+      // break, or -- with no calendar -- inside the default break window). A
+      // load failure counts an error and skips this tick (same as the other
+      // per-(user,school) query failures); a later tick retries.
+      let calendarRows;
+      try {
+        calendarRows = await getSchoolCalendar(tenantId);
+      } catch (err) {
+        summary.errors += 1;
+        console.error('[overdue-logs-digest] calendar-load failed user_id=', user.id, 'tenant_id=', tenantId, 'err=', err.message);
+        continue;
+      }
+      if (!isWeekInSession(weekOf, calendarRows, process.env)) {
+        summary.skippedOutOfSession += 1; // counts only -- no id/name logged
         continue;
       }
 

@@ -11,40 +11,22 @@ const {
 } = require('../middleware/authorizeInterventionAccess');
 const { ELEVATED_ROLES } = require('../constants/roles');
 const { applyElevatedViewerGate } = require('../middleware/canAccessStudent');
+const {
+  getWeekStart,
+  getPriorWeekStart,
+} = require('./weeklyProgressCore');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Helper to get the Monday of a given week
-function getWeekStart(date) {
-  // Parse date string manually to avoid timezone issues
-  let year, month, day;
-  
-  if (typeof date === 'string') {
-    [year, month, day] = date.split('-').map(Number);
-  } else {
-    year = date.getFullYear();
-    month = date.getMonth() + 1;
-    day = date.getDate();
-  }
-  
-  // Create date at noon (avoids any daylight saving issues too)
-  const d = new Date(year, month - 1, day, 12, 0, 0);
-  
-  // Calculate Monday of this week
-  const dayOfWeek = d.getDay();
-  const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // Sunday = go back 6, else go to Monday
-  d.setDate(d.getDate() + diff);
-  
-  // Return as YYYY-MM-DD string (no timezone conversion)
-  const resultYear = d.getFullYear();
-  const resultMonth = String(d.getMonth() + 1).padStart(2, '0');
-  const resultDay = String(d.getDate()).padStart(2, '0');
-  
-  return `${resultYear}-${resultMonth}-${resultDay}`;
-}
+// getWeekStart / getPriorWeekStart are pure helpers imported from
+// ./weeklyProgressCore so the week math can be unit-tested without this router's
+// middleware chain. The core also exports satisfyingWeeks — the single source
+// of truth for the frequency-aware overdue rule — which the SQL CASE in
+// getMissingLogsForStaff mirrors row-by-row (the per-row decision is enforced
+// in SQL; satisfyingWeeks is unit-tested directly against the core).
 
 // Compute the active interventions that are missing this week's progress log
 // for a given staff user within a single tenant. Mirrors the §5 dual-path
@@ -58,8 +40,18 @@ function getWeekStart(date) {
 // be confirmed to be in the caller's accessible-tenant set by the caller; this
 // function does not re-check access. The students JOIN binds s.tenant_id as
 // defense-in-depth so no cross-tenant row can surface even if data drifts.
+//
+// Frequency-aware (spec §3 decision #3): the NOT EXISTS clause clears a plan
+// when a log exists for any of satisfyingWeeks(log_frequency, currentWeek,
+// priorWeek) — i.e. the current week for weekly-cadence plans, or the current
+// OR prior week for 'biweekly' plans. The SQL CASE mirrors satisfyingWeeks per
+// row. Because the rule lives in the shared predicate, the in-app dashboard
+// card and the scheduled email stay in agreement.
 async function getMissingLogsForStaff(user, tenantId) {
   const currentWeek = getWeekStart(new Date().toISOString().split('T')[0]);
+  // Prior week, used only by biweekly plans (see satisfyingWeeks). Bound as $3
+  // and consulted by the SQL CASE below for log_frequency = 'biweekly' rows.
+  const priorWeek = getPriorWeekStart(currentWeek);
   const pathTenantId = Number(tenantId);
   const userRole = user.role;
   const schoolWideAccess = user.school_wide_access === true;
@@ -88,11 +80,16 @@ async function getMissingLogsForStaff(user, tenantId) {
         AND NOT EXISTS (
           SELECT 1 FROM weekly_progress wp
           WHERE wp.student_intervention_id = si.id
-          AND wp.week_of = $2
+          AND wp.week_of = ANY(
+            CASE WHEN si.log_frequency = 'biweekly'
+                 THEN ARRAY[$2::date, $3::date]
+                 ELSE ARRAY[$2::date]
+            END
+          )
         )
       ORDER BY s.last_name, s.first_name
     `;
-    params = [pathTenantId, currentWeek];
+    params = [pathTenantId, currentWeek, priorWeek];
   } else {
     query = `
       SELECT
@@ -107,7 +104,7 @@ async function getMissingLogsForStaff(user, tenantId) {
       JOIN students s ON si.student_id = s.id
       INNER JOIN intervention_assignments ia
         ON ia.student_intervention_id = si.id
-       AND ia.user_id = $3
+       AND ia.user_id = $4
        AND ia.assignment_type = 'staff'
       WHERE s.tenant_id = $1
         AND si.status = 'active'
@@ -116,11 +113,16 @@ async function getMissingLogsForStaff(user, tenantId) {
         AND NOT EXISTS (
           SELECT 1 FROM weekly_progress wp
           WHERE wp.student_intervention_id = si.id
-          AND wp.week_of = $2
+          AND wp.week_of = ANY(
+            CASE WHEN si.log_frequency = 'biweekly'
+                 THEN ARRAY[$2::date, $3::date]
+                 ELSE ARRAY[$2::date]
+            END
+          )
         )
       ORDER BY s.last_name, s.first_name
     `;
-    params = [pathTenantId, currentWeek, user.id];
+    params = [pathTenantId, currentWeek, priorWeek, user.id];
   }
 
   const result = await pool.query(query, params);
@@ -395,4 +397,9 @@ module.exports = router;
 // getWeekStart is also exported so the digest aligns its dedup-ledger week_of to
 // the same Monday boundary this route uses.
 module.exports.getMissingLogsForStaff = getMissingLogsForStaff;
+// Re-exported for back-compat: the digest imports getWeekStart from here to
+// align its dedup-ledger week_of to the same Monday boundary. The pure
+// definitions now live in ./weeklyProgressCore (also re-exported for callers
+// that import from this module).
 module.exports.getWeekStart = getWeekStart;
+module.exports.getPriorWeekStart = getPriorWeekStart;
