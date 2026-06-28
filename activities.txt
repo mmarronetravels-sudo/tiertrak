@@ -30799,3 +30799,59 @@ NEXT SESSION SHOULD
   main. If you want the guide entry's "Item" label behavior changed, it lives at
   frontend/src/views/ResourcesView.jsx (conditional on resource.itemRef).
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-28T13:32:08-0700
+BRANCH:  fix/resources-guide-toc-tables
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/343
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Replaced Complete User Guide assets — TOC rendering fix + GFM tables converted
+  to plain lists; 2 files. Corrected versions of the guide (.docx + preview .md)
+  swapped in place at the same paths/filenames. Follow-up to PR #341 (already
+  MERGED, shipped the guide): pushing to that merged branch could not update it,
+  so the fix rides a fresh fix/ branch + PR. No catalog/manifest change.
+
+FILES TOUCHED
+  frontend/src/resources/markdown/complete-user-guide.md — eight-roles table + appendix permission matrix converted from GFM tables to plain bullet lists
+  frontend/public/resources/complete-user-guide.docx — corrected downloadable Word file (TOC rendering fix)
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  no DB changes — Resources is a global static manifest; no SQL, routes, or tenant-scoped data
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none
+  Logging audit: no logging paths changed; no PII introduced
+  Cross-tenant risk: none identified — blank, non-tenant, non-student template assets
+
+VERIFICATION
+  npm test (root) — 51 passed, 0 failed
+  npm run lint (frontend) — pre-existing baseline (91 problems) unchanged; changed assets are .md/.docx (not JS), so ESLint does not lint them — 0 new
+  git diff origin/main --stat (fix branch) — exactly 2 asset files changed; index.js and all other files untouched
+  markdown diff reviewed — 2 GFM tables replaced with equivalent bullet lists; content preserved
+  orphaned-commit gate: SKIPPED — PR #343 not merged yet (OPEN)
+  merge-sha verification: SKIPPED — PR #343 not merged yet (OPEN)
+  misattribution check: N/A — no FIXES block this session
+
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #343 commit OIDs:
+  ab9dd011f29632875cb3934f55e6dd6b5e470066
+
+OPEN ITEMS / FOLLOW-UPS
+  - PR #343 open against main; leave for review (do not self-merge).
+  - This activities entry lands on main via its own chore/activities-log-pr343 PR.
+  - Process note: PR #341 was already merged when the asset correction was made;
+    a push to its branch cannot reopen/update a merged PR — fresh fix/ PR is the
+    correct path (mirrors the stacked/merged-PR follow-up pattern).
+
+NEXT SESSION SHOULD
+  After PR #343 is reviewed/merged, land this chore/activities-log-pr343 PR to
+  main. Guide content now lives in frontend/src/resources/markdown/complete-user-guide.md
+  (preview) + frontend/public/resources/complete-user-guide.docx (download).
+================================================================================
