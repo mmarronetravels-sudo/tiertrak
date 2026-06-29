@@ -33,6 +33,9 @@ const EXPECTED_SCHEMA = [
   { migration: '047', table: 'staff_import_audit' },                   // staff import commit
   { migration: '048', table: 'student_import_audit' },                 // student import commit
   { migration: '049', table: 'screener_reset_audit' },                 // screener-reset (the gap that 500'd)
+  { migration: '050', table: 'overdue_log_reminder_sends' },    // overdue-logs digest send-dedup ledger
+  { migration: '051', table: 'overdue_log_reminder_optouts' },  // overdue-logs per-tenant opt-out scopes
+  { migration: '052', table: 'school_academic_calendar' },      // calendar-aware overdue digest (the GET/POST 500)
 ];
 
 // Module-level health flag. Defaults to healthy and is only flipped by a
