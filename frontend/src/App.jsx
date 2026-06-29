@@ -30,6 +30,7 @@ import CsvImportResultBanner from './components/shared/CsvImportResultBanner';
 import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
 import OverdueLogReminderToggle from './components/OverdueLogReminderToggle';
+import SchoolCalendarManager from './components/SchoolCalendarManager';
 import EACaseloadManager from './components/EACaseloadManager';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
@@ -5359,6 +5360,10 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
       {/* School-level reminder settings. Self-hides until the backend reports
           feature_enabled, so it stays invisible until the email feature is live. */}
       {user?.role === 'school_admin' && <OverdueLogReminderToggle API_URL={API_URL} />}
+
+      {/* School academic calendar management (terms/breaks). Self-service for
+          school_admin; the server resolves the caller's own school. */}
+      {user?.role === 'school_admin' && <SchoolCalendarManager API_URL={API_URL} />}
 
       {/* Admin Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
