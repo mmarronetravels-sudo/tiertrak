@@ -88,11 +88,13 @@ Progress monitoring is the heart of MTSS. Anyone who manages interventions can l
 
 **Logging:** open **Log Weekly Progress** and enter the **Date**, the **Implementation Status** (**Implemented as Planned**, **Partially Implemented**, **Not Implemented**, **Student Absent**), the **Progress Rating (1-5)**, the student's response (**Engaged**, **Cooperative**, **Resistant**, **Frustrated**, **Distracted**), and any **Notes**, then **Save Progress Log**. View trends in the **Progress Over Time** chart.
 
-**When is a log overdue?** When the intervention is active, the student isn't archived, the intervention requires monitoring (not **Note only**), and no progress has been logged for the current week (weeks start Monday).
+**When is a log overdue?** When the intervention is active, the student isn't archived, the intervention requires monitoring (not **Note only**), and no progress has been logged within the expected window (weeks start Monday). For most plans that means the current week; for plans on a biweekly cadence, a log in either the current or the prior week keeps it current.
 
-> **About overdue logic.** The check looks at the calendar week, not each intervention's stated frequency, and has no end-of-term cutoff — so an intervention left **active** over a break can keep flagging until it's completed or archived. Closing out finished interventions keeps reminders meaningful.
+> **About overdue logic.** The overdue check now respects two things it used to ignore: your school's academic calendar and each plan's logging frequency. Reminders pause during the term breaks your school has entered (see The academic calendar, below), so an intervention left **active** over a break won't keep flagging until classes resume, and a biweekly plan isn't counted overdue in an off week. This applies to both the reminder email and the **Weekly Reminder: Log Progress** card on the dashboard. Closing out finished interventions still keeps your reminders meaningful.
 
 **The weekly reminder email** (subject **Weekly Reminder: Log Progress**) goes to staff with overdue logs at their school. **School admins** control whether their building receives it, from the **Weekly overdue-logs reminder** card in Admin settings; the default is **on**. District admins can set it for a district or single school, and support can do it by request.
+
+**The academic calendar.** School admins set their building's term and break dates from the **Academic calendar** card in Admin settings, and the overdue-log reminders use those dates to pause during breaks. Choose **Add**, set the **Type** (**Term (in session)** or **Break (out of session)**), enter a **Start date** and **End date**, add an optional **Label** (such as "Winter Break"), then **Add entry**. Edit a row with the pencil icon and **Save changes**, or remove it with the trash icon. Keeping the calendar current keeps reminders aligned with your school year.
 
 ## 8. MTSS meetings and the referral process
 
@@ -177,7 +179,7 @@ ScholarPath is built so people only see the students they're entitled to see.
 
 **A button described here isn't showing up for me. Why?** Almost always because your role doesn't include that capability, or you're viewing a student/school you don't have access to. Check your role (top-right) and ask an administrator if needed.
 
-**Why is an intervention still overdue when school is out?** The overdue check flags any active, monitored intervention not logged this week, with no automatic pause for breaks. Mark it complete or archive the student to stop the flag.
+**Why is an intervention still overdue when school is out?** The overdue check now pauses during the term breaks your school has entered in its academic calendar (in Admin settings), so active interventions stop flagging while school is out and resume when classes return. During session, if a student's work is genuinely finished, mark the intervention complete or archive the student so it stops flagging.
 
 **Can I undo a grade roll-up?** Yes, but immediately — **Undo this run** is available right after you commit.
 
