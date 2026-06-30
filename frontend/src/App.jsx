@@ -31,6 +31,7 @@ import { AddStaffModal, EditStaffModal } from './components/Modals/StaffModals';
 import MTSSCoordinatorToggle from './components/MTSSCoordinatorToggle';
 import OverdueLogReminderToggle from './components/OverdueLogReminderToggle';
 import SchoolCalendarManager from './components/SchoolCalendarManager';
+import DistrictCalendarReminderPanel from './components/DistrictCalendarReminderPanel';
 import EACaseloadManager from './components/EACaseloadManager';
 import { useApp } from './context/AppContext';
 import InterventionPlanModal from './components/Modals/InterventionPlanModal';
@@ -5364,6 +5365,11 @@ const ScreenerAtRiskList = ({ results, onReview }) => {
       {/* School academic calendar management (terms/breaks). Self-service for
           school_admin; the server resolves the caller's own school. */}
       {user?.role === 'school_admin' && <SchoolCalendarManager API_URL={API_URL} />}
+
+      {/* District-admin calendar + reminder management across in-district schools.
+          Sources its school picker from GET /api/districts/:id/schools; each card
+          re-sends school_tenant_id for the server to re-validate. */}
+      {isDistrictAdmin && <DistrictCalendarReminderPanel API_URL={API_URL} districtId={user.district_id} />}
 
       {/* Admin Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-2">
