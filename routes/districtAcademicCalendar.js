@@ -41,6 +41,7 @@ const {
   validateIntParam,
   validateCalendarBody,
 } = require('./schoolAcademicCalendarCore');
+const { authorizeDistrictAdmin } = require('./districtAuthzCore');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -65,13 +66,13 @@ const ROW_COLUMNS =
 // (the §5 cross-district fence). The DB membership check is the load-bearing
 // isolation property — the school is never trusted from request input alone.
 async function resolveDistrictSchool(req, rawSchoolTenantId) {
-  const districtId = validateIntParam(req.params.id);
-  if (districtId === null) {
-    return { error: { status: 400, message: 'Invalid district id' } };
+  // Shared DB-free prefix: district id validation (400) + district_admin /
+  // own-district role gate (403). Identical behavior to the prior inline form.
+  const gate = authorizeDistrictAdmin(req.user, req.params.id);
+  if (gate.error) {
+    return { error: gate.error };
   }
-  if (req.user.role !== 'district_admin' || req.user.district_id !== districtId) {
-    return { error: { status: 403, message: 'Forbidden' } };
-  }
+  const { districtId } = gate;
   if (rawSchoolTenantId === undefined || rawSchoolTenantId === null) {
     return { error: { status: 400, message: 'school_tenant_id required' } };
   }

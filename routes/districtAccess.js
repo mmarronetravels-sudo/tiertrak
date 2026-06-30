@@ -39,6 +39,7 @@ require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { mutationUserLimiter } = require('../middleware/rateLimiters');
+const { authorizeDistrictAdmin } = require('./districtAuthzCore');
 // Server-authoritative feature flag (OVERDUE_LOGS_REMINDERS_ENABLED). The FE
 // hides the reminder toggle unless this is true; reused here so the district
 // GET reports the same flag the school surface does. Read-only consumption.
@@ -397,13 +398,14 @@ router.put('/:id/overdue-log-reminders', requireAuth, mutationUserLimiter, async
 // §4B: the request, the 200 body, and all logs carry integers + a boolean only.
 router.get('/:id/overdue-log-reminders', requireAuth, async (req, res) => {
   try {
-    const districtId = validateIntParam(req.params.id);
-    if (districtId === null) {
-      return res.status(400).json({ error: 'Invalid district id' });
+    // Adjacent gate (district id 400 + role 403) — the one inline gate in this
+    // file structurally identical to resolveDistrictSchool's prefix, so it
+    // consolidates without reordering any other validation.
+    const gate = authorizeDistrictAdmin(req.user, req.params.id);
+    if (gate.error) {
+      return res.status(gate.error.status).json({ error: gate.error.message });
     }
-    if (req.user.role !== 'district_admin' || req.user.district_id !== districtId) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    const { districtId } = gate;
 
     // school_tenant_id is optional: present -> school-scoped state, absent ->
     // district-wide state (symmetric with the PUT).

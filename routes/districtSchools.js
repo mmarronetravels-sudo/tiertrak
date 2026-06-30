@@ -32,7 +32,7 @@ const express = require('express');
 const router = express.Router();
 const { Pool } = require('pg');
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
-const { validateIntParam } = require('./schoolAcademicCalendarCore');
+const { authorizeDistrictAdmin } = require('./districtAuthzCore');
 require('dotenv').config();
 
 const pool = new Pool({
@@ -45,13 +45,11 @@ router.use(requireAuth);
 // GET /:id/schools — list every school-tenant in the caller's own district.
 router.get('/:id/schools', async (req, res) => {
   try {
-    const districtId = validateIntParam(req.params.id);
-    if (districtId === null) {
-      return res.status(400).json({ error: 'Invalid district id' });
+    const gate = authorizeDistrictAdmin(req.user, req.params.id);
+    if (gate.error) {
+      return res.status(gate.error.status).json({ error: gate.error.message });
     }
-    if (req.user.role !== 'district_admin' || req.user.district_id !== districtId) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
+    const { districtId } = gate;
 
     const result = await pool.query(
       `SELECT id AS school_tenant_id, name AS school_name
