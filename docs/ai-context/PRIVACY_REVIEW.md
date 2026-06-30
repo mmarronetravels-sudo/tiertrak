@@ -581,6 +581,16 @@ Default posture is data minimization per CLAUDE.md Section 4B. Entries below are
 
 **Provenance:** `fix/parent-portal-intervention-write-access` (PR #8), commit `29daf3b`.
 
+### District school-picker — `school_name` in the roster response
+
+**Exposure:** `GET /api/districts/:id/schools` returns one row per in-district school as `{ school_tenant_id (int), school_name }`. `school_name` is the tenant name from `tenants.name`.
+
+**Rationale:** Powers the district_admin school picker in the calendar + reminder management UI (`DistrictCalendarReminderPanel`). The picker needs a human-readable label to let a district_admin choose which school's calendar / reminder settings to manage; the integer `school_tenant_id` alone is not usable in a UI. `school_name` is tenant metadata (a building name), **not** student or staff PII — it identifies an organization, not an individual. It renders in UI labels only; only the integer `school_tenant_id` is ever placed in URLs, query strings, or logs (see CLAUDE.md Section 4B and the district route headers).
+
+**Safeguards:** Read-only. Scoped to the caller's own district — `SELECT id, name FROM tenants WHERE district_id = $1 AND type = 'school'`, where `$1` is derived from the authenticated session (`req.user.district_id`) via `authorizeDistrictAdmin`, never from request input. Gated to `role = 'district_admin'` for that same district (403 otherwise); a cross-district read is structurally impossible. Response is minimized to `id` + `name` (no `created_at`, `subdomain`, or other tenant columns).
+
+**Provenance:** `feat/district-admin-calendar-and-reminder-access`, commit `d300dd6`.
+
 ## The "new data collection" trigger
 
 Any PR that adds a new field storing PII is a Section 8 ask-first trigger. The PR description must include:
