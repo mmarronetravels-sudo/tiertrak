@@ -31136,3 +31136,116 @@ NEXT SESSION SHOULD
   picker + district-aware cards) and the deferred tests, then run the three reviewer
   subagents and open a review-ready PR. Branch is backend-only today.
 ================================================================================
+
+================================================================================
+SESSION: 2026-06-30T07:50:58-0700
+BRANCH:  feat/district-admin-calendar-and-reminder-access (PR #354) — MERGED
+         chore/activities-log-district-fe (this entry) — doc-only chore
+DISPOSITION: merged
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Completed the district_admin calendar + reminder feature whose backend-only
+  branch was banked last session, then merged it. Added the frontend (wrapper
+  approach), a new district-scoped read route to source the picker, a shared
+  authz-gate extraction, and the deferred authz unit tests. Ran the three
+  reviewer subagents pre-merge (all APPROVED, 0 CRITICAL/0 HIGH), obtained a
+  formal non-author human approval (Section 2A), merged, and verified working
+  in prod (a district_admin can see and use the calendar + reminder toggle for
+  a real in-district school).
+
+FILES TOUCHED (feature PR #354, vs origin/main)
+  routes/districtSchools.js — NEW. 1 district-scoped read route
+    GET /api/districts/:id/schools -> { school_tenant_id (int), school_name }.
+    Model B: WHERE district_id = $1 AND type = 'school', district derived from
+    the session, never request input. Sources the FE school picker (deliberately
+    NOT the grant-filtered dashboard list, so a zero-grant district_admin still
+    sees every in-district school).
+  routes/districtAuthzCore.js — NEW. Pure DB-free authorizeDistrictAdmin(user,
+    rawId) -> { districtId } | { error:{status,message} }. Reproduces the prior
+    inline gate byte-for-byte (validateIntParam 400; role !== 'district_admin' ||
+    district_id !== :id -> 403, legacy null district fails closed).
+  routes/districtAcademicCalendar.js — resolveDistrictSchool now consumes the
+    shared gate (prefix only; school-membership DB check unchanged).
+  routes/districtAccess.js — the adjacent inline gate (GET overdue-log-reminders)
+    now consumes the shared gate.
+  frontend/src/components/DistrictCalendarReminderPanel.jsx — NEW. Wrapper: school
+    picker (loading/error/empty states; auto-select when district has 1 school)
+    composing the two cards.
+  frontend/src/components/DistrictCalendarManager.jsx — NEW. Calendar CRUD card;
+    sends explicit school_tenant_id on every call.
+  frontend/src/components/DistrictReminderToggle.jsx — NEW. Reminder toggle with a
+    district-wide (omit school_tenant_id) vs per-school (send it) scope switch;
+    hidden until server reports feature_enabled.
+  frontend/src/components/calendarFormShared.js — NEW. Shared logic only (period-
+    type constants + client validator); markup stays inline.
+  frontend/src/App.jsx — 1 sibling render line for isDistrictAdmin; the two
+    school_admin render lines left byte-for-byte unchanged.
+  server.js — mount districtSchoolsRoutes on /api/districts.
+  test/districtAuthz.test.js — NEW. +6 authz-matrix unit tests.
+  docs/ai-context/PRIVACY_REVIEW.md — recorded the school_name response field as
+    tenant metadata (not student/staff PII).
+
+  Scope tally: +1 district-scoped read route + FE picker/calendar/toggle (3
+  components + 1 shared module); extracted 1 shared authz gate consumed by 3
+  handlers; +6 authz unit tests.
+
+MIGRATIONS RUN
+  none (reuses migration-050/051/052 tables already in prod).
+
+TENANT ISOLATION REVIEW
+  tenant-isolation-auditor: APPROVED, 0 CRITICAL/0 HIGH (1 LOW, 3 INFO). 11/11
+  data-touching queries scoped; no cross-tenant pathway. Model B fence verified:
+  district scope from req.user.district_id (never request input); school target
+  validated via tenants.district_id = :id AND type='school' before any read/write
+  (clean 404 cross-district). authorizeDistrictAdmin fails closed on null district.
+  Consolidation refactor preserved every check.
+
+PRIVACY REVIEW (Section 4B)
+  privacy-reviewer: APPROVED WITH NOTES, 0 CRITICAL/HIGH/MEDIUM (1 LOW now closed
+  by the PRIVACY_REVIEW.md entry; 1 INFO on the FE logError primitive). PII fields
+  touched: none. Surfaces carry integers, dates, a period_type enum, the optional
+  non-PII label, a boolean, a feature flag, and school/tenant names (tenant
+  metadata, UI-labels-only; only the integer school_tenant_id rides URLs/query
+  strings/logs). console.error static-tag + err.message only.
+
+SECURITY REVIEW
+  security-reviewer: APPROVED, 0 CRITICAL/0 HIGH (1 LOW, 2 INFO). AuthZ fail-closed;
+  role allowlist exactly district_admin (district_tech_admin -> 403, tested); no
+  IDOR; SQL fully parameterized; mutationUserLimiter on every write; JWT pinned
+  HS256; global /api CSRF enforce; no PII in logs/error bodies.
+
+VERIFICATION
+  npm test (on main, post-merge) — 89 passed, 0 failed (was 83; +6 authz tests).
+  Frontend eslint on the 4 new components — 0 errors / 0 warnings. (Repo-wide
+    lint still carries pre-existing debt in untouched files; no backend lint
+    configured — Followup #74.)
+  PR #354 reviewDecision == APPROVED by a non-author human at the branch tip
+    commit (no post-approval pushes; approval current, not auto-dismissed).
+  Prod: district_admin verified able to see + use the calendar + reminder toggle
+    for a real in-district school.
+  orphaned-commit gate: PASS — feature commits are ancestors of origin/main
+    (PR #354 merged, main fast-forwarded to the merge commit).
+
+OPEN ITEMS / FOLLOW-UPS (banked from the PR; none blocking)
+  - [TOP] Foreign-district 404 regression test: pin "GET/PUT with a foreign-
+    district school_tenant_id -> 404" for the opt-out and calendar surfaces, so
+    the upstream tenants membership fence can't be silently removed/reordered.
+  - School-scoped opt-out district_id denormalization: the pre-existing
+    districtAccess school-scoped opt-out writer leaves district_id NULL
+    (constrained by M051 chk_optout_exactly_one_scope). Not an isolation defect;
+    revisit if a district-rollup report joins opt-outs by district_id.
+  - Per-file new Pool() consolidation: each route module instantiates its own pg
+    Pool; fold into the shared pg-pool-consolidation backlog item.
+  - Remaining 4 interleaved districtAccess gates (GET/POST/DELETE
+    /:id/users/:userId/access, PUT /:id/overdue-log-reminders) were NOT
+    consolidated onto authorizeDistrictAdmin: each runs another 400-validation
+    between the district-id check and the role check, so front-gating would
+    reorder their 400-vs-403 responses. A follow-up could add a narrow
+    assertDistrictAdmin(user, districtId) predicate that preserves the
+    input-before-authz ordering.
+
+NEXT SESSION SHOULD
+  Land the [TOP] foreign-district 404 regression test first (own branch + PR;
+  reviewer triad since it asserts a Section 5 property), then optionally the
+  4-gate consolidation and the pg-pool / opt-out-denormalization cleanups.
+================================================================================
