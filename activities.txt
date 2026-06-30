@@ -31058,3 +31058,81 @@ NEXT SESSION SHOULD
   OVERDUE_LOGS_REMINDERS_ENABLED prod-enable gate forward as the condition before
   the send path goes live.
 ================================================================================
+================================================================================
+SESSION: 2026-06-29T07:40:53-07:00
+BRANCH:  feat/district-admin-calendar-and-reminder-access
+DISPOSITION: kept
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Two threads. (1) Prod ops: enabled the weekly overdue-logs digest in prod after
+  read-only pre-flight gates cleared (demo-tenant calendar in-session check; M-2
+  soft-deactivation schema check; three reviewer subagents on the send path all
+  cleared block-on-CRITICAL). (2) Backend feature: gave district_admin the ability
+  to manage academic-calendar rows and the overdue-log reminder toggle for schools
+  in their OWN district (previously school_admin-only), scoped server-side under
+  Model B (whole-district). Frontend and tests are INTENTIONALLY DEFERRED to a
+  future session; the feature branch is NOT review-ready.
+
+FILES TOUCHED
+  routes/districtAcademicCalendar.js — NEW district_admin calendar CRUD router
+    (GET/POST/PUT/DELETE) mounted /api/districts/:id/academic-calendar.
+  routes/districtAccess.js — added GET /:id/overdue-log-reminders (reminder-state
+    read; counterpart to the existing district opt-out PUT).
+  server.js — require + mount the new district calendar router under /api/districts.
+
+MIGRATIONS RUN
+  none (reuses migration-050/051/052 tables already present in prod).
+
+PROD OPS (operator-performed out-of-band; not a code change this session)
+  Flag OVERDUE_LOGS_REMINDERS_ENABLED set true in prod (digest was OFF before).
+  Env OVERDUE_LOGS_TZ=America/Los_Angeles set (consumed at server.js:871 as the
+    node-cron timezone). OVERDUE_LOGS_CRON default '0 7 * * 1' -> weekly digest
+    cron registered to fire Monday 07:00 Pacific.
+
+TENANT ISOLATION REVIEW
+  New + modified queries scoped by the resolved school_tenant_id. Model B authz:
+    role === 'district_admin' AND req.user.district_id === :id, with the target
+    school validated via tenants.district_id === :id AND type='school' (cross-
+    district read/write structurally impossible -> clean 404). PUT/DELETE double-
+    scope WHERE id = $ AND school_tenant_id = $. No resolveAccessibleTenantIds
+    widening; school_admin SELF_SERVICE_ROLES left unchanged. Reviewer subagents on
+    the new routes NOT yet run (deferred with FE+tests, pre-merge).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none. Routes carry integers, dates, a period_type enum, and
+    the optional non-PII calendar label only.
+  Logging audit: log lines carry integers + a boolean only; label never logged.
+  Cross-tenant risk: none identified (district_id-match fence; double-scoped writes).
+
+VERIFICATION
+  npm test — 83 passed, 0 failed (no district-calendar tests yet; deferred phase).
+  node --check routes/districtAcademicCalendar.js — OK
+  node --check routes/districtAccess.js — OK
+  node --check server.js — OK
+  git push origin feat/district-admin-calendar-and-reminder-access — new branch,
+    unmerged, no PR opened.
+  orphaned-commit gate: SKIPPED — kept (branch not landed by design).
+  merge-sha verification: N/A — kept (no PR, no merge).
+  misattribution check: N/A — no FIXES block this session.
+
+OPEN ITEMS / FOLLOW-UPS
+  - FRONTEND deferred: render the reminder toggle + calendar-manager cards for
+    district_admin with a school picker (keep the district-wide reminder option),
+    pointed at the /api/districts/:id endpoints (App.jsx ~5362/5366, currently
+    role === 'school_admin' only).
+  - TESTS deferred: unit/route coverage for the district calendar CRUD authz +
+    validation, role-matrix (district_tech_admin + cross-district rejected), and
+    the district reminder-state GET.
+  - PRE-MERGE: run tenant-isolation-auditor + security-reviewer + privacy-reviewer
+    on the new routes, then obtain formal human PR approval (Section 2A; this is an
+    authz + Section 5 change).
+  - In-district school-validation snippet now inlined in 3 spots (calendar helper,
+    reminder PUT, reminder GET) -> maps to the resolveAndBindTargetTenant
+    consolidation follow-up; left surgical for this PR.
+  - Post-enable watch: confirm the first Monday 07:00 Pacific digest run behaves.
+
+NEXT SESSION SHOULD
+  Resume on feat/district-admin-calendar-and-reminder-access: build the FE (school
+  picker + district-aware cards) and the deferred tests, then run the three reviewer
+  subagents and open a review-ready PR. Branch is backend-only today.
+================================================================================
