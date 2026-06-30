@@ -39,6 +39,11 @@ require('dotenv').config();
 const { requireAuth } = require('../middleware/authorizeInterventionAccess');
 const { resolveAccessibleTenantIds } = require('../middleware/resolveAccessibleTenantIds');
 const { mutationUserLimiter } = require('../middleware/rateLimiters');
+const { authorizeDistrictAdmin } = require('./districtAuthzCore');
+// Server-authoritative feature flag (OVERDUE_LOGS_REMINDERS_ENABLED). The FE
+// hides the reminder toggle unless this is true; reused here so the district
+// GET reports the same flag the school surface does. Read-only consumption.
+const { featureEnabled } = require('./schoolOverdueLogOptoutsCore');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -372,6 +377,80 @@ router.put('/:id/overdue-log-reminders', requireAuth, mutationUserLimiter, async
     res.json({ message: 'Updated', ...row });
   } catch (err) {
     console.error('[districtAccess:optout]', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /:id/overdue-log-reminders — current weekly overdue-logs reminder state for
+// the district_admin's OWN district. Mirrors the PUT's scope: with
+// school_tenant_id present, reports that ONE in-district school's opt-out state;
+// absent, reports the district-wide state. Absence of a row means eligible
+// (default-on / opt-out semantics), so reports reminders_enabled = true.
+// feature_enabled tells the FE whether to render the toggle at all (the same
+// server-authoritative flag the school surface returns).
+//
+// Authz (§5): identical gate to the PUT -- requireAuth + role === 'district_admin'
+// + req.user.district_id === pathId. A supplied school_tenant_id is validated to
+// be a school-tenant within THIS district (tenants.district_id === pathId), so a
+// cross-district read is structurally impossible. Read-only: no transaction, no
+// rate limiter (mirrors the access-list GET).
+//
+// §4B: the request, the 200 body, and all logs carry integers + a boolean only.
+router.get('/:id/overdue-log-reminders', requireAuth, async (req, res) => {
+  try {
+    // Adjacent gate (district id 400 + role 403) — the one inline gate in this
+    // file structurally identical to resolveDistrictSchool's prefix, so it
+    // consolidates without reordering any other validation.
+    const gate = authorizeDistrictAdmin(req.user, req.params.id);
+    if (gate.error) {
+      return res.status(gate.error.status).json({ error: gate.error.message });
+    }
+    const { districtId } = gate;
+
+    // school_tenant_id is optional: present -> school-scoped state, absent ->
+    // district-wide state (symmetric with the PUT).
+    const hasSchool = req.query.school_tenant_id !== undefined && req.query.school_tenant_id !== null;
+    let schoolTenantId = null;
+    if (hasSchool) {
+      schoolTenantId = validateIntParam(req.query.school_tenant_id);
+      if (schoolTenantId === null) {
+        return res.status(400).json({ error: 'Invalid school_tenant_id' });
+      }
+      // §5: the target school must be a school-tenant within THIS district.
+      const school = await pool.query(
+        "SELECT id FROM tenants WHERE id = $1 AND district_id = $2 AND type = 'school'",
+        [schoolTenantId, districtId]
+      );
+      if (school.rows.length === 0) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+    }
+
+    // Read the opt-out row for the SAME scope the PUT writes. School-scoped rows
+    // carry school_tenant_id (district_id NULL); district-wide rows carry
+    // district_id (school_tenant_id NULL), so each WHERE matches one scope only.
+    const result = schoolTenantId !== null
+      ? await pool.query(
+          'SELECT reminders_enabled FROM overdue_log_reminder_optouts WHERE school_tenant_id = $1',
+          [schoolTenantId]
+        )
+      : await pool.query(
+          'SELECT reminders_enabled FROM overdue_log_reminder_optouts WHERE district_id = $1',
+          [districtId]
+        );
+
+    const remindersEnabled = result.rows.length === 0
+      ? true
+      : result.rows[0].reminders_enabled;
+
+    res.json({
+      district_id: districtId,
+      school_tenant_id: schoolTenantId,
+      reminders_enabled: remindersEnabled,
+      feature_enabled: featureEnabled(process.env),
+    });
+  } catch (err) {
+    console.error('[districtAccess:optout-get]', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
