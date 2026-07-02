@@ -31249,3 +31249,67 @@ NEXT SESSION SHOULD
   reviewer triad since it asserts a Section 5 property), then optionally the
   4-gate consolidation and the pg-pool / opt-out-denormalization cleanups.
 ================================================================================
+
+================================================================================
+SESSION: 2026-07-02T13:38:05-07:00
+BRANCH:  fix/prod-test-seed-guard
+DISPOSITION: pr-opened:https://github.com/mmarronetravels-sudo/tiertrak/pull/356 (MERGED)
+--------------------------------------------------------------------------------
+TASK SUMMARY
+  Guard the boot-time test-user seed in server.js so it never runs in
+  production. Part of scoping an EU (Frankfurt) app+DB replica of the Oregon
+  stack: the empty EU DB must not receive fixture rows on first app boot.
+
+FILES TOUCHED
+  server.js — wrap the createTables() test-user seed block in an
+              `if (process.env.NODE_ENV !== 'production')` guard; seed SQL and
+              fixture rows unchanged (control-flow only).
+
+MIGRATIONS RUN
+  none
+
+TENANT ISOLATION REVIEW
+  No schema changes. No SQL added or modified. The guarded INSERT retains its
+  explicit tenant identifier and can no longer run in prod. tenant-isolation-
+  auditor subagent on the diff: APPROVED, 0 CRITICAL / 0 WARN / 2 INFO.
+  Net effect is isolation-positive (prod no longer inserts fixture rows into a
+  hard-coded tenant).
+
+PRIVACY REVIEW (Section 4B)
+  PII fields touched: none real. The guarded block inserts synthetic fixture
+    rows only (not real student/staff data); those rows are unchanged by the diff.
+  Logging audit: only changed log line is a static string, no interpolation.
+  Cross-tenant risk: none identified. Change strictly reduces data written in
+    production. privacy-reviewer subagent: APPROVED, 0 CRITICAL / 0 WARN / 2 INFO.
+
+VERIFICATION
+  npm test — 89 passed, 0 failed, 0 skipped
+  node --check server.js — clean
+  npm run lint — N/A (no backend lint script; followup #74)
+  orphaned-commit gate: PASS — head 246a8d9 is an ancestor of origin/main (base=main).
+  merge-sha verification: MATCH — true merge commit; second parent == PR head 246a8d9.
+------------------------------------------------------------------------
+WORK-PR COMMITS (SHA-only manifest, auto-generated)
+------------------------------------------------------------------------
+
+PR #356 commit OIDs at merge time:
+  246a8d92244263080073fa3f7ebeee2e772bd0b9
+------------------------------------------------------------------------
+OPEN ITEMS / FOLLOW-UPS
+  - Fail-open NODE_ENV guard: both reviewers independently flagged that the
+    guard only protects prod if NODE_ENV is set to exactly 'production' on the
+    Render service(s). Confirm NODE_ENV=production on the prod Render service(s);
+    consider a fail-closed variant (explicit SEED_TEST_USERS flag) as future
+    hardening.
+  - PR #356 was approved (non-author, scholapathsystems) and MERGED to main by
+    that reviewer during the session — the operator had expected it to stay open
+    awaiting review. Outcome is a valid Section 2A flow (non-author human APPROVED
+    + merged); noted only because it differed from the stated intent at hand-off.
+  - EU replication still open (this was one prerequisite): schema-only prod dump
+    into empty Frankfurt DB, EU app-service env wiring, and boot-order plan
+    remain to be executed by the operator.
+
+NEXT SESSION SHOULD
+  Confirm NODE_ENV=production on the prod Render service before relying on the
+  seed guard, then proceed with the EU schema-only clone + app-service standup.
+================================================================================
